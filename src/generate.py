@@ -57,5 +57,8 @@ def generate_response(prompt, max_new_tokens=100, temperature=0.8, repetition_pe
         response = full_response.split("Answer:")[-1].strip()
     else:
         response = generated_text.strip()
+
+    # Remove any quotation marks
+    response = response.replace('"', '')
     
     return response
