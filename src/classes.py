@@ -65,7 +65,7 @@ class NPC:
 
         # Draw exclamation mark if has quest
         if self.has_active_quest and not self.quest_complete:
-            font = pygame.font.Font(None, 24)
+            font = pygame.font.Font(None, 30)
             text = font.render("!", True, YELLOW)
             screen.blit(text, (screen_x + NPC_SIZE // 2 - 5, screen_y - 20))
     
