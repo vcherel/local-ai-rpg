@@ -37,8 +37,8 @@ class Game:
         self.current_dialogue = ""
         self.current_npc = None
         self.dialogue_scroll = 0
-        self.font = pygame.font.Font(None, 24)
-        self.small_font = pygame.font.Font(None, 20)
+        self.font = pygame.font.SysFont("arial", 28, bold=True)
+        self.small_font = pygame.font.SysFont("arial", 22)
         
         # Camera
         self.camera_x = 0
@@ -152,7 +152,7 @@ class Game:
         # Draw dialogue box if active
         if self.dialogue_active:
             box_height = 200
-            box_y = SCREEN_HEIGHT - box_height - 10
+            box_y = SCREEN_HEIGHT - box_height - 25
             pygame.draw.rect(self.screen, DARK_GRAY, 
                            (10, box_y, SCREEN_WIDTH - 20, box_height))
             pygame.draw.rect(self.screen, WHITE, 
@@ -183,7 +183,7 @@ class Game:
             
             # Draw instruction
             instruction = self.small_font.render("Press SPACE to close", True, YELLOW)
-            self.screen.blit(instruction, (SCREEN_WIDTH - 200, box_y + box_height - 30))
+            self.screen.blit(instruction, (SCREEN_WIDTH - 250, box_y + box_height - 30))
         
         # Draw controls
         controls = self.small_font.render("ZQSD: Move | E: Talk/Pickup | SPACE: Close dialogue", True, WHITE)
