@@ -1,3 +1,4 @@
+import re
 import pygame
 import random
 import sys
@@ -173,7 +174,11 @@ class Game:
             npc.quest_content = self.current_dialogue
             extract_prompt = f"From this quest: '{npc.quest_content}', extract ONLY the item name. Respond with nothing else, no explanations, no quotes, just the item name."
             item_name = generate_response(extract_prompt).strip()
-            print(item_name)
+
+            # If there's text inside single quotes, extract it
+            match = re.search(r"'([^']+)'", item_name)
+            if match:
+                item_name = match.group(1)
             
             return (npc, item_name)
         
@@ -280,8 +285,9 @@ class Game:
                 y_offset += 25
             
             # Draw instruction
-            instruction = self.small_font.render("Press SPACE to close", True, YELLOW)
-            self.screen.blit(instruction, (SCREEN_WIDTH - 250, box_y + box_height - 30))
+            if self.dialogue_generator is None:
+                instruction = self.small_font.render("Press SPACE to close", True, YELLOW)
+                self.screen.blit(instruction, (SCREEN_WIDTH - 250, box_y + box_height - 30))
         
         # Draw controls
         controls = self.small_font.render("ZQSD: Move | E: Talk/Pickup | SPACE: Close dialogue", True, WHITE)
@@ -305,7 +311,7 @@ class Game:
                         if not self.dialogue_active:
                             self.pickup_nearby_item()
                     
-                    if event.key == pygame.K_SPACE and self.dialogue_active:
+                    if event.key == pygame.K_SPACE and self.dialogue_active and self.dialogue_generator is None:
                         self.dialogue_active = False
                         self.current_npc = None
 
@@ -353,13 +359,13 @@ class Game:
                            (0 - self.camera_x, 0 - self.camera_y, 
                             self.world_width, self.world_height), 3)
             
-            # Draw items
-            for item in self.items:
-                item.draw(self.screen, self.camera_x, self.camera_y)
-            
             # Draw NPCs
             for npc in self.npcs:
                 npc.draw(self.screen, self.camera_x, self.camera_y)
+
+            # Draw items
+            for item in self.items:
+                item.draw(self.screen, self.camera_x, self.camera_y)
             
             # Draw player
             self.player.draw(self.screen, self.camera_x, self.camera_y)
