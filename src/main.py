@@ -115,7 +115,8 @@ class Game:
     def generate_npc_interaction(self, npc: NPC):
         """Generate interaction dialogue with NPC"""
         # Choose type of interaction
-        interaction_type = random.choice(["quest", "talk"])
+        # interaction_type = random.choice(["quest", "talk"])
+        interaction_type = random.choice(["quest"])
         
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate quest
@@ -168,7 +169,7 @@ class Game:
             # Now extract quest item from completed dialogue
             npc.quest_content = self.current_dialogue
             extract_prompt = f"From this quest: '{npc.quest_content}', extract ONLY the item name. Respond with nothing else, no explanations, no quotes, just the item name."
-            item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
+            item_name = generate_response(extract_prompt).strip()
             
             return (npc, item_name)
         
