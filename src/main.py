@@ -15,7 +15,10 @@ class Game:
         # World settings
         self.world_width = 2500
         self.world_height = 2000
-        
+
+        # World items
+        self.floor_details = [ (random.randint(0, self.world_width), random.randint(0, self.world_height), random.choice(["stone", "flower"])) for _ in range(300) ]
+
         # Game objects
         self.player = Player(self.world_width // 2, self.world_height // 2)
         self.npcs = []
@@ -57,7 +60,7 @@ class Game:
             # Generate quest
             prompt = (
                 f"You are an NPC in a RPG game. Generate a quest where you ask the player to find and bring you a specific item."
-                f"Keep it brief."
+                f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
             )
             response = generate_response(prompt, max_new_tokens=80)
             
@@ -83,7 +86,8 @@ class Game:
             # Quest completion dialogue
             prompt = (
                 f"You are an NPC in a RPG. The player just completed your quest "
-                f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item. Keep it brief."
+                f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item."
+                f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
             )
             response = generate_response(prompt, max_new_tokens=60)
             npc.has_active_quest = False
@@ -92,8 +96,11 @@ class Game:
             return response.strip()
         
         else:
-            # Casual conversation
-            prompt = f"You are an NPC in a RPG world. Have small talk with the player. Keep it brief."
+            # Casual conversation"
+            prompt = (
+                f"You are an NPC in a RPG world. Have small talk with the player."
+                f"Keep it brief (1/2 sentence) and stay in character."
+            )
             response = generate_response(prompt, max_new_tokens=70)
             return response.strip()
     
@@ -215,6 +222,11 @@ class Game:
             
             # Drawing
             self.screen.fill(GREEN)
+            for (x, y, kind) in self.floor_details:
+                if kind == "stone":
+                    pygame.draw.circle(self.screen, (100, 100, 100), (x - self.camera_x, y - self.camera_y), 3)
+                else:
+                    pygame.draw.circle(self.screen, (255, 0, 0), (x - self.camera_x, y - self.camera_y), 2)
             
             # Draw world border
             pygame.draw.rect(self.screen, WHITE, 
