@@ -75,7 +75,7 @@ class DialogueManager:
             # Quest completion dialogue (NPC rewards player)
             prompt = (
                 f"You are an NPC in an RPG. The player completed your quest ({npc.quest_content}) and brought you the {npc.quest_item_name}. "
-                f"You must thank the player and explicitly give them a specific number of coins as a reward. "
+                f"You must thank the player and explicitly give them a specific number of coins as a reward. Currently, the player has {self.player.coins} coins. "
                 f"Reply only as the NPC, in one short sentence."
             )
             self.generator = generate_response_stream(prompt)
@@ -133,10 +133,20 @@ class DialogueManager:
             while self.generator is not None:
                 time.sleep(0.1)
             
-            # Extract coin number from NPC's message
+            # First try to extract coin number directly from NPC's message
             match = re.search(r'\b(\d+)\b', self.current_text)
             if match:
                 return int(match.group(1))
+            
+            # If no explicit number found, use LLM to extract the amount
+            extract_prompt = f"From this quest reward description: '{self.current_text}', extract ONLY the coin/gold amount as a number. Respond with nothing else, no explanations, just the number. If no reward is mentioned, respond with 0."
+            reward_str = generate_response(extract_prompt).strip()
+            
+            # Clean up any non-numeric characters
+            reward_str = re.sub(r'[^\d]', '', reward_str)
+            
+            if reward_str:
+                return int(reward_str)
             return 0
         
         def on_complete(reward):
