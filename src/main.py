@@ -6,7 +6,7 @@ from queue import Queue
 from typing import Callable, Optional
 
 from constants import GREEN, INTERACTION_DISTANCE, PLAYER_SPEED, SCREEN_HEIGHT, SCREEN_WIDTH, WHITE
-from classes import Player, NPC, Item
+from classes import Player, NPC
 from dialogue_manager import DialogueManager
 
 

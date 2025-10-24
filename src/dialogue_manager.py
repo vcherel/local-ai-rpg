@@ -6,7 +6,7 @@ from typing import Optional
 
 from constants import DARK_GRAY, SCREEN_HEIGHT, SCREEN_WIDTH, WHITE, YELLOW
 from generate import generate_response, generate_response_stream
-from classes import Player, NPC, Item
+from classes import NPC, Item
 
 
 class DialogueManager:
