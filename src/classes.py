@@ -1,0 +1,68 @@
+import pygame
+
+from constants import BLACK, ITEM_SIZE, NPC_SIZE, PLAYER_SIZE, YELLOW
+from functions import random_color
+
+
+class Player:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.inventory = []
+        self.coins = 0
+    
+    def move(self, dx, dy, world_width, world_height):
+        new_x = max(PLAYER_SIZE//2, min(self.x + dx, world_width - PLAYER_SIZE//2))
+        new_y = max(PLAYER_SIZE//2, min(self.y + dy, world_height - PLAYER_SIZE//2))
+        self.x = new_x
+        self.y = new_y
+    
+    def draw(self, screen, camera_x, camera_y):
+        pygame.draw.rect(screen, BLACK, 
+                        (self.x - camera_x - PLAYER_SIZE//2, 
+                         self.y - camera_y - PLAYER_SIZE//2, 
+                         PLAYER_SIZE, PLAYER_SIZE))
+    
+
+class NPC:
+    def __init__(self, x, y, npc_id):
+        self.x = x
+        self.y = y
+        self.color = random_color()
+        self.id = npc_id
+        self.has_active_quest = False
+        self.quest_item_name = None
+        self.quest_complete = False
+        
+    def draw(self, screen, camera_x, camera_y):
+        screen_x = self.x - camera_x - NPC_SIZE//2
+        screen_y = self.y - camera_y - NPC_SIZE//2
+        pygame.draw.rect(screen, self.color, (screen_x, screen_y, NPC_SIZE, NPC_SIZE))
+        # Draw exclamation mark if has quest
+        if self.has_active_quest and not self.quest_complete:
+            font = pygame.font.Font(None, 24)
+            text = font.render("!", True, YELLOW)
+            screen.blit(text, (screen_x + NPC_SIZE//2 - 5, screen_y - 20))
+    
+    def distance_to_player(self, player):
+        return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
+
+
+class Item:
+    def __init__(self, x, y, name):
+        self.x = x
+        self.y = y
+        self.name = name
+        self.color = YELLOW
+        self.picked_up = False
+    
+    def draw(self, screen, camera_x, camera_y):
+        if not self.picked_up:
+            screen_x = self.x - camera_x - ITEM_SIZE//2
+            screen_y = self.y - camera_y - ITEM_SIZE//2
+            pygame.draw.circle(screen, self.color, 
+                             (screen_x + ITEM_SIZE//2, screen_y + ITEM_SIZE//2), 
+                             ITEM_SIZE//2)
+    
+    def distance_to_player(self, player):
+        return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
