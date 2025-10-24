@@ -41,6 +41,7 @@ class NPC:
         self.color = random_color()
         self.id = npc_id
         self.has_active_quest = False
+        self.quest_content = None
         self.quest_item_name = None
         self.quest_complete = False
         

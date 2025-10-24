@@ -51,7 +51,7 @@ class Game:
         self.camera_x = max(0, min(self.camera_x, self.world_width - SCREEN_WIDTH))
         self.camera_y = max(0, min(self.camera_y, self.world_height - SCREEN_HEIGHT))
     
-    def generate_npc_interaction(self, npc):
+    def generate_npc_interaction(self, npc: NPC):
         """Generate interaction dialogue with NPC"""
         # Choose type of interaction
         interaction_type = random.choice(["quest", "talk"])
@@ -73,7 +73,7 @@ class Game:
             # Create quest
             npc.has_active_quest = True
             npc.quest_item_name = item_name
-            # TODO: add quest here
+            npc.quest_content = quest_text
             
             # Spawn item in random location
             item_x = random.randint(100, self.world_width - 100)
@@ -85,7 +85,7 @@ class Game:
         elif npc.has_active_quest and npc.quest_complete:
             # Quest completion dialogue
             prompt = (
-                f"You are an NPC in a RPG. The player just completed your quest "
+                f"You are an NPC in a RPG. The player just completed your quest ({npc.quest_content}) "
                 f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item."
                 f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
             )
@@ -107,6 +107,7 @@ class Game:
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
         for npc in self.npcs:
+            npc: NPC
             if npc.distance_to_player(self.player) < INTERACTION_DISTANCE:
                 # Check if player has quest item
                 if npc.has_active_quest and npc.quest_item_name in self.player.inventory:
@@ -126,6 +127,7 @@ class Game:
     def pickup_nearby_item(self):
         """Check for nearby items and pick them up"""
         for item in self.items:
+            item: Item
             if not item.picked_up and item.distance_to_player(self.player) < INTERACTION_DISTANCE:
                 item.picked_up = True
                 self.player.inventory.append(item.name)
