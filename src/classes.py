@@ -81,11 +81,15 @@ class Item:
     
     def draw(self, screen, camera_x, camera_y):
         if not self.picked_up:
-            screen_x = self.x - camera_x - ITEM_SIZE//2
-            screen_y = self.y - camera_y - ITEM_SIZE//2
-            pygame.draw.circle(screen, self.color, 
-                             (screen_x + ITEM_SIZE//2, screen_y + ITEM_SIZE//2), 
-                             ITEM_SIZE//2)
+            screen_x = self.x - camera_x - ITEM_SIZE // 2
+            screen_y = self.y - camera_y - ITEM_SIZE // 2
+            center = (screen_x + ITEM_SIZE // 2, screen_y + ITEM_SIZE // 2)
+            
+            # Draw thin black outline
+            pygame.draw.circle(screen, (0, 0, 0), center, ITEM_SIZE // 2, 1)
+            
+            # Draw filled circle
+            pygame.draw.circle(screen, self.color, center, ITEM_SIZE // 2 - 1)
     
     def distance_to_player(self, player):
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5

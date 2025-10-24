@@ -93,13 +93,13 @@ class Game:
             # Casual conversation"
             prompt = (
                 f"You are an NPC in a RPG world. Have small talk with the player."
-                f"Keep it brief (1/2 sentence) and stay in character."
+                f"Say ONLY one sentence in your reply."
             )
             self.dialogue_generator = generate_response_stream(prompt)
             self.current_dialogue = ""
     
     def generate_quest_item_in_background(self, npc: NPC):
-        extract_prompt = f"From this quest: '{npc.quest_content}', what is the item name? Answer with just the item name."
+        extract_prompt = f"From this quest: '{npc.quest_content}', what is the item name? Answer with ONLY the item name."
         item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
     
         npc.quest_item_name = item_name

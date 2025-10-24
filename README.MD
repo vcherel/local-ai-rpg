@@ -14,6 +14,6 @@ Settings :          CTRL + ,
 
 Fold all :          CTRL + K  ;  CTRL + 0
 Unfold all :        CTRL + K  ; CTRL + J
-Folde functions :   CTRL + K  ; CTRL + 2
+Fold functions :   CTRL + K  ; CTRL + 2
 
 See all shorcuts :  CTRL + K  ; CTRL + S
