@@ -99,6 +99,10 @@ def generate_response_stream(prompt, max_new_tokens=100, temperature=0.8, repeti
         attention_mask = torch.cat([attention_mask, new_mask], dim=-1)
         
         new_token = tokenizer.decode(new_token_id[0], skip_special_tokens=True)
+
+        # Remove any quotation marks from the new token
+        new_token = new_token.replace('"', '')
+
         generated_text += new_token
         yield generated_text
         
