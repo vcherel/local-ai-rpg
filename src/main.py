@@ -1,9 +1,10 @@
 import pygame
 import random
 import sys
+import threading
 
 from constants import DARK_GRAY, GREEN, INTERACTION_DISTANCE, PLAYER_SPEED, SCREEN_HEIGHT, SCREEN_WIDTH, WHITE, YELLOW
-from generate import generate_response
+from generate import generate_response, generate_response_stream
 from classes import Player, NPC, Item
 
 
@@ -32,6 +33,7 @@ class Game:
         
         # UI state
         self.dialogue_active = False
+        self.dialogue_generator = None
         self.current_dialogue = ""
         self.current_npc = None
         self.dialogue_scroll = 0
@@ -62,25 +64,16 @@ class Game:
                 f"You are an NPC in a RPG game. Generate a quest where you ask the player to find and bring you a specific item."
                 f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
             )
-            response = generate_response(prompt, max_new_tokens=80)
-            
-            quest_text = response.strip()
-            
-            # Ask LLM to extract item name
-            extract_prompt = f"From this quest: '{quest_text}', what is the item name? Answer with just the item name, nothing else."
-            item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
+
+            self.dialogue_generator = generate_response_stream(prompt)
+            self.current_dialogue = ""
             
             # Create quest
             npc.has_active_quest = True
-            npc.quest_item_name = item_name
-            npc.quest_content = quest_text
-            
-            # Spawn item in random location
-            item_x = random.randint(100, self.world_width - 100)
-            item_y = random.randint(100, self.world_height - 100)
-            self.items.append(Item(item_x, item_y, item_name))
-            
-            return quest_text
+            npc.quest_content = ""  # TODO: will be filled after dialogue is complete
+
+            # Generate quest item in background
+            threading.Thread(target=self.generate_quest_item_in_background, args=(npc,)).start()
         
         elif npc.has_active_quest and npc.quest_complete:
             # Quest completion dialogue
@@ -89,11 +82,12 @@ class Game:
                 f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item."
                 f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
             )
-            response = generate_response(prompt, max_new_tokens=60)
+            self.dialogue_generator = generate_response_stream(prompt)
+            self.current_dialogue = ""
+
             npc.has_active_quest = False
             npc.quest_complete = False
             npc.quest_item_name = None
-            return response.strip()
         
         else:
             # Casual conversation"
@@ -101,9 +95,19 @@ class Game:
                 f"You are an NPC in a RPG world. Have small talk with the player."
                 f"Keep it brief (1/2 sentence) and stay in character."
             )
-            response = generate_response(prompt, max_new_tokens=70)
-            return response.strip()
+            self.dialogue_generator = generate_response_stream(prompt)
+            self.current_dialogue = ""
     
+    def generate_quest_item_in_background(self, npc: NPC):
+        extract_prompt = f"From this quest: '{npc.quest_content}', what is the item name? Answer with just the item name."
+        item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
+    
+        npc.quest_item_name = item_name
+    
+        item_x = random.randint(100, self.world_width - 100)
+        item_y = random.randint(100, self.world_height - 100)
+        self.items.append(Item(item_x, item_y, item_name))
+
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
         for npc in self.npcs:
@@ -121,7 +125,8 @@ class Game:
                 self.current_dialogue = "Generating response..."
                 
                 # Generate dialogue
-                self.current_dialogue = self.generate_npc_interaction(npc)
+                self.generate_npc_interaction(npc)
+                
                 break # Only interact with one NPC at a time
     
     def pickup_nearby_item(self):
@@ -202,6 +207,16 @@ class Game:
                     if event.key == pygame.K_SPACE and self.dialogue_active:
                         self.dialogue_active = False
                         self.current_npc = None
+
+            # Update dialogue text if generator is active
+            if self.dialogue_active and self.dialogue_generator is not None:
+                try:
+                    # Get next partial text from generator
+                    partial = next(self.dialogue_generator)
+                    self.current_dialogue = partial
+                except StopIteration:
+                    # Generator finished
+                    self.dialogue_generator = None
             
             # Player movement
             if not self.dialogue_active:
