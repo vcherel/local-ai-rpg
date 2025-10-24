@@ -1,6 +1,6 @@
 import pygame
 
-from constants import BLACK, ITEM_SIZE, NPC_SIZE, PLAYER_SIZE, YELLOW
+from constants import BLACK, WHITE, ITEM_SIZE, NPC_SIZE, PLAYER_SIZE, YELLOW
 from functions import random_color
 
 
@@ -18,10 +18,20 @@ class Player:
         self.y = new_y
     
     def draw(self, screen, camera_x, camera_y):
-        pygame.draw.rect(screen, BLACK, 
-                        (self.x - camera_x - PLAYER_SIZE//2, 
-                         self.y - camera_y - PLAYER_SIZE//2, 
-                         PLAYER_SIZE, PLAYER_SIZE))
+        screen_x = self.x - camera_x - PLAYER_SIZE // 2
+        screen_y = self.y - camera_y - PLAYER_SIZE // 2
+        border_thickness = 2  # thickness of the white border
+
+        # Draw white border
+        pygame.draw.rect(
+            screen,
+            WHITE,
+            (screen_x - border_thickness, screen_y - border_thickness,
+            PLAYER_SIZE + border_thickness * 2, PLAYER_SIZE + border_thickness * 2)
+        )
+
+        # Draw main black rectangle
+        pygame.draw.rect(screen, BLACK, (screen_x, screen_y, PLAYER_SIZE, PLAYER_SIZE))
     
 
 class NPC:
@@ -35,14 +45,26 @@ class NPC:
         self.quest_complete = False
         
     def draw(self, screen, camera_x, camera_y):
-        screen_x = self.x - camera_x - NPC_SIZE//2
-        screen_y = self.y - camera_y - NPC_SIZE//2
+        screen_x = self.x - camera_x - NPC_SIZE // 2
+        screen_y = self.y - camera_y - NPC_SIZE // 2
+
+        # Draw black border
+        border_thickness = 2
+        pygame.draw.rect(
+            screen,
+            BLACK,
+            (screen_x - border_thickness, screen_y - border_thickness,
+            NPC_SIZE + border_thickness * 2, NPC_SIZE + border_thickness * 2)
+        )
+
+        # Draw NPC
         pygame.draw.rect(screen, self.color, (screen_x, screen_y, NPC_SIZE, NPC_SIZE))
+
         # Draw exclamation mark if has quest
         if self.has_active_quest and not self.quest_complete:
             font = pygame.font.Font(None, 24)
             text = font.render("!", True, YELLOW)
-            screen.blit(text, (screen_x + NPC_SIZE//2 - 5, screen_y - 20))
+            screen.blit(text, (screen_x + NPC_SIZE // 2 - 5, screen_y - 20))
     
     def distance_to_player(self, player):
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
