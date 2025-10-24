@@ -2,10 +2,62 @@ import pygame
 import random
 import sys
 import threading
+import time
+from queue import Queue
+from typing import Callable, Optional
 
 from constants import DARK_GRAY, GREEN, INTERACTION_DISTANCE, PLAYER_SPEED, SCREEN_HEIGHT, SCREEN_WIDTH, WHITE, YELLOW
 from generate import generate_response, generate_response_stream
 from classes import Player, NPC, Item
+
+
+class BackgroundTaskManager:
+    """Manages background tasks to avoid race conditions"""
+    
+    def __init__(self):
+        self.active_tasks = []
+        self.task_queue = Queue()
+        self.lock = threading.Lock()
+    
+    def add_task(self, func: Callable, callback: Optional[Callable] = None):
+        """Add a task to run in background. Callback runs on main thread."""
+        task = {
+            'thread': None,
+            'func': func,
+            'callback': callback,
+            'completed': False,
+            'result': None
+        }
+        
+        def wrapper():
+            try:
+                result = func()
+                with self.lock:
+                    task['result'] = result
+                    task['completed'] = True
+                    if callback:
+                        self.task_queue.put(lambda: callback(result))
+            except Exception as e:
+                print(f"Background task error: {e}")
+                with self.lock:
+                    task['completed'] = True
+        
+        task['thread'] = threading.Thread(target=wrapper, daemon=True)
+        
+        with self.lock:
+            self.active_tasks.append(task)
+        
+        task['thread'].start()
+    
+    def process_callbacks(self):
+        """Process completed task callbacks on main thread"""
+        while not self.task_queue.empty():
+            callback = self.task_queue.get()
+            callback()
+        
+        # Clean up completed tasks
+        with self.lock:
+            self.active_tasks = [t for t in self.active_tasks if not t['completed']]
 
 
 class Game:
@@ -18,7 +70,11 @@ class Game:
         self.world_height = 2000
 
         # World items
-        self.floor_details = [ (random.randint(0, self.world_width), random.randint(0, self.world_height), random.choice(["stone", "flower"])) for _ in range(300) ]
+        self.floor_details = [
+            (random.randint(0, self.world_width), random.randint(0, self.world_height), 
+             random.choice(["stone", "flower"])) 
+            for _ in range(300)
+        ]
 
         # Game objects
         self.player = Player(self.world_width // 2, self.world_height // 2)
@@ -43,6 +99,9 @@ class Game:
         # Camera
         self.camera_x = 0
         self.camera_y = 0
+        
+        # Background task manager
+        self.task_manager = BackgroundTaskManager()
     
     def update_camera(self):
         # Center camera on player
@@ -61,57 +120,92 @@ class Game:
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate quest
             prompt = (
-                f"You are an NPC in a RPG game. Generate a quest where you ask the player to find and bring you a specific item."
-                f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
+                f"You are an NPC in an RPG game. Give a quest asking the player to find a single item."
+                f"Reply ONLY as the NPC would, in one short sentence. Do not add extra details or explanations."
             )
 
             self.dialogue_generator = generate_response_stream(prompt)
-            self.current_dialogue = ""
             
             # Create quest
             npc.has_active_quest = True
-            npc.quest_content = ""  # TODO: will be filled after dialogue is complete
-
-            # Generate quest item in background
-            threading.Thread(target=self.generate_quest_item_in_background, args=(npc,)).start()
+            
+            # Wait for dialogue to complete, then generate quest item
+            self.schedule_quest_item_generation(npc)
         
         elif npc.has_active_quest and npc.quest_complete:
-            # Quest completion dialogue
+            # Quest completion dialogue (NPC rewards player)
             prompt = (
-                f"You are an NPC in a RPG. The player just completed your quest ({npc.quest_content}) "
-                f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item."
-                f"Reply only with the answer from the character, keeping it brief (1/2 sentence)."
+                f"You are an NPC in an RPG. The player completed your quest ({npc.quest_content}) and brought you the {npc.quest_item_name}. "
+                f"You must thank the player and explicitly give them a specific number of coins as a reward. "
+                f"Reply only as the NPC, in one short sentence."
             )
-            self.dialogue_generator = generate_response_stream(prompt)
-            self.current_dialogue = ""
 
+            self.dialogue_generator = generate_response_stream(prompt)
+            
+            # Extract reward after dialogue completes
+            self.schedule_reward_extraction()
+
+            # Reset quest status
             npc.has_active_quest = False
             npc.quest_complete = False
             npc.quest_item_name = None
         
         else:
-            # Casual conversation"
+            # Casual conversation
             prompt = (
-                f"You are an NPC in a RPG world. Have small talk with the player."
-                f"Say ONLY one sentence in your reply."
+                f"You are an NPC in a RPG world. Have small talk with the player. "
+                f"Say ONLY one sentence in your reply, stay in character."
             )
             self.dialogue_generator = generate_response_stream(prompt)
-            self.current_dialogue = ""
     
-    def generate_quest_item_in_background(self, npc: NPC):
-        extract_prompt = f"From this quest: '{npc.quest_content}', what is the item name? Answer with ONLY the item name."
-        item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
+    def schedule_quest_item_generation(self, npc: NPC):
+        """Schedule quest item generation after dialogue completes"""
+        def generate_when_ready():
+            # Wait for dialogue to finish accumulating
+            while self.dialogue_generator is not None:
+                time.sleep(0.1)
+            
+            # Now extract quest item from completed dialogue
+            npc.quest_content = self.current_dialogue
+            extract_prompt = f"From this quest: '{npc.quest_content}', extract ONLY the item name. Respond with nothing else, no explanations, no quotes, just the item name."
+            item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
+            
+            return (npc, item_name)
+        
+        def on_complete(result):
+            npc, item_name = result
+            npc.quest_item_name = item_name
+            
+            # Spawn the item
+            item_x = random.randint(100, self.world_width - 100)
+            item_y = random.randint(100, self.world_height - 100)
+            self.items.append(Item(item_x, item_y, item_name))
+        
+        self.task_manager.add_task(generate_when_ready, on_complete)
     
-        npc.quest_item_name = item_name
-    
-        item_x = random.randint(100, self.world_width - 100)
-        item_y = random.randint(100, self.world_height - 100)
-        self.items.append(Item(item_x, item_y, item_name))
+    def schedule_reward_extraction(self):
+        """Schedule coin reward extraction after dialogue completes"""
+        def extract_when_ready():
+            # Wait for dialogue to finish
+            while self.dialogue_generator is not None:
+                time.sleep(0.1)
+            
+            # Extract coin number from NPC's message
+            import re
+            match = re.search(r'\b(\d+)\b', self.current_dialogue)
+            if match:
+                return int(match.group(1))
+            return 0
+        
+        def on_complete(reward):
+            if reward > 0:
+                self.player.coins += reward
+        
+        self.task_manager.add_task(extract_when_ready, on_complete)
 
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
         for npc in self.npcs:
-            npc: NPC
             if npc.distance_to_player(self.player) < INTERACTION_DISTANCE:
                 # Check if player has quest item
                 if npc.has_active_quest and npc.quest_item_name in self.player.inventory:
@@ -122,17 +216,16 @@ class Game:
                 self.current_npc = npc
                 self.dialogue_active = True
                 self.dialogue_scroll = 0
-                self.current_dialogue = "Generating response..."
+                self.current_dialogue = ""
                 
                 # Generate dialogue
                 self.generate_npc_interaction(npc)
                 
-                break # Only interact with one NPC at a time
+                break  # Only interact with one NPC at a time
     
     def pickup_nearby_item(self):
         """Check for nearby items and pick them up"""
         for item in self.items:
-            item: Item
             if not item.picked_up and item.distance_to_player(self.player) < INTERACTION_DISTANCE:
                 item.picked_up = True
                 self.player.inventory.append(item.name)
@@ -193,6 +286,9 @@ class Game:
         running = True
         
         while running:
+            # Process background task callbacks
+            self.task_manager.process_callbacks()
+            
             # Event handling
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -241,9 +337,11 @@ class Game:
             self.screen.fill(GREEN)
             for (x, y, kind) in self.floor_details:
                 if kind == "stone":
-                    pygame.draw.circle(self.screen, (100, 100, 100), (x - self.camera_x, y - self.camera_y), 3)
+                    pygame.draw.circle(self.screen, (100, 100, 100), 
+                                     (x - self.camera_x, y - self.camera_y), 3)
                 else:
-                    pygame.draw.circle(self.screen, (255, 0, 0), (x - self.camera_x, y - self.camera_y), 2)
+                    pygame.draw.circle(self.screen, (255, 0, 0), 
+                                     (x - self.camera_x, y - self.camera_y), 2)
             
             # Draw world border
             pygame.draw.rect(self.screen, WHITE, 

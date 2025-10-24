@@ -59,7 +59,7 @@ def generate_response(prompt, max_new_tokens=100, temperature=0.8, repetition_pe
         response = generated_text.strip()
 
     # Remove any quotation marks
-    response = response.replace('"', '')
+    response = response.translate(str.maketrans('', '', '\'"'))
     
     return response
 
@@ -101,7 +101,7 @@ def generate_response_stream(prompt, max_new_tokens=100, temperature=0.8, repeti
         new_token = tokenizer.decode(new_token_id[0], skip_special_tokens=True)
 
         # Remove any quotation marks from the new token
-        new_token = new_token.replace('"', '')
+        new_token = new_token.translate(str.maketrans('', '', '\'"'))
 
         generated_text += new_token
         yield generated_text
