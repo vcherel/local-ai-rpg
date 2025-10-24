@@ -22,7 +22,7 @@ class Game:
         self.items = []
         
         # Spawn NPCs randomly
-        for i in range(15):
+        for i in range(5):
             x = random.randint(100, self.world_width - 100)
             y = random.randint(100, self.world_height - 100)
             self.npcs.append(NPC(x, y, i))
@@ -49,40 +49,28 @@ class Game:
         self.camera_y = max(0, min(self.camera_y, self.world_height - SCREEN_HEIGHT))
     
     def generate_npc_interaction(self, npc):
-        """Generate NPC dialogue or quest using LLM"""
-        # Decide if this should be a quest or casual talk
+        """Generate interaction dialogue with NPC"""
+        # Choose type of interaction
         interaction_type = random.choice(["quest", "talk"])
         
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate quest
             prompt = (
-                f"You are an NPC in a fantasy RPG game. Generate a quest where you ask the player "
-                f"to find and bring you a specific item. Format your response as: "
-                f"'QUEST: [quest description and item name]'. "
-                f"Be creative with the item name. Keep it to 2-3 sentences."
+                f"You are an NPC in a RPG game. Generate a quest where you ask the player to find and bring you a specific item."
+                f"Keep it brief."
             )
-            response = self.generate_response(prompt, max_new_tokens=80)
+            response = generate_response(prompt, max_new_tokens=80)
             
-            # Extract item name from response
-            if "QUEST:" in response:
-                quest_text = response.split("QUEST:")[-1].strip()
-            else:
-                quest_text = response.strip()
+            quest_text = response.strip()
             
-            # Try to extract item name (simple approach - last noun-like word)
-            words = quest_text.replace(".", "").replace(",", "").split()
-            potential_items = [w for w in words if len(w) > 3 and w[0].isupper()]
-            
-            if potential_items:
-                item_name = potential_items[-1]
-            else:
-                # Fallback: ask LLM to extract item name
-                extract_prompt = f"From this quest: '{quest_text}', what is the item name? Answer with just the item name, nothing else."
-                item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
+            # Ask LLM to extract item name
+            extract_prompt = f"From this quest: '{quest_text}', what is the item name? Answer with just the item name, nothing else."
+            item_name = generate_response(extract_prompt, max_new_tokens=10).strip()
             
             # Create quest
             npc.has_active_quest = True
             npc.quest_item_name = item_name
+            # TODO: add quest here
             
             # Spawn item in random location
             item_x = random.randint(100, self.world_width - 100)
@@ -95,7 +83,7 @@ class Game:
             # Quest completion dialogue
             prompt = (
                 f"You are an NPC in a RPG. The player just completed your quest "
-                f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item. "
+                f"and brought you the {npc.quest_item_name}. Thank them and react to receiving the item. Keep it brief."
             )
             response = generate_response(prompt, max_new_tokens=60)
             npc.has_active_quest = False
@@ -105,7 +93,7 @@ class Game:
         
         else:
             # Casual conversation
-            prompt = f"You are an NPC in a RPG world. Have small talk with the player."
+            prompt = f"You are an NPC in a RPG world. Have small talk with the player. Keep it brief."
             response = generate_response(prompt, max_new_tokens=70)
             return response.strip()
     
@@ -124,9 +112,9 @@ class Game:
                 self.dialogue_scroll = 0
                 self.current_dialogue = "Generating response..."
                 
-                # Generate dialogue in background (simulate with immediate call)
+                # Generate dialogue
                 self.current_dialogue = self.generate_npc_interaction(npc)
-                break
+                break # Only interact with one NPC at a time
     
     def pickup_nearby_item(self):
         """Check for nearby items and pick them up"""
@@ -137,7 +125,6 @@ class Game:
                 break
     
     def draw_ui(self):
-        """Draw UI elements"""
         # Draw inventory and coins
         inventory_text = f"Inventory: {', '.join(self.player.inventory) if self.player.inventory else 'Empty'}"
         coins_text = f"Coins: {self.player.coins}"
@@ -185,7 +172,7 @@ class Game:
             self.screen.blit(instruction, (SCREEN_WIDTH - 200, box_y + box_height - 30))
         
         # Draw controls
-        controls = self.small_font.render("WASD: Move | E: Talk/Pickup | SPACE: Close dialogue", True, WHITE)
+        controls = self.small_font.render("ZQSD: Move | E: Talk/Pickup | SPACE: Close dialogue", True, WHITE)
         self.screen.blit(controls, (10, SCREEN_HEIGHT - 25))
     
     def run(self):
@@ -212,11 +199,11 @@ class Game:
                 keys = pygame.key.get_pressed()
                 dx = dy = 0
                 
-                if keys[pygame.K_w]:
+                if keys[pygame.K_z]:
                     dy = -PLAYER_SPEED
                 if keys[pygame.K_s]:
                     dy = PLAYER_SPEED
-                if keys[pygame.K_a]:
+                if keys[pygame.K_q]:
                     dx = -PLAYER_SPEED
                 if keys[pygame.K_d]:
                     dx = PLAYER_SPEED
