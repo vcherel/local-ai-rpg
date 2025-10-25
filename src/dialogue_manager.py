@@ -6,7 +6,7 @@ from typing import Optional
 
 import constants as c
 from generate import generate_response, generate_response_stream
-from classes import NPC, Item
+from game_classes import NPC, Item
 
 
 class DialogueManager:
@@ -23,6 +23,9 @@ class DialogueManager:
         self.current_text = ""
         self.current_npc: Optional[NPC] = None
         self.scroll = 0
+        self.waiting_for_llm = False  # Track if we're waiting for LLM to start
+        self.pending_npc = None  # Store NPC we need to generate dialogue for
+        self.frames_waited = 0  # Count frames before starting generation
         
         # Fonts
         self.font = pygame.font.SysFont("arial", 28, bold=True)
@@ -44,9 +47,9 @@ class DialogueManager:
         self.active = True
         self.scroll = 0
         self.current_text = ""
-        
-        # Generate dialogue
-        self._generate_npc_dialogue(npc)
+        self.waiting_for_llm = True
+        self.pending_npc = npc
+        self.frames_waited = 0
     
     def _generate_npc_dialogue(self, npc: NPC):
         """Generate interaction dialogue with NPC"""
@@ -152,11 +155,20 @@ class DialogueManager:
     
     def update(self):
         """Update dialogue text if generator is active"""
+        if self.pending_npc is not None:
+            self.frames_waited += 1
+            if self.frames_waited >= 2:  # Wait 2 frames so loading indicator is visible
+                self._generate_npc_dialogue(self.pending_npc)
+                self.pending_npc = None
+                self.frames_waited = 0
+            return  # Don't process generator yet
+        
         if self.active and self.generator is not None:
             try:
                 # Get next partial text from generator
                 partial = next(self.generator)
                 self.current_text = partial
+                self.waiting_for_llm = False  # Clear waiting state once we start getting text
             except StopIteration:
                 # Generator finished
                 self.generator = None
@@ -166,6 +178,9 @@ class DialogueManager:
         if self.active and self.generator is None:
             self.active = False
             self.current_npc = None
+            self.waiting_for_llm = False
+            self.pending_npc = None
+            self.frames_waited = 0
     
     def draw(self, screen):
         """Draw dialogue box if active"""

@@ -2,63 +2,11 @@ import pygame
 import random
 import math
 import sys
-import threading
-from queue import Queue
-from typing import Callable, Optional
 
 import constants as c
-from classes import Player, NPC
+from game_classes import Player, NPC
 from dialogue_manager import DialogueManager
-
-
-class BackgroundTaskManager:
-    """Manages background tasks to avoid race conditions"""
-    
-    def __init__(self):
-        self.active_tasks = []
-        self.task_queue = Queue()
-        self.lock = threading.Lock()
-    
-    def add_task(self, func: Callable, callback: Optional[Callable] = None):
-        """Add a task to run in background. Callback runs on main thread."""
-        task = {
-            'thread': None,
-            'func': func,
-            'callback': callback,
-            'completed': False,
-            'result': None
-        }
-        
-        def wrapper():
-            try:
-                result = func()
-                with self.lock:
-                    task['result'] = result
-                    task['completed'] = True
-                    if callback:
-                        self.task_queue.put(lambda: callback(result))
-            except Exception as e:
-                print(f"Background task error: {e}")
-                with self.lock:
-                    task['completed'] = True
-        
-        task['thread'] = threading.Thread(target=wrapper, daemon=True)
-        
-        with self.lock:
-            self.active_tasks.append(task)
-        
-        task['thread'].start()
-    
-    def process_callbacks(self):
-        """Process completed task callbacks on main thread"""
-        while not self.task_queue.empty():
-            callback = self.task_queue.get()
-            callback()
-        
-        # Clean up completed tasks
-        with self.lock:
-            self.active_tasks = [t for t in self.active_tasks if not t['completed']]
-
+from classes import BackgroundTaskManager, LoadingIndicator
 
 class Game:
     def __init__(self):
@@ -99,8 +47,9 @@ class Game:
         self.camera_x = 0
         self.camera_y = 0
         
-        # Fonts
+        # UI
         self.small_font = pygame.font.SysFont("arial", 22)
+        self.loading_indicator = LoadingIndicator()
     
     def update_camera(self):
         """Center camera on player"""
@@ -127,7 +76,7 @@ class Game:
                 break
     
     def draw_ui(self):
-        """Draw inventory, coins, and controls"""
+        """Draw inventory, coins, controls, and loading indicators"""
         # Draw inventory and coins
         inventory_text = f"Inventaire: {', '.join(self.player.inventory) if self.player.inventory else 'Vide'}"
         coins_text = f"Pièces: {self.player.coins}"
@@ -141,6 +90,20 @@ class Game:
         # Draw controls
         controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | ESPACE : Fermer le dialogue", True, c.Colors.WHITE)
         self.screen.blit(controls, (10, c.Screen.HEIGHT - 25))
+        
+        # Draw loading indicators (top right)
+        indicator_x = c.Screen.WIDTH - 30
+        indicator_y = 30
+        
+        # LLM loading indicator (when waiting for dialogue to start)
+        if self.dialogue_manager.waiting_for_llm:
+            self.loading_indicator.draw_llm_indicator(self.screen, indicator_x, indicator_y)
+            indicator_y += 45  # Offset for next indicator if both are visible
+        
+        # Background task indicator
+        active_task_count = len(self.task_manager.active_tasks)
+        if active_task_count > 0:
+            self.loading_indicator.draw_task_indicator(self.screen, indicator_x, indicator_y, active_task_count)
     
     def draw_world(self):
         """Draw all world elements"""
@@ -295,6 +258,9 @@ class Game:
             
             # Update dialogue
             self.dialogue_manager.update()
+
+            # Update loading indicator
+            self.loading_indicator.update()
             
             # Update player movement
             self.update_player_movement()
