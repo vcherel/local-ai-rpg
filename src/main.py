@@ -6,7 +6,7 @@ import sys
 import constants as c
 from game_classes import Player, NPC
 from dialogue_manager import DialogueManager
-from classes import BackgroundTaskManager, LoadingIndicator
+from classes import LoadingIndicator
 
 class Game:
     def __init__(self):
@@ -35,11 +35,8 @@ class Game:
             y = random.randint(100, self.world_height - 100)
             self.npcs.append(NPC(x, y, i))
         
-        # Background task manager
-        self.task_manager = BackgroundTaskManager()
-        
         # Dialogue manager
-        self.dialogue_manager = DialogueManager(self.world_width, self.world_height, self.task_manager)
+        self.dialogue_manager = DialogueManager(self.world_width, self.world_height)
         self.dialogue_manager.items_list = self.items
         self.dialogue_manager.player = self.player
         
@@ -101,7 +98,7 @@ class Game:
             indicator_y += 45  # Offset for next indicator if both are visible
         
         # Background task indicator
-        active_task_count = len(self.task_manager.active_tasks)
+        active_task_count = 0  # TODO : Integrate with actual task manager
         if active_task_count > 0:
             self.loading_indicator.draw_task_indicator(self.screen, indicator_x, indicator_y, active_task_count)
     
@@ -247,10 +244,7 @@ class Game:
         """Main game loop"""
         running = True
         
-        while running:
-            # Process background task callbacks
-            self.task_manager.process_callbacks()
-            
+        while running:            
             # Handle input
             running = self.handle_input()
             if not running:

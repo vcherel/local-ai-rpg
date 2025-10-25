@@ -1,58 +1,5 @@
-import threading
-from queue import Queue
-from typing import Callable, Optional
 import math
 import pygame
-
-
-class BackgroundTaskManager:
-    """Manages background tasks to avoid race conditions"""
-    
-    def __init__(self):
-        self.active_tasks = []
-        self.task_queue = Queue()
-        self.lock = threading.Lock()
-    
-    def add_task(self, func: Callable, callback: Optional[Callable] = None):
-        """Add a task to run in background. Callback runs on main thread."""
-        task = {
-            'thread': None,
-            'func': func,
-            'callback': callback,
-            'completed': False,
-            'result': None
-        }
-        
-        def wrapper():
-            try:
-                result = func()
-                with self.lock:
-                    task['result'] = result
-                    task['completed'] = True
-                    if callback:
-                        self.task_queue.put(lambda: callback(result))
-            except Exception as e:
-                print(f"Background task error: {e}")
-                with self.lock:
-                    task['completed'] = True
-        
-        task['thread'] = threading.Thread(target=wrapper, daemon=True)
-        
-        with self.lock:
-            self.active_tasks.append(task)
-        
-        task['thread'].start()
-    
-    def process_callbacks(self):
-        """Process completed task callbacks on main thread"""
-        while not self.task_queue.empty():
-            callback = self.task_queue.get()
-            callback()
-        
-        # Clean up completed tasks
-        with self.lock:
-            self.active_tasks = [t for t in self.active_tasks if not t['completed']]
-
 
 class LoadingIndicator:
     """Visual loading indicator for various game states"""

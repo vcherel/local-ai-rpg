@@ -1,7 +1,96 @@
+from queue import Queue
+import threading
 from llama_cpp import Llama
 import time
 
 import constants as c
+
+class LLMRequestQueue:
+    """Manages sequential LLM requests to prevent concurrent access"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.request_queue = Queue()
+        self.callback_queue = Queue()  # For main-thread callbacks
+        self.worker_thread = None
+        self.running = False
+        self.lock = threading.Lock()
+        
+    def start(self):
+        """Start the worker thread"""
+        if not self.running:
+            self.running = True
+            self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+            self.worker_thread.start()
+    
+    def _process_queue(self):
+        """Worker thread that processes LLM requests sequentially"""
+        while self.running:
+            try:
+                # Get next request with timeout to allow checking self.running
+                request = self.request_queue.get(timeout=0.1)
+                
+                # Execute the request
+                try:
+                    result = request['func']()
+                    request['result_queue'].put(('success', result))
+                except Exception as e:
+                    request['result_queue'].put(('error', str(e)))
+                
+                self.request_queue.task_done()
+                
+            except:
+                # Queue is empty, continue loop
+                continue
+    
+    def generate_response(self, prompt: str, system_prompt: str) -> str:
+        """
+        Queue a blocking LLM request.
+        Returns the response when complete.
+        """
+        result_queue = Queue()
+        
+        def request_func():
+            return generate_response_internal(prompt, system_prompt)
+        
+        self.request_queue.put({
+            'func': request_func,
+            'result_queue': result_queue
+        })
+        
+        # Wait for result
+        status, result = result_queue.get()
+        if status == 'error':
+            raise Exception(f"LLM error: {result}")
+        return result
+    
+    def generate_response_stream(self, prompt: str, system_prompt: str):
+        """
+        Queue a streaming LLM request.
+        Yields accumulated text as it's generated.
+        """
+        result_queue = Queue()
+        stream_queue = Queue()
+        
+        def request_func():
+            # Generate streaming response
+            for partial in generate_response_stream_internal(prompt, system_prompt):
+                stream_queue.put(('chunk', partial))
+            stream_queue.put(('done', None))
+            return None
+        
+        # Queue the request
+        self.request_queue.put({
+            'func': request_func,
+            'result_queue': result_queue
+        })
+        
+        # Yield chunks as they arrive
+        while True:
+            status, data = stream_queue.get()
+            if status == 'done':
+                break
+            yield data
 
 # Load the model
 llm = Llama(
@@ -13,17 +102,20 @@ llm = Llama(
     seed=int(time.time() * 1000) % (2**31)
 )
 
-def generate_response(prompt, system_prompt):
-    """
-    Generate a response from a prompt.
-    
-    Args:
-        prompt: Input text prompt
-        system_prompt: System-level instructions
-    
-    Returns:
-        str: Generated response text
-    """    
+llm_queue = LLMRequestQueue(llm)
+llm_queue.start()
+
+def generate_response_queued(prompt, system_prompt):
+    """Generate response using the queue (blocking)"""
+    return llm_queue.generate_response(prompt, system_prompt)
+
+
+def generate_response_stream_queued(prompt, system_prompt):
+    """Generate streaming response using the queue"""
+    yield from llm_queue.generate_response_stream(prompt, system_prompt)
+
+
+def generate_response_internal(prompt, system_prompt):
     if system_prompt:
         formatted_prompt = (
             f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
@@ -36,10 +128,7 @@ def generate_response(prompt, system_prompt):
             f"<|im_start|>assistant\n"
         )
     
-    # Reset the model state
     llm.reset()
-    
-    # Generate response
     response = llm(
         prompt=formatted_prompt,
         max_tokens=c.Hyperparameters.MAX_TOKENS,
@@ -48,33 +137,17 @@ def generate_response(prompt, system_prompt):
         stop=["<|im_end|>", "<|im_start|>"]
     )
     
-    # Extract the generated text
     generated_text = response.get("choices", [{}])[0].get("text", "").strip()
-
-    # Remove any quotation marks from the generated text
     generated_text = generated_text.translate(str.maketrans('', '', '"«»'))
-
-    # Remove leading/trailing newlines
     generated_text = generated_text.strip('\n')
-
-    # If newline in middle → keep left part only
+    
     if '\n' in generated_text:
         generated_text = generated_text.split('\n', 1)[0].strip()
     
     return generated_text
 
 
-def generate_response_stream(prompt, system_prompt=None):
-    """
-    Generate a response from a prompt with streaming output.
-    
-    Args:
-        prompt: Input text prompt
-        system_prompt: System-level instructions
-
-    Yields:
-        str: Accumulated generated text after each token
-    """
+def generate_response_stream_internal(prompt, system_prompt):
     if system_prompt:
         formatted_prompt = (
             f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
@@ -87,10 +160,7 @@ def generate_response_stream(prompt, system_prompt=None):
             f"<|im_start|>assistant\n"
         )
     
-    # Reset the model state
     llm.reset()
-    
-    # Generate response with streaming
     stream = llm(
         prompt=formatted_prompt,
         max_tokens=c.Hyperparameters.MAX_TOKENS,
@@ -103,19 +173,14 @@ def generate_response_stream(prompt, system_prompt=None):
     accumulated_text = ""
     started = False
     
-    # Iterate through the stream and yield accumulated tokens
     for output in stream:
         new_token = output.get("choices", [{}])[0].get("text", "")
-        
-        # Remove any quotation marks from the new token
         new_token = new_token.translate(str.maketrans('', '', '"«»'))
-
+        
         if new_token:
             started = True
-
-        if started and new_token == "\n":  # Do not stop if \n is first character
+        if started and new_token == "\n":
             break
-
+        
         accumulated_text += new_token
-            
         yield accumulated_text
