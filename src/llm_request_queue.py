@@ -16,12 +16,30 @@ class LLMRequestQueue:
         self.running = False
         self.lock = threading.Lock()
         
+        # Task tracking
+        self.active_requests = 0  # Number of requests being processed
+        self.queued_requests = 0  # Number of requests waiting in queue
+    
     def start(self):
         """Start the worker thread"""
         if not self.running:
             self.running = True
             self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
             self.worker_thread.start()
+    
+    def get_active_task_count(self):
+        """Get total number of active + queued requests"""
+        with self.lock:
+            return self.active_requests + self.queued_requests
+    
+    def get_queue_status(self):
+        """Get detailed queue status"""
+        with self.lock:
+            return {
+                'active': self.active_requests,
+                'queued': self.queued_requests,
+                'total': self.active_requests + self.queued_requests
+            }
     
     def _process_queue(self):
         """Worker thread that processes LLM requests sequentially"""
@@ -30,15 +48,23 @@ class LLMRequestQueue:
                 # Get next request with timeout to allow checking self.running
                 request = self.request_queue.get(timeout=0.1)
                 
+                # Update counters
+                with self.lock:
+                    self.queued_requests -= 1
+                    self.active_requests += 1
+                
                 # Execute the request
                 try:
                     result = request['func']()
                     request['result_queue'].put(('success', result))
                 except Exception as e:
                     request['result_queue'].put(('error', str(e)))
-                
-                self.request_queue.task_done()
-                
+                finally:
+                    # Always decrement active counter
+                    with self.lock:
+                        self.active_requests -= 1
+                    self.request_queue.task_done()
+                    
             except:
                 # Queue is empty, continue loop
                 continue
@@ -52,6 +78,10 @@ class LLMRequestQueue:
         
         def request_func():
             return generate_response_internal(prompt, system_prompt)
+        
+        # Increment queued counter
+        with self.lock:
+            self.queued_requests += 1
         
         self.request_queue.put({
             'func': request_func,
@@ -79,6 +109,10 @@ class LLMRequestQueue:
             stream_queue.put(('done', None))
             return None
         
+        # Increment queued counter
+        with self.lock:
+            self.queued_requests += 1
+        
         # Queue the request
         self.request_queue.put({
             'func': request_func,
@@ -92,28 +126,38 @@ class LLMRequestQueue:
                 break
             yield data
 
-# Load the model
-llm = Llama(
-    model_path="./models/LFM2-2.6B-Q4_0.gguf",
-    n_gpu_layers=20,
-    verbose=False,
-    n_ctx=128000,
-    flash_attn=True,
-    seed=int(time.time() * 1000) % (2**31)
-)
 
-llm_queue = LLMRequestQueue(llm)
-llm_queue.start()
+# Global instance
+llm_queue = None
+llm = None
+
+def init_llm_queue():
+    """Initialize the global LLM queue"""
+    global llm_queue, llm
+    llm = Llama(
+        model_path="./models/LFM2-2.6B-Q4_0.gguf",
+        n_gpu_layers=20,
+        verbose=False,
+        n_ctx=128000,
+        flash_attn=True,
+        seed=int(time.time() * 1000) % (2**31)
+    )
+    llm_queue = LLMRequestQueue(llm)
+    llm_queue.start()
+
+def get_llm_task_count():
+    """Get number of active LLM tasks"""
+    if llm_queue is None:
+        return 0
+    return llm_queue.get_active_task_count()
 
 def generate_response_queued(prompt, system_prompt):
     """Generate response using the queue (blocking)"""
     return llm_queue.generate_response(prompt, system_prompt)
 
-
 def generate_response_stream_queued(prompt, system_prompt):
     """Generate streaming response using the queue"""
     yield from llm_queue.generate_response_stream(prompt, system_prompt)
-
 
 def generate_response_internal(prompt, system_prompt):
     if system_prompt:
@@ -145,7 +189,6 @@ def generate_response_internal(prompt, system_prompt):
         generated_text = generated_text.split('\n', 1)[0].strip()
     
     return generated_text
-
 
 def generate_response_stream_internal(prompt, system_prompt):
     if system_prompt:

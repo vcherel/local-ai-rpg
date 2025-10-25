@@ -6,6 +6,7 @@ import sys
 import constants as c
 from entities import Player, NPC
 from dialogue_manager import DialogueManager
+from llm_request_queue import get_llm_task_count, init_llm_queue
 from loading_indicator import LoadingIndicator
 
 class Game:
@@ -98,7 +99,7 @@ class Game:
             indicator_y += 45  # Offset for next indicator if both are visible
         
         # Background task indicator
-        active_task_count = 0  # TODO : Integrate with actual task manager
+        active_task_count = get_llm_task_count()
         if active_task_count > 0:
             self.loading_indicator.draw_task_indicator(self.screen, indicator_x, indicator_y, active_task_count)
     
@@ -273,6 +274,8 @@ class Game:
         pygame.quit()
         sys.exit()
 
+# Initialize LLM request queue
+init_llm_queue()
 
 # Initialize Pygame
 pygame.init()
