@@ -94,11 +94,6 @@ class Game:
         indicator_x = c.Screen.WIDTH - 30
         indicator_y = 30
         
-        # LLM loading indicator (when waiting for dialogue to start)
-        if self.dialogue_manager.waiting_for_llm:
-            self.loading_indicator.draw_llm_indicator(self.screen, indicator_x, indicator_y)
-            indicator_y += 45  # Offset for next indicator if both are visible
-        
         # Background task indicator
         active_task_count = get_llm_task_count()
         if active_task_count > 0:

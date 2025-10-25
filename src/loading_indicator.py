@@ -43,21 +43,6 @@ class LoadingIndicator:
             if len(points) > 1:
                 pygame.draw.lines(screen, arc_color, False, points, 3)
     
-    def draw_llm_indicator(self, screen, x, y):
-        """Draw LLM loading indicator (top right position)"""
-        # Background circle
-        pygame.draw.circle(screen, (0, 0, 0, 180), (x, y), 18)
-        pygame.draw.circle(screen, (100, 100, 255), (x, y), 18, 2)
-        
-        # Spinner
-        self.draw_spinner(screen, x, y, 12, (100, 150, 255))
-        
-        # Text
-        font = pygame.font.SysFont("arial", 14)
-        text = font.render("LLM", True, (200, 200, 255))
-        text_rect = text.get_rect(center=(x, y))
-        screen.blit(text, text_rect)
-    
     def draw_task_indicator(self, screen, x, y, task_count):
         """Draw background task indicator"""
         # Background circle

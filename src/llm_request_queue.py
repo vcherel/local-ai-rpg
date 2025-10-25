@@ -119,13 +119,15 @@ class LLMRequestQueue:
             'result_queue': result_queue
         })
         
+        # Yield empty string immediately so UI doesn't block
+        yield ""
+        
         # Yield chunks as they arrive
         while True:
             status, data = stream_queue.get()
             if status == 'done':
                 break
             yield data
-
 
 # Global instance
 llm_queue = None

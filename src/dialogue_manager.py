@@ -166,7 +166,7 @@ class DialogueManager:
         # The prompt is just the conversation
         prompt = conversation_text
         
-        self.waiting_for_llm = True
+        # Start the generator - user message is already in history and will display
         self.generator = generate_response_stream_queued(prompt, system_prompt)
     
     def _generate_npc_dialogue(self, npc: NPC):
@@ -174,7 +174,7 @@ class DialogueManager:
         # Choose type of interaction
         interaction_type = random.choices(
             ["quest", "talk"],
-            weights=[0.7, 0.3],
+            weights=[0.6, 0.4],
             k=1
         )[0]
 
@@ -214,13 +214,13 @@ class DialogueManager:
             prompt = "Dis une courte réplique au joueur pour le saluer."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
 
-    def _execute_quest_item_generation(self):
-        """Execute quest item generation (called when dialogue closes)"""
+    def _execute_quest_item_extraction(self):
+        """Execute quest item extraction (called when dialogue closes)"""
         npc = self.current_npc
         
         # Extract quest item
         npc.quest_content = self.conversation_history[-1]["content"]
-        system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'un', 'une', etc.) et sans guillemets."
+        system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'l\', 'un', 'une', etc.) et sans guillemets."
         prompt = f"Quel est l'objet à récupérer dans '{npc.quest_content}' ?"
         
         # Use the queued version and get the response
@@ -289,7 +289,7 @@ class DialogueManager:
         if self.active and self.generator is None:
             # Execute pending actions before closing
             if self.pending_quest_item_gen:
-                threading.Thread(target=self._execute_quest_item_generation, daemon=True).start()
+                threading.Thread(target=self._execute_quest_item_extraction, daemon=True).start()
                 self.pending_quest_item_gen = False
             
             if self.pending_reward_extraction:
