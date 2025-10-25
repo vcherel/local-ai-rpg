@@ -34,6 +34,10 @@ class DialogueManager:
         self.max_visible_height = 180  # Height of scrollable area in pixels
         self.line_height = 26
         
+        # Pending actions to execute on close
+        self.pending_quest_item_gen = False
+        self.pending_reward_extraction = False
+        
         # Fonts
         self.font = pygame.font.SysFont("arial", 28, bold=True)
         self.message_font = pygame.font.SysFont("arial", 20)
@@ -60,6 +64,8 @@ class DialogueManager:
         self.frames_waited = 0
         self.user_input = ""
         self.conversation_history = []
+        self.pending_quest_item_gen = False
+        self.pending_reward_extraction = False
     
     def handle_text_input(self, event):
         """Handle text input for chat"""
@@ -181,8 +187,8 @@ class DialogueManager:
             # Create quest
             npc.has_active_quest = True
 
-            # Schedule quest item generation to run after dialogue completes
-            self._schedule_quest_item_generation(npc)
+            # Mark that quest item generation should happen on close
+            self.pending_quest_item_gen = True
 
         elif npc.has_active_quest:
             if npc.quest_complete:
@@ -194,22 +200,13 @@ class DialogueManager:
                 )
                 self.generator = generate_response_stream_queued(prompt, system_prompt)
 
-                # Schedule reward extraction
-                self._schedule_reward_extraction()
+                # Mark that reward extraction should happen on close
+                self.pending_reward_extraction = True
 
                 # Reset quest status
                 npc.has_active_quest = False
                 npc.quest_complete = False
                 npc.quest_item_name = None
-            else:
-                # Talk about active quest
-                system_prompt = "Tu es un PNJ dans un RPG. Le joueur est en train de faire ta quête."
-                prompt = (
-                    f"Tu as demandé au joueur de récupérer {npc.quest_item_name}. "
-                    f"Contexte de la quête : {npc.quest_content}. "
-                    f"Le joueur n'a pas encore terminé. Relance-le en une seule phrase naturelle."
-                )
-                self.generator = generate_response_stream_queued(prompt, system_prompt)
 
         else:
             # Casual conversation
@@ -217,66 +214,52 @@ class DialogueManager:
             prompt = "Dis une courte réplique au joueur pour le saluer."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
 
-    def _schedule_quest_item_generation(self, npc: NPC):
-        """Schedule quest item generation after dialogue completes"""
-        def check_and_generate():
-            # Wait for dialogue to finish
-            while self.generator is not None:
-                time.sleep(0.1)
-            
-            # Extract quest item
-            npc.quest_content = self.conversation_history[-1]["content"]
-            system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'un', 'une', etc.) et sans guillemets."
-            prompt = f"Quel est l'objet à récupérer dans '{npc.quest_content}' ?"
-            
-            # Use the queued version and get the response
-            item_name = generate_response_queued(prompt, system_prompt)
-            
-            # Process the extracted item name
-            item_name = item_name.strip().rstrip('.')
-            npc.quest_item_name = item_name
-            
-            # Spawn the item
-            item_x = random.randint(100, self.world_width - 100)
-            item_y = random.randint(100, self.world_height - 100)
-            self.items_list.append(Item(item_x, item_y, item_name))
+    def _execute_quest_item_generation(self):
+        """Execute quest item generation (called when dialogue closes)"""
+        npc = self.current_npc
         
-        # Start the waiting thread
-        threading.Thread(target=check_and_generate, daemon=True).start()
+        # Extract quest item
+        npc.quest_content = self.conversation_history[-1]["content"]
+        system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'un', 'une', etc.) et sans guillemets."
+        prompt = f"Quel est l'objet à récupérer dans '{npc.quest_content}' ?"
+        
+        # Use the queued version and get the response
+        item_name = generate_response_queued(prompt, system_prompt)
+        
+        # Process the extracted item name
+        item_name = item_name.strip().rstrip('.')
+        npc.quest_item_name = item_name
+        
+        # Spawn the item
+        item_x = random.randint(100, self.world_width - 100)
+        item_y = random.randint(100, self.world_height - 100)
+        self.items_list.append(Item(item_x, item_y, item_name))
 
-    def _schedule_reward_extraction(self):
-        """Schedule coin reward extraction after dialogue completes"""
-        def check_and_extract():
-            # Wait for dialogue to finish
-            while self.generator is not None:
-                time.sleep(0.1)
-            
-            # Get the last assistant message
-            last_message = self.conversation_history[-1]["content"]
-            
-            # First try to extract coin number directly
-            match = re.search(r'\b(\d+)\b', last_message)
-            if match:
-                reward = int(match.group(1))
-                self.player.coins += reward
-                return
-            
-            # If no explicit number, use LLM
-            system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
-            prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
-            
-            # Get the response using the queued function
-            reward_str = generate_response_queued(prompt, system_prompt)
-            
-            # Process the extracted reward
-            reward_str = re.sub(r'[^\d]', '', reward_str)
-            if reward_str:
-                reward = int(reward_str)
-                if reward > 0:
-                    self.player.coins += reward
+    def _execute_reward_extraction(self):
+        """Execute coin reward extraction (called when dialogue closes)"""
+        # Get the last assistant message
+        last_message = self.conversation_history[-1]["content"]
         
-        # Start the waiting thread
-        threading.Thread(target=check_and_extract, daemon=True).start()
+        # First try to extract coin number directly
+        match = re.search(r'\b(\d+)\b', last_message)
+        if match:
+            reward = int(match.group(1))
+            self.player.coins += reward
+            return
+        
+        # If no explicit number, use LLM
+        system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
+        prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
+        
+        # Get the response using the queued function
+        reward_str = generate_response_queued(prompt, system_prompt)
+        
+        # Process the extracted reward
+        reward_str = re.sub(r'[^\d]', '', reward_str)
+        if reward_str:
+            reward = int(reward_str)
+            if reward > 0:
+                self.player.coins += reward
     
     def update(self):
         """Update dialogue text if generator is active"""        
@@ -302,8 +285,18 @@ class DialogueManager:
                 self.generator = None
     
     def close(self):
-        """Close the dialogue window"""
+        """Close the dialogue window and execute pending actions"""
         if self.active and self.generator is None:
+            # Execute pending actions before closing
+            if self.pending_quest_item_gen:
+                threading.Thread(target=self._execute_quest_item_generation, daemon=True).start()
+                self.pending_quest_item_gen = False
+            
+            if self.pending_reward_extraction:
+                threading.Thread(target=self._execute_reward_extraction, daemon=True).start()
+                self.pending_reward_extraction = False
+            
+            # Now close the dialogue
             self.active = False
             self.current_npc = None
             self.waiting_for_llm = False
