@@ -65,8 +65,8 @@ class Game:
         self.clock = pygame.time.Clock()
         
         # World settings
-        self.world_width = 2500
-        self.world_height = 2000
+        self.world_width = SCREEN_WIDTH + 100
+        self.world_height = SCREEN_HEIGHT + 100
         
         # World items
         self.floor_details = [
@@ -81,7 +81,7 @@ class Game:
         self.items = []
         
         # Spawn NPCs randomly
-        for i in range(5):
+        for i in range(3):
             x = random.randint(100, self.world_width - 100)
             y = random.randint(100, self.world_height - 100)
             self.npcs.append(NPC(x, y, i))

@@ -1,6 +1,10 @@
 from llama_cpp import Llama
 import time
 
+MAX_TOKENS = 100
+TEMPERATURE = 0.8
+REPETITION_PENALTY = 1.2
+
 # Load the model
 llm = Llama(
     model_path="./model/LFM2-2.6B-Q4_0.gguf",
@@ -11,7 +15,7 @@ llm = Llama(
     seed=int(time.time() * 1000) % (2**31)
 )
 
-def generate_response(prompt, max_new_tokens=100, temperature=0.8, repetition_penalty=1.2):
+def generate_response(prompt):
     """
     Generate a response from a prompt.
     
@@ -24,6 +28,8 @@ def generate_response(prompt, max_new_tokens=100, temperature=0.8, repetition_pe
     Returns:
         str: Generated response text
     """
+    print("Prompt for generation:", prompt)
+    
     # Simplified prompt formatting for dialogue
     formatted_prompt = f"{prompt}\nAnswer:"
     
@@ -33,22 +39,18 @@ def generate_response(prompt, max_new_tokens=100, temperature=0.8, repetition_pe
     # Generate response
     response = llm(
         prompt=formatted_prompt,
-        max_tokens=max_new_tokens,
-        temperature=temperature,
-        repeat_penalty=repetition_penalty,
-        stop=["\n"]  # Stop at newline like the original
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        repeat_penalty=REPETITION_PENALTY
     )
     
     # Extract the generated text
     generated_text = response.get("choices", [{}])[0].get("text", "").strip()
     
-    # Remove any quotation marks
-    generated_text = generated_text.replace('"', '')
-    
     return generated_text
 
 
-def generate_response_stream(prompt, max_new_tokens=100, temperature=0.8, repetition_penalty=1.2):
+def generate_response_stream(prompt):
     """
     Generate a response from a prompt with streaming output.
     
@@ -61,6 +63,8 @@ def generate_response_stream(prompt, max_new_tokens=100, temperature=0.8, repeti
     Yields:
         str: Accumulated generated text after each token
     """
+    print("Prompt for streaming generation:", prompt)
+
     # Simplified prompt formatting for dialogue
     formatted_prompt = f"{prompt}\nAnswer:"
     
@@ -70,9 +74,9 @@ def generate_response_stream(prompt, max_new_tokens=100, temperature=0.8, repeti
     # Generate response with streaming
     stream = llm(
         prompt=formatted_prompt,
-        max_tokens=max_new_tokens,
-        temperature=temperature,
-        repeat_penalty=repetition_penalty,
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        repeat_penalty=REPETITION_PENALTY,
         stream=True
     )
     
@@ -84,11 +88,7 @@ def generate_response_stream(prompt, max_new_tokens=100, temperature=0.8, repeti
         
         # Remove any quotation marks from the new token
         new_token = new_token.replace('"', '')
-        
+
         accumulated_text += new_token
-        
-        # Stop if newline is generated (matching original behavior)
-        if '\n' in new_token:
-            break
             
         yield accumulated_text

@@ -60,8 +60,9 @@ class DialogueManager:
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate quest
             prompt = (
-                f"You are an NPC in an RPG game. Give a quest asking the player to find a single item."
-                f"Reply ONLY as the NPC would, in one short sentence. Do not add extra details or explanations."
+                "You are an NPC in an RPG. Ask the player in first person to retrieve an item. "
+                "Keep it very short and simple: state the item, where to find it, and why you need it. "
+                "Directly ask for their help. Avoid extra complications, hidden locations, or long explanations."
             )
             self.generator = generate_response_stream(prompt)
             
@@ -74,9 +75,9 @@ class DialogueManager:
         elif npc.has_active_quest and npc.quest_complete:
             # Quest completion dialogue (NPC rewards player)
             prompt = (
-                f"You are an NPC in an RPG. The player completed your quest ({npc.quest_content}) and brought you the {npc.quest_item_name}. "
-                f"You must thank the player and explicitly give them a specific number of coins as a reward. Currently, the player has {self.player.coins} coins. "
-                f"Reply only as the NPC, in one short sentence."
+                f"You are an NPC in an RPG. The player completed your quest ({npc.quest_content}) and brought you the item: {npc.quest_item_name}. "
+                f"You should comment on the quest and the item, and you may thank the player or give them coins. Currently, the player has {self.player.coins} coins. "
+                f"Keep it short and concise."
             )
             self.generator = generate_response_stream(prompt)
             
@@ -91,8 +92,8 @@ class DialogueManager:
         else:
             # Casual conversation
             prompt = (
-                f"You are an NPC in a RPG world. Have small talk with the player. "
-                f"Say ONLY one sentence in your reply, stay in character."
+                f"You are an NPC in an RPG world. Say one short, random line: a greeting, comment, or question to the player. "
+                f"Keep it concise and natural. Do not continue the conversation or add extra dialogue."
             )
             self.generator = generate_response_stream(prompt)
     
@@ -105,18 +106,12 @@ class DialogueManager:
             
             # Now extract quest item from completed dialogue
             npc.quest_content = self.current_text
-            extract_prompt = f"From this quest: '{npc.quest_content}', extract ONLY the item name. Respond with nothing else, no explanations, no quotes, just the item name."
+            extract_prompt = f"From this quest: '{npc.quest_content}', extract only the item name."
             item_name = generate_response(extract_prompt).strip()
             
-            # If there's text inside single quotes, extract it
-            match = re.search(r"'([^']+)'", item_name)
-            if match:
-                item_name = match.group(1)
-            
-            return (npc, item_name)
+            return item_name
         
-        def on_complete(result):
-            npc, item_name = result
+        def on_complete(item_name):
             npc.quest_item_name = item_name
             
             # Spawn the item
@@ -139,7 +134,10 @@ class DialogueManager:
                 return int(match.group(1))
             
             # If no explicit number found, use LLM to extract the amount
-            extract_prompt = f"From this quest reward description: '{self.current_text}', extract ONLY the coin/gold amount as a number. Respond with nothing else, no explanations, just the number. If no reward is mentioned, respond with 0."
+            extract_prompt = (
+                f"From this NPC message: '{self.current_text}', determine how many coins the player should gain according to what the NPC said. "
+                f"Extract ONLY the number of coins as an integer."
+            )
             reward_str = generate_response(extract_prompt).strip()
             
             # Clean up any non-numeric characters
