@@ -27,9 +27,7 @@ def generate_response(prompt):
     
     Returns:
         str: Generated response text
-    """
-    print("Prompt for generation:", prompt)
-    
+    """    
     # Simplified prompt formatting for dialogue
     formatted_prompt = f"{prompt}\nAnswer:"
     
@@ -63,8 +61,6 @@ def generate_response_stream(prompt):
     Yields:
         str: Accumulated generated text after each token
     """
-    print("Prompt for streaming generation:", prompt)
-
     # Simplified prompt formatting for dialogue
     formatted_prompt = f"{prompt}\nAnswer:"
     
