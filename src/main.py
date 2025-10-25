@@ -6,7 +6,7 @@ import threading
 from queue import Queue
 from typing import Callable, Optional
 
-from constants import GREEN, BLACK, INTERACTION_DISTANCE, PLAYER_SPEED, SCREEN_HEIGHT, SCREEN_WIDTH, WHITE
+import constants as c
 from classes import Player, NPC
 from dialogue_manager import DialogueManager
 
@@ -62,12 +62,12 @@ class BackgroundTaskManager:
 
 class Game:
     def __init__(self):
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT))
         self.clock = pygame.time.Clock()
         
         # World settings
-        self.world_width = SCREEN_WIDTH * 2
-        self.world_height = SCREEN_HEIGHT * 2
+        self.world_width = c.Screen.WIDTH * 2
+        self.world_height = c.Screen.HEIGHT * 2
         
         # World items
         self.floor_details = [
@@ -104,24 +104,24 @@ class Game:
     
     def update_camera(self):
         """Center camera on player"""
-        self.camera_x = self.player.x - SCREEN_WIDTH // 2
-        self.camera_y = self.player.y - SCREEN_HEIGHT // 2
+        self.camera_x = self.player.x - c.Screen.WIDTH // 2
+        self.camera_y = self.player.y - c.Screen.HEIGHT // 2
         
         # Clamp camera to world bounds
-        self.camera_x = max(0, min(self.camera_x, self.world_width - SCREEN_WIDTH))
-        self.camera_y = max(0, min(self.camera_y, self.world_height - SCREEN_HEIGHT))
+        self.camera_x = max(0, min(self.camera_x, self.world_width - c.Screen.WIDTH))
+        self.camera_y = max(0, min(self.camera_y, self.world_height - c.Screen.HEIGHT))
     
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
         for npc in self.npcs:
-            if npc.distance_to_player(self.player) < INTERACTION_DISTANCE:
+            if npc.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
                 self.dialogue_manager.interact_with_npc(npc)
                 break  # Only interact with one NPC at a time
     
     def pickup_nearby_item(self):
         """Check for nearby items and pick them up"""
         for item in self.items:
-            if not item.picked_up and item.distance_to_player(self.player) < INTERACTION_DISTANCE:
+            if not item.picked_up and item.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
                 item.picked_up = True
                 self.player.inventory.append(item.name)
                 break
@@ -132,20 +132,20 @@ class Game:
         inventory_text = f"Inventaire: {', '.join(self.player.inventory) if self.player.inventory else 'Vide'}"
         coins_text = f"Pièces: {self.player.coins}"
         
-        inv_surface = self.small_font.render(inventory_text, True, WHITE)
-        coins_surface = self.small_font.render(coins_text, True, WHITE)
+        inv_surface = self.small_font.render(inventory_text, True, c.Colors.WHITE)
+        coins_surface = self.small_font.render(coins_text, True, c.Colors.WHITE)
         
         self.screen.blit(inv_surface, (10, 10))
         self.screen.blit(coins_surface, (10, 35))
         
         # Draw controls
-        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | ESPACE : Fermer le dialogue", True, WHITE)
-        self.screen.blit(controls, (10, SCREEN_HEIGHT - 25))
+        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | ESPACE : Fermer le dialogue", True, c.Colors.WHITE)
+        self.screen.blit(controls, (10, c.Screen.HEIGHT - 25))
     
     def draw_world(self):
         """Draw all world elements"""
         # Background
-        self.screen.fill(GREEN)
+        self.screen.fill(c.Colors.GREEN)
         
         # Floor details
         for (x, y, kind) in self.floor_details:
@@ -157,7 +157,7 @@ class Game:
                                 (x - self.camera_x, y - self.camera_y), 2)
         
         # World border
-        pygame.draw.rect(self.screen, WHITE, 
+        pygame.draw.rect(self.screen, c.Colors.WHITE, 
                     (0 - self.camera_x, 0 - self.camera_y, 
                         self.world_width, self.world_height), 3)
         
@@ -189,13 +189,13 @@ class Game:
             item_screen_y = item.y - self.camera_y
             
             # Check if item is off-screen
-            is_offscreen = (item_screen_x < 0 or item_screen_x > SCREEN_WIDTH or
-                        item_screen_y < 0 or item_screen_y > SCREEN_HEIGHT)
+            is_offscreen = (item_screen_x < 0 or item_screen_x > c.Screen.WIDTH or
+                        item_screen_y < 0 or item_screen_y > c.Screen.HEIGHT)
             
             if is_offscreen:
                 # Calculate direction to item
-                dx = item.x - (self.camera_x + SCREEN_WIDTH // 2)
-                dy = item.y - (self.camera_y + SCREEN_HEIGHT // 2)
+                dx = item.x - (self.camera_x + c.Screen.WIDTH // 2)
+                dy = item.y - (self.camera_y + c.Screen.HEIGHT // 2)
                 
                 # Normalize direction
                 distance = math.sqrt(dx * dx + dy * dy)
@@ -204,12 +204,12 @@ class Game:
                     dy /= distance
                 
                 # Find intersection with screen bounds
-                arrow_x = SCREEN_WIDTH // 2 + dx * (SCREEN_WIDTH // 2 - margin)
-                arrow_y = SCREEN_HEIGHT // 2 + dy * (SCREEN_HEIGHT // 2 - margin)
+                arrow_x = c.Screen.WIDTH // 2 + dx * (c.Screen.WIDTH // 2 - margin)
+                arrow_y = c.Screen.HEIGHT // 2 + dy * (c.Screen.HEIGHT // 2 - margin)
                 
                 # Clamp to screen edges
-                arrow_x = max(margin, min(arrow_x, SCREEN_WIDTH - margin))
-                arrow_y = max(margin, min(arrow_y, SCREEN_HEIGHT - margin))
+                arrow_x = max(margin, min(arrow_x, c.Screen.WIDTH - margin))
+                arrow_y = max(margin, min(arrow_y, c.Screen.HEIGHT - margin))
                 
                 # Calculate angle for arrow rotation
                 angle = math.atan2(dy, dx)
@@ -241,7 +241,7 @@ class Game:
                 # Draw arrow with item's color but semi-transparent
                 arrow_color = (*item.color, 120)  # Add alpha channel
                 pygame.draw.polygon(arrow_surface, arrow_color, local_points)
-                pygame.draw.polygon(arrow_surface, (*BLACK, 150), local_points, 1)
+                pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
                 
                 # Blit to screen
                 self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
@@ -270,13 +270,13 @@ class Game:
             dx = dy = 0
             
             if keys[pygame.K_z]:
-                dy = -PLAYER_SPEED
+                dy = -c.Game.PLAYER_SPEED
             if keys[pygame.K_s]:
-                dy = PLAYER_SPEED
+                dy = c.Game.PLAYER_SPEED
             if keys[pygame.K_q]:
-                dx = -PLAYER_SPEED
+                dx = -c.Game.PLAYER_SPEED
             if keys[pygame.K_d]:
-                dx = PLAYER_SPEED
+                dx = c.Game.PLAYER_SPEED
             
             self.player.move(dx, dy, self.world_width, self.world_height)
     

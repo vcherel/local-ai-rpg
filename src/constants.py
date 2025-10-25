@@ -1,16 +1,32 @@
-# Constants
-SCREEN_WIDTH = 1800
-SCREEN_HEIGHT = 900
-PLAYER_SIZE = 30
-NPC_SIZE = 30
-ITEM_SIZE = 25
-PLAYER_SPEED = 5
-INTERACTION_DISTANCE = 50
+from dataclasses import dataclass
 
-# Colors
-BLACK = (0, 0, 0)
-GREEN = (34, 139, 34)
-WHITE = (255, 255, 255)
-YELLOW = (255, 255, 0)
-GRAY = (100, 100, 100)
-DARK_GRAY = (50, 50, 50)
+@dataclass(frozen=True)
+class Screen:
+    WIDTH: int = 1800
+    HEIGHT: int = 900
+
+@dataclass(frozen=True)
+class Size:
+    PLAYER: int = 30
+    NPC: int = 30
+    ITEM: int = 25
+
+@dataclass(frozen=True)
+class Game:
+    PLAYER_SPEED: int = 5
+    INTERACTION_DISTANCE: int = 50
+
+@dataclass(frozen=True)
+class Colors:
+    BLACK: tuple = (0, 0, 0)
+    GREEN: tuple = (34, 139, 34)
+    WHITE: tuple = (255, 255, 255)
+    YELLOW: tuple = (255, 255, 0)
+    GRAY: tuple = (100, 100, 100)
+    DARK_GRAY: tuple = (50, 50, 50)
+
+@dataclass(frozen=True)
+class Hyperparameters:
+    MAX_TOKENS: int = 200
+    TEMPERATURE: float = 0.8
+    REPETITION_PENALTY: float = 1.2

@@ -4,7 +4,7 @@ import time
 import pygame
 from typing import Optional
 
-from constants import DARK_GRAY, SCREEN_HEIGHT, SCREEN_WIDTH, WHITE, YELLOW
+import constants as c
 from generate import generate_response, generate_response_stream
 from classes import NPC, Item
 
@@ -61,10 +61,8 @@ class DialogueManager:
             # Generate quest
             prompt = (
                 "Tu es un PNJ dans un RPG. Demande au joueur de récupérer un objet. "
-                "Écris-le comme une phrase naturelle et fluide, à la première personne, "
-                "indique l'objet, où le trouver et pourquoi tu en as besoin. "
-                "Demande directement son aide. Ne fais pas de listes ni de bullet points.\n\n"
-                "Exemple de style souhaité : 'Salut ! Peux-tu m'aider à retrouver mon épée perdue dans la forêt ? J'en ai besoin pour vaincre le dragon.'"
+                "Écris une phrase courte et fluide, à la première personne, indiquant l'objet, où le trouver et pourquoi tu en as besoin. "
+                "Demande directement son aide. Une seule phrase suffit, pas de liste, pas de paragraphe."
             )
             self.generator = generate_response_stream(prompt)
             
@@ -180,11 +178,11 @@ class DialogueManager:
             return
         
         box_height = 200
-        box_y = SCREEN_HEIGHT - box_height - 25
-        pygame.draw.rect(screen, DARK_GRAY, 
-                       (10, box_y, SCREEN_WIDTH - 20, box_height))
-        pygame.draw.rect(screen, WHITE, 
-                       (10, box_y, SCREEN_WIDTH - 20, box_height), 2)
+        box_y = c.Screen.HEIGHT - box_height - 25
+        pygame.draw.rect(screen, c.Colors.DARK_GRAY, 
+                       (10, box_y, c.Screen.WIDTH - 20, box_height))
+        pygame.draw.rect(screen, c.Colors.WHITE, 
+                       (10, box_y, c.Screen.WIDTH - 20, box_height), 2)
         
         # Word wrap dialogue
         words = self.current_text.split()
@@ -193,7 +191,7 @@ class DialogueManager:
         
         for word in words:
             test_line = ' '.join(current_line + [word])
-            if self.small_font.size(test_line)[0] < SCREEN_WIDTH - 60:
+            if self.small_font.size(test_line)[0] < c.Screen.WIDTH - 60:
                 current_line.append(word)
             else:
                 if current_line:
@@ -205,11 +203,11 @@ class DialogueManager:
         # Draw lines
         y_offset = box_y + 15
         for line in lines:
-            text_surface = self.small_font.render(line, True, WHITE)
+            text_surface = self.small_font.render(line, True, c.Colors.WHITE)
             screen.blit(text_surface, (25, y_offset))
             y_offset += 25
         
         # Draw instruction
         if self.generator is None:
-            instruction = self.small_font.render("Appuyez sur ESPACE pour fermer", True, YELLOW)
-            screen.blit(instruction, (SCREEN_WIDTH - 350, box_y + box_height - 30))
+            instruction = self.small_font.render("Appuyez sur ESPACE pour fermer", True, c.Colors.YELLOW)
+            screen.blit(instruction, (c.Screen.WIDTH - 350, box_y + box_height - 30))

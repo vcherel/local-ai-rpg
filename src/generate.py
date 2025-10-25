@@ -1,9 +1,7 @@
 from llama_cpp import Llama
 import time
 
-MAX_TOKENS = 200
-TEMPERATURE = 0.8
-REPETITION_PENALTY = 1.2
+import constants as c
 
 # Load the model
 llm = Llama(
@@ -37,9 +35,9 @@ def generate_response(prompt):
     # Generate response
     response = llm(
         prompt=formatted_prompt,
-        max_tokens=MAX_TOKENS,
-        temperature=TEMPERATURE,
-        repeat_penalty=REPETITION_PENALTY,
+        max_tokens=c.Hyperparameters.MAX_TOKENS,
+        temperature=c.Hyperparameters.TEMPERATURE,
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
         stop=["\n"]
     )
     
@@ -74,10 +72,11 @@ def generate_response_stream(prompt):
     # Generate response with streaming
     stream = llm(
         prompt=formatted_prompt,
-        max_tokens=MAX_TOKENS,
-        temperature=TEMPERATURE,
-        repeat_penalty=REPETITION_PENALTY,
-        stream=True
+        max_tokens=c.Hyperparameters.MAX_TOKENS,
+        temperature=c.Hyperparameters.TEMPERATURE,
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
+        stream=True,
+        stop=["\n"]
     )
     
     accumulated_text = ""
