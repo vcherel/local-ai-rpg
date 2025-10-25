@@ -139,75 +139,75 @@ class Game:
         self.draw_offscreen_indicators()
 
     def draw_offscreen_indicators(self):
-        """Draw arrows pointing to items that are off-screen"""
+        """Draw arrows pointing to off-screen items and NPCs with active quests."""
         margin = 30
         arrow_size = 32
-        
+
+        def draw_arrow(target_x, target_y, color):
+            # Calculate position relative to camera
+            screen_x = target_x - self.camera_x
+            screen_y = target_y - self.camera_y
+
+            # Check if target is off-screen
+            if 0 <= screen_x <= c.Screen.WIDTH and 0 <= screen_y <= c.Screen.HEIGHT:
+                return  # On-screen → no indicator
+
+            # Calculate direction to target
+            dx = target_x - (self.camera_x + c.Screen.WIDTH // 2)
+            dy = target_y - (self.camera_y + c.Screen.HEIGHT // 2)
+
+            distance = math.hypot(dx, dy)
+            if distance == 0:
+                return
+            dx /= distance
+            dy /= distance
+
+            # Find arrow position near screen edge
+            arrow_x = c.Screen.WIDTH // 2 + dx * (c.Screen.WIDTH // 2 - margin)
+            arrow_y = c.Screen.HEIGHT // 2 + dy * (c.Screen.HEIGHT // 2 - margin)
+
+            arrow_x = max(margin, min(arrow_x, c.Screen.WIDTH - margin))
+            arrow_y = max(margin, min(arrow_y, c.Screen.HEIGHT - margin))
+
+            # Calculate arrow rotation
+            angle = math.atan2(dy, dx)
+            arrow_points = [
+                (arrow_size, 0),
+                (-arrow_size // 2, -arrow_size // 2),
+                (-arrow_size // 2, arrow_size // 2)
+            ]
+
+            rotated_points = []
+            for px, py in arrow_points:
+                rx = px * math.cos(angle) - py * math.sin(angle)
+                ry = px * math.sin(angle) + py * math.cos(angle)
+                rotated_points.append((arrow_x + rx, arrow_y + ry))
+
+            # Draw semi-transparent arrow
+            arrow_surface = pygame.Surface((arrow_size * 3, arrow_size * 3), pygame.SRCALPHA)
+            local_points = [
+                (p[0] - arrow_x + arrow_size * 1.5, p[1] - arrow_y + arrow_size * 1.5)
+                for p in rotated_points
+            ]
+            arrow_color = (*color, 120)
+            pygame.draw.polygon(arrow_surface, arrow_color, local_points)
+            pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
+            self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
+
+        # --- Item indicators ---
         for item in self.items:
-            if item.picked_up:
-                continue
-            
-            # Calculate item position relative to camera
-            item_screen_x = item.x - self.camera_x
-            item_screen_y = item.y - self.camera_y
-            
-            # Check if item is off-screen
-            is_offscreen = (item_screen_x < 0 or item_screen_x > c.Screen.WIDTH or
-                        item_screen_y < 0 or item_screen_y > c.Screen.HEIGHT)
-            
-            if is_offscreen:
-                # Calculate direction to item
-                dx = item.x - (self.camera_x + c.Screen.WIDTH // 2)
-                dy = item.y - (self.camera_y + c.Screen.HEIGHT // 2)
-                
-                # Normalize direction
-                distance = math.sqrt(dx * dx + dy * dy)
-                if distance > 0:
-                    dx /= distance
-                    dy /= distance
-                
-                # Find intersection with screen bounds
-                arrow_x = c.Screen.WIDTH // 2 + dx * (c.Screen.WIDTH // 2 - margin)
-                arrow_y = c.Screen.HEIGHT // 2 + dy * (c.Screen.HEIGHT // 2 - margin)
-                
-                # Clamp to screen edges
-                arrow_x = max(margin, min(arrow_x, c.Screen.WIDTH - margin))
-                arrow_y = max(margin, min(arrow_y, c.Screen.HEIGHT - margin))
-                
-                # Calculate angle for arrow rotation
-                angle = math.atan2(dy, dx)
-                
-                # Create arrow points (pointing right initially)
-                arrow_points = [
-                    (arrow_size, 0),
-                    (-arrow_size // 2, -arrow_size // 2),
-                    (-arrow_size // 2, arrow_size // 2)
-                ]
-                
-                # Rotate and translate arrow points
-                rotated_points = []
-                for px, py in arrow_points:
-                    # Rotate
-                    rx = px * math.cos(angle) - py * math.sin(angle)
-                    ry = px * math.sin(angle) + py * math.cos(angle)
-                    # Translate
-                    rotated_points.append((arrow_x + rx, arrow_y + ry))
-                
-                # Draw semi-transparent arrow
-                # Create a surface for transparency
-                arrow_surface = pygame.Surface((arrow_size * 3, arrow_size * 3), pygame.SRCALPHA)
-                
-                # Translate points to local surface coordinates
-                local_points = [(p[0] - arrow_x + arrow_size * 1.5, 
-                            p[1] - arrow_y + arrow_size * 1.5) for p in rotated_points]
-                
-                # Draw arrow with item's color but semi-transparent
-                arrow_color = (*item.color, 120)  # Add alpha channel
-                pygame.draw.polygon(arrow_surface, arrow_color, local_points)
-                pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
-                
-                # Blit to screen
-                self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
+            if not item.picked_up:
+                draw_arrow(item.x, item.y, item.color)
+
+        # --- NPC indicators ---
+        for npc in self.npcs:
+            if (
+                npc.has_active_quest
+                and not npc.quest_complete
+                and npc.quest_item_name in self.player.inventory
+            ):
+                # Yellow arrow (quest return indicator)
+                draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
 
     def handle_input(self):
         """Handle keyboard input"""

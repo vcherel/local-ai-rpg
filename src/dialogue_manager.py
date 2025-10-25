@@ -107,8 +107,8 @@ class DialogueManager:
             
             # Now extract quest item from completed dialogue
             npc.quest_content = self.current_text
-            system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, rien d'autre."
-            prompt = f"Objet à récupérer dans '{npc.quest_content}' ?"
+            system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'un', 'une', etc.) et sans guillemets."
+            prompt = f"Quel est l'objet à récupérer dans '{npc.quest_content}' ?"
             item_name = generate_response(prompt, system_prompt).strip().rstrip('.')
             
             return item_name
