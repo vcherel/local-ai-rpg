@@ -1,11 +1,17 @@
+import colorsys
 import math
 import pygame
 import random
 import time
 
 import constants as c
-from functions import random_color
 
+def random_color():
+    h = random.random()
+    s = 0.6 + 0.4 * random.random()  # moderate to high saturation
+    l = 0.5 + 0.2 * random.random()  # mid to bright
+    r, g, b = [int(x * 255) for x in colorsys.hls_to_rgb(h, l, s)]
+    return (r, g, b)
 
 class Player:
     def __init__(self, x, y):
@@ -36,7 +42,6 @@ class Player:
         # Draw main black rectangle
         pygame.draw.rect(screen, c.Colors.BLACK, (screen_x, screen_y, c.Size.PLAYER, c.Size.PLAYER))
     
-
 class NPC:
     def __init__(self, x, y, npc_id):
         self.x = x
@@ -78,7 +83,6 @@ class NPC:
     
     def distance_to_player(self, player):
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
-
 
 class Item:
     def __init__(self, x, y, name):

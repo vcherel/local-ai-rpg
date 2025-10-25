@@ -6,8 +6,8 @@ import pygame
 from typing import Optional
 
 import constants as c
-from generate import generate_response_queued, generate_response_stream_queued, llm_queue
-from game_classes import NPC, Item
+from llm_request_queue import generate_response_queued, generate_response_stream_queued
+from entities import NPC, Item
 
 
 class DialogueManager:

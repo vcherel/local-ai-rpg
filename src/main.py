@@ -4,9 +4,9 @@ import math
 import sys
 
 import constants as c
-from game_classes import Player, NPC
+from entities import Player, NPC
 from dialogue_manager import DialogueManager
-from classes import LoadingIndicator
+from loading_indicator import LoadingIndicator
 
 class Game:
     def __init__(self):
