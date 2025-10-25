@@ -59,12 +59,9 @@ class DialogueManager:
         
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate quest
-            prompt = (
-                "Tu es un PNJ dans un RPG. Demande au joueur de récupérer un objet. "
-                "Écris une phrase courte et fluide, à la première personne, indiquant l'objet, où le trouver et pourquoi tu en as besoin. "
-                "Demande directement son aide. Une seule phrase suffit, pas de liste, pas de paragraphe."
-            )
-            self.generator = generate_response_stream(prompt)
+            system_prompt = "Tu es un PNJ dans un RPG. Tu demandes de l'aide au joueur en une seule phrase."
+            prompt = "Demande au joueur de récupérer un objet. Indique l'objet, où il se trouve, et pourquoi tu en as besoin."
+            self.generator = generate_response_stream(prompt, system_prompt)
             
             # Create quest
             npc.has_active_quest = True
@@ -74,13 +71,14 @@ class DialogueManager:
         
         elif npc.has_active_quest and npc.quest_complete:
             # Quest completion dialogue (NPC rewards player)
+            system_prompt = "Tu es un PNJ dans un RPG. Le joueur vient de terminer ta quête."
+
             prompt = (
-                f"Tu es un PNJ dans un RPG. Le joueur a terminé ta quête ({npc.quest_content}) et t'a apporté l'objet : {npc.quest_item_name}. "
-                f"Tu dois commenter la quête et l'objet, et tu peux remercier le joueur ou lui donner des pièces. Actuellement, le joueur a {self.player.coins} pièces. "
-                f"Fais court et concis."
+                f"Le joueur t'a apporté {npc.quest_item_name} ({npc.quest_content}). "
+                f"Remercie-le en une phrase et mentionne sa récompense en pièces."
             )
 
-            self.generator = generate_response_stream(prompt)
+            self.generator = generate_response_stream(prompt, system_prompt)
             
             # Extract reward after dialogue completes
             self._schedule_reward_extraction()
@@ -92,12 +90,10 @@ class DialogueManager:
         
         else:
             # Casual conversation
-            prompt = (
-                f"Tu es un PNJ dans un monde RPG. Dis une courte réplique aléatoire : un salut, un commentaire ou une question au joueur. "
-                f"Reste concis et naturel. Ne continue pas la conversation et n’ajoute pas de dialogue supplémentaire."
-            )
+            system_prompt = "Tu es un PNJ dans un RPG. Tu discutes brièvement avec le joueur."
+            prompt = "Dis une courte réplique au joueur."
 
-            self.generator = generate_response_stream(prompt)
+            self.generator = generate_response_stream(prompt, system_prompt)
     
     def _schedule_quest_item_generation(self, npc: NPC):
         """Schedule quest item generation after dialogue completes"""
@@ -108,8 +104,9 @@ class DialogueManager:
             
             # Now extract quest item from completed dialogue
             npc.quest_content = self.current_text
-            extract_prompt = f"À partir de cette quête : '{npc.quest_content}', donne uniquement le nom de l’objet."
-            item_name = generate_response(extract_prompt).strip().rstrip('.')
+            system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, rien d'autre."
+            prompt = f"Objet à récupérer dans '{npc.quest_content}' ?"
+            item_name = generate_response(prompt, system_prompt).strip().rstrip('.')
             
             return item_name
         
@@ -136,11 +133,9 @@ class DialogueManager:
                 return int(match.group(1))
             
             # If no explicit number found, use LLM to extract the amount
-            extract_prompt = (
-                f"À partir de ce message du PNJ : '{self.current_text}', détermine combien de pièces le joueur devrait recevoir selon ce que le PNJ a dit. "
-                f"Extrait UNIQUEMENT le nombre de pièces sous forme d'entier."
-            )
-            reward_str = generate_response(extract_prompt).strip()
+            system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
+            prompt = f"Combien de pièces dans ce texte : '{self.current_text}' ?"
+            reward_str = generate_response(prompt, system_prompt).strip()
             
             # Clean up any non-numeric characters
             reward_str = re.sub(r'[^\d]', '', reward_str)

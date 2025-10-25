@@ -15,6 +15,7 @@ class Size:
 class Game:
     PLAYER_SPEED: int = 5
     INTERACTION_DISTANCE: int = 50
+    NB_NPCS: int = 20
 
 @dataclass(frozen=True)
 class Colors:

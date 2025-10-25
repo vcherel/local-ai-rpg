@@ -13,21 +13,28 @@ llm = Llama(
     seed=int(time.time() * 1000) % (2**31)
 )
 
-def generate_response(prompt):
+def generate_response(prompt, system_prompt):
     """
     Generate a response from a prompt.
     
     Args:
         prompt: Input text prompt
-        max_new_tokens: Maximum number of tokens to generate
-        temperature: Sampling temperature (higher = more random)
-        repetition_penalty: Penalty for repeating tokens
+        system_prompt: System-level instructions
     
     Returns:
         str: Generated response text
     """    
-    # Simplified prompt formatting for dialogue
-    formatted_prompt = f"{prompt}\Réponse :"
+    if system_prompt:
+        formatted_prompt = (
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n{prompt}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+    else:
+        formatted_prompt = (
+            f"<|im_start|>user\n{prompt}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
     
     # Reset the model state
     llm.reset()
@@ -37,7 +44,8 @@ def generate_response(prompt):
         prompt=formatted_prompt,
         max_tokens=c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
-        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
+        stop=["<|im_end|>", "<|im_start|>"]
     )
     
     # Extract the generated text
@@ -56,21 +64,28 @@ def generate_response(prompt):
     return generated_text
 
 
-def generate_response_stream(prompt):
+def generate_response_stream(prompt, system_prompt=None):
     """
     Generate a response from a prompt with streaming output.
     
     Args:
         prompt: Input text prompt
-        max_new_tokens: Maximum number of tokens to generate
-        temperature: Sampling temperature (higher = more random)
-        repetition_penalty: Penalty for repeating tokens
-    
+        system_prompt: System-level instructions
+
     Yields:
         str: Accumulated generated text after each token
     """
-    # Simplified prompt formatting for dialogue
-    formatted_prompt = f"{prompt}\Réponse :"
+    if system_prompt:
+        formatted_prompt = (
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n{prompt}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+    else:
+        formatted_prompt = (
+            f"<|im_start|>user\n{prompt}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
     
     # Reset the model state
     llm.reset()
@@ -81,7 +96,8 @@ def generate_response_stream(prompt):
         max_tokens=c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        stream=True
+        stream=True,
+        stop=["<|im_end|>", "<|im_start|>"]
     )
     
     accumulated_text = ""

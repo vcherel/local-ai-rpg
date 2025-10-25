@@ -82,7 +82,7 @@ class Game:
         self.items = []
         
         # Spawn NPCs randomly
-        for i in range(3):
+        for i in range(c.Game.NB_NPCS):
             x = random.randint(100, self.world_width - 100)
             y = random.randint(100, self.world_height - 100)
             self.npcs.append(NPC(x, y, i))
