@@ -30,8 +30,9 @@ class DialogueManager:
         self.conversation_history = []  # List of {"role": "user"/"assistant", "content": str}
         
         # Scroll state
-        self.scroll_offset = 0  # Lines scrolled from bottom (0 = bottom)
-        self.max_visible_lines = 7  # Number of message lines visible
+        self.scroll_offset = 0  # Pixels scrolled from bottom
+        self.max_visible_height = 180  # Height of scrollable area in pixels
+        self.line_height = 26
         
         # Fonts
         self.font = pygame.font.SysFont("arial", 28, bold=True)
@@ -80,13 +81,47 @@ class DialogueManager:
         if not self.active:
             return
         
-        # Calculate total lines in conversation
-        total_lines = len(self.conversation_history)
-        max_scroll = max(0, total_lines - self.max_visible_lines)
+        # Scroll by line_height pixels
+        scroll_amount = self.line_height * direction
+        
+        # Calculate total content height
+        total_height = self._calculate_total_content_height()
+        max_scroll = max(0, total_height - self.max_visible_height)
         
         # Update scroll offset
-        self.scroll_offset = max(0, min(self.scroll_offset + direction, max_scroll))
-    
+        self.scroll_offset = max(0, min(self.scroll_offset + scroll_amount, max_scroll))
+
+    def _calculate_total_content_height(self):
+        """Calculate total height of all messages"""
+        total_height = 0
+        for msg in self.conversation_history:
+            # Calculate wrapped lines for this message
+            if msg["role"] == "user":
+                prefix = "Vous : "
+            else:
+                prefix = f"{self.current_npc.name} : "
+            
+            full_text = prefix + msg["content"]
+            words = full_text.split()
+            lines = []
+            current_line = []
+            
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                if self.message_font.size(test_line)[0] < c.Screen.WIDTH - 60:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                    current_line = [word]
+            
+            if current_line:
+                lines.append(' '.join(current_line))
+            
+            total_height += len(lines) * self.line_height
+        
+        return total_height
+
     def _send_chat_message(self, message: str):
         """Send a chat message to the NPC and get response"""
         npc = self.current_npc
@@ -297,18 +332,17 @@ class DialogueManager:
         # Draw conversation history (scrollable)
         message_area_y = box_y + 45
         message_area_height = 180
-        line_height = 26
         
-        # Calculate which messages to display based on scroll
-        total_messages = len(self.conversation_history)
-        start_index = max(0, total_messages - self.max_visible_lines - self.scroll_offset)
-        end_index = total_messages - self.scroll_offset
+        # Create a subsurface for clipping
+        clip_rect = pygame.Rect(20, message_area_y, c.Screen.WIDTH - 40, message_area_height)
+        screen.set_clip(clip_rect)
         
-        visible_messages = self.conversation_history[start_index:end_index]
+        # Calculate total height and starting y position
+        total_height = self._calculate_total_content_height()
+        y_offset = message_area_y + message_area_height - total_height + self.scroll_offset
         
         # Draw messages
-        y_offset = message_area_y
-        for msg in visible_messages:
+        for msg in self.conversation_history:
             if msg["role"] == "user":
                 prefix = "Vous : "
                 color = c.Colors.CYAN
@@ -316,7 +350,7 @@ class DialogueManager:
                 prefix = f"{self.current_npc.name} : "
                 color = c.Colors.WHITE
             
-            # Word wrap the message
+            # Word wrap the message (same as before)
             full_text = prefix + msg["content"]
             words = full_text.split()
             lines = []
@@ -330,21 +364,24 @@ class DialogueManager:
                     if current_line:
                         lines.append(' '.join(current_line))
                     current_line = [word]
+            
             if current_line:
                 lines.append(' '.join(current_line))
             
             # Draw each line
             for line in lines:
-                if y_offset < message_area_y + message_area_height:
-                    text_surface = self.message_font.render(line, True, color)
-                    screen.blit(text_surface, (25, y_offset))
-                    y_offset += line_height
+                text_surface = self.message_font.render(line, True, color)
+                screen.blit(text_surface, (25, y_offset))
+                y_offset += self.line_height
+        
+        # Remove clipping
+        screen.set_clip(None)
         
         # Draw scroll indicator if needed
-        if self.scroll_offset > 0:
-            scroll_text = f"↑ {self.scroll_offset} messages au-dessus"
+        if total_height > message_area_height and self.scroll_offset < total_height - message_area_height:
+            scroll_text = f"↑ Défiler pour voir plus"
             scroll_surface = self.small_font.render(scroll_text, True, c.Colors.YELLOW)
-            screen.blit(scroll_surface, (c.Screen.WIDTH - 250, message_area_y))
+            screen.blit(scroll_surface, (c.Screen.WIDTH - 250, message_area_y - 35))
         
         # Draw chat input box
         input_y = box_y + box_height - 60
