@@ -85,6 +85,7 @@ def generate_response_stream(prompt):
     )
     
     accumulated_text = ""
+    started = False
     
     # Iterate through the stream and yield accumulated tokens
     for output in stream:
