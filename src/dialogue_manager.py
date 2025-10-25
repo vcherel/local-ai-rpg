@@ -27,13 +27,19 @@ class DialogueManager:
         self.pending_npc = None
         self.frames_waited = 0
         
+        # Chat mode
+        self.chat_mode = False
+        self.user_input = ""
+        self.conversation_history = []
+        
         # Fonts
         self.font = pygame.font.SysFont("arial", 28, bold=True)
         self.small_font = pygame.font.SysFont("arial", 22)
+        self.input_font = pygame.font.SysFont("arial", 24)
         
         # References
         self.items_list: List[Item] = None
-        self.player: Player  = None
+        self.player: Player = None
     
     def interact_with_npc(self, npc: NPC):
         """Start interaction with an NPC"""
@@ -50,6 +56,64 @@ class DialogueManager:
         self.waiting_for_llm = True
         self.pending_npc = npc
         self.frames_waited = 0
+        self.chat_mode = False
+        self.user_input = ""
+        self.conversation_history = []
+    
+    def toggle_chat_mode(self):
+        """Toggle between automatic dialogue and chat mode"""
+        if self.active and self.generator is None:
+            self.chat_mode = not self.chat_mode
+            if self.chat_mode:
+                self.user_input = ""
+    
+    def handle_text_input(self, event):
+        """Handle text input for chat mode"""
+        if not self.chat_mode:
+            return
+        
+        if event.key == pygame.K_RETURN and self.user_input.strip():
+            # Send message to NPC
+            self._send_chat_message(self.user_input)
+            self.user_input = ""
+        elif event.key == pygame.K_BACKSPACE:
+            self.user_input = self.user_input[:-1]
+        elif event.unicode and len(self.user_input) < 100:
+            self.user_input += event.unicode
+    
+    def _send_chat_message(self, message: str):
+        """Send a chat message to the NPC and get response"""
+        npc = self.current_npc
+        
+        # Add user message to history
+        self.conversation_history.append({"role": "user", "content": message})
+        
+        # Build context about the NPC and current state
+        context = f"Tu es {npc.name}, un PNJ dans un RPG. "
+        
+        if npc.has_active_quest and not npc.quest_complete:
+            context += f"Tu as demandé au joueur de récupérer {npc.quest_item_name}. "
+            if npc.quest_item_name in self.player.inventory:
+                context += "Le joueur l'a maintenant dans son inventaire. "
+            else:
+                context += "Le joueur ne l'a pas encore trouvé. "
+        elif npc.quest_complete:
+            context += "Le joueur vient de terminer ta quête. "
+        
+        context += "Réponds naturellement à ce que dit le joueur."
+        
+        # Build conversation for LLM
+        conversation_text = "\n".join([
+            f"{'Joueur' if msg['role'] == 'user' else npc.name}: {msg['content']}"
+            for msg in self.conversation_history[-5:]  # Keep last 5 exchanges
+        ])
+        
+        prompt = f"{context}\n\nConversation:\n{conversation_text}\n\n{npc.name}:"
+        system_prompt = "Tu es un personnage dans un jeu vidéo RPG. Réponds de manière naturelle et immersive."
+        
+        self.waiting_for_llm = True
+        self.current_text = ""
+        self.generator = generate_response_stream_queued(prompt, system_prompt)
     
     def _generate_npc_dialogue(self, npc: NPC):
         """Generate interaction dialogue with NPC"""
@@ -180,6 +244,12 @@ class DialogueManager:
                 self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
+                # Add NPC response to conversation history if in chat mode
+                if self.chat_mode and self.current_npc:
+                    self.conversation_history.append({
+                        "role": "assistant",
+                        "content": self.current_text
+                    })
     
     def close(self):
         """Close the dialogue window"""
@@ -189,18 +259,25 @@ class DialogueManager:
             self.waiting_for_llm = False
             self.pending_npc = None
             self.frames_waited = 0
+            self.chat_mode = False
+            self.user_input = ""
+            self.conversation_history = []
 
-    def draw(self, screen):
+    def draw(self, screen: pygame.Surface):
         """Draw dialogue box if active"""
         if not self.active:
             return
         
-        box_height = 200
+        box_height = 200 if not self.chat_mode else 250
         box_y = c.Screen.HEIGHT - box_height - 25
         pygame.draw.rect(screen, c.Colors.DARK_GRAY, 
                        (10, box_y, c.Screen.WIDTH - 20, box_height))
         pygame.draw.rect(screen, c.Colors.WHITE, 
                        (10, box_y, c.Screen.WIDTH - 20, box_height), 2)
+        
+        # Draw NPC name
+        name_surface = self.font.render(self.current_npc.name, True, c.Colors.YELLOW)
+        screen.blit(name_surface, (25, box_y + 10))
         
         # Word wrap dialogue
         words = self.current_text.split()
@@ -219,13 +296,32 @@ class DialogueManager:
             lines.append(' '.join(current_line))
         
         # Draw lines
-        y_offset = box_y + 15
-        for line in lines:
+        y_offset = box_y + 45
+        max_lines = 4 if not self.chat_mode else 5
+        for line in lines[:max_lines]:
             text_surface = self.small_font.render(line, True, c.Colors.WHITE)
             screen.blit(text_surface, (25, y_offset))
             y_offset += 25
         
-        # Draw instruction
-        if self.generator is None:
-            instruction = self.small_font.render("Appuyez sur ESPACE pour fermer", True, c.Colors.YELLOW)
-            screen.blit(instruction, (c.Screen.WIDTH - 350, box_y + box_height - 30))
+        # Draw chat input box if in chat mode
+        if self.chat_mode:
+            input_y = box_y + box_height - 70
+            pygame.draw.rect(screen, c.Colors.BLACK,
+                           (20, input_y, c.Screen.WIDTH - 40, 35))
+            pygame.draw.rect(screen, c.Colors.WHITE,
+                           (20, input_y, c.Screen.WIDTH - 40, 35), 2)
+            
+            # Draw user input
+            input_text = self.user_input + "|"  # Cursor
+            input_surface = self.input_font.render(input_text, True, c.Colors.WHITE)
+            screen.blit(input_surface, (30, input_y + 5))
+            
+            # Draw chat mode instruction
+            instruction = self.small_font.render("Tapez votre message puis ENTRÉE | C: Mode auto", True, c.Colors.CYAN)
+            screen.blit(instruction, (25, box_y + box_height - 35))
+        else:
+            # Draw instructions for normal mode
+            if self.generator is None:
+                instruction = self.small_font.render("ESPACE: Fermer | C: Mode chat", 
+                                                    True, c.Colors.YELLOW)
+                screen.blit(instruction, (c.Screen.WIDTH - 350, box_y + box_height - 30))

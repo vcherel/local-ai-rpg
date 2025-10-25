@@ -52,6 +52,7 @@ class NPC:
         self.quest_content = None
         self.quest_item_name = None
         self.quest_complete = False
+        self.name = "Gérard" # TODO: change
         
     def draw(self, screen, camera_x, camera_y):
         screen_x = self.x - camera_x - c.Size.NPC // 2

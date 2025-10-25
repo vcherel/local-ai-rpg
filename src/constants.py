@@ -25,6 +25,7 @@ class Colors:
     YELLOW: tuple = (255, 255, 0)
     GRAY: tuple = (100, 100, 100)
     DARK_GRAY: tuple = (50, 50, 50)
+    CYAN: tuple = (0, 255, 255)
 
 @dataclass(frozen=True)
 class Hyperparameters:
