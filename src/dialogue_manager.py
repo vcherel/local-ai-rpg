@@ -88,28 +88,36 @@ class DialogueManager:
         # Add user message to history
         self.conversation_history.append({"role": "user", "content": message})
         
-        # Build context about the NPC and current state
-        context = f"Tu es {npc.name}, un PNJ dans un RPG. "
+        # Build system prompt with NPC context
+        system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG. "
         
         if npc.has_active_quest and not npc.quest_complete:
-            context += f"Tu as demandé au joueur de récupérer {npc.quest_item_name}. "
+            system_prompt += f"Tu as demandé au joueur de récupérer {npc.quest_item_name or 'un objet'}."
             if npc.quest_item_name in self.player.inventory:
-                context += "Le joueur l'a maintenant dans son inventaire. "
+                system_prompt += "Le joueur l'a maintenant dans son inventaire. "
             else:
-                context += "Le joueur ne l'a pas encore trouvé. "
+                system_prompt += "Le joueur ne l'a pas encore trouvé. "
         elif npc.quest_complete:
-            context += "Le joueur vient de terminer ta quête. "
+            system_prompt += "Le joueur vient de terminer ta quête. "
         
-        context += "Réponds naturellement à ce que dit le joueur."
+        system_prompt += "Réponds naturellement en une ou deux phrases courtes."
         
-        # Build conversation for LLM
-        conversation_text = "\n".join([
-            f"{'Joueur' if msg['role'] == 'user' else npc.name}: {msg['content']}"
-            for msg in self.conversation_history[-5:]  # Keep last 5 exchanges
-        ])
+        # Build conversation history in chat format
+        conversation_messages = self.conversation_history[-10:]
         
-        prompt = f"{context}\n\nConversation:\n{conversation_text}\n\n{npc.name}:"
-        system_prompt = "Tu es un personnage dans un jeu vidéo RPG. Réponds de manière naturelle et immersive."
+        # Format as a multi-turn conversation for the prompt
+        conversation_text = ""
+        for msg in conversation_messages[:-1]:  # All except the last (current) message
+            if msg['role'] == 'user':
+                conversation_text += f"Joueur: {msg['content']}\n"
+            else:
+                conversation_text += f"{npc.name}: {msg['content']}\n"
+        
+        # Add the current user message
+        conversation_text += f"Joueur: {message}"
+        
+        # The prompt is just the conversation
+        prompt = conversation_text
         
         self.waiting_for_llm = True
         self.current_text = ""
