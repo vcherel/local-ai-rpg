@@ -107,22 +107,21 @@ class DialogueManager:
             system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'un', 'une', etc.) et sans guillemets."
             prompt = f"Quel est l'objet à récupérer dans '{npc.quest_content}' ?"
             
-            # Use the queued version with callback
-            def on_item_extracted(item_name: str):
-                item_name = item_name.strip().rstrip('.')
-                npc.quest_item_name = item_name
-                
-                # Spawn the item
-                item_x = random.randint(100, self.world_width - 100)
-                item_y = random.randint(100, self.world_height - 100)
-                self.items_list.append(Item(item_x, item_y, item_name))
-                # TODO : Use this function
+            # Use the queued version and get the response
+            item_name = generate_response_queued(prompt, system_prompt)
             
-            generate_response_queued(prompt, system_prompt)
+            # Process the extracted item name
+            item_name = item_name.strip().rstrip('.')
+            npc.quest_item_name = item_name
+            
+            # Spawn the item
+            item_x = random.randint(100, self.world_width - 100)
+            item_y = random.randint(100, self.world_height - 100)
+            self.items_list.append(Item(item_x, item_y, item_name))
         
         # Start the waiting thread
         threading.Thread(target=check_and_generate, daemon=True).start()
-    
+
     def _schedule_reward_extraction(self):
         """Schedule coin reward extraction after dialogue completes"""
         def check_and_extract():
@@ -137,19 +136,19 @@ class DialogueManager:
                 self.player.coins += reward
                 return
             
-            # If no explicit number, use LLM with callback
+            # If no explicit number, use LLM
             system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
             prompt = f"Combien de pièces dans ce texte : '{self.current_text}' ?"
             
-            def on_reward_extracted(reward_str):
-                reward_str = re.sub(r'[^\d]', '', reward_str)
-                if reward_str:
-                    reward = int(reward_str)
-                    if reward > 0:
-                        self.player.coins += reward
-            # TODO : Use this function
+            # Get the response using the queued function
+            reward_str = generate_response_queued(prompt, system_prompt)
             
-            generate_response_queued(prompt, system_prompt)
+            # Process the extracted reward
+            reward_str = re.sub(r'[^\d]', '', reward_str)
+            if reward_str:
+                reward = int(reward_str)
+                if reward > 0:
+                    self.player.coins += reward
         
         # Start the waiting thread
         threading.Thread(target=check_and_extract, daemon=True).start()
