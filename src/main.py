@@ -2,9 +2,10 @@ import pygame
 import random
 import math
 import sys
+from typing import List
 
 import constants as c
-from entities import Player, NPC
+from entities import Player, NPC, Item
 from dialogue_manager import DialogueManager
 from llm_request_queue import get_llm_task_count, init_llm_queue
 from loading_indicator import LoadingIndicator
@@ -27,8 +28,8 @@ class Game:
         
         # Game objects
         self.player = Player(self.world_width // 2, self.world_height // 2)
-        self.npcs = []
-        self.items = []
+        self.npcs: List[NPC] = []
+        self.items: List[Item] = []
         
         # Spawn NPCs randomly
         for i in range(c.Game.NB_NPCS):

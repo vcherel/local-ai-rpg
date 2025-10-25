@@ -3,11 +3,11 @@ import random
 import threading
 import time
 import pygame
-from typing import Optional
+from typing import List
 
 import constants as c
 from llm_request_queue import generate_response_queued, generate_response_stream_queued
-from entities import NPC, Item
+from entities import NPC, Item, Player
 
 
 class DialogueManager:
@@ -21,7 +21,7 @@ class DialogueManager:
         self.active = False
         self.generator = None
         self.current_text = ""
-        self.current_npc: Optional[NPC] = None
+        self.current_npc: NPC = None
         self.scroll = 0
         self.waiting_for_llm = False
         self.pending_npc = None
@@ -31,9 +31,9 @@ class DialogueManager:
         self.font = pygame.font.SysFont("arial", 28, bold=True)
         self.small_font = pygame.font.SysFont("arial", 22)
         
-        # References (set externally)
-        self.items_list = None
-        self.player = None
+        # References
+        self.items_list: List[Item] = None
+        self.player: Player  = None
     
     def interact_with_npc(self, npc: NPC):
         """Start interaction with an NPC"""
