@@ -59,42 +59,52 @@ class DialogueManager:
             weights=[0.7, 0.3],
             k=1
         )[0]
-        
+
         if interaction_type == "quest" and not npc.has_active_quest:
-            # Generate quest
+            # Generate new quest
             system_prompt = "Tu es un PNJ dans un RPG. Tu demandes de l'aide au joueur en une seule phrase."
             prompt = "Demande au joueur de récupérer un objet. Indique l'objet, où il se trouve, et pourquoi tu en as besoin."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
-            
+
             # Create quest
             npc.has_active_quest = True
-            
+
             # Schedule quest item generation to run after dialogue completes
             self._schedule_quest_item_generation(npc)
-        
-        elif npc.has_active_quest and npc.quest_complete:
-            # Quest completion dialogue
-            system_prompt = "Tu es un PNJ dans un RPG. Le joueur vient de terminer ta quête."
-            prompt = (
-                f"Le joueur t'a apporté {npc.quest_item_name} ({npc.quest_content}). "
-                f"Remercie-le en une phrase et mentionne sa récompense en pièces."
-            )
-            self.generator = generate_response_stream_queued(prompt, system_prompt)
-            
-            # Schedule reward extraction
-            self._schedule_reward_extraction()
-            
-            # Reset quest status
-            npc.has_active_quest = False
-            npc.quest_complete = False
-            npc.quest_item_name = None
-        
+
+        elif npc.has_active_quest:
+            if npc.quest_complete:
+                # Quest completion dialogue
+                system_prompt = "Tu es un PNJ dans un RPG. Le joueur vient de terminer ta quête."
+                prompt = (
+                    f"Le joueur t'a apporté {npc.quest_item_name} ({npc.quest_content}). "
+                    f"Remercie-le en une phrase et mentionne sa récompense en pièces."
+                )
+                self.generator = generate_response_stream_queued(prompt, system_prompt)
+
+                # Schedule reward extraction
+                self._schedule_reward_extraction()
+
+                # Reset quest status
+                npc.has_active_quest = False
+                npc.quest_complete = False
+                npc.quest_item_name = None
+            else:
+                # Talk about active quest
+                system_prompt = "Tu es un PNJ dans un RPG. Le joueur est en train de faire ta quête."
+                prompt = (
+                    f"Tu as demandé au joueur de récupérer {npc.quest_item_name}. "
+                    f"Contexte de la quête : {npc.quest_content}. "
+                    f"Le joueur n'a pas encore terminé. Relance-le en une seule phrase naturelle."
+                )
+                self.generator = generate_response_stream_queued(prompt, system_prompt)
+
         else:
             # Casual conversation
             system_prompt = "Tu es un PNJ dans un RPG. Tu discutes brièvement avec le joueur."
             prompt = "Dis une courte réplique au joueur."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
-    
+
     def _schedule_quest_item_generation(self, npc: NPC):
         """Schedule quest item generation after dialogue completes"""
         def check_and_generate():
