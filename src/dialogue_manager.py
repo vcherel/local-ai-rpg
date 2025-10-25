@@ -20,22 +20,24 @@ class DialogueManager:
         # Dialogue state
         self.active = False
         self.generator = None
-        self.current_text = ""
         self.current_npc: NPC = None
-        self.scroll = 0
         self.waiting_for_llm = False
         self.pending_npc = None
         self.frames_waited = 0
         
-        # Chat mode
-        self.chat_mode = False
+        # Chat state - always enabled
         self.user_input = ""
-        self.conversation_history = []
+        self.conversation_history = []  # List of {"role": "user"/"assistant", "content": str}
+        
+        # Scroll state
+        self.scroll_offset = 0  # Lines scrolled from bottom (0 = bottom)
+        self.max_visible_lines = 7  # Number of message lines visible
         
         # Fonts
         self.font = pygame.font.SysFont("arial", 28, bold=True)
-        self.small_font = pygame.font.SysFont("arial", 22)
+        self.message_font = pygame.font.SysFont("arial", 20)
         self.input_font = pygame.font.SysFont("arial", 24)
+        self.small_font = pygame.font.SysFont("arial", 18)
         
         # References
         self.items_list: List[Item] = None
@@ -51,35 +53,39 @@ class DialogueManager:
         
         self.current_npc = npc
         self.active = True
-        self.scroll = 0
-        self.current_text = ""
+        self.scroll_offset = 0
         self.waiting_for_llm = True
         self.pending_npc = npc
         self.frames_waited = 0
-        self.chat_mode = False
         self.user_input = ""
         self.conversation_history = []
     
-    def toggle_chat_mode(self):
-        """Toggle between automatic dialogue and chat mode"""
-        if self.active and self.generator is None:
-            self.chat_mode = not self.chat_mode
-            if self.chat_mode:
-                self.user_input = ""
-    
     def handle_text_input(self, event):
-        """Handle text input for chat mode"""
-        if not self.chat_mode:
+        """Handle text input for chat"""
+        if not self.active:
             return
         
         if event.key == pygame.K_RETURN and self.user_input.strip():
             # Send message to NPC
             self._send_chat_message(self.user_input)
             self.user_input = ""
+            self.scroll_offset = 0  # Auto-scroll to bottom on new message
         elif event.key == pygame.K_BACKSPACE:
             self.user_input = self.user_input[:-1]
-        elif event.unicode and len(self.user_input) < 100:
+        elif event.unicode and len(self.user_input) < 150:
             self.user_input += event.unicode
+    
+    def handle_scroll(self, scroll_direction):
+        """Handle mouse wheel scrolling (scroll_direction: 1 for up, -1 for down)"""
+        if not self.active:
+            return
+        
+        # Calculate total lines in conversation
+        total_lines = len(self.conversation_history)
+        max_scroll = max(0, total_lines - self.max_visible_lines)
+        
+        # Update scroll offset
+        self.scroll_offset = max(0, min(self.scroll_offset + scroll_direction, max_scroll))
     
     def _send_chat_message(self, message: str):
         """Send a chat message to the NPC and get response"""
@@ -111,7 +117,7 @@ class DialogueManager:
             if msg['role'] == 'user':
                 conversation_text += f"Joueur: {msg['content']}\n"
             else:
-                conversation_text += f"{npc.name}: {msg['content']}\n"
+                conversation_text += f"PNJ: {msg['content']}\n"
         
         # Add the current user message
         conversation_text += f"Joueur: {message}"
@@ -120,11 +126,10 @@ class DialogueManager:
         prompt = conversation_text
         
         self.waiting_for_llm = True
-        self.current_text = ""
         self.generator = generate_response_stream_queued(prompt, system_prompt)
     
     def _generate_npc_dialogue(self, npc: NPC):
-        """Generate interaction dialogue with NPC"""
+        """Generate initial interaction dialogue with NPC (first message is automatic)"""
         # Choose type of interaction
         interaction_type = random.choices(
             ["quest", "talk"],
@@ -174,7 +179,7 @@ class DialogueManager:
         else:
             # Casual conversation
             system_prompt = "Tu es un PNJ dans un RPG. Tu discutes brièvement avec le joueur."
-            prompt = "Dis une courte réplique au joueur."
+            prompt = "Dis une courte réplique au joueur pour le saluer."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
 
     def _schedule_quest_item_generation(self, npc: NPC):
@@ -185,7 +190,7 @@ class DialogueManager:
                 time.sleep(0.1)
             
             # Extract quest item
-            npc.quest_content = self.current_text
+            npc.quest_content = self.conversation_history[-1]["content"]
             system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'un', 'une', etc.) et sans guillemets."
             prompt = f"Quel est l'objet à récupérer dans '{npc.quest_content}' ?"
             
@@ -211,8 +216,11 @@ class DialogueManager:
             while self.generator is not None:
                 time.sleep(0.1)
             
+            # Get the last assistant message
+            last_message = self.conversation_history[-1]["content"]
+            
             # First try to extract coin number directly
-            match = re.search(r'\b(\d+)\b', self.current_text)
+            match = re.search(r'\b(\d+)\b', last_message)
             if match:
                 reward = int(match.group(1))
                 self.player.coins += reward
@@ -220,7 +228,7 @@ class DialogueManager:
             
             # If no explicit number, use LLM
             system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
-            prompt = f"Combien de pièces dans ce texte : '{self.current_text}' ?"
+            prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
             
             # Get the response using the queued function
             reward_str = generate_response_queued(prompt, system_prompt)
@@ -248,16 +256,15 @@ class DialogueManager:
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
-                self.current_text = partial
+                # Update the last message in history if it's from assistant
+                if self.conversation_history and self.conversation_history[-1]["role"] == "assistant":
+                    self.conversation_history[-1]["content"] = partial
+                else:
+                    # Add new assistant message
+                    self.conversation_history.append({"role": "assistant", "content": partial})
                 self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
-                # Add NPC response to conversation history if in chat mode
-                if self.chat_mode and self.current_npc:
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": self.current_text
-                    })
     
     def close(self):
         """Close the dialogue window"""
@@ -267,16 +274,16 @@ class DialogueManager:
             self.waiting_for_llm = False
             self.pending_npc = None
             self.frames_waited = 0
-            self.chat_mode = False
             self.user_input = ""
             self.conversation_history = []
+            self.scroll_offset = 0
 
     def draw(self, screen: pygame.Surface):
-        """Draw dialogue box if active"""
+        """Draw dialogue box with scrollable conversation history"""
         if not self.active:
             return
         
-        box_height = 200 if not self.chat_mode else 250
+        box_height = 300
         box_y = c.Screen.HEIGHT - box_height - 25
         pygame.draw.rect(screen, c.Colors.DARK_GRAY, 
                        (10, box_y, c.Screen.WIDTH - 20, box_height))
@@ -287,49 +294,70 @@ class DialogueManager:
         name_surface = self.font.render(self.current_npc.name, True, c.Colors.YELLOW)
         screen.blit(name_surface, (25, box_y + 10))
         
-        # Word wrap dialogue
-        words = self.current_text.split()
-        lines = []
-        current_line = []
+        # Draw conversation history (scrollable)
+        message_area_y = box_y + 45
+        message_area_height = 180
+        line_height = 26
         
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            if self.small_font.size(test_line)[0] < c.Screen.WIDTH - 60:
-                current_line.append(word)
+        # Calculate which messages to display based on scroll
+        total_messages = len(self.conversation_history)
+        start_index = max(0, total_messages - self.max_visible_lines - self.scroll_offset)
+        end_index = total_messages - self.scroll_offset
+        
+        visible_messages = self.conversation_history[start_index:end_index]
+        
+        # Draw messages
+        y_offset = message_area_y
+        for msg in visible_messages:
+            if msg["role"] == "user":
+                prefix = "Vous : "
+                color = c.Colors.CYAN
             else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                current_line = [word]
-        if current_line:
-            lines.append(' '.join(current_line))
-        
-        # Draw lines
-        y_offset = box_y + 45
-        max_lines = 4 if not self.chat_mode else 5
-        for line in lines[:max_lines]:
-            text_surface = self.small_font.render(line, True, c.Colors.WHITE)
-            screen.blit(text_surface, (25, y_offset))
-            y_offset += 25
-        
-        # Draw chat input box if in chat mode
-        if self.chat_mode:
-            input_y = box_y + box_height - 70
-            pygame.draw.rect(screen, c.Colors.BLACK,
-                           (20, input_y, c.Screen.WIDTH - 40, 35))
-            pygame.draw.rect(screen, c.Colors.WHITE,
-                           (20, input_y, c.Screen.WIDTH - 40, 35), 2)
+                prefix = f"{self.current_npc.name} : "
+                color = c.Colors.WHITE
             
-            # Draw user input
-            input_text = self.user_input + "|"  # Cursor
-            input_surface = self.input_font.render(input_text, True, c.Colors.WHITE)
-            screen.blit(input_surface, (30, input_y + 5))
+            # Word wrap the message
+            full_text = prefix + msg["content"]
+            words = full_text.split()
+            lines = []
+            current_line = []
             
-            # Draw chat mode instruction
-            instruction = self.small_font.render("Tapez votre message puis ENTRÉE | C: Mode auto", True, c.Colors.CYAN)
-            screen.blit(instruction, (25, box_y + box_height - 35))
-        else:
-            # Draw instructions for normal mode
-            if self.generator is None:
-                instruction = self.small_font.render("ESPACE: Fermer | C: Mode chat", 
-                                                    True, c.Colors.YELLOW)
-                screen.blit(instruction, (c.Screen.WIDTH - 350, box_y + box_height - 30))
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                if self.message_font.size(test_line)[0] < c.Screen.WIDTH - 60:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                    current_line = [word]
+            if current_line:
+                lines.append(' '.join(current_line))
+            
+            # Draw each line
+            for line in lines:
+                if y_offset < message_area_y + message_area_height:
+                    text_surface = self.message_font.render(line, True, color)
+                    screen.blit(text_surface, (25, y_offset))
+                    y_offset += line_height
+        
+        # Draw scroll indicator if needed
+        if self.scroll_offset > 0:
+            scroll_text = f"↑ {self.scroll_offset} messages au-dessus"
+            scroll_surface = self.small_font.render(scroll_text, True, c.Colors.YELLOW)
+            screen.blit(scroll_surface, (c.Screen.WIDTH - 250, message_area_y))
+        
+        # Draw chat input box
+        input_y = box_y + box_height - 60
+        pygame.draw.rect(screen, c.Colors.BLACK,
+                       (20, input_y, c.Screen.WIDTH - 40, 35))
+        pygame.draw.rect(screen, c.Colors.WHITE,
+                       (20, input_y, c.Screen.WIDTH - 40, 35), 2)
+        
+        # Draw user input with cursor
+        input_text = self.user_input + "|"
+        input_surface = self.input_font.render(input_text, True, c.Colors.WHITE)
+        screen.blit(input_surface, (30, input_y + 5))
+        
+        # Draw instructions
+        instruction = self.small_font.render("ENTRÉE: Envoyer | Molette: Défiler | ESPACE: Fermer", True, c.Colors.CYAN)
+        screen.blit(instruction, (25, box_y + box_height - 25))

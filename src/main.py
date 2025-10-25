@@ -87,10 +87,7 @@ class Game:
         self.screen.blit(coins_surface, (10, 35))
         
         # Draw controls
-        if self.dialogue_manager.chat_mode:
-            controls = self.small_font.render("ENTRÉE : Envoyer | C : Mode auto", True, c.Colors.WHITE)
-        else:
-            controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | C : Mode chat | ESPACE : Fermer", True, c.Colors.WHITE)
+        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | ECHAP : Fermer", True, c.Colors.WHITE)
         self.screen.blit(controls, (10, c.Screen.HEIGHT - 25))
         
         # Draw loading indicators (top right)
@@ -212,30 +209,33 @@ class Game:
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
 
     def handle_input(self):
-            """Handle keyboard input"""
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return False
-                
-                if event.type == pygame.KEYDOWN:
-                    # Chat mode text input
-                    if self.dialogue_manager.chat_mode:
-                        self.dialogue_manager.handle_text_input(event)
-                    else:
-                        # Normal game controls
-                        if event.key == pygame.K_e and not self.dialogue_manager.active:
-                            self.interact_with_nearby_npc()
-                            if not self.dialogue_manager.active:
-                                self.pickup_nearby_item()
-                        
-                        if event.key == pygame.K_SPACE:
-                            self.dialogue_manager.close()
-                        
-                        # Toggle chat mode
-                        if event.key == pygame.K_c and self.dialogue_manager.active:
-                            self.dialogue_manager.toggle_chat_mode()
+        """Handle keyboard input"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
             
-            return True
+            if event.type == pygame.KEYDOWN:
+                # Chat text input when dialogue is active
+                if self.dialogue_manager.active:
+                    self.dialogue_manager.handle_text_input(event)
+                
+                # Game controls
+                if event.key == pygame.K_e and not self.dialogue_manager.active:
+                    self.interact_with_nearby_npc()
+                    if not self.dialogue_manager.active:
+                        self.pickup_nearby_item()
+                
+                if event.key == pygame.K_ESCAPE:
+                    self.dialogue_manager.close()
+            
+            # Mouse wheel scrolling for dialogue
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 4:  # Scroll up
+                    self.dialogue_manager.handle_scroll(1)
+                elif event.button == 5:  # Scroll down
+                    self.dialogue_manager.handle_scroll(-1)
+        
+        return True
     
     def update_player_movement(self):
         """Update player position based on input"""
