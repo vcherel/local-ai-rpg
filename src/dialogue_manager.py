@@ -75,8 +75,8 @@ class DialogueManager:
         elif event.unicode and len(self.user_input) < 150:
             self.user_input += event.unicode
     
-    def handle_scroll(self, scroll_direction):
-        """Handle mouse wheel scrolling (scroll_direction: 1 for up, -1 for down)"""
+    def handle_scroll(self, direction):
+        """Handle arrow key scrolling (direction: 1 for up, -1 for down)"""
         if not self.active:
             return
         
@@ -85,7 +85,7 @@ class DialogueManager:
         max_scroll = max(0, total_lines - self.max_visible_lines)
         
         # Update scroll offset
-        self.scroll_offset = max(0, min(self.scroll_offset + scroll_direction, max_scroll))
+        self.scroll_offset = max(0, min(self.scroll_offset + direction, max_scroll))
     
     def _send_chat_message(self, message: str):
         """Send a chat message to the NPC and get response"""
@@ -359,5 +359,5 @@ class DialogueManager:
         screen.blit(input_surface, (30, input_y + 5))
         
         # Draw instructions
-        instruction = self.small_font.render("ENTRÉE: Envoyer | Molette: Défiler | ESPACE: Fermer", True, c.Colors.CYAN)
+        instruction = self.small_font.render("ENTRÉE: Envoyer | Flèches Haut/Bas: Défiler chat | ESPACE: Fermer", True, c.Colors.CYAN)
         screen.blit(instruction, (25, box_y + box_height - 25))

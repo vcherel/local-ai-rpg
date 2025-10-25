@@ -213,28 +213,24 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            
             if event.type == pygame.KEYDOWN:
                 # Chat text input when dialogue is active
                 if self.dialogue_manager.active:
-                    self.dialogue_manager.handle_text_input(event)
+                    # Handle scrolling with arrow keys
+                    if event.key == pygame.K_UP:
+                        self.dialogue_manager.handle_scroll(1)  # Scroll up
+                    elif event.key == pygame.K_DOWN:
+                        self.dialogue_manager.handle_scroll(-1)  # Scroll down
+                    else:
+                        self.dialogue_manager.handle_text_input(event)
                 
                 # Game controls
                 if event.key == pygame.K_e and not self.dialogue_manager.active:
                     self.interact_with_nearby_npc()
                     if not self.dialogue_manager.active:
                         self.pickup_nearby_item()
-                
                 if event.key == pygame.K_ESCAPE:
                     self.dialogue_manager.close()
-            
-            # Mouse wheel scrolling for dialogue
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 4:  # Scroll up
-                    self.dialogue_manager.handle_scroll(1)
-                elif event.button == 5:  # Scroll down
-                    self.dialogue_manager.handle_scroll(-1)
-        
         return True
     
     def update_player_movement(self):
