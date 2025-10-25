@@ -129,8 +129,8 @@ class Game:
     def draw_ui(self):
         """Draw inventory, coins, and controls"""
         # Draw inventory and coins
-        inventory_text = f"Inventory: {', '.join(self.player.inventory) if self.player.inventory else 'Empty'}"
-        coins_text = f"Coins: {self.player.coins}"
+        inventory_text = f"Inventaire: {', '.join(self.player.inventory) if self.player.inventory else 'Vide'}"
+        coins_text = f"Pièces: {self.player.coins}"
         
         inv_surface = self.small_font.render(inventory_text, True, WHITE)
         coins_surface = self.small_font.render(coins_text, True, WHITE)
@@ -139,7 +139,7 @@ class Game:
         self.screen.blit(coins_surface, (10, 35))
         
         # Draw controls
-        controls = self.small_font.render("ZQSD: Move | E: Talk/Pickup | SPACE: Close dialogue", True, WHITE)
+        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | ESPACE : Fermer le dialogue", True, WHITE)
         self.screen.blit(controls, (10, SCREEN_HEIGHT - 25))
     
     def draw_world(self):

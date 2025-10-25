@@ -60,9 +60,11 @@ class DialogueManager:
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate quest
             prompt = (
-                "You are an NPC in an RPG. Ask the player in first person to retrieve an item. "
-                "Keep it very short and simple: state the item, where to find it, and why you need it. "
-                "Directly ask for their help. Avoid extra complications, hidden locations, or long explanations."
+                "Tu es un PNJ dans un RPG. Demande au joueur de récupérer un objet. "
+                "Écris-le comme une phrase naturelle et fluide, à la première personne, "
+                "indique l'objet, où le trouver et pourquoi tu en as besoin. "
+                "Demande directement son aide. Ne fais pas de listes ni de bullet points.\n\n"
+                "Exemple de style souhaité : 'Salut ! Peux-tu m'aider à retrouver mon épée perdue dans la forêt ? J'en ai besoin pour vaincre le dragon.'"
             )
             self.generator = generate_response_stream(prompt)
             
@@ -75,10 +77,11 @@ class DialogueManager:
         elif npc.has_active_quest and npc.quest_complete:
             # Quest completion dialogue (NPC rewards player)
             prompt = (
-                f"You are an NPC in an RPG. The player completed your quest ({npc.quest_content}) and brought you the item: {npc.quest_item_name}. "
-                f"You should comment on the quest and the item, and you may thank the player or give them coins. Currently, the player has {self.player.coins} coins. "
-                f"Keep it short and concise."
+                f"Tu es un PNJ dans un RPG. Le joueur a terminé ta quête ({npc.quest_content}) et t'a apporté l'objet : {npc.quest_item_name}. "
+                f"Tu dois commenter la quête et l'objet, et tu peux remercier le joueur ou lui donner des pièces. Actuellement, le joueur a {self.player.coins} pièces. "
+                f"Fais court et concis."
             )
+
             self.generator = generate_response_stream(prompt)
             
             # Extract reward after dialogue completes
@@ -92,9 +95,10 @@ class DialogueManager:
         else:
             # Casual conversation
             prompt = (
-                f"You are an NPC in an RPG world. Say one short, random line: a greeting, comment, or question to the player. "
-                f"Keep it concise and natural. Do not continue the conversation or add extra dialogue."
+                f"Tu es un PNJ dans un monde RPG. Dis une courte réplique aléatoire : un salut, un commentaire ou une question au joueur. "
+                f"Reste concis et naturel. Ne continue pas la conversation et n’ajoute pas de dialogue supplémentaire."
             )
+
             self.generator = generate_response_stream(prompt)
     
     def _schedule_quest_item_generation(self, npc: NPC):
@@ -106,7 +110,7 @@ class DialogueManager:
             
             # Now extract quest item from completed dialogue
             npc.quest_content = self.current_text
-            extract_prompt = f"From this quest: '{npc.quest_content}', extract only the item name."
+            extract_prompt = f"À partir de cette quête : '{npc.quest_content}', extrais uniquement le nom de l'objet."
             item_name = generate_response(extract_prompt).strip()
             
             return item_name
@@ -135,8 +139,8 @@ class DialogueManager:
             
             # If no explicit number found, use LLM to extract the amount
             extract_prompt = (
-                f"From this NPC message: '{self.current_text}', determine how many coins the player should gain according to what the NPC said. "
-                f"Extract ONLY the number of coins as an integer."
+                f"À partir de ce message du PNJ : '{self.current_text}', détermine combien de pièces le joueur devrait recevoir selon ce que le PNJ a dit. "
+                f"Extrait UNIQUEMENT le nombre de pièces sous forme d'entier."
             )
             reward_str = generate_response(extract_prompt).strip()
             
@@ -207,5 +211,5 @@ class DialogueManager:
         
         # Draw instruction
         if self.generator is None:
-            instruction = self.small_font.render("Press SPACE to close", True, YELLOW)
-            screen.blit(instruction, (SCREEN_WIDTH - 250, box_y + box_height - 30))
+            instruction = self.small_font.render("Appuyez sur ESPACE pour fermer", True, YELLOW)
+            screen.blit(instruction, (SCREEN_WIDTH - 350, box_y + box_height - 30))
