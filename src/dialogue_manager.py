@@ -108,8 +108,8 @@ class DialogueManager:
             
             # Now extract quest item from completed dialogue
             npc.quest_content = self.current_text
-            extract_prompt = f"À partir de cette quête : '{npc.quest_content}', extrais uniquement le nom de l'objet."
-            item_name = generate_response(extract_prompt).strip()
+            extract_prompt = f"À partir de cette quête : '{npc.quest_content}', donne uniquement le nom de l’objet."
+            item_name = generate_response(extract_prompt).strip().rstrip('.')
             
             return item_name
         

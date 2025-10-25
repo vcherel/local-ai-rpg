@@ -5,7 +5,7 @@ import constants as c
 
 # Load the model
 llm = Llama(
-    model_path="./model/LFM2-2.6B-Q4_0.gguf",
+    model_path="./models/LFM2-2.6B-Q4_0.gguf",
     n_gpu_layers=20,
     verbose=False,
     n_ctx=128000,
@@ -37,8 +37,7 @@ def generate_response(prompt):
         prompt=formatted_prompt,
         max_tokens=c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
-        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        stop=["\n"]
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY
     )
     
     # Extract the generated text
@@ -46,6 +45,13 @@ def generate_response(prompt):
 
     # Remove any quotation marks from the generated text
     generated_text = generated_text.translate(str.maketrans('', '', '"«»'))
+
+    # Remove leading/trailing newlines
+    generated_text = generated_text.strip('\n')
+
+    # If newline in middle → keep left part only
+    if '\n' in generated_text:
+        generated_text = generated_text.split('\n', 1)[0].strip()
     
     return generated_text
 
@@ -75,8 +81,7 @@ def generate_response_stream(prompt):
         max_tokens=c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        stream=True,
-        stop=["\n"]
+        stream=True
     )
     
     accumulated_text = ""
@@ -87,6 +92,12 @@ def generate_response_stream(prompt):
         
         # Remove any quotation marks from the new token
         new_token = new_token.translate(str.maketrans('', '', '"«»'))
+
+        if new_token:
+            started = True
+
+        if started and new_token == "\n":  # Do not stop if \n is first character
+            break
 
         accumulated_text += new_token
             
