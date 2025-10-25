@@ -1,6 +1,7 @@
 import math
 import pygame
 import random
+import time
 
 import constants as c
 from functions import random_color
@@ -57,7 +58,7 @@ class NPC:
             screen,
             c.Colors.BLACK,
             (screen_x - border_thickness, screen_y - border_thickness,
-            c.Size.NPC + border_thickness * 2, c.Size.NPC + border_thickness * 2)
+             c.Size.NPC + border_thickness * 2, c.Size.NPC + border_thickness * 2)
         )
 
         # Draw NPC
@@ -65,9 +66,15 @@ class NPC:
 
         # Draw exclamation mark if has quest
         if self.has_active_quest and not self.quest_complete:
-            font = pygame.font.Font(None, 30)
+            # Make font bigger
+            font = pygame.font.Font(None, 45)
+
+            # Create small bobbing animation (sin wave)
+            bob_offset = math.sin(time.time() * 4) * 4  # speed * amplitude
+
             text = font.render("!", True, c.Colors.YELLOW)
-            screen.blit(text, (screen_x + c.Size.NPC // 2 - 5, screen_y - 20))
+            text_rect = text.get_rect(center=(screen_x + c.Size.NPC // 2, screen_y - 25 + bob_offset))
+            screen.blit(text, text_rect)
     
     def distance_to_player(self, player):
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
