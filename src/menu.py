@@ -28,8 +28,9 @@ class InventoryMenu:
         
     def get_slot_at_mouse(self, mouse_x, mouse_y, menu_x, menu_y):
         """Returns the slot index at the given mouse position, or None"""
-        grid_start_x = menu_x + self.padding
-        grid_start_y = menu_y + self.padding + 80
+        grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
+        grid_start_x = (self.width - grid_width) // 2
+        grid_start_y = self.padding + 100
         
         if mouse_x < grid_start_x or mouse_y < grid_start_y:
             return None
@@ -94,8 +95,9 @@ class InventoryMenu:
         items_list = list(item_dict.values())
         
         # Draw inventory grid
-        grid_start_x = self.padding
-        grid_start_y = self.padding + 80
+        grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
+        grid_start_x = (self.width - grid_width) // 2  # Center the grid horizontally
+        grid_start_y = self.padding + 100
         
         for row in range(self.grid_rows):
             for col in range(self.grid_cols):
