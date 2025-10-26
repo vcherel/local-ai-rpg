@@ -9,6 +9,7 @@ from entities import Player, NPC, Item, get_npc_name_generator
 from dialogue_manager import DialogueManager
 from llm_request_queue import get_llm_task_count, init_llm_queue
 from loading_indicator import LoadingIndicator
+from menu import InventoryMenu
 
 class Game:
     def __init__(self):
@@ -43,6 +44,10 @@ class Game:
         self.dialogue_manager.player = self.player
         get_npc_name_generator() # Initialize the name generator
         
+        # Inventory menu
+        self.inventory_menu = InventoryMenu()
+        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
+        
         # Camera
         self.camera_x = 0
         self.camera_y = 0
@@ -76,19 +81,33 @@ class Game:
                 break
     
     def draw_ui(self):
-        """Draw inventory, coins, controls, and loading indicators"""
-        # Draw inventory and coins
-        inventory_text = f"Inventaire: {', '.join(self.player.inventory) if self.player.inventory else 'Vide'}"
+        """Draw inventory button, coins, controls, and loading indicators"""
+        # Draw inventory button
+        mouse_pos = pygame.mouse.get_pos()
+        is_hovering = self.inv_button_rect.collidepoint(mouse_pos)
+        
+        button_color = (80, 80, 80) if is_hovering else (60, 60, 60)
+        pygame.draw.rect(self.screen, button_color, self.inv_button_rect)
+        pygame.draw.rect(self.screen, c.Colors.WHITE, self.inv_button_rect, 2)
+        
+        # Draw button text
+        button_text = self.small_font.render("Inventaire", True, c.Colors.WHITE)
+        text_x = self.inv_button_rect.x + (self.inv_button_rect.width - button_text.get_width()) // 2
+        text_y = self.inv_button_rect.y + (self.inv_button_rect.height - button_text.get_height()) // 2
+        self.screen.blit(button_text, (text_x, text_y))
+        
+        # Draw quick info below button
         coins_text = f"Pièces: {self.player.coins}"
-        
-        inv_surface = self.small_font.render(inventory_text, True, c.Colors.WHITE)
+        objects_text = f"Objets: {len(self.player.inventory)}"
+
         coins_surface = self.small_font.render(coins_text, True, c.Colors.WHITE)
-        
-        self.screen.blit(inv_surface, (10, 10))
-        self.screen.blit(coins_surface, (10, 35))
+        objects_surface = self.small_font.render(objects_text, True, c.Colors.WHITE)
+
+        self.screen.blit(coins_surface, (12, 55))
+        self.screen.blit(objects_surface, (12, 90))
         
         # Draw controls
-        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | ECHAP : Fermer", True, c.Colors.WHITE)
+        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | I : Inventaire | ECHAP : Fermer", True, c.Colors.WHITE)
         self.screen.blit(controls, (10, c.Screen.HEIGHT - 25))
         
         # Draw loading indicators (top right)
@@ -205,10 +224,18 @@ class Game:
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
 
     def handle_input(self):
-        """Handle keyboard input"""
+        """Handle keyboard and mouse input"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+            
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click
+                    # Check if inventory button was clicked
+                    if self.inv_button_rect.collidepoint(event.pos):
+                        if not self.dialogue_manager.active:
+                            self.inventory_menu.toggle()
+            
             if event.type == pygame.KEYDOWN:
                 # Chat text input when dialogue is active
                 if self.dialogue_manager.active:
@@ -221,17 +248,21 @@ class Game:
                         self.dialogue_manager.handle_text_input(event)
                 
                 # Game controls
-                if event.key == pygame.K_e and not self.dialogue_manager.active:
+                if event.key == pygame.K_e and not self.dialogue_manager.active and not self.inventory_menu.active:
                     self.interact_with_nearby_npc()
                     if not self.dialogue_manager.active:
                         self.pickup_nearby_item()
+                
                 if event.key == pygame.K_ESCAPE:
-                    self.dialogue_manager.close()
+                    if self.inventory_menu.active:
+                        self.inventory_menu.close()
+                    else:
+                        self.dialogue_manager.close()
         return True
     
     def update_player_movement(self):
         """Update player position based on input"""
-        if not self.dialogue_manager.active:
+        if not self.dialogue_manager.active and not self.inventory_menu.active:
             keys = pygame.key.get_pressed()
             dx = dy = 0
             
@@ -272,6 +303,7 @@ class Game:
             self.draw_world()
             self.draw_ui()
             self.dialogue_manager.draw(self.screen)
+            self.inventory_menu.draw(self.screen, self.player)
             
             pygame.display.flip()
             self.clock.tick(60)
