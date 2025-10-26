@@ -5,7 +5,7 @@ import sys
 from typing import List
 
 import constants as c
-from entities import Player, NPC, Item
+from entities import Player, NPC, Item, get_npc_name_generator
 from dialogue_manager import DialogueManager
 from llm_request_queue import get_llm_task_count, init_llm_queue
 from loading_indicator import LoadingIndicator
@@ -41,6 +41,7 @@ class Game:
         self.dialogue_manager = DialogueManager(self.world_width, self.world_height)
         self.dialogue_manager.items_list = self.items
         self.dialogue_manager.player = self.player
+        get_npc_name_generator() # Initialize the name generator
         
         # Camera
         self.camera_x = 0

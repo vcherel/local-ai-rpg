@@ -49,7 +49,9 @@ class DialogueManager:
         self.player: Player = None
     
     def interact_with_npc(self, npc: NPC):
-        """Start interaction with an NPC"""
+        # Assign name if not already done
+        npc.assign_name()
+
         # Check if player has quest item
         if npc.has_active_quest and npc.quest_item_name in self.player.inventory:
             # Complete quest
