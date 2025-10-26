@@ -29,6 +29,8 @@ class Colors:
 
 @dataclass(frozen=True)
 class Hyperparameters:
+    GPU_LAYERS: int = -1
+    CONTEXT_SIZE: int = 4096
     MAX_TOKENS: int = 200
     TEMPERATURE: float = 0.8
     REPETITION_PENALTY: float = 1.2

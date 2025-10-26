@@ -138,10 +138,12 @@ def init_llm_queue():
     global llm_queue, llm
     llm = Llama(
         model_path="./models/LFM2-2.6B-Q4_0.gguf",
-        n_gpu_layers=20,
+        n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
         verbose=False,
-        n_ctx=128000,
+        n_ctx=c.Hyperparameters.CONTEXT_SIZE,
         flash_attn=True,
+        use_mlock=True,
+        n_threads=8,
         seed=int(time.time() * 1000) % (2**31)
     )
     llm_queue = LLMRequestQueue(llm)
@@ -154,11 +156,9 @@ def get_llm_task_count():
     return llm_queue.get_active_task_count()
 
 def generate_response_queued(prompt, system_prompt):
-    """Generate response using the queue (blocking)"""
     return llm_queue.generate_response(prompt, system_prompt)
 
 def generate_response_stream_queued(prompt, system_prompt):
-    """Generate streaming response using the queue"""
     yield from llm_queue.generate_response_stream(prompt, system_prompt)
 
 def generate_response_internal(prompt, system_prompt):
@@ -192,6 +192,7 @@ def generate_response_internal(prompt, system_prompt):
     
     return generated_text
 
+CHAR_FILTER = str.maketrans('', '', '"«»')
 def generate_response_stream_internal(prompt, system_prompt):
     if system_prompt:
         formatted_prompt = (
@@ -217,10 +218,8 @@ def generate_response_stream_internal(prompt, system_prompt):
     
     accumulated_text = ""
     started = False
-    
     for output in stream:
         new_token = output.get("choices", [{}])[0].get("text", "")
-        new_token = new_token.translate(str.maketrans('', '', '"«»'))
         
         if new_token:
             started = True
@@ -228,4 +227,4 @@ def generate_response_stream_internal(prompt, system_prompt):
             break
         
         accumulated_text += new_token
-        yield accumulated_text
+        yield accumulated_text.translate(CHAR_FILTER)
