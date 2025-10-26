@@ -182,7 +182,7 @@ class DialogueManager:
 
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate new quest
-            system_prompt = "Tu es un PNJ dans un RPG. Tu demandes de l'aide au joueur en une seule phrase."
+            system_prompt = f"Tu es {self.current_npc.name}, un PNJ dans un RPG. Tu demandes de l'aide au joueur en une seule phrase."
             prompt = "Demande au joueur de récupérer un objet. Indique l'objet, où il se trouve, et pourquoi tu en as besoin."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
 
@@ -195,7 +195,7 @@ class DialogueManager:
         elif npc.has_active_quest:
             if npc.quest_complete:
                 # Quest completion dialogue
-                system_prompt = "Tu es un PNJ dans un RPG. Le joueur vient de terminer ta quête."
+                system_prompt = f"Tu es {self.current_npc.name}, un PNJ dans un RPG. Le joueur vient de terminer ta quête."
                 prompt = (
                     f"Le joueur t'a apporté {npc.quest_item.name} ({npc.quest_content}). "
                     f"Remercie-le en une phrase et mentionne sa récompense en pièces."
@@ -212,7 +212,7 @@ class DialogueManager:
 
         else:
             # Casual conversation
-            system_prompt = "Tu es un PNJ dans un RPG. Tu discutes brièvement avec le joueur."
+            system_prompt = f"Tu es {self.current_npc.name}, un PNJ dans un RPG. Tu discutes brièvement avec le joueur."
             prompt = "Dis une courte réplique au joueur pour le saluer."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
 

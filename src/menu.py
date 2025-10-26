@@ -28,15 +28,19 @@ class InventoryMenu:
         
     def get_slot_at_mouse(self, mouse_x, mouse_y, menu_x, menu_y):
         """Returns the slot index at the given mouse position, or None"""
+        # Convert mouse position to menu-relative coordinates
+        relative_mouse_x = mouse_x - menu_x
+        relative_mouse_y = mouse_y - menu_y
+        
         grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
         grid_start_x = (self.width - grid_width) // 2
         grid_start_y = self.padding + 100
         
-        if mouse_x < grid_start_x or mouse_y < grid_start_y:
+        if relative_mouse_x < grid_start_x or relative_mouse_y < grid_start_y:
             return None
             
-        col = (mouse_x - grid_start_x) // (self.cell_size + self.cell_padding)
-        row = (mouse_y - grid_start_y) // (self.cell_size + self.cell_padding)
+        col = (relative_mouse_x - grid_start_x) // (self.cell_size + self.cell_padding)
+        row = (relative_mouse_y - grid_start_y) // (self.cell_size + self.cell_padding)
         
         if col >= self.grid_cols or row >= self.grid_rows:
             return None
@@ -45,8 +49,8 @@ class InventoryMenu:
         cell_x = grid_start_x + col * (self.cell_size + self.cell_padding)
         cell_y = grid_start_y + row * (self.cell_size + self.cell_padding)
         
-        if (mouse_x >= cell_x and mouse_x < cell_x + self.cell_size and
-            mouse_y >= cell_y and mouse_y < cell_y + self.cell_size):
+        if (relative_mouse_x >= cell_x and relative_mouse_x < cell_x + self.cell_size and
+            relative_mouse_y >= cell_y and relative_mouse_y < cell_y + self.cell_size):
             return row * self.grid_cols + col
         
         return None
