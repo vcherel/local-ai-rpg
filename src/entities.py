@@ -5,6 +5,7 @@ import threading
 import pygame
 import random
 import time
+from typing import List
 
 import constants as c
 from llm_request_queue import generate_response_queued
@@ -83,7 +84,7 @@ class NPC:
         self.id = npc_id
         self.has_active_quest = False
         self.quest_content = None
-        self.quest_item_name = None
+        self.quest_item: Item = None
         self.quest_complete = False
         
         # NPCs start without a specific name
@@ -145,7 +146,7 @@ class Player:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.inventory = []
+        self.inventory: List[Item] = []
         self.coins = 0
     
     def move(self, dx, dy, world_width, world_height):
@@ -179,47 +180,43 @@ class Item:
         self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
     
-    def draw(self, screen, camera_x, camera_y):
-        if not self.picked_up:
-            screen_x = self.x - camera_x - c.Size.ITEM // 2
-            screen_y = self.y - camera_y - c.Size.ITEM // 2
-            center = (screen_x + c.Size.ITEM // 2, screen_y + c.Size.ITEM // 2)
-            size = c.Size.ITEM // 2
-
-            if self.shape == "circle":
-                pygame.draw.circle(screen, c.Colors.BLACK, center, size, 2)
-                pygame.draw.circle(screen, self.color, center, size - 1)
-
-            elif self.shape == "triangle":
-                points = [
-                    (center[0], center[1] - size),
-                    (center[0] - size, center[1] + size),
-                    (center[0] + size, center[1] + size)
-                ]
-                pygame.draw.polygon(screen, c.Colors.BLACK, points, 2)
-                pygame.draw.polygon(screen, self.color, points)
-
-            elif self.shape == "pentagon":
-                points = [
-                    (center[0], center[1] - size),
-                    (center[0] - size * 0.95, center[1] - size * 0.31),
-                    (center[0] - size * 0.59, center[1] + size * 0.81),
-                    (center[0] + size * 0.59, center[1] + size * 0.81),
-                    (center[0] + size * 0.95, center[1] - size * 0.31)
-                ]
-                pygame.draw.polygon(screen, c.Colors.BLACK, points, 2)
-                pygame.draw.polygon(screen, self.color, points)
-
-            elif self.shape == "star":
-                points = []
-                for i in range(10):
-                    angle = i * 36  # 360 / 10
-                    r = size if i % 2 == 0 else size / 2
-                    x = center[0] + r * math.sin(math.radians(angle))
-                    y = center[1] - r * math.cos(math.radians(angle))
-                    points.append((x, y))
-                pygame.draw.polygon(screen, c.Colors.BLACK, points, 2)
-                pygame.draw.polygon(screen, self.color, points)
+    def draw(self, screen, camera_x, camera_y):        
+        screen_x = self.x - camera_x - c.Size.ITEM // 2
+        screen_y = self.y - camera_y - c.Size.ITEM // 2
+        center = (screen_x + c.Size.ITEM // 2, screen_y + c.Size.ITEM // 2)
+        size = c.Size.ITEM // 2
+        
+        if self.shape == "circle":
+            pygame.draw.circle(screen, c.Colors.BLACK, center, size, 2)
+            pygame.draw.circle(screen, self.color, center, size - 1)
+        elif self.shape == "triangle":
+            points = [
+                (center[0], center[1] - size),
+                (center[0] - size, center[1] + size),
+                (center[0] + size, center[1] + size)
+            ]
+            pygame.draw.polygon(screen, c.Colors.BLACK, points, 2)
+            pygame.draw.polygon(screen, self.color, points)
+        elif self.shape == "pentagon":
+            points = [
+                (center[0], center[1] - size),
+                (center[0] - size * 0.95, center[1] - size * 0.31),
+                (center[0] - size * 0.59, center[1] + size * 0.81),
+                (center[0] + size * 0.59, center[1] + size * 0.81),
+                (center[0] + size * 0.95, center[1] - size * 0.31)
+            ]
+            pygame.draw.polygon(screen, c.Colors.BLACK, points, 2)
+            pygame.draw.polygon(screen, self.color, points)
+        elif self.shape == "star":
+            points = []
+            for i in range(10):
+                angle = i * 36
+                r = size if i % 2 == 0 else size / 2
+                x = center[0] + r * math.sin(math.radians(angle))
+                y = center[1] - r * math.cos(math.radians(angle))
+                points.append((x, y))
+            pygame.draw.polygon(screen, c.Colors.BLACK, points, 2)
+            pygame.draw.polygon(screen, self.color, points)
     
     def distance_to_player(self, player):
         return math.hypot(self.x - player.x, self.y - player.y)

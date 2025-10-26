@@ -53,9 +53,9 @@ class DialogueManager:
         npc.assign_name()
 
         # Check if player has quest item
-        if npc.has_active_quest and npc.quest_item_name in self.player.inventory:
+        if npc.has_active_quest and npc.quest_item in self.player.inventory:
             # Complete quest
-            self.player.inventory.remove(npc.quest_item_name)
+            self.player.inventory.remove(npc.quest_item)
             npc.quest_complete = True
         
         self.current_npc = npc
@@ -141,8 +141,8 @@ class DialogueManager:
         system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG. "
         
         if npc.has_active_quest and not npc.quest_complete:
-            system_prompt += f"Tu as demandé au joueur de récupérer {npc.quest_item_name or 'un objet'}."
-            if npc.quest_item_name in self.player.inventory:
+            system_prompt += f"Tu as demandé au joueur de récupérer {npc.quest_item.name or 'un objet'}."
+            if npc.quest_item in self.player.inventory:
                 system_prompt += "Le joueur l'a maintenant dans son inventaire. "
             else:
                 system_prompt += "Le joueur ne l'a pas encore trouvé. "
@@ -197,7 +197,7 @@ class DialogueManager:
                 # Quest completion dialogue
                 system_prompt = "Tu es un PNJ dans un RPG. Le joueur vient de terminer ta quête."
                 prompt = (
-                    f"Le joueur t'a apporté {npc.quest_item_name} ({npc.quest_content}). "
+                    f"Le joueur t'a apporté {npc.quest_item.name} ({npc.quest_content}). "
                     f"Remercie-le en une phrase et mentionne sa récompense en pièces."
                 )
                 self.generator = generate_response_stream_queued(prompt, system_prompt)
@@ -208,7 +208,7 @@ class DialogueManager:
                 # Reset quest status
                 npc.has_active_quest = False
                 npc.quest_complete = False
-                npc.quest_item_name = None
+                npc.quest_item = None
 
         else:
             # Casual conversation
@@ -230,12 +230,12 @@ class DialogueManager:
         
         # Process the extracted item name
         item_name = item_name.strip().rstrip('.')
-        npc.quest_item_name = item_name
-        
-        # Spawn the item
+
+        # Create the quest item
         item_x = random.randint(100, self.world_width - 100)
         item_y = random.randint(100, self.world_height - 100)
-        self.items_list.append(Item(item_x, item_y, item_name))
+        npc.quest_item = Item(item_x, item_y, item_name)
+        self.items_list.append(npc.quest_item) # Add to the global items list
 
     def _execute_reward_extraction(self):
         """Execute coin reward extraction (called when dialogue closes)"""

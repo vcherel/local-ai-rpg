@@ -40,7 +40,7 @@ class Game:
         
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.world_width, self.world_height)
-        self.dialogue_manager.items_list = self.items
+        self.dialogue_manager.items_list = self.items  # To spawn quest items
         self.dialogue_manager.player = self.player
         get_npc_name_generator() # Initialize the name generator
         
@@ -77,7 +77,7 @@ class Game:
         for item in self.items:
             if not item.picked_up and item.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
                 item.picked_up = True
-                self.player.inventory.append(item.name)
+                self.player.inventory.append(item)
                 break
     
     def draw_ui(self):
@@ -143,9 +143,9 @@ class Game:
             npc.draw(self.screen, self.camera_x, self.camera_y)
         
         # Items
-        for item in self.items:
+        for item in (i for i in self.items if not i.picked_up):
             item.draw(self.screen, self.camera_x, self.camera_y)
-        
+      
         # Player
         self.player.draw(self.screen, self.camera_x, self.camera_y)
         
@@ -218,7 +218,7 @@ class Game:
             if (
                 npc.has_active_quest
                 and not npc.quest_complete
-                and npc.quest_item_name in self.player.inventory
+                and npc.quest_item in self.player.inventory
             ):
                 # Yellow arrow (quest return indicator)
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
