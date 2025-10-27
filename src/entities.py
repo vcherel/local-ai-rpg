@@ -166,36 +166,46 @@ class Player:
         screen_y = self.y - camera_y - c.Size.PLAYER // 2
         border_thickness = 2  # thickness of the white border
 
-        # Draw white border
-        pygame.draw.rect(
-            screen,
-            c.Colors.WHITE,
-            (screen_x - border_thickness, screen_y - border_thickness,
-            c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2)
+        # Create player surface with per-pixel alpha
+        player_surf = pygame.Surface(
+            (c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2),
+            pygame.SRCALPHA
         )
 
-        # Draw main black rectangle
-        pygame.draw.rect(screen, c.Colors.BLACK,
-                        (screen_x, screen_y, c.Size.PLAYER, c.Size.PLAYER))
+        # Draw white border
+        pygame.draw.rect(
+            player_surf,
+            c.Colors.WHITE,
+            (0, 0, c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2)
+        )
 
-        # Draw semi-transparent white arrow showing facing direction
-        arrow_distance = 50  # distance from player center
-        arrow_size = 10      # arrow triangle size
-        arrow_alpha = 128    # 0-255 transparency
+        # Draw inner black square
+        pygame.draw.rect(
+            player_surf,
+            c.Colors.BLACK,
+            (border_thickness, border_thickness, c.Size.PLAYER, c.Size.PLAYER)
+        )
 
-        # Compute arrow position
+        # Rotate the player surface around its center
+        rotated_surf = pygame.transform.rotate(player_surf, -math.degrees(self.angle))
+        rect = rotated_surf.get_rect(center=(screen_x + c.Size.PLAYER // 2, screen_y + c.Size.PLAYER // 2))
+        screen.blit(rotated_surf, rect)
+
+        # Draw direction arrow
+        arrow_distance = 50
+        arrow_size = 10
+        arrow_alpha = 128
+
         center_x = screen_x + c.Size.PLAYER / 2
         center_y = screen_y + c.Size.PLAYER / 2
         arrow_x = center_x + math.cos(self.angle) * arrow_distance
         arrow_y = center_y + math.sin(self.angle) * arrow_distance
 
-        # Arrowhead triangle points
         left_x = arrow_x + math.cos(self.angle + math.pi * 0.75) * arrow_size
         left_y = arrow_y + math.sin(self.angle + math.pi * 0.75) * arrow_size
         right_x = arrow_x + math.cos(self.angle - math.pi * 0.75) * arrow_size
         right_y = arrow_y + math.sin(self.angle - math.pi * 0.75) * arrow_size
 
-        # Draw to a temporary transparent surface
         arrow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
         pygame.draw.polygon(
             arrow_surface,
@@ -203,7 +213,6 @@ class Player:
             [(arrow_x, arrow_y), (left_x, left_y), (right_x, right_y)]
         )
         screen.blit(arrow_surface, (0, 0))
-
 
 class Item:
     def __init__(self, x, y, name):
