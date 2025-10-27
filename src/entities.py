@@ -176,54 +176,40 @@ class Player:
         self.y += dy
 
     def draw(self, screen: pygame.Surface):
-        """Draw player at screen center, always facing up"""        
+        """Draw player at screen bottom center, always facing up"""
         border_thickness = 2
-        
-        # Create player surface
+        arm_radius = c.Size.PLAYER // 3.5
+        extra_space = arm_radius * 2
         player_surf = pygame.Surface(
-            (c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2),
+            (c.Size.PLAYER + border_thickness * 2 + extra_space * 2, 
+            c.Size.PLAYER + border_thickness * 2),
             pygame.SRCALPHA
         )
         
-        # Draw white border
-        pygame.draw.rect(
+        x_offset = extra_space
+
+        # Draw body
+        pygame.draw.circle(
             player_surf,
-            c.Colors.WHITE,
-            (0, 0, c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2)
+            c.Colors.PLAYER,
+            (x_offset + c.Size.PLAYER // 2 + border_thickness, c.Size.PLAYER // 2 + border_thickness),
+            c.Size.PLAYER // 2 + border_thickness
         )
         
-        # Draw inner black square
-        pygame.draw.rect(
-            player_surf,
-            c.Colors.BLACK,
-            (border_thickness, border_thickness, c.Size.PLAYER, c.Size.PLAYER)
-        )
+        # Draw arms
+        arm_y = (c.Size.PLAYER + border_thickness * 2) // 3.5
+        distance_arm = 10
+        left_arm_x = arm_radius + distance_arm
+        pygame.draw.circle(player_surf, c.Colors.BLACK, (left_arm_x, arm_y), arm_radius)
+        pygame.draw.circle(player_surf, c.Colors.PLAYER, (left_arm_x, arm_y), arm_radius - border_thickness)
         
+        right_arm_x = c.Size.PLAYER + border_thickness * 2 + extra_space * 2 - arm_radius - distance_arm
+        pygame.draw.circle(player_surf, c.Colors.BLACK, (right_arm_x, arm_y), arm_radius)
+        pygame.draw.circle(player_surf, c.Colors.PLAYER, (right_arm_x, arm_y), arm_radius - border_thickness)
+
         # Player is always drawn facing up
         rect = player_surf.get_rect(center=(c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y))
         screen.blit(player_surf, rect)
-        
-        # Draw direction arrow pointing up
-        arrow_distance = 50
-        arrow_size = 10
-        arrow_alpha = 128
-        
-        arrow_x = c.Screen.ORIGIN_X
-        arrow_y = c.Screen.ORIGIN_Y - arrow_distance
-        
-        left_x = arrow_x - arrow_size
-        left_y = arrow_y + arrow_size
-        
-        right_x = arrow_x + arrow_size
-        right_y = arrow_y + arrow_size
-        
-        arrow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
-        pygame.draw.polygon(
-            arrow_surface,
-            (255, 255, 255, arrow_alpha),
-            [(arrow_x, arrow_y), (left_x, left_y), (right_x, right_y)]
-        )
-        screen.blit(arrow_surface, (0, 0))
 
 class Item:
     def __init__(self, x, y, name):

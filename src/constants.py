@@ -5,7 +5,7 @@ class Screen:
     WIDTH: int = 1800
     HEIGHT: int = 900
     ORIGIN_X: int = WIDTH // 2
-    ORIGIN_Y: int = HEIGHT // 2
+    ORIGIN_Y: int = HEIGHT // 2 + 300
 
 @dataclass(frozen=True)
 class Size:
@@ -30,6 +30,7 @@ class Colors:
     DARK_GRAY: tuple = (50, 50, 50)
     CYAN: tuple = (0, 255, 255)
     RED: tuple = (255, 0, 0)
+    PLAYER: tuple = (255, 200, 160)
 
 @dataclass(frozen=True)
 class Hyperparameters:
