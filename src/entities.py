@@ -81,6 +81,7 @@ class NPC:
     def __init__(self, x, y, npc_id):
         self.x = x
         self.y = y
+        self.angle = random.uniform(0, 2 * math.pi)
         self.color = random_color()
         self.id = npc_id
         self.has_active_quest = False
@@ -101,60 +102,60 @@ class NPC:
         if self.has_been_named and self.name:
             return self.name
         return ""
-    
-    def draw(self, screen: pygame.Surface, camera: Camera):
-        """Draw NPC with rotation applied"""
-        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
 
-        # NPC size and border
+    def draw(self, screen: pygame.Surface, camera: Camera):
+        """Draw NPC with correct rotation relative to camera"""
+        # Rotate NPC position by camera
+        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
+        
         npc_size = c.Size.NPC
         border_thickness = 2
-
-        # Create surface slightly bigger to accommodate border
-        npc_surface = pygame.Surface((npc_size + border_thickness*2, npc_size + border_thickness*2), pygame.SRCALPHA)
-
-        # Draw black border
+        
+        # NPC surface
+        npc_surface = pygame.Surface(
+            (npc_size + border_thickness*2, npc_size + border_thickness*2),
+            pygame.SRCALPHA
+        )
         pygame.draw.rect(
             npc_surface,
             c.Colors.BLACK,
             (0, 0, npc_size + border_thickness*2, npc_size + border_thickness*2)
         )
-
-        # Draw NPC rectangle inside border
         pygame.draw.rect(
             npc_surface,
             self.color,
             (border_thickness, border_thickness, npc_size, npc_size)
         )
-
-        # Rotate the whole surface
-        rotated_surface = pygame.transform.rotate(npc_surface, camera.angle)
+        
+        # Add camera angle to NPC angle to maintain world-space orientation
+        visual_angle = self.angle + camera.angle
+        rotated_surface = pygame.transform.rotate(npc_surface, math.degrees(-visual_angle))
         rect = rotated_surface.get_rect(center=(rotated_x, rotated_y))
-
-        # Blit to screen
         screen.blit(rotated_surface, rect.topleft)
-
-        # Exclamation mark
+        
+        # Exclamation mark for active quests
         if self.has_active_quest and not self.quest_complete:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
             text_rect = text.get_rect(center=(rotated_x, rotated_y - npc_size // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
-
+        
         # Name label
-        name_font = pygame.font.SysFont("arial", 16)
         display_name = self.get_display_name()
-        name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-        name_rect = name_surface.get_rect(center=(rotated_x, rotated_y + npc_size // 2 + 15))
-
-        if self.has_been_named:
+        if display_name:
+            name_font = pygame.font.SysFont("arial", 16)
+            name_surface = name_font.render(display_name, True, c.Colors.WHITE)
+            name_rect = name_surface.get_rect(center=(rotated_x, rotated_y + npc_size // 2 + 15))
+            
+            # Background box
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(bg_surface, (0, 0, 0, 180), bg_surface.get_rect(), border_radius=6)
             screen.blit(bg_surface, bg_rect)
-
-        screen.blit(name_surface, name_rect)
+            
+            # Draw name
+            screen.blit(name_surface, name_rect)
 
     def distance_to_player(self, player):
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
@@ -175,10 +176,7 @@ class Player:
         self.y += dy
 
     def draw(self, screen: pygame.Surface):
-        """Draw player at screen center, always facing up"""
-        screen_center_x = screen.get_width() // 2
-        screen_center_y = screen.get_height() // 2
-        
+        """Draw player at screen center, always facing up"""        
         border_thickness = 2
         
         # Create player surface
@@ -202,7 +200,7 @@ class Player:
         )
         
         # Player is always drawn facing up
-        rect = player_surf.get_rect(center=(screen_center_x, screen_center_y))
+        rect = player_surf.get_rect(center=(c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y))
         screen.blit(player_surf, rect)
         
         # Draw direction arrow pointing up
@@ -210,8 +208,8 @@ class Player:
         arrow_size = 10
         arrow_alpha = 128
         
-        arrow_x = screen_center_x
-        arrow_y = screen_center_y - arrow_distance
+        arrow_x = c.Screen.ORIGIN_X
+        arrow_y = c.Screen.ORIGIN_Y - arrow_distance
         
         left_x = arrow_x - arrow_size
         left_y = arrow_y + arrow_size
