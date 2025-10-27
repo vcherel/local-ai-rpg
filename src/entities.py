@@ -152,9 +152,15 @@ class Player:
         self.coins = 0
     
     def move(self, dx, dy, world_width, world_height, world_mouse_x, world_mouse_y):
-        # Avoid moving out of bounds
-        new_x = max(c.Size.PLAYER//2, min(self.x + dx, world_width - c.Size.PLAYER//2))
-        new_y = max(c.Size.PLAYER//2, min(self.y + dy, world_height - c.Size.PLAYER//2))
+        # Handle diagonal movement normalization and boundary checks
+        if abs(dx) != 0 and abs(dy) != 0:
+            diag_factor = 1 / math.sqrt(2)
+            new_x = max(c.Size.PLAYER//2, min(self.x + dx * diag_factor, world_width - c.Size.PLAYER//2))
+            new_y = max(c.Size.PLAYER//2, min(self.y + dy * diag_factor, world_height - c.Size.PLAYER//2))
+        else:
+            new_x = max(c.Size.PLAYER//2, min(self.x + dx, world_width - c.Size.PLAYER//2))
+            new_y = max(c.Size.PLAYER//2, min(self.y + dy, world_height - c.Size.PLAYER//2))
+
         self.x = new_x
         self.y = new_y
 

@@ -13,7 +13,7 @@ class Size:
 
 @dataclass(frozen=True)
 class Game:
-    PLAYER_SPEED: int = 5
+    PLAYER_SPEED: int = 8
     INTERACTION_DISTANCE: int = 50
     NB_NPCS: int = 20
 
