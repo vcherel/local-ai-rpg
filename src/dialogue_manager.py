@@ -178,7 +178,7 @@ class DialogueManager:
         # Choose type of interaction
         interaction_type = random.choices(
             ["quest", "talk"],
-            weights=[0.6, 0.4],
+            weights=[0.8, 0.2],
             k=1
         )[0]
 
