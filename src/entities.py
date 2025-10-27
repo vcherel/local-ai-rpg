@@ -176,14 +176,34 @@ class Player:
 
         # Draw main black rectangle
         pygame.draw.rect(screen, c.Colors.BLACK,
-                         (screen_x, screen_y, c.Size.PLAYER, c.Size.PLAYER))
+                        (screen_x, screen_y, c.Size.PLAYER, c.Size.PLAYER))
 
-        # Draw facing direction
-        end_x = screen_x + c.Size.PLAYER/2 + math.cos(self.angle) * 15
-        end_y = screen_y + c.Size.PLAYER/2 + math.sin(self.angle) * 15
-        pygame.draw.line(screen, c.Colors.RED,
-                         (screen_x + c.Size.PLAYER/2, screen_y + c.Size.PLAYER/2),
-                         (end_x, end_y), 2)
+        # Draw semi-transparent white arrow showing facing direction
+        arrow_distance = 50  # distance from player center
+        arrow_size = 10      # arrow triangle size
+        arrow_alpha = 128    # 0-255 transparency
+
+        # Compute arrow position
+        center_x = screen_x + c.Size.PLAYER / 2
+        center_y = screen_y + c.Size.PLAYER / 2
+        arrow_x = center_x + math.cos(self.angle) * arrow_distance
+        arrow_y = center_y + math.sin(self.angle) * arrow_distance
+
+        # Arrowhead triangle points
+        left_x = arrow_x + math.cos(self.angle + math.pi * 0.75) * arrow_size
+        left_y = arrow_y + math.sin(self.angle + math.pi * 0.75) * arrow_size
+        right_x = arrow_x + math.cos(self.angle - math.pi * 0.75) * arrow_size
+        right_y = arrow_y + math.sin(self.angle - math.pi * 0.75) * arrow_size
+
+        # Draw to a temporary transparent surface
+        arrow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+        pygame.draw.polygon(
+            arrow_surface,
+            (255, 255, 255, arrow_alpha),
+            [(arrow_x, arrow_y), (left_x, left_y), (right_x, right_y)]
+        )
+        screen.blit(arrow_surface, (0, 0))
+
 
 class Item:
     def __init__(self, x, y, name):
