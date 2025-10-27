@@ -13,10 +13,65 @@ from llm_request_queue import generate_response_queued
 
 def random_color():
     h = random.random()
-    s = 0.6 + 0.4 * random.random()  # moderate to high saturation
-    l = 0.5 + 0.2 * random.random()  # mid to bright
+    s = 0.3 + 0.2 * random.random()
+    l = 0.4 + 0.2 * random.random()
     r, g, b = [int(x * 255) for x in colorsys.hls_to_rgb(h, l, s)]
     return (r, g, b)
+
+def draw_character(surface: pygame.Surface, center_x: int, center_y: int, color: tuple, size: int = c.Size.PLAYER, angle: float = 0):
+    """Draw a character (player or NPC) with body and arms
+    
+    Args:
+        angle: rotation angle in radians (0 = facing up)
+    """
+    border_thickness = 2
+    arm_radius = size // 3.5
+    extra_space = arm_radius * 2
+    
+    char_surf = pygame.Surface(
+        (size + border_thickness * 2 + extra_space * 2, 
+         size + border_thickness * 2),
+        pygame.SRCALPHA
+    )
+    
+    x_offset = extra_space
+
+    # Draw body with border
+    pygame.draw.circle(
+        char_surf,
+        c.Colors.BLACK,
+        (x_offset + size // 2 + border_thickness, size // 2 + border_thickness),
+        size // 2 + border_thickness
+    )
+    pygame.draw.circle(
+        char_surf,
+        color,
+        (x_offset + size // 2 + border_thickness, size // 2 + border_thickness),
+        size // 2
+    )
+    
+    # Draw arms
+    arm_y = (size + border_thickness * 2) // 3.5
+    distance_arm = 10
+    
+    # Left arm
+    left_arm_x = arm_radius + distance_arm
+    pygame.draw.circle(char_surf, c.Colors.BLACK, (left_arm_x, arm_y), arm_radius)
+    pygame.draw.circle(char_surf, color, (left_arm_x, arm_y), arm_radius - border_thickness)
+    
+    # Right arm
+    right_arm_x = size + border_thickness * 2 + extra_space * 2 - arm_radius - distance_arm
+    pygame.draw.circle(char_surf, c.Colors.BLACK, (right_arm_x, arm_y), arm_radius)
+    pygame.draw.circle(char_surf, color, (right_arm_x, arm_y), arm_radius - border_thickness)
+
+    # Rotate if needed
+    if angle != 0:
+        char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
+    
+    # Blit to main surface
+    rect = char_surf.get_rect(center=(center_x, center_y))
+    surface.blit(char_surf, rect)
+
 
 class NPCNameGenerator:
     """Background generator for NPC names"""
@@ -108,30 +163,10 @@ class NPC:
         # Rotate NPC position by camera
         rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
         
+        # Draw character
+        draw_character(screen, rotated_x, rotated_y, self.color, c.Size.NPC, self.angle)
+        
         npc_size = c.Size.NPC
-        border_thickness = 2
-        
-        # NPC surface
-        npc_surface = pygame.Surface(
-            (npc_size + border_thickness*2, npc_size + border_thickness*2),
-            pygame.SRCALPHA
-        )
-        pygame.draw.rect(
-            npc_surface,
-            c.Colors.BLACK,
-            (0, 0, npc_size + border_thickness*2, npc_size + border_thickness*2)
-        )
-        pygame.draw.rect(
-            npc_surface,
-            self.color,
-            (border_thickness, border_thickness, npc_size, npc_size)
-        )
-        
-        # Add camera angle to NPC angle to maintain world-space orientation
-        visual_angle = self.angle + camera.angle
-        rotated_surface = pygame.transform.rotate(npc_surface, math.degrees(-visual_angle))
-        rect = rotated_surface.get_rect(center=(rotated_x, rotated_y))
-        screen.blit(rotated_surface, rect.topleft)
         
         # Exclamation mark for active quests
         if self.has_active_quest and not self.quest_complete:
@@ -177,39 +212,7 @@ class Player:
 
     def draw(self, screen: pygame.Surface):
         """Draw player at screen bottom center, always facing up"""
-        border_thickness = 2
-        arm_radius = c.Size.PLAYER // 3.5
-        extra_space = arm_radius * 2
-        player_surf = pygame.Surface(
-            (c.Size.PLAYER + border_thickness * 2 + extra_space * 2, 
-            c.Size.PLAYER + border_thickness * 2),
-            pygame.SRCALPHA
-        )
-        
-        x_offset = extra_space
-
-        # Draw body
-        pygame.draw.circle(
-            player_surf,
-            c.Colors.PLAYER,
-            (x_offset + c.Size.PLAYER // 2 + border_thickness, c.Size.PLAYER // 2 + border_thickness),
-            c.Size.PLAYER // 2 + border_thickness
-        )
-        
-        # Draw arms
-        arm_y = (c.Size.PLAYER + border_thickness * 2) // 3.5
-        distance_arm = 10
-        left_arm_x = arm_radius + distance_arm
-        pygame.draw.circle(player_surf, c.Colors.BLACK, (left_arm_x, arm_y), arm_radius)
-        pygame.draw.circle(player_surf, c.Colors.PLAYER, (left_arm_x, arm_y), arm_radius - border_thickness)
-        
-        right_arm_x = c.Size.PLAYER + border_thickness * 2 + extra_space * 2 - arm_radius - distance_arm
-        pygame.draw.circle(player_surf, c.Colors.BLACK, (right_arm_x, arm_y), arm_radius)
-        pygame.draw.circle(player_surf, c.Colors.PLAYER, (right_arm_x, arm_y), arm_radius - border_thickness)
-
-        # Player is always drawn facing up
-        rect = player_surf.get_rect(center=(c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y))
-        screen.blit(player_surf, rect)
+        draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Colors.PLAYER)
 
 class Item:
     def __init__(self, x, y, name):
