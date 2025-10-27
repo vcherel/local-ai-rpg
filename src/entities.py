@@ -164,71 +164,82 @@ class Player:
         self.x = x
         self.y = y
         self.angle = 0
-
         self.inventory: List[Item] = []
         self.coins = 0
     
-    def move(self, dx, dy, world_width, world_height, world_mouse_x, world_mouse_y):
-        # Handle diagonal movement normalization and boundary checks
-        if abs(dx) != 0 and abs(dy) != 0:
-            diag_factor = 1 / math.sqrt(2)
-            new_x = max(c.Size.PLAYER//2, min(self.x + dx * diag_factor, world_width - c.Size.PLAYER//2))
-            new_y = max(c.Size.PLAYER//2, min(self.y + dy * diag_factor, world_height - c.Size.PLAYER//2))
-        else:
-            new_x = max(c.Size.PLAYER//2, min(self.x + dx, world_width - c.Size.PLAYER//2))
-            new_y = max(c.Size.PLAYER//2, min(self.y + dy, world_height - c.Size.PLAYER//2))
-
-        self.x = new_x
-        self.y = new_y
-
-        # Update facing direction
-        self.angle = math.atan2(world_mouse_y - self.y, world_mouse_x - self.x)
+    def move(self, dx, dy, world_width, world_height, screen_mouse_x, screen_mouse_y):
+        """Move relative to player's facing direction"""
+        # Update facing direction based on SCREEN mouse position (not world)
+        # Player is always at screen center, so we calculate angle from center to mouse
+        self.angle = math.atan2(screen_mouse_y, screen_mouse_x)
+        
+        # Rotate movement input based on player's angle
+        if dx != 0 or dy != 0:
+            # Normalize diagonal movement
+            if abs(dx) != 0 and abs(dy) != 0:
+                diag_factor = 1 / math.sqrt(2)
+                dx *= diag_factor
+                dy *= diag_factor
+            
+            # Rotate the movement vector by player's angle
+            cos_angle = math.cos(self.angle)
+            sin_angle = math.sin(self.angle)
+            
+            rotated_dx = dx * cos_angle - dy * sin_angle
+            rotated_dy = dx * sin_angle + dy * cos_angle
+            
+            # Apply movement with bounds checking
+            new_x = max(c.Size.PLAYER//2, min(self.x + rotated_dx, world_width - c.Size.PLAYER//2))
+            new_y = max(c.Size.PLAYER//2, min(self.y + rotated_dy, world_height - c.Size.PLAYER//2))
+            
+            self.x = new_x
+            self.y = new_y
     
-    def draw(self, screen: pygame.Surface, camera_x, camera_y, angle):
-        screen_x = self.x - camera_x - c.Size.PLAYER // 2
-        screen_y = self.y - camera_y - c.Size.PLAYER // 2
-        border_thickness = 2  # thickness of the white border
-
-        # Create player surface with per-pixel alpha
+    def draw(self, screen: pygame.Surface):
+        """Draw player at screen center, always facing up"""
+        screen_center_x = screen.get_width() // 2
+        screen_center_y = screen.get_height() // 2
+        
+        border_thickness = 2
+        
+        # Create player surface
         player_surf = pygame.Surface(
             (c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2),
             pygame.SRCALPHA
         )
-
+        
         # Draw white border
         pygame.draw.rect(
             player_surf,
             c.Colors.WHITE,
             (0, 0, c.Size.PLAYER + border_thickness * 2, c.Size.PLAYER + border_thickness * 2)
         )
-
+        
         # Draw inner black square
         pygame.draw.rect(
             player_surf,
             c.Colors.BLACK,
             (border_thickness, border_thickness, c.Size.PLAYER, c.Size.PLAYER)
         )
-
-        # Rotate the player surface around its center
-        rotated_surf = pygame.transform.rotate(player_surf, -math.degrees(angle))
-        rect = rotated_surf.get_rect(center=(screen_x + c.Size.PLAYER // 2, screen_y + c.Size.PLAYER // 2))
-        screen.blit(rotated_surf, rect)
-
-        # Draw direction arrow
+        
+        # Player is always drawn facing up
+        rect = player_surf.get_rect(center=(screen_center_x, screen_center_y))
+        screen.blit(player_surf, rect)
+        
+        # Draw direction arrow pointing up
         arrow_distance = 50
         arrow_size = 10
         arrow_alpha = 128
-
-        center_x = screen_x + c.Size.PLAYER / 2
-        center_y = screen_y + c.Size.PLAYER / 2
-        arrow_x = center_x + math.cos(self.angle) * arrow_distance
-        arrow_y = center_y + math.sin(self.angle) * arrow_distance
-
-        left_x = arrow_x + math.cos(self.angle + math.pi * 0.75) * arrow_size
-        left_y = arrow_y + math.sin(self.angle + math.pi * 0.75) * arrow_size
-        right_x = arrow_x + math.cos(self.angle - math.pi * 0.75) * arrow_size
-        right_y = arrow_y + math.sin(self.angle - math.pi * 0.75) * arrow_size
-
+        
+        arrow_x = screen_center_x
+        arrow_y = screen_center_y - arrow_distance
+        
+        left_x = arrow_x - arrow_size
+        left_y = arrow_y + arrow_size
+        
+        right_x = arrow_x + arrow_size
+        right_y = arrow_y + arrow_size
+        
         arrow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
         pygame.draw.polygon(
             arrow_surface,
