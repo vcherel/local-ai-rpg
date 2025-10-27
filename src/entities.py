@@ -102,54 +102,60 @@ class NPC:
             return self.name
         return ""
     
-    def draw(self, screen: pygame.Surface, camera_x, camera_y, camera: Camera):
-        """Draw NPC with rotation applied"""        
-        # Calculate NPC position relative to camera
-        screen_x = self.x - camera_x
-        screen_y = self.y - camera_y
-        
-        # Apply rotation around screen center
-        rotated_x, rotated_y = camera.rotate_point(screen_x, screen_y)
-        
-        # Calculate draw position (top-left corner)
-        draw_x = rotated_x - c.Size.NPC // 2
-        draw_y = rotated_y - c.Size.NPC // 2
-        
-        # Draw black border
+    def draw(self, screen: pygame.Surface, camera: Camera):
+        """Draw NPC with rotation applied"""
+        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
+
+        # NPC size and border
+        npc_size = c.Size.NPC
         border_thickness = 2
+
+        # Create surface slightly bigger to accommodate border
+        npc_surface = pygame.Surface((npc_size + border_thickness*2, npc_size + border_thickness*2), pygame.SRCALPHA)
+
+        # Draw black border
         pygame.draw.rect(
-            screen,
+            npc_surface,
             c.Colors.BLACK,
-            (draw_x - border_thickness, draw_y - border_thickness,
-            c.Size.NPC + border_thickness * 2, c.Size.NPC + border_thickness * 2)
+            (0, 0, npc_size + border_thickness*2, npc_size + border_thickness*2)
         )
-        
-        # Draw NPC
-        pygame.draw.rect(screen, self.color, (draw_x, draw_y, c.Size.NPC, c.Size.NPC))
-        
-        # Draw exclamation mark if has quest
+
+        # Draw NPC rectangle inside border
+        pygame.draw.rect(
+            npc_surface,
+            self.color,
+            (border_thickness, border_thickness, npc_size, npc_size)
+        )
+
+        # Rotate the whole surface
+        rotated_surface = pygame.transform.rotate(npc_surface, camera.angle)
+        rect = rotated_surface.get_rect(center=(rotated_x, rotated_y))
+
+        # Blit to screen
+        screen.blit(rotated_surface, rect.topleft)
+
+        # Exclamation mark
         if self.has_active_quest and not self.quest_complete:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
-            text_rect = text.get_rect(center=(rotated_x, draw_y - 25 + bob_offset))
+            text_rect = text.get_rect(center=(rotated_x, rotated_y - npc_size // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
-        
-        # Draw name label
+
+        # Name label
         name_font = pygame.font.SysFont("arial", 16)
         display_name = self.get_display_name()
         name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-        name_rect = name_surface.get_rect(center=(rotated_x, draw_y + c.Size.NPC + 15))
-        
+        name_rect = name_surface.get_rect(center=(rotated_x, rotated_y + npc_size // 2 + 15))
+
         if self.has_been_named:
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(bg_surface, (0, 0, 0, 180), bg_surface.get_rect(), border_radius=6)
             screen.blit(bg_surface, bg_rect)
-        
+
         screen.blit(name_surface, name_rect)
 
-    
     def distance_to_player(self, player):
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
 
@@ -230,14 +236,10 @@ class Item:
         self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
     
-    def draw(self, screen: pygame.Surface, camera_x, camera_y, camera: Camera):
+    def draw(self, screen: pygame.Surface, camera: Camera):
         """Draw item with rotation applied"""        
-        # Calculate item position relative to camera
-        screen_x = self.x - camera_x
-        screen_y = self.y - camera_y
-        
         # Apply rotation around screen center
-        rotated_x, rotated_y = camera.rotate_point(screen_x, screen_y)
+        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
         
         # Calculate draw position
         center = (rotated_x, rotated_y)

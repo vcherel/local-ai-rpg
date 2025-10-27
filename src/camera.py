@@ -20,9 +20,9 @@ class Camera:
     
     def rotate_point(self, x, y):
         """Rotate a point around an origin"""
-        # Translate to origin
-        translated_x = x - c.Screen.ORIGIN_X
-        translated_y = y - c.Screen.ORIGIN_Y
+        # Translate to origin (we remove camera position too)
+        translated_x = x - c.Screen.ORIGIN_X - self.x
+        translated_y = y - c.Screen.ORIGIN_Y - self.y
         
         # Rotate
         cos_angle = math.cos(self.angle)

@@ -121,37 +121,20 @@ class Game:
         
         # Floor details
         for (x, y, kind) in self.floor_details:
-            screen_x = x - self.camera.x
-            screen_y = y - self.camera.y
-            rotated_x, rotated_y = self.camera.rotate_point(screen_x, screen_y)
+            rotated_x, rotated_y = self.camera.rotate_point(x, y)
             
             if kind == "stone":
                 pygame.draw.circle(self.screen, (100, 100, 100), (rotated_x, rotated_y), 3)
             else:
                 pygame.draw.circle(self.screen, (255, 0, 0), (rotated_x, rotated_y), 2)
         
-        # World border (calculate 4 corners and rotate)
-        border_corners = [
-            (0 - self.camera.x, 0 - self.camera.y),
-            (self.world_width - self.camera.x, 0 - self.camera.y),
-            (self.world_width - self.camera.x, self.world_height - self.camera.y),
-            (0 - self.camera.x, self.world_height - self.camera.y)
-        ]
-        
-        rotated_corners = []
-        for corner_x, corner_y in border_corners:
-            rotated_x, rotated_y = self.camera.rotate_point(corner_x, corner_y)
-            rotated_corners.append((rotated_x, rotated_y))
-        
-        pygame.draw.lines(self.screen, c.Colors.WHITE, True, rotated_corners, 3)
-        
         # NPCs
         for npc in self.npcs:
-            npc.draw(self.screen, self.camera.x, self.camera.y, self.camera)
+            npc.draw(self.screen, self.camera)
         
         # Items
         for item in (i for i in self.items if not i.picked_up):
-            item.draw(self.screen, self.camera.x, self.camera.y, self.camera)
+            item.draw(self.screen, self.camera)
         
         # Player
         self.player.draw(self.screen)
