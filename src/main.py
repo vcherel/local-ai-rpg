@@ -261,11 +261,12 @@ class Game:
         return True
     
     def update_player_movement(self):
-        """Update player position based on input"""
+        """Update player position based on keyboard and mouse input"""
         if not self.dialogue_manager.active and not self.inventory_menu.active:
             keys = pygame.key.get_pressed()
             dx = dy = 0
-            
+
+            # Keyboard movement
             if keys[pygame.K_z]:
                 dy = -c.Game.PLAYER_SPEED
             if keys[pygame.K_s]:
@@ -274,8 +275,13 @@ class Game:
                 dx = -c.Game.PLAYER_SPEED
             if keys[pygame.K_d]:
                 dx = c.Game.PLAYER_SPEED
-            
-            self.player.move(dx, dy, self.world_width, self.world_height)
+
+            # Mouse movement
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            world_mouse_x = mouse_x + self.camera_x
+            world_mouse_y = mouse_y + self.camera_y
+
+            self.player.move(dx, dy, self.world_width, self.world_height,world_mouse_x, world_mouse_y)
     
     def run(self):
         """Main game loop"""

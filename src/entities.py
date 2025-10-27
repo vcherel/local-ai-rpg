@@ -146,14 +146,20 @@ class Player:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        self.angle = 0
+
         self.inventory: List[Item] = []
         self.coins = 0
     
-    def move(self, dx, dy, world_width, world_height):
+    def move(self, dx, dy, world_width, world_height, world_mouse_x, world_mouse_y):
+        # Avoid moving out of bounds
         new_x = max(c.Size.PLAYER//2, min(self.x + dx, world_width - c.Size.PLAYER//2))
         new_y = max(c.Size.PLAYER//2, min(self.y + dy, world_height - c.Size.PLAYER//2))
         self.x = new_x
         self.y = new_y
+
+        # Update facing direction
+        self.angle = math.atan2(world_mouse_y - self.y, world_mouse_x - self.x)
     
     def draw(self, screen, camera_x, camera_y):
         screen_x = self.x - camera_x - c.Size.PLAYER // 2
@@ -169,7 +175,15 @@ class Player:
         )
 
         # Draw main black rectangle
-        pygame.draw.rect(screen, c.Colors.BLACK, (screen_x, screen_y, c.Size.PLAYER, c.Size.PLAYER))
+        pygame.draw.rect(screen, c.Colors.BLACK,
+                         (screen_x, screen_y, c.Size.PLAYER, c.Size.PLAYER))
+
+        # Draw facing direction
+        end_x = screen_x + c.Size.PLAYER/2 + math.cos(self.angle) * 15
+        end_y = screen_y + c.Size.PLAYER/2 + math.sin(self.angle) * 15
+        pygame.draw.line(screen, c.Colors.RED,
+                         (screen_x + c.Size.PLAYER/2, screen_y + c.Size.PLAYER/2),
+                         (end_x, end_y), 2)
 
 class Item:
     def __init__(self, x, y, name):
