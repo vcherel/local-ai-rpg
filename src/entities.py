@@ -163,19 +163,16 @@ class Player:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.angle = 0
         self.inventory: List[Item] = []
         self.coins = 0
     
-    def move(self, distance, world_width, world_height):
-        """Move player in the direction they are facing (self.angle)"""
-        # Calculate delta based on angle
-        dy = -math.cos(math.radians(self.angle)) * distance
-        dx = math.sin(math.radians(self.angle)) * distance
+    def move(self, distance, world_width, world_height, angle):
+        """Move player in the direction they are facing"""
+        dx = -math.sin(angle) * distance
+        dy = -math.cos(angle) * distance
 
-        # Apply movement with bounds checking
-        self.x = max(c.Size.PLAYER//2, min(self.x + dx, world_width - c.Size.PLAYER//2))
-        self.y = max(c.Size.PLAYER//2, min(self.y + dy, world_height - c.Size.PLAYER//2))
+        self.x += dx
+        self.y += dy
 
     def draw(self, screen: pygame.Surface):
         """Draw player at screen center, always facing up"""

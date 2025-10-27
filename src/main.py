@@ -62,10 +62,6 @@ class Game:
         """Center camera on player"""
         self.camera_x = self.player.x - c.Screen.WIDTH // 2
         self.camera_y = self.player.y - c.Screen.HEIGHT // 2
-        
-        # Clamp camera to world bounds
-        self.camera_x = max(0, min(self.camera_x, self.world_width - c.Screen.WIDTH))
-        self.camera_y = max(0, min(self.camera_y, self.world_height - c.Screen.HEIGHT))
     
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
@@ -122,10 +118,7 @@ class Game:
             self.loading_indicator.draw_task_indicator(self.screen, indicator_x, indicator_y, active_task_count)
     
     def draw_world(self):
-        """Draw all world elements with rotation"""
-        # Update rotation based on player angle
-        self.rotating_camera.update(self.player.angle)
-        
+        """Draw all world elements with rotation"""        
         # Background
         self.screen.fill(c.Colors.GREEN)
         
@@ -296,16 +289,15 @@ class Game:
             if keys[pygame.K_s]:
                 distance -= c.Game.PLAYER_SPEED / 2  # Backward is slower
 
+            # Rotate camera using Q/D
+            if keys[pygame.K_q]:
+                self.rotating_camera.update(c.Game.PLAYER_TURN_SPEED)
+            if keys[pygame.K_d]:
+                self.rotating_camera.update(-c.Game.PLAYER_TURN_SPEED)
+
             # Move player
             if distance != 0:
-                self.player.move(distance, self.world_width, self.world_height)
-
-            # Rotate camera using Q/D
-            camera_rotation_speed = 0.05  # radians per frame
-            if keys[pygame.K_q]:
-                self.rotating_camera.rotation_angle += camera_rotation_speed
-            if keys[pygame.K_d]:
-                self.rotating_camera.rotation_angle -= camera_rotation_speed
+                self.player.move(distance, self.world_width, self.world_height, self.rotating_camera.angle)
     
     def run(self):
         """Main game loop"""
