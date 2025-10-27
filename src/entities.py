@@ -167,34 +167,16 @@ class Player:
         self.inventory: List[Item] = []
         self.coins = 0
     
-    def move(self, dx, dy, world_width, world_height, screen_mouse_x, screen_mouse_y):
-        """Move relative to player's facing direction"""
-        # Update facing direction based on SCREEN mouse position (not world)
-        # Player is always at screen center, so we calculate angle from center to mouse
-        self.angle = math.atan2(screen_mouse_y, screen_mouse_x)
-        
-        # Rotate movement input based on player's angle
-        if dx != 0 or dy != 0:
-            # Normalize diagonal movement
-            if abs(dx) != 0 and abs(dy) != 0:
-                diag_factor = 1 / math.sqrt(2)
-                dx *= diag_factor
-                dy *= diag_factor
-            
-            # Rotate the movement vector by player's angle
-            cos_angle = math.cos(self.angle)
-            sin_angle = math.sin(self.angle)
-            
-            rotated_dx = dx * cos_angle - dy * sin_angle
-            rotated_dy = dx * sin_angle + dy * cos_angle
-            
-            # Apply movement with bounds checking
-            new_x = max(c.Size.PLAYER//2, min(self.x + rotated_dx, world_width - c.Size.PLAYER//2))
-            new_y = max(c.Size.PLAYER//2, min(self.y + rotated_dy, world_height - c.Size.PLAYER//2))
-            
-            self.x = new_x
-            self.y = new_y
-    
+    def move(self, distance, world_width, world_height):
+        """Move player in the direction they are facing (self.angle)"""
+        # Calculate delta based on angle
+        dy = -math.cos(math.radians(self.angle)) * distance
+        dx = math.sin(math.radians(self.angle)) * distance
+
+        # Apply movement with bounds checking
+        self.x = max(c.Size.PLAYER//2, min(self.x + dx, world_width - c.Size.PLAYER//2))
+        self.y = max(c.Size.PLAYER//2, min(self.y + dy, world_height - c.Size.PLAYER//2))
+
     def draw(self, screen: pygame.Surface):
         """Draw player at screen center, always facing up"""
         screen_center_x = screen.get_width() // 2

@@ -123,8 +123,7 @@ class Game:
     
     def draw_world(self):
         """Draw all world elements with rotation"""
-        # Update rotation based on mouse position
-        mouse_x, mouse_y = pygame.mouse.get_pos()
+        # Update rotation based on player angle
         self.rotating_camera.update(self.player.angle)
         
         # Background
@@ -286,35 +285,27 @@ class Game:
         return True
     
     def update_player_movement(self):
-        """Update player position based on keyboard and mouse input"""
+        """Update player position and camera based on keyboard"""
         if not self.dialogue_manager.active and not self.inventory_menu.active:
             keys = pygame.key.get_pressed()
-            dx = dy = 0
-            
-            # Keyboard movement (relative to player's view)
+            distance = 0
+
+            # Player movement (forward/back relative to camera rotation)
             if keys[pygame.K_z]:
-                dy = -c.Game.PLAYER_SPEED  # Forward
+                distance += c.Game.PLAYER_SPEED
             if keys[pygame.K_s]:
-                dy = c.Game.PLAYER_SPEED   # Backward
+                distance -= c.Game.PLAYER_SPEED / 2  # Backward is slower
+
+            # Move player
+            if distance != 0:
+                self.player.move(distance, self.world_width, self.world_height)
+
+            # Rotate camera using Q/D
+            camera_rotation_speed = 0.05  # radians per frame
             if keys[pygame.K_q]:
-                dx = -c.Game.PLAYER_SPEED  # Strafe left
+                self.rotating_camera.rotation_angle += camera_rotation_speed
             if keys[pygame.K_d]:
-                dx = c.Game.PLAYER_SPEED   # Strafe right
-            
-            # Get screen mouse position relative to center
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-            screen_center_x = self.screen.get_width() // 2
-            screen_center_y = self.screen.get_height() // 2
-            
-            # Calculate offset from center (this stays in screen space)
-            screen_mouse_x = mouse_x - screen_center_x
-            screen_mouse_y = mouse_y - screen_center_y
-            
-            # Update player with screen-space mouse coordinates
-            self.player.move(dx, dy, self.world_width, self.world_height, screen_mouse_x, screen_mouse_y)
-            
-            # Update camera rotation to follow player's facing direction
-            self.rotating_camera.update(self.player.angle)
+                self.rotating_camera.rotation_angle -= camera_rotation_speed
     
     def run(self):
         """Main game loop"""
