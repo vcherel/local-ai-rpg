@@ -2,12 +2,13 @@ import colorsys
 import math
 import queue
 import threading
+import time
 import pygame
 import random
-import time
 from typing import List
 
 import constants as c
+from camera import RotatingCamera
 from llm_request_queue import generate_response_queued
 
 def random_color():
@@ -101,42 +102,58 @@ class NPC:
             return self.name
         return ""
     
-    def draw(self, screen: pygame.Surface, camera_x, camera_y):
-        screen_x = self.x - camera_x - c.Size.NPC // 2
-        screen_y = self.y - camera_y - c.Size.NPC // 2
+    def draw(self, screen: pygame.Surface, camera_x, camera_y, rotating_camera: RotatingCamera):
+        """Draw NPC with rotation applied"""
+        # Calculate center of screen (rotation origin)
+        screen_center_x = screen.get_width() / 2
+        screen_center_y = screen.get_height() / 2
+        
+        # Calculate NPC position relative to camera
+        screen_x = self.x - camera_x
+        screen_y = self.y - camera_y
+        
+        # Apply rotation around screen center
+        rotated_x, rotated_y = rotating_camera.rotate_point(
+            screen_x, screen_y, screen_center_x, screen_center_y
+        )
+        
+        # Calculate draw position (top-left corner)
+        draw_x = rotated_x - c.Size.NPC // 2
+        draw_y = rotated_y - c.Size.NPC // 2
         
         # Draw black border
         border_thickness = 2
         pygame.draw.rect(
             screen,
             c.Colors.BLACK,
-            (screen_x - border_thickness, screen_y - border_thickness,
-             c.Size.NPC + border_thickness * 2, c.Size.NPC + border_thickness * 2)
+            (draw_x - border_thickness, draw_y - border_thickness,
+            c.Size.NPC + border_thickness * 2, c.Size.NPC + border_thickness * 2)
         )
         
         # Draw NPC
-        pygame.draw.rect(screen, self.color, (screen_x, screen_y, c.Size.NPC, c.Size.NPC))
+        pygame.draw.rect(screen, self.color, (draw_x, draw_y, c.Size.NPC, c.Size.NPC))
         
         # Draw exclamation mark if has quest
         if self.has_active_quest and not self.quest_complete:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
-            text_rect = text.get_rect(center=(screen_x + c.Size.NPC // 2, screen_y - 25 + bob_offset))
+            text_rect = text.get_rect(center=(rotated_x, draw_y - 25 + bob_offset))
             screen.blit(text, text_rect)
         
         # Draw name label
         name_font = pygame.font.SysFont("arial", 16)
         display_name = self.get_display_name()
         name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-        name_rect = name_surface.get_rect(center=(screen_x + c.Size.NPC // 2, screen_y + c.Size.NPC + 15))
+        name_rect = name_surface.get_rect(center=(rotated_x, draw_y + c.Size.NPC + 15))
         
         if self.has_been_named:
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(bg_surface, (0, 0, 0, 180), bg_surface.get_rect(), border_radius=6)
             screen.blit(bg_surface, bg_rect)
-            screen.blit(name_surface, name_rect)
+        
+        screen.blit(name_surface, name_rect)
 
     
     def distance_to_player(self, player):
@@ -167,7 +184,7 @@ class Player:
         # Update facing direction
         self.angle = math.atan2(world_mouse_y - self.y, world_mouse_x - self.x)
     
-    def draw(self, screen, camera_x, camera_y):
+    def draw(self, screen: pygame.Surface, camera_x, camera_y, angle):
         screen_x = self.x - camera_x - c.Size.PLAYER // 2
         screen_y = self.y - camera_y - c.Size.PLAYER // 2
         border_thickness = 2  # thickness of the white border
@@ -193,7 +210,7 @@ class Player:
         )
 
         # Rotate the player surface around its center
-        rotated_surf = pygame.transform.rotate(player_surf, -math.degrees(self.angle))
+        rotated_surf = pygame.transform.rotate(player_surf, -math.degrees(angle))
         rect = rotated_surf.get_rect(center=(screen_x + c.Size.PLAYER // 2, screen_y + c.Size.PLAYER // 2))
         screen.blit(rotated_surf, rect)
 
@@ -229,12 +246,26 @@ class Item:
         self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
     
-    def draw(self, screen, camera_x, camera_y):        
-        screen_x = self.x - camera_x - c.Size.ITEM // 2
-        screen_y = self.y - camera_y - c.Size.ITEM // 2
-        center = (screen_x + c.Size.ITEM // 2, screen_y + c.Size.ITEM // 2)
+    def draw(self, screen: pygame.Surface, camera_x, camera_y, rotating_camera: RotatingCamera):
+        """Draw item with rotation applied"""
+        # Calculate center of screen (rotation origin)
+        screen_center_x = screen.get_width() / 2
+        screen_center_y = screen.get_height() / 2
+        
+        # Calculate item position relative to camera
+        screen_x = self.x - camera_x
+        screen_y = self.y - camera_y
+        
+        # Apply rotation around screen center
+        rotated_x, rotated_y = rotating_camera.rotate_point(
+            screen_x, screen_y, screen_center_x, screen_center_y
+        )
+        
+        # Calculate draw position
+        center = (rotated_x, rotated_y)
         size = c.Size.ITEM // 2
         
+        # Draw based on shape (same as before, but using rotated positions)
         if self.shape == "circle":
             pygame.draw.circle(screen, c.Colors.BLACK, center, size, 2)
             pygame.draw.circle(screen, self.color, center, size - 1)
