@@ -12,48 +12,55 @@ class LoadingIndicator:
         """Update the rotation angle"""
         self.angle = (self.angle + self.speed) % 360
     
-    def draw_spinner(self, screen, x, y, radius=12, color=(255, 255, 255)):
-        """Draw a rotating spinner at the specified position"""
-        # Draw arc segments to create spinner effect
-        num_segments = 8
+    def draw_spinner(self, screen, x, y, radius=12, color=(255, 220, 150)):
+        num_segments = 12
+        segment_angle = 360 / num_segments
+
         for i in range(num_segments):
-            angle_offset = (360 / num_segments) * i
+            # Create trailing effect
+            angle_offset = segment_angle * i
             current_angle = (self.angle + angle_offset) % 360
-            
-            # Calculate opacity based on position (trailing effect)
-            opacity = int(255 * (i / num_segments))
-            
-            # Calculate arc position
+            opacity = int(255 * ((i + 1) / num_segments))  # fade tail
+
+            # Compute arc positions
             start_angle = math.radians(current_angle)
-            end_angle = math.radians(current_angle + 45)
-            
-            # Draw arc segment
-            arc_color = (*color[:3], opacity) if len(color) == 4 else color
-            
-            # Create points for the arc
+            end_angle = math.radians(current_angle + segment_angle * 0.6)
+
+            # Blend color with alpha
+            arc_color = (*color[:3], opacity)
+
+            # Build arc points
             points = []
-            steps = 5
+            steps = 6
             for step in range(steps + 1):
                 angle = start_angle + (end_angle - start_angle) * (step / steps)
                 px = x + math.cos(angle) * radius
                 py = y + math.sin(angle) * radius
                 points.append((px, py))
-            
-            # Draw the arc as a thick line
-            if len(points) > 1:
-                pygame.draw.lines(screen, arc_color, False, points, 3)
-    
+
+            # Use an intermediate surface to support alpha
+            arc_surface = pygame.Surface((radius * 2 + 6, radius * 2 + 6), pygame.SRCALPHA)
+            offset_points = [(px - x + radius + 3, py - y + radius + 3) for px, py in points]
+            pygame.draw.lines(arc_surface, arc_color, False, offset_points, 3)
+            screen.blit(arc_surface, (x - radius - 3, y - radius - 3))
+
+
     def draw_task_indicator(self, screen, x, y, task_count):
-        """Draw background task indicator"""
-        # Background circle
-        pygame.draw.circle(screen, (0, 0, 0, 180), (x, y), 18)
-        pygame.draw.circle(screen, (255, 200, 100), (x, y), 18, 2)
-        
+        # Semi-transparent background
+        bg_surface = pygame.Surface((40, 40), pygame.SRCALPHA)
+        pygame.draw.circle(bg_surface, (0, 0, 0, 180), (20, 20), 18)
+        pygame.draw.circle(bg_surface, (255, 200, 100, 220), (20, 20), 18, 2)
+
+        # Glow ring for visibility
+        pygame.draw.circle(bg_surface, (255, 240, 180, 100), (20, 20), 20, 4)
+
+        screen.blit(bg_surface, (x - 20, y - 20))
+
         # Spinner
-        self.draw_spinner(screen, x, y, 12, (255, 220, 150))
-        
-        # Task count
+        self.draw_spinner(screen, x, y, 12, (255, 240, 200))
+
+        # Task count number
         font = pygame.font.SysFont("arial", 16, bold=True)
-        text = font.render(str(task_count), True, (255, 230, 180))
+        text = font.render(str(task_count), True, (255, 255, 200))
         text_rect = text.get_rect(center=(x, y))
         screen.blit(text, text_rect)
