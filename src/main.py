@@ -5,7 +5,7 @@ import sys
 from typing import List
 
 import constants as c
-from camera import RotatingCamera
+from camera import Camera
 from entities import Player, NPC, Item, get_npc_name_generator
 from dialogue_manager import DialogueManager
 from llm_request_queue import get_llm_task_count, init_llm_queue
@@ -16,7 +16,7 @@ class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT))
         self.clock = pygame.time.Clock()
-        self.rotating_camera = RotatingCamera()
+        self.camera = Camera()
         
         # World settings
         self.world_width = c.Screen.WIDTH * 2
@@ -50,18 +50,15 @@ class Game:
         self.inventory_menu = InventoryMenu()
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
         
-        # Camera
-        self.camera_x = 0
-        self.camera_y = 0
-        
         # UI
         self.small_font = pygame.font.SysFont("arial", 22)
         self.loading_indicator = LoadingIndicator()
     
     def update_camera(self):
         """Center camera on player"""
-        self.camera_x = self.player.x - c.Screen.WIDTH // 2
-        self.camera_y = self.player.y - c.Screen.HEIGHT // 2
+        new_x = self.player.x - c.Screen.WIDTH // 2
+        new_y = self.player.y - c.Screen.HEIGHT // 2
+        self.camera.update_position(new_x, new_y)
     
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
@@ -122,16 +119,11 @@ class Game:
         # Background
         self.screen.fill(c.Colors.GREEN)
         
-        screen_center_x = c.Screen.WIDTH / 2
-        screen_center_y = c.Screen.HEIGHT / 2
-        
         # Floor details
         for (x, y, kind) in self.floor_details:
-            screen_x = x - self.camera_x
-            screen_y = y - self.camera_y
-            rotated_x, rotated_y = self.rotating_camera.rotate_point(
-                screen_x, screen_y, screen_center_x, screen_center_y
-            )
+            screen_x = x - self.camera.x
+            screen_y = y - self.camera.y
+            rotated_x, rotated_y = self.camera.rotate_point(screen_x, screen_y)
             
             if kind == "stone":
                 pygame.draw.circle(self.screen, (100, 100, 100), (rotated_x, rotated_y), 3)
@@ -140,28 +132,26 @@ class Game:
         
         # World border (calculate 4 corners and rotate)
         border_corners = [
-            (0 - self.camera_x, 0 - self.camera_y),
-            (self.world_width - self.camera_x, 0 - self.camera_y),
-            (self.world_width - self.camera_x, self.world_height - self.camera_y),
-            (0 - self.camera_x, self.world_height - self.camera_y)
+            (0 - self.camera.x, 0 - self.camera.y),
+            (self.world_width - self.camera.x, 0 - self.camera.y),
+            (self.world_width - self.camera.x, self.world_height - self.camera.y),
+            (0 - self.camera.x, self.world_height - self.camera.y)
         ]
         
         rotated_corners = []
         for corner_x, corner_y in border_corners:
-            rotated_x, rotated_y = self.rotating_camera.rotate_point(
-                corner_x, corner_y, screen_center_x, screen_center_y
-            )
+            rotated_x, rotated_y = self.camera.rotate_point(corner_x, corner_y)
             rotated_corners.append((rotated_x, rotated_y))
         
         pygame.draw.lines(self.screen, c.Colors.WHITE, True, rotated_corners, 3)
         
         # NPCs
         for npc in self.npcs:
-            npc.draw(self.screen, self.camera_x, self.camera_y, self.rotating_camera)
+            npc.draw(self.screen, self.camera.x, self.camera.y, self.camera)
         
         # Items
         for item in (i for i in self.items if not i.picked_up):
-            item.draw(self.screen, self.camera_x, self.camera_y, self.rotating_camera)
+            item.draw(self.screen, self.camera.x, self.camera.y, self.camera)
         
         # Player
         self.player.draw(self.screen)
@@ -176,16 +166,16 @@ class Game:
 
         def draw_arrow(target_x, target_y, color):
             # Calculate position relative to camera
-            screen_x = target_x - self.camera_x
-            screen_y = target_y - self.camera_y
+            screen_x = target_x - self.camera.x
+            screen_y = target_y - self.camera.y
 
             # Check if target is off-screen
             if 0 <= screen_x <= c.Screen.WIDTH and 0 <= screen_y <= c.Screen.HEIGHT:
                 return  # On-screen → no indicator
 
             # Calculate direction to target
-            dx = target_x - (self.camera_x + c.Screen.WIDTH // 2)
-            dy = target_y - (self.camera_y + c.Screen.HEIGHT // 2)
+            dx = target_x - (self.camera.x + c.Screen.WIDTH // 2)
+            dy = target_y - (self.camera.y + c.Screen.HEIGHT // 2)
 
             distance = math.hypot(dx, dy)
             if distance == 0:
@@ -291,13 +281,13 @@ class Game:
 
             # Rotate camera using Q/D
             if keys[pygame.K_q]:
-                self.rotating_camera.update(c.Game.PLAYER_TURN_SPEED)
+                self.camera.update_angle(c.Game.PLAYER_TURN_SPEED)
             if keys[pygame.K_d]:
-                self.rotating_camera.update(-c.Game.PLAYER_TURN_SPEED)
+                self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
 
             # Move player
             if distance != 0:
-                self.player.move(distance, self.world_width, self.world_height, self.rotating_camera.angle)
+                self.player.move(distance, self.camera.angle)
     
     def run(self):
         """Main game loop"""

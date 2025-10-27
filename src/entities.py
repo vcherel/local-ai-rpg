@@ -8,7 +8,7 @@ import random
 from typing import List
 
 import constants as c
-from camera import RotatingCamera
+from camera import Camera
 from llm_request_queue import generate_response_queued
 
 def random_color():
@@ -102,20 +102,14 @@ class NPC:
             return self.name
         return ""
     
-    def draw(self, screen: pygame.Surface, camera_x, camera_y, rotating_camera: RotatingCamera):
-        """Draw NPC with rotation applied"""
-        # Calculate center of screen (rotation origin)
-        screen_center_x = screen.get_width() / 2
-        screen_center_y = screen.get_height() / 2
-        
+    def draw(self, screen: pygame.Surface, camera_x, camera_y, camera: Camera):
+        """Draw NPC with rotation applied"""        
         # Calculate NPC position relative to camera
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
         # Apply rotation around screen center
-        rotated_x, rotated_y = rotating_camera.rotate_point(
-            screen_x, screen_y, screen_center_x, screen_center_y
-        )
+        rotated_x, rotated_y = camera.rotate_point(screen_x, screen_y)
         
         # Calculate draw position (top-left corner)
         draw_x = rotated_x - c.Size.NPC // 2
@@ -166,7 +160,7 @@ class Player:
         self.inventory: List[Item] = []
         self.coins = 0
     
-    def move(self, distance, world_width, world_height, angle):
+    def move(self, distance, angle):
         """Move player in the direction they are facing"""
         dx = -math.sin(angle) * distance
         dy = -math.cos(angle) * distance
@@ -236,20 +230,14 @@ class Item:
         self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
     
-    def draw(self, screen: pygame.Surface, camera_x, camera_y, rotating_camera: RotatingCamera):
-        """Draw item with rotation applied"""
-        # Calculate center of screen (rotation origin)
-        screen_center_x = screen.get_width() / 2
-        screen_center_y = screen.get_height() / 2
-        
+    def draw(self, screen: pygame.Surface, camera_x, camera_y, camera: Camera):
+        """Draw item with rotation applied"""        
         # Calculate item position relative to camera
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
         # Apply rotation around screen center
-        rotated_x, rotated_y = rotating_camera.rotate_point(
-            screen_x, screen_y, screen_center_x, screen_center_y
-        )
+        rotated_x, rotated_y = camera.rotate_point(screen_x, screen_y)
         
         # Calculate draw position
         center = (rotated_x, rotated_y)

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 class Screen:
     WIDTH: int = 1800
     HEIGHT: int = 900
+    ORIGIN_X: int = WIDTH // 2
+    ORIGIN_Y: int = HEIGHT // 2
 
 @dataclass(frozen=True)
 class Size:

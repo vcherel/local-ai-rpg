@@ -13,10 +13,7 @@ from entities import NPC, Item, Player
 class DialogueManager:
     """Manages all dialogue, quest, and NPC interaction logic"""
     
-    def __init__(self, world_width: int, world_height: int):
-        self.world_width = world_width
-        self.world_height = world_height
-        
+    def __init__(self, world_width: int, world_height: int):        
         # Dialogue state
         self.active = False
         self.generator = None
@@ -47,6 +44,10 @@ class DialogueManager:
         # References
         self.items_list: List[Item] = None
         self.player: Player = None
+
+        # World dimensions for item placement
+        self.world_width = world_width
+        self.world_height = world_height
     
     def interact_with_npc(self, npc: NPC):
         # Assign name if not already done
