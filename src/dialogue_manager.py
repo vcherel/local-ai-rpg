@@ -31,7 +31,7 @@ class DialogueManager:
         
         # Scroll state
         self.scroll_offset = 0  # Pixels scrolled from bottom
-        self.max_visible_height = 180  # Height of scrollable area in pixels
+        self.max_visible_height = 170  # Height of scrollable area in pixels
         self.line_height = 26
         
         # Pending actions to execute on close
@@ -78,7 +78,7 @@ class DialogueManager:
             # Send message to NPC
             self._send_chat_message(self.user_input)
             self.user_input = ""
-            self.scroll_offset = 0  # Auto-scroll to bottom on new message
+            self.auto_scroll()
         elif event.key == pygame.K_BACKSPACE:
             self.user_input = self.user_input[:-1]
         elif event.unicode and len(self.user_input) < 150:
@@ -90,7 +90,7 @@ class DialogueManager:
             return
         
         # Scroll by line_height pixels
-        scroll_amount = self.line_height * direction
+        scroll_amount = -self.line_height * direction
         
         # Calculate total content height
         total_height = self._calculate_total_content_height()
@@ -140,14 +140,15 @@ class DialogueManager:
         # Build system prompt with NPC context
         system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG. "
         
-        if npc.has_active_quest and not npc.quest_complete:
-            system_prompt += f"Tu as demandé au joueur de récupérer {npc.quest_item.name or 'un objet'}."
-            if npc.quest_item in self.player.inventory:
-                system_prompt += "Le joueur l'a maintenant dans son inventaire. "
-            else:
-                system_prompt += "Le joueur ne l'a pas encore trouvé. "
-        elif npc.quest_complete:
-            system_prompt += "Le joueur vient de terminer ta quête. "
+        if npc.has_active_quest: 
+            if not npc.quest_complete and npc.quest_item:  # If quest is active AND item generated
+                system_prompt += f"Tu as demandé au joueur de récupérer {npc.quest_item.name or 'un objet'}."
+                if npc.quest_item in self.player.inventory:
+                    system_prompt += "Le joueur l'a maintenant dans son inventaire. "
+                else:
+                    system_prompt += "Le joueur ne l'a pas encore trouvé. "
+            elif npc.quest_complete:
+                system_prompt += "Le joueur vient de terminer ta quête. "
         
         system_prompt += "Réponds naturellement en une ou deux phrases courtes."
         
@@ -263,6 +264,14 @@ class DialogueManager:
             if reward > 0:
                 self.player.coins += reward
     
+    def auto_scroll(self):
+        """Auto-scroll to bottom of chat if needed"""
+        total_height = self._calculate_total_content_height()
+        if total_height > self.max_visible_height:
+            self.scroll_offset = total_height - self.max_visible_height
+        else:
+            self.scroll_offset = 0
+
     def update(self):
         """Update dialogue text if generator is active"""        
         if self.pending_npc is not None:
@@ -282,6 +291,7 @@ class DialogueManager:
                 else:
                     # Add new assistant message
                     self.conversation_history.append({"role": "assistant", "content": partial})
+                    self.auto_scroll()
                 self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
@@ -325,8 +335,8 @@ class DialogueManager:
         screen.blit(name_surface, (25, box_y + 10))
         
         # Draw conversation history (scrollable)
-        message_area_y = box_y + 45
-        message_area_height = 180
+        message_area_y = box_y + 55
+        message_area_height = self.max_visible_height
         
         # Create a subsurface for clipping
         clip_rect = pygame.Rect(20, message_area_y, c.Screen.WIDTH - 40, message_area_height)
@@ -334,7 +344,7 @@ class DialogueManager:
         
         # Calculate total height and starting y position
         total_height = self._calculate_total_content_height()
-        y_offset = message_area_y + message_area_height - total_height + self.scroll_offset
+        y_offset = message_area_y - self.scroll_offset
         
         # Draw messages
         for msg in self.conversation_history:
