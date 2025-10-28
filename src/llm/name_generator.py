@@ -2,17 +2,20 @@ import queue
 import threading
 import time
 
+from core.save import SaveSystem
 from llm.llm_request_queue import generate_response_queued
 
 
 class NPCNameGenerator:
     """Background generator for NPC names"""
-    
-    def __init__(self, get_context_callback):
+
+    def __init__(self, save_system, get_context_callback):
         self.name_queue = queue.Queue(maxsize=1)  # Only keep 1 name ready
         self.lock = threading.Lock()
         self.get_context = get_context_callback
         self.is_generating = False
+
+        self.save_system: SaveSystem = save_system
         
         # Start generating the first name immediately
         self._start_generation()
@@ -22,6 +25,12 @@ class NPCNameGenerator:
         with self.lock:
             if self.is_generating or not self.name_queue.empty():
                 return  # Already generating or have a name ready
+            
+            loaded_name: str = self.save_system.load("name", None)
+            if loaded_name:
+                self.name_queue.put(loaded_name.strip())
+                self.save_system.update("name", None)
+                return  # Loaded name from memory
             
             self.is_generating = True
         
@@ -44,7 +53,7 @@ class NPCNameGenerator:
         with self.lock:
             self.is_generating = False
     
-    def get_name(self) -> str:
+    def get_name(self, generate_again=True) -> str:
         """
         Get a generated name (waits if necessary), then start generating the next one.
         """
@@ -52,6 +61,7 @@ class NPCNameGenerator:
         name = self.name_queue.get()
         
         # Start generating the next name in background
-        self._start_generation()
+        if generate_again:
+            self._start_generation()
         
         return name

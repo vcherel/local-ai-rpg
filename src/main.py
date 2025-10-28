@@ -54,7 +54,7 @@ class Game:
 
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.items, self.player)
-        self.npc_name_generator = NPCNameGenerator(get_context_callback=lambda: self.context)
+        self.npc_name_generator = NPCNameGenerator(self.save_system, get_context_callback=lambda: self.context)
 
     def _generate_context(self):
         system_prompt = (
@@ -289,7 +289,11 @@ class Game:
             # Move player
             if distance != 0:
                 self.player.move(distance, self.camera.angle)
-    
+
+    def save_data(self):
+        self.save_system.update("name", self.npc_name_generator.get_name(generate_again=False))
+        self.save_system.save_all()
+
     def run(self):
         """Main game loop"""
         running = True
@@ -322,14 +326,14 @@ class Game:
             # Auto-save every 5 minutes (300,000 ms)
             current_time = pygame.time.get_ticks()
             if current_time - last_save_time >= 300_000:
-                self.save_system.save_all()
+                self.save_data()
                 last_save_time = current_time
                 print("Game auto-saved.")
             
             pygame.display.flip()
             self.clock.tick(60)
         
-        self.save_system.save_all()
+        self.save_data()
         pygame.quit()
         sys.exit()
 
