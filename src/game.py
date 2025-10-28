@@ -13,6 +13,7 @@ from entities import NPC, Item, Player
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import generate_response_queued, get_llm_task_count
 from llm.name_generator import NPCNameGenerator
+from ui.context_window import ContextWindow
 from ui.game_renderer import GameRenderer
 from ui.loading_indicator import LoadingIndicator
 from ui.menu import InventoryMenu
@@ -50,11 +51,14 @@ class Game:
         # UI
         self.small_font = pygame.font.SysFont("arial", 22)
         self.loading_indicator = LoadingIndicator()
+        self.context_window = ContextWindow(screen.get_width(), screen.get_height())
 
         # Context
         self.context = self.save_system.load("context", None)
         if self.context is None:
             threading.Thread(target=self._generate_context, daemon=True).start()
+        else:
+            self.context_window.set_context(self.context)
 
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.items, self.player)
@@ -70,6 +74,7 @@ class Game:
         )
         self.context = generate_response_queued(prompt, system_prompt)
         self.save_system.update("context", self.context)
+        self.context_window.set_context(self.context)
 
     def update_camera(self):
         """Center camera on player with proper offset"""
@@ -95,6 +100,9 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+            
+            if self.context_window.handle_event(event):
+                continue
             
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
@@ -187,6 +195,7 @@ class Game:
             self.game_renderer.draw_ui(self.player, self.loading_indicator, get_llm_task_count())
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)
+            self.context_window.draw(self.screen)
 
             # Auto-save every 5 minutes (300,000 ms)
             current_time = pygame.time.get_ticks()
