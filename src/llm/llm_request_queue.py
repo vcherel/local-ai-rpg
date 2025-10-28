@@ -3,7 +3,7 @@ import threading
 from llama_cpp import Llama
 import time
 
-import constants as c
+import core.constants as c
 
 class LLMRequestQueue:
     """Manages sequential LLM requests to prevent concurrent access"""

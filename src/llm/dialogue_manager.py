@@ -4,20 +4,20 @@ import threading
 import pygame
 from typing import List
 
-import constants as c
-from conversation_ui import ConversationUI
+import core.constants as c
+from ui.conversation_ui import ConversationUI
 from entities import NPC, Player
-from llm_request_queue import generate_response_queued, generate_response_stream_queued
-from utils import ConversationHistory, random_coordinates
+from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
+from core.utils import ConversationHistory, random_coordinates
 
 import pygame
 import random
 import threading
 import re
 from typing import List
-from llm_request_queue import generate_response_stream_queued, generate_response_queued
-from utils import random_coordinates
-import constants as c
+from llm.llm_request_queue import generate_response_stream_queued, generate_response_queued
+from core.utils import random_coordinates
+import core.constants as c
 
 class QuestSystem:
     """Manages quest generation, completion, and rewards"""

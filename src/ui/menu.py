@@ -2,7 +2,7 @@ import sys
 import pygame
 
 from entities import Player, Item
-import constants as c
+import core.constants as c
 
 class InventoryMenu:
     def __init__(self):

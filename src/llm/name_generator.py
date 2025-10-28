@@ -2,7 +2,7 @@ import queue
 import threading
 import time
 
-from llm_request_queue import generate_response_queued
+from llm.llm_request_queue import generate_response_queued
 
 
 class NPCNameGenerator:

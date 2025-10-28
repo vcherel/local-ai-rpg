@@ -1,6 +1,6 @@
 import math
 
-import constants as c
+import core.constants as c
 
 class Camera:
     """Handles world rotation"""

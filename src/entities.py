@@ -4,10 +4,10 @@ import pygame
 import random
 from typing import List
 
-import constants as c
-from camera import Camera
-from utils import random_color
-from name_generator import NPCNameGenerator
+import core.constants as c
+from core.camera import Camera
+from core.utils import random_color
+from llm.name_generator import NPCNameGenerator
 
 def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float):
     """Draw a character (player or NPC) with body and arms

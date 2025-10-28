@@ -5,15 +5,15 @@ import math
 import sys
 from typing import List
 
-import constants as c
-from camera import Camera
+import core.constants as c
+from core.camera import Camera
 from entities import Player, NPC, Item
-from dialogue_manager import DialogueManager
-from llm_request_queue import generate_response_queued, get_llm_queue, get_llm_task_count
-from loading_indicator import LoadingIndicator
-from menu import InventoryMenu, run_main_menu
-from name_generator import NPCNameGenerator
-from utils import random_coordinates
+from llm.dialogue_manager import DialogueManager
+from llm.llm_request_queue import generate_response_queued, get_llm_queue, get_llm_task_count
+from ui.loading_indicator import LoadingIndicator
+from ui.menu import InventoryMenu, run_main_menu
+from llm.name_generator import NPCNameGenerator
+from core.utils import random_coordinates
 
 class Game:
     def __init__(self, screen, clock):

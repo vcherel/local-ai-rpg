@@ -1,7 +1,7 @@
 import colorsys
 import random
 
-import constants as c
+import core.constants as c
 
 def random_color():
     h = random.random()

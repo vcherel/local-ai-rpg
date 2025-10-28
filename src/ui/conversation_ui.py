@@ -1,8 +1,8 @@
 from typing import List
 import pygame
 
-from utils import ConversationHistory
-import constants as c
+from core.utils import ConversationHistory
+import core.constants as c
 
 
 class ConversationUI:
