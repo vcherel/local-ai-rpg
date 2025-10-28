@@ -50,9 +50,7 @@ class Game:
         threading.Thread(target=self._generate_context, daemon=True).start()
 
         # Dialogue manager
-        self.dialogue_manager = DialogueManager()
-        self.dialogue_manager.items_list = self.items  # To spawn quest items
-        self.dialogue_manager.player = self.player
+        self.dialogue_manager = DialogueManager(self.items, self.player)
         self.npc_name_generator = NPCNameGenerator(get_context_callback=lambda: self.context)
 
     def _generate_context(self):
