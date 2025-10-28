@@ -9,7 +9,7 @@ import constants as c
 from camera import Camera
 from entities import Player, NPC, Item, get_npc_name_generator
 from dialogue_manager import DialogueManager
-from llm_request_queue import generate_response_queued, get_llm_task_count
+from llm_request_queue import generate_response_queued, get_llm_queue, get_llm_task_count
 from loading_indicator import LoadingIndicator
 from menu import InventoryMenu
 from utils import random_coordinates
@@ -51,18 +51,19 @@ class Game:
         self.loading_indicator = LoadingIndicator()
 
         # Context
+        self.context = None
         threading.Thread(target=self._generate_context, daemon=True).start()
 
     def _generate_context(self):
         system_prompt = (
-            "Tu crées des mondes pour un RPG 2D. "
-            "Chaque monde doit contenir un détail original vivant ou intrigant qui peut servir de point de départ pour des quêtes ou des histoires."
+            "Tu crées des mondes pour un RPG. "
+            "Chaque monde doit contenir un détail original qui peut servir de point de départ pour des quêtes."
         )
         prompt = (
-            "En une seule phrase très courte, décris un monde RPG 2D avec son ambiance, ses habitants, "
-            "et un ou élément ou événement intéressant pour des quêtes."
+            "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
         )
-        self.context = generate_response_queued(prompt, system_prompt)
+        # self.context = generate_response_queued(prompt, system_prompt)
+        self.context = "Dans le monde d'Aetheris, où les rêves deviennent réalité et s'effondrent aléatoirement chaque nuit, un cartographe de cauchemars est chargé de tracer une porte vers la source des mondes perdus."
         print("Context : ", self.context)
 
     def update_camera(self):
@@ -111,7 +112,7 @@ class Game:
         self.screen.blit(objects_surface, (12, 90))
         
         # Draw controls
-        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser | I : Inventaire | ECHAP : Fermer", True, c.Colors.WHITE)
+        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser", True, c.Colors.WHITE)
         self.screen.blit(controls, (10, c.Screen.HEIGHT - 25))
         
         # Draw loading indicators (top right)
@@ -245,7 +246,7 @@ class Game:
                     elif event.key == pygame.K_DOWN:
                         self.dialogue_manager.handle_scroll(-1)  # Scroll down
                     else:
-                        self.dialogue_manager.handle_text_input(event)
+                        self.dialogue_manager.handle_text_input(event, self.context)
                 
                 # Game controls
                 if event.key == pygame.K_e and not self.dialogue_manager.active and not self.inventory_menu.active:
@@ -293,7 +294,7 @@ class Game:
                 break
             
             # Update dialogue
-            self.dialogue_manager.update()
+            self.dialogue_manager.update(self.context)
 
             # Update loading indicator
             self.loading_indicator.update()
@@ -318,6 +319,9 @@ class Game:
 
 # Initialize Pygame
 pygame.init()
+
+# Initialize LLM queue
+get_llm_queue()
 
 game = Game()
 game.run()

@@ -154,16 +154,23 @@ class Item:
         self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
     
-    def draw(self, screen: pygame.Surface, camera: Camera):
+    def draw(self, surface: pygame.Surface, camera: Camera=None, x=None, y=None):
         """Draw item with correct rotation relative to camera"""
-        # Rotate item position by camera
-        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
+        # Determine position
+        draw_x = x if x is not None else self.x
+        draw_y = y if y is not None else self.y
+
+        if camera:
+            # Rotate item position by camera
+            rotated_x, rotated_y = camera.rotate_point(draw_x, draw_y)
+            visual_angle = self.angle + camera.angle
+        else:
+            rotated_x, rotated_y = draw_x, draw_y
+            visual_angle = 0  # default angle when no camera
+
         center = (rotated_x, rotated_y)
         size = c.Size.ITEM // 2
         border = 2  # outline thickness
-
-        # Compute visual angle (world-space + camera rotation)
-        visual_angle = self.angle + camera.angle
 
         # Add generous padding to prevent clipping during rotation
         padding = size + border + 4
@@ -209,7 +216,7 @@ class Item:
         rect = rotated_surface.get_rect(center=center)
 
         # Blit to screen
-        screen.blit(rotated_surface, rect.topleft)
+        surface.blit(rotated_surface, rect.topleft)
 
     def distance_to_player(self, player):
         return math.hypot(self.x - player.x, self.y - player.y)

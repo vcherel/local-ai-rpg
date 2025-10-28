@@ -1,7 +1,6 @@
 import re
 import random
 import threading
-import time
 import pygame
 from typing import List
 
@@ -23,7 +22,7 @@ class DialogueManager:
         self.pending_npc = None
         self.frames_waited = 0
         
-        # Chat state - always enabled
+        # Chat state
         self.user_input = ""
         self.conversation_history = []  # List of {"role": "user"/"assistant", "content": str}
         
@@ -67,14 +66,14 @@ class DialogueManager:
         self.pending_quest_item_gen = False
         self.pending_reward_extraction = False
     
-    def handle_text_input(self, event):
+    def handle_text_input(self, event, context):
         """Handle text input for chat"""
         if not self.active:
             return
         
         if event.key == pygame.K_RETURN and self.user_input.strip():
             # Send message to NPC
-            self._send_chat_message(self.user_input)
+            self._send_chat_message(self.user_input, context)
             self.user_input = ""
             self.auto_scroll()
         elif event.key == pygame.K_BACKSPACE:
@@ -128,7 +127,7 @@ class DialogueManager:
         
         return total_height
 
-    def _send_chat_message(self, message: str):
+    def _send_chat_message(self, message: str, context: str):
         """Send a chat message to the NPC and get response"""
         npc = self.current_npc
         
@@ -136,7 +135,7 @@ class DialogueManager:
         self.conversation_history.append({"role": "user", "content": message})
         
         # Build system prompt with NPC context
-        system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG. "
+        system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG avec ce contexte : {context}"
         
         if npc.has_active_quest: 
             if not npc.quest_complete and npc.quest_item:  # If quest is active AND item generated
@@ -170,7 +169,7 @@ class DialogueManager:
         # Start the generator - user message is already in history and will display
         self.generator = generate_response_stream_queued(prompt, system_prompt)
     
-    def _generate_npc_dialogue(self, npc: NPC):
+    def _generate_npc_dialogue(self, npc: NPC, context: str):
         """Generate initial interaction dialogue with NPC"""
         # Choose type of interaction
         interaction_type = random.choices(
@@ -181,8 +180,11 @@ class DialogueManager:
 
         if interaction_type == "quest" and not npc.has_active_quest:
             # Generate new quest
-            system_prompt = f"Tu es {self.current_npc.name}, un PNJ dans un RPG. Tu demandes de l'aide au joueur en une seule phrase."
-            prompt = "Demande au joueur de récupérer un objet. Indique l'objet, où il se trouve, et pourquoi tu en as besoin."
+            system_prompt = (
+                f"Tu es {self.current_npc.name}, un PNJ dans un RPG avec ce contexte : {context}"
+                f"Tu demandes de l'aide au joueur en une seule phrase."
+            )
+            prompt = "Demande au joueur de récupérer un objet en prenant en compte le context. Indique l'objet, où il se trouve, et pourquoi tu en as besoin."
             self.generator = generate_response_stream_queued(prompt, system_prompt)
 
             # Create quest
@@ -194,7 +196,10 @@ class DialogueManager:
         elif npc.has_active_quest:
             if npc.quest_complete:
                 # Quest completion dialogue
-                system_prompt = f"Tu es {self.current_npc.name}, un PNJ dans un RPG. Le joueur vient de terminer ta quête."
+                system_prompt = (
+                    f"Tu es {self.current_npc.name}, un PNJ dans un RPG avec ce contexte : {context}."
+                    f"Le joueur vient de terminer ta quête."
+                    )
                 prompt = (
                     f"Le joueur t'a apporté {npc.quest_item.name} ({npc.quest_content}). "
                     f"Remercie-le en une phrase et mentionne sa récompense en pièces."
@@ -268,12 +273,12 @@ class DialogueManager:
         else:
             self.scroll_offset = 0
 
-    def update(self):
+    def update(self, context: str):
         """Update dialogue text if generator is active"""        
         if self.pending_npc is not None:
             self.frames_waited += 1
             if self.frames_waited >= 2:
-                self._generate_npc_dialogue(self.pending_npc)
+                self._generate_npc_dialogue(self.pending_npc, context)
                 self.pending_npc = None
                 self.frames_waited = 0
             return

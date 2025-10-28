@@ -134,9 +134,9 @@ class InventoryMenu:
                     icon_center_y = cell_y + self.cell_size // 2
                     
                     # Draw item icon using the item's draw method with custom camera offset
-                    camera_x_for_icon = item.x - icon_center_x
-                    camera_y_for_icon = item.y - icon_center_y
-                    item.draw(menu_surface, camera_x_for_icon, camera_y_for_icon)
+                    icon_center_x = cell_x + self.cell_size // 2
+                    icon_center_y = cell_y + self.cell_size // 2
+                    item.draw(menu_surface, x=icon_center_x, y=icon_center_y)
                     
                     # Draw count if more than 1
                     if count > 1:

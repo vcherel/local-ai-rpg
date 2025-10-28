@@ -23,8 +23,7 @@ class NPCNameGenerator:
             
             self.is_generating = True
         
-        thread = threading.Thread(target=self._generate_name_background, daemon=True)
-        thread.start()
+        threading.Thread(target=self._generate_name_background, daemon=True).start()
     
     def _generate_name_background(self):
         system_prompt = "Tu es un générateur de PNJ pour un RPG. Réponds uniquement avec UN prénom et/ou UNE profession, sur une seule ligne, sans répétition, sans explication."
