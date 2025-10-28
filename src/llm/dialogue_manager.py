@@ -61,7 +61,7 @@ class QuestSystem:
         )
         return generate_response_stream_queued(prompt, system_prompt)
     
-    def extract_quest_item(self, npc, quest_content: str):
+    def extract_quest_item(self, npc: NPC, quest_content: str):
         """Extract and create quest item from dialogue"""
         system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec l'information demandée, sans article ('le', 'la', 'l\', 'un', 'une', etc.) et sans guillemets."
         prompt = f"Quel est l'objet à récupérer dans '{quest_content}' ?"
