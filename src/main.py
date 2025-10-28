@@ -55,10 +55,8 @@ class Game:
         self.loading_indicator = LoadingIndicator()
     
     def update_camera(self):
-        """Center camera on player"""
-        new_x = self.player.x - c.Screen.WIDTH // 2
-        new_y = self.player.y - c.Screen.HEIGHT // 2
-        self.camera.update_position(new_x, new_y)
+        """Center camera on player with proper offset"""
+        self.camera.update_position(self.player.x, self.player.y)
     
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
@@ -137,7 +135,7 @@ class Game:
             item.draw(self.screen, self.camera)
         
         # Player
-        self.player.draw(self.screen, self.camera)
+        self.player.draw(self.screen)
         
         # Off-screen item indicators
         self.draw_offscreen_indicators()

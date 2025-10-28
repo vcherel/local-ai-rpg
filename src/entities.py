@@ -164,7 +164,8 @@ class NPC:
         rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
         
         # Draw character
-        draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, self.angle)
+        real_angle = self.angle + camera.angle
+        draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, real_angle)
         
         npc_size = c.Size.NPC
         
@@ -197,8 +198,8 @@ class NPC:
 
 class Player:
     def __init__(self):
-        self.x = c.Screen.ORIGIN_X
-        self.y = c.Screen.ORIGIN_Y
+        self.x = c.Screen.WIDTH
+        self.y = c.Screen.HEIGHT
         self.inventory: List[Item] = []
         self.coins = 0
     
