@@ -131,8 +131,10 @@ class Game:
                 if event.key == pygame.K_ESCAPE:
                     if self.inventory_menu.active:
                         self.inventory_menu.close()
-                    else:
+                    elif self.dialogue_manager.active:
                         self.dialogue_manager.close()
+                    elif self.context_window.active:
+                        self.context_window.close
         return True
     
     def update_player_movement(self):
