@@ -280,6 +280,12 @@ class Game:
             if keys[pygame.K_d]:
                 self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
 
+            # Check if it is running
+            if keys[pygame.K_LSHIFT]:
+                self.player.is_running = True
+            else:
+                self.player.is_running = False
+
             # Move player
             if distance != 0:
                 self.player.move(distance, self.camera.angle)

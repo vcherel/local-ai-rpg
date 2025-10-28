@@ -134,11 +134,15 @@ class Player:
         self.save_system: SaveSystem = save_system
         self.inventory: List[Item] = []
         self.coins = coins
+
+        self.is_running = False
     
     def move(self, distance, angle):
         """Move player in the direction they are facing"""
-        dx = -math.sin(angle) * distance
-        dy = -math.cos(angle) * distance
+        run_mul = 2 if self.is_running else 1
+
+        dx = -math.sin(angle) * distance * run_mul
+        dy = -math.cos(angle) * distance * run_mul
 
         self.x += dx
         self.y += dy
