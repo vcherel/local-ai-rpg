@@ -1,5 +1,6 @@
 import queue
 import threading
+import time
 
 from llm_request_queue import generate_response_queued
 
@@ -7,10 +8,11 @@ from llm_request_queue import generate_response_queued
 class NPCNameGenerator:
     """Background generator for NPC names"""
     
-    def __init__(self):
+    def __init__(self, get_context_callback):
         self.name_queue = queue.Queue(maxsize=1)  # Only keep 1 name ready
-        self.is_generating = False
         self.lock = threading.Lock()
+        self.get_context = get_context_callback
+        self.is_generating = False
         
         # Start generating the first name immediately
         self._start_generation()
@@ -24,17 +26,21 @@ class NPCNameGenerator:
             self.is_generating = True
         
         threading.Thread(target=self._generate_name_background, daemon=True).start()
-    
+
     def _generate_name_background(self):
-        system_prompt = "Tu es un générateur de PNJ pour un RPG. Réponds uniquement avec UN prénom et/ou UNE profession, sur une seule ligne, sans répétition, sans explication."
+        # Wait for context to be ready
+        context = None
+        while context is None:
+            context = self.get_context()
+            if context is None:
+                time.sleep(0.1)  # avoid busy waiting
+
+        system_prompt = f"Tu es un générateur de PNJ pour un RPG. Contexte: {context}. Réponds uniquement avec UN prénom et/ou UNE profession, sur une seule ligne, sans répétition, sans explication."
         prompt = "Génère un prénom et/ou une profession pour un PNJ de RPG."
         
-        # Use the queued function to avoid blocking
         name = generate_response_queued(prompt, system_prompt)
-            
-        # Put result in queue (will block if queue is full, but we set maxsize=1)
         self.name_queue.put(name.strip())
-    
+
         with self.lock:
             self.is_generating = False
     
@@ -49,14 +55,3 @@ class NPCNameGenerator:
         self._start_generation()
         
         return name
-
-
-# Global instance
-_npc_name_generator = None
-
-def get_npc_name_generator() -> NPCNameGenerator:
-    """Get or create the global NPC name generator"""
-    global _npc_name_generator
-    if _npc_name_generator is None:
-        _npc_name_generator = NPCNameGenerator()
-    return _npc_name_generator

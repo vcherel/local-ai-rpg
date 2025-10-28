@@ -7,11 +7,12 @@ from typing import List
 
 import constants as c
 from camera import Camera
-from entities import Player, NPC, Item, get_npc_name_generator
+from entities import Player, NPC, Item
 from dialogue_manager import DialogueManager
 from llm_request_queue import generate_response_queued, get_llm_queue, get_llm_task_count
 from loading_indicator import LoadingIndicator
 from menu import InventoryMenu
+from name_generator import NPCNameGenerator
 from utils import random_coordinates
 
 class Game:
@@ -36,12 +37,6 @@ class Game:
         for i in range(c.Game.NB_NPCS):
             self.npcs.append(NPC(*random_coordinates(), i))
         
-        # Dialogue manager
-        self.dialogue_manager = DialogueManager()
-        self.dialogue_manager.items_list = self.items  # To spawn quest items
-        self.dialogue_manager.player = self.player
-        get_npc_name_generator() # Initialize the name generator
-        
         # Inventory menu
         self.inventory_menu = InventoryMenu()
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
@@ -54,6 +49,12 @@ class Game:
         self.context = None
         threading.Thread(target=self._generate_context, daemon=True).start()
 
+        # Dialogue manager
+        self.dialogue_manager = DialogueManager()
+        self.dialogue_manager.items_list = self.items  # To spawn quest items
+        self.dialogue_manager.player = self.player
+        self.npc_name_generator = NPCNameGenerator(get_context_callback=lambda: self.context)
+
     def _generate_context(self):
         system_prompt = (
             "Tu crées des mondes pour un RPG. "
@@ -62,8 +63,8 @@ class Game:
         prompt = (
             "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
         )
-        # self.context = generate_response_queued(prompt, system_prompt)
-        self.context = "Dans le monde d'Aetheris, où les rêves deviennent réalité et s'effondrent aléatoirement chaque nuit, un cartographe de cauchemars est chargé de tracer une porte vers la source des mondes perdus."
+        self.context = generate_response_queued(prompt, system_prompt)
+        # self.context = "Dans le monde d'Aetheris, où les rêves deviennent réalité et s'effondrent aléatoirement chaque nuit, un cartographe de cauchemars est chargé de tracer une porte vers la source des mondes perdus."
         print("Context : ", self.context)
 
     def update_camera(self):
@@ -74,7 +75,7 @@ class Game:
         """Check for nearby NPCs and interact"""
         for npc in self.npcs:
             if npc.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
-                self.dialogue_manager.interact_with_npc(npc)
+                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator)
                 break  # Only interact with one NPC at a time
     
     def pickup_nearby_item(self):

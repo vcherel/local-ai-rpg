@@ -7,7 +7,7 @@ from typing import List
 import constants as c
 from camera import Camera
 from utils import random_color
-from name_generator import get_npc_name_generator
+from name_generator import NPCNameGenerator
 
 def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float):
     """Draw a character (player or NPC) with body and arms
@@ -79,9 +79,9 @@ class NPC:
         self.name = None
         self.has_been_named = False
     
-    def assign_name(self):
+    def assign_name(self, npc_name_generator: NPCNameGenerator):
         if not self.has_been_named:
-            self.name = get_npc_name_generator().get_name()
+            self.name = npc_name_generator.get_name()
             self.has_been_named = True
     
     def get_display_name(self) -> str:
