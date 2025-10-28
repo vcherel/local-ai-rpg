@@ -30,7 +30,7 @@ class Game:
         ]
         
         # Game objects
-        self.player = Player(self.world_width // 2, self.world_height // 2)
+        self.player = Player()
         self.npcs: List[NPC] = []
         self.items: List[Item] = []
         
@@ -137,7 +137,7 @@ class Game:
             item.draw(self.screen, self.camera)
         
         # Player
-        self.player.draw(self.screen)
+        self.player.draw(self.screen, self.camera)
         
         # Off-screen item indicators
         self.draw_offscreen_indicators()

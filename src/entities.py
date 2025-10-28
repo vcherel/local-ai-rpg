@@ -18,7 +18,7 @@ def random_color():
     r, g, b = [int(x * 255) for x in colorsys.hls_to_rgb(h, l, s)]
     return (r, g, b)
 
-def draw_character(surface: pygame.Surface, center_x: int, center_y: int, color: tuple, size: int = c.Size.PLAYER, angle: float = 0):
+def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float):
     """Draw a character (player or NPC) with body and arms
     
     Args:
@@ -69,7 +69,7 @@ def draw_character(surface: pygame.Surface, center_x: int, center_y: int, color:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
     
     # Blit to main surface
-    rect = char_surf.get_rect(center=(center_x, center_y))
+    rect = char_surf.get_rect(center=(x, y))
     surface.blit(char_surf, rect)
 
 
@@ -164,7 +164,7 @@ class NPC:
         rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
         
         # Draw character
-        draw_character(screen, rotated_x, rotated_y, self.color, c.Size.NPC, self.angle)
+        draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, self.angle)
         
         npc_size = c.Size.NPC
         
@@ -196,9 +196,9 @@ class NPC:
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
 
 class Player:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+    def __init__(self):
+        self.x = c.Screen.ORIGIN_X
+        self.y = c.Screen.ORIGIN_Y
         self.inventory: List[Item] = []
         self.coins = 0
     
@@ -212,7 +212,7 @@ class Player:
 
     def draw(self, screen: pygame.Surface):
         """Draw player at screen bottom center, always facing up"""
-        draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Colors.PLAYER)
+        draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Size.PLAYER, c.Colors.PLAYER, 0)
 
 class Item:
     def __init__(self, x, y, name):
