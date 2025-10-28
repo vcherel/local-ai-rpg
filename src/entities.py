@@ -1,7 +1,4 @@
-import colorsys
 import math
-import queue
-import threading
 import time
 import pygame
 import random
@@ -9,14 +6,8 @@ from typing import List
 
 import constants as c
 from camera import Camera
-from llm_request_queue import generate_response_queued
-
-def random_color():
-    h = random.random()
-    s = 0.3 + 0.2 * random.random()
-    l = 0.4 + 0.2 * random.random()
-    r, g, b = [int(x * 255) for x in colorsys.hls_to_rgb(h, l, s)]
-    return (r, g, b)
+from utils import random_color
+from name_generator import get_npc_name_generator
 
 def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float):
     """Draw a character (player or NPC) with body and arms
@@ -72,66 +63,6 @@ def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tu
     rect = char_surf.get_rect(center=(x, y))
     surface.blit(char_surf, rect)
 
-
-class NPCNameGenerator:
-    """Background generator for NPC names"""
-    
-    def __init__(self):
-        self.name_queue = queue.Queue(maxsize=1)  # Only keep 1 name ready
-        self.is_generating = False
-        self.lock = threading.Lock()
-        
-        # Start generating the first name immediately
-        self._start_generation()
-    
-    def _start_generation(self):
-        """Start a background thread to generate a name"""
-        with self.lock:
-            if self.is_generating or not self.name_queue.empty():
-                return  # Already generating or have a name ready
-            
-            self.is_generating = True
-        
-        thread = threading.Thread(target=self._generate_name_background, daemon=True)
-        thread.start()
-    
-    def _generate_name_background(self):
-        system_prompt = "Tu es un générateur de PNJ pour un RPG. Réponds uniquement avec UN prénom et/ou UNE profession, sur une seule ligne, sans répétition, sans explication."
-        prompt = "Génère un prénom et/ou une profession pour un PNJ de RPG."
-        
-        # Use the queued function to avoid blocking
-        name = generate_response_queued(prompt, system_prompt)
-            
-        # Put result in queue (will block if queue is full, but we set maxsize=1)
-        self.name_queue.put(name.strip())
-    
-        with self.lock:
-            self.is_generating = False
-    
-    def get_name(self) -> str:
-        """
-        Get a generated name (waits if necessary), then start generating the next one.
-        """
-        # Wait until a name is ready
-        name = self.name_queue.get()
-        
-        # Start generating the next name in background
-        self._start_generation()
-        
-        return name
-
-
-# Global instance
-_npc_name_generator = None
-
-def get_npc_name_generator() -> NPCNameGenerator:
-    """Get or create the global NPC name generator"""
-    global _npc_name_generator
-    if _npc_name_generator is None:
-        _npc_name_generator = NPCNameGenerator()
-    return _npc_name_generator
-
-
 class NPC:
     def __init__(self, x, y, npc_id):
         self.x = x
@@ -167,14 +98,12 @@ class NPC:
         real_angle = self.angle + camera.angle
         draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, real_angle)
         
-        npc_size = c.Size.NPC
-        
         # Exclamation mark for active quests
         if self.has_active_quest and not self.quest_complete:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
-            text_rect = text.get_rect(center=(rotated_x, rotated_y - npc_size // 2 - 20 + bob_offset))
+            text_rect = text.get_rect(center=(rotated_x, rotated_y - c.Size.NPC // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
         
         # Name label
@@ -182,7 +111,7 @@ class NPC:
         if display_name:
             name_font = pygame.font.SysFont("arial", 16)
             name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-            name_rect = name_surface.get_rect(center=(rotated_x, rotated_y + npc_size // 2 + 15))
+            name_rect = name_surface.get_rect(center=(rotated_x, rotated_y + c.Size.NPC // 2 + 15))
             
             # Background box
             bg_rect = name_rect.inflate(10, 4)
@@ -198,8 +127,8 @@ class NPC:
 
 class Player:
     def __init__(self):
-        self.x = c.Screen.WIDTH
-        self.y = c.Screen.HEIGHT
+        self.x = c.Game.WORLD_SIZE // 2
+        self.y = c.Game.WORLD_SIZE // 2
         self.inventory: List[Item] = []
         self.coins = 0
     

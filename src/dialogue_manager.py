@@ -8,12 +8,13 @@ from typing import List
 import constants as c
 from llm_request_queue import generate_response_queued, generate_response_stream_queued
 from entities import NPC, Item, Player
+from utils import random_coordinates
 
 
 class DialogueManager:
     """Manages all dialogue, quest, and NPC interaction logic"""
     
-    def __init__(self, world_width: int, world_height: int):        
+    def __init__(self):        
         # Dialogue state
         self.active = False
         self.generator = None
@@ -44,10 +45,6 @@ class DialogueManager:
         # References
         self.items_list: List[Item] = None
         self.player: Player = None
-
-        # World dimensions for item placement
-        self.world_width = world_width
-        self.world_height = world_height
     
     def interact_with_npc(self, npc: NPC):
         # Assign name if not already done
@@ -234,9 +231,7 @@ class DialogueManager:
         item_name = item_name.strip().rstrip('.')
 
         # Create the quest item
-        item_x = random.randint(100, self.world_width - 100)
-        item_y = random.randint(100, self.world_height - 100)
-        npc.quest_item = Item(item_x, item_y, item_name)
+        npc.quest_item = Item(*random_coordinates(), item_name)
         self.items_list.append(npc.quest_item) # Add to the global items list
 
     def _execute_reward_extraction(self):

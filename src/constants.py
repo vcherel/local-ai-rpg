@@ -17,9 +17,11 @@ class Size:
 @dataclass(frozen=True)
 class Game:
     PLAYER_SPEED: int = 5
-    PLAYER_TURN_SPEED: float = 0.04  # Radians per frame
+    PLAYER_TURN_SPEED: float = 0.03
     INTERACTION_DISTANCE: int = 50
-    NB_NPCS: int = 20
+    WORLD_SIZE: int = 5000
+    NB_NPCS: int = 20 * (WORLD_SIZE // 1000)
+    NB_DETAILS: int = 500 * (WORLD_SIZE // 1000)
 
 @dataclass(frozen=True)
 class Colors:

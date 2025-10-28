@@ -11,6 +11,7 @@ from dialogue_manager import DialogueManager
 from llm_request_queue import get_llm_task_count, init_llm_queue
 from loading_indicator import LoadingIndicator
 from menu import InventoryMenu
+from utils import random_coordinates
 
 class Game:
     def __init__(self):
@@ -18,15 +19,10 @@ class Game:
         self.clock = pygame.time.Clock()
         self.camera = Camera()
         
-        # World settings
-        self.world_width = c.Screen.WIDTH * 2
-        self.world_height = c.Screen.HEIGHT * 2
-        
         # World items
         self.floor_details = [
-            (random.randint(0, self.world_width), random.randint(0, self.world_height), 
-             random.choice(["stone", "flower"])) 
-            for _ in range(300)
+            (*random_coordinates(), random.choice(["stone", "flower"]))
+            for _ in range(c.Game.NB_DETAILS)
         ]
         
         # Game objects
@@ -36,12 +32,10 @@ class Game:
         
         # Spawn NPCs randomly
         for i in range(c.Game.NB_NPCS):
-            x = random.randint(100, self.world_width - 100)
-            y = random.randint(100, self.world_height - 100)
-            self.npcs.append(NPC(x, y, i))
+            self.npcs.append(NPC(*random_coordinates(), i))
         
         # Dialogue manager
-        self.dialogue_manager = DialogueManager(self.world_width, self.world_height)
+        self.dialogue_manager = DialogueManager()
         self.dialogue_manager.items_list = self.items  # To spawn quest items
         self.dialogue_manager.player = self.player
         get_npc_name_generator() # Initialize the name generator
