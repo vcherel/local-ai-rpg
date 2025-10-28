@@ -81,7 +81,7 @@ class QuestSystem:
         match = re.search(r'\b(\d+)\b', last_message)
         if match:
             reward = int(match.group(1))
-            self.player.coins += reward
+            self.player.add_coins(reward)
             return
         
         # Fall back to LLM extraction
@@ -94,7 +94,7 @@ class QuestSystem:
         if reward_str:
             reward = int(reward_str)
             if reward > 0:
-                self.player.coins += reward
+                self.player.add_coins(reward)
     
     def complete_quest(self, npc: NPC):
         """Mark quest as complete and reset NPC quest state"""

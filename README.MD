@@ -3,18 +3,8 @@
 I am creating an open-world 2D RPG video game for my own use with Pygame. In this game, we spawn in a world without any objective, and every goal we will have in the game will be determined by AI. We encounter random characters, and we can talk with all of them with full liberty.
 The LLM I use is a quantied LFM2 model with 2.6B parameters.
 
-Here are the .py files I have:
-camera
-constants
-conversation_ui
-dialogue_manager
-entities
-llm_request_queue
-loading_indicator
-main
-menu
-name_generator
-utils
+To save:
+- coins
 
 ## Commands
 Launch main.py :    CTRL + MAJ + B

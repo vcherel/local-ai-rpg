@@ -7,6 +7,7 @@ from typing import List
 
 import core.constants as c
 from core.camera import Camera
+from core.save import SaveSystem
 from entities import Player, NPC, Item
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import generate_response_queued, get_llm_queue, get_llm_task_count
@@ -16,11 +17,12 @@ from llm.name_generator import NPCNameGenerator
 from core.utils import random_coordinates
 
 class Game:
-    def __init__(self, screen, clock):
+    def __init__(self, screen, clock, save_system: SaveSystem):
         # Pygame
         self.screen = screen
         self.clock = clock
         self.camera = Camera()
+        self.save_system = save_system
         
         # World items
         self.floor_details = [
@@ -29,7 +31,7 @@ class Game:
         ]
         
         # Game objects
-        self.player = Player()
+        self.player = Player(self.save_system, self.save_system.load("coins", 0))
         self.npcs: List[NPC] = []
         self.items: List[Item] = []
         
@@ -46,8 +48,9 @@ class Game:
         self.loading_indicator = LoadingIndicator()
 
         # Context
-        self.context = None
-        threading.Thread(target=self._generate_context, daemon=True).start()
+        self.context = self.save_system.load("context", None)
+        if self.context is None:
+            threading.Thread(target=self._generate_context, daemon=True).start()
 
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.items, self.player)
@@ -61,9 +64,8 @@ class Game:
         prompt = (
             "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
         )
-        # self.context = generate_response_queued(prompt, system_prompt)
-        self.context = "Dans le monde d'Aetheris, où les rêves deviennent réalité et s'effondrent aléatoirement chaque nuit, un cartographe de cauchemars est chargé de tracer une porte vers la source des mondes perdus."
-        print("Context : ", self.context)
+        self.context = generate_response_queued(prompt, system_prompt)
+        self.save_system.update("context", self.context)
 
     def update_camera(self):
         """Center camera on player with proper offset"""
@@ -124,7 +126,7 @@ class Game:
             self.loading_indicator.draw_task_indicator(self.screen, indicator_x, indicator_y, active_task_count)
     
     def draw_world(self):
-        """Draw all world elements with rotation"""        
+        """Draw all world elements"""        
         # Background
         self.screen.fill(c.Colors.GREEN)
         
@@ -285,6 +287,7 @@ class Game:
     def run(self):
         """Main game loop"""
         running = True
+        last_save_time = pygame.time.get_ticks()
         
         while running:            
             # Handle input
@@ -309,10 +312,18 @@ class Game:
             self.draw_ui()
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)
+
+            # Auto-save every 5 minutes (300,000 ms)
+            current_time = pygame.time.get_ticks()
+            if current_time - last_save_time >= 300_000:
+                self.save_system.save_all()
+                last_save_time = current_time
+                print("Game auto-saved.")
             
             pygame.display.flip()
             self.clock.tick(60)
         
+        self.save_system.save_all()
         pygame.quit()
         sys.exit()
 
@@ -324,8 +335,11 @@ clock = pygame.time.Clock()
 # Initialize LLM queue
 get_llm_queue()
 
+# Initialize memory
+save_system = SaveSystem()
+
 # Show main menu
-if run_main_menu(screen, clock):
+if run_main_menu(screen, clock, save_system):
     # Start the game
-    game = Game(screen, clock)
+    game = Game(screen, clock, save_system)
     game.run()

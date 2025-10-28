@@ -1,6 +1,7 @@
 import sys
 import pygame
 
+from core.save import SaveSystem
 from entities import Player, Item
 import core.constants as c
 
@@ -188,8 +189,9 @@ class InventoryMenu:
         screen.blit(menu_surface, (menu_x, menu_y))
 
 class MainMenu:
-    def __init__(self, screen):
+    def __init__(self, screen, save_system):
         self.screen = screen
+        self.save_system: SaveSystem = save_system
         self.active = True
         
         # Fonts
@@ -219,10 +221,10 @@ class MainMenu:
     def handle_click(self, pos):
         """Handle mouse clicks on menu buttons"""
         if self.new_game_button.collidepoint(pos):
+            self.save_system.clear()
             self.active = False
             return "new_game"
         elif self.continue_button.collidepoint(pos):
-            # TODO
             return "continue"
         return None
     
@@ -254,8 +256,8 @@ class MainMenu:
         
         self.draw_button(self.continue_button, "Continuer", mouse_pos)
 
-def run_main_menu(screen, clock):
-    main_menu = MainMenu(screen)
+def run_main_menu(screen, clock, save_system):
+    main_menu = MainMenu(screen, save_system)
     
     while main_menu.active:
         for event in pygame.event.get():
@@ -269,7 +271,7 @@ def run_main_menu(screen, clock):
                     if result == "new_game":
                         return True  # Start new game
                     elif result == "continue":
-                        pass  # TODO
+                        return True
         
         main_menu.draw()
         pygame.display.flip()

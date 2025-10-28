@@ -6,6 +6,7 @@ from typing import List
 
 import core.constants as c
 from core.camera import Camera
+from core.save import SaveSystem
 from core.utils import random_color
 from llm.name_generator import NPCNameGenerator
 
@@ -126,11 +127,13 @@ class NPC:
         return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
 
 class Player:
-    def __init__(self):
+    def __init__(self, save_system, coins):
         self.x = c.Game.WORLD_SIZE // 2
         self.y = c.Game.WORLD_SIZE // 2
+
+        self.save_system: SaveSystem = save_system
         self.inventory: List[Item] = []
-        self.coins = 0
+        self.coins = coins
     
     def move(self, distance, angle):
         """Move player in the direction they are facing"""
@@ -143,6 +146,10 @@ class Player:
     def draw(self, screen: pygame.Surface):
         """Draw player at screen bottom center, always facing up"""
         draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Size.PLAYER, c.Colors.PLAYER, 0)
+
+    def add_coins(self, amount):
+        self.coins += amount
+        self.save_system.update("coins", self.coins)
 
 class Item:
     def __init__(self, x, y, name):
