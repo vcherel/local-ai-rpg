@@ -16,7 +16,7 @@ from llm.name_generator import NPCNameGenerator
 from ui.context_window import ContextWindow
 from ui.game_renderer import GameRenderer
 from ui.loading_indicator import LoadingIndicator
-from ui.menu import InventoryMenu
+from ui.inventory_menu import InventoryMenu
 
 
 class Game:
