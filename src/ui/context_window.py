@@ -13,13 +13,6 @@ class ContextWindow:
         self.x = (screen_width - self.width) // 2
         self.y = (screen_height - self.height) // 2
         
-        # Colors
-        self.bg_color = (40, 40, 50, 230)  # Semi-transparent dark background
-        self.border_color = (100, 100, 120)
-        self.text_color = (255, 255, 255)
-        self.button_color = (80, 80, 100)
-        self.button_hover_color = (100, 100, 120)
-        
         # Close button
         self.close_button = pygame.Rect(self.x + self.width - 80, self.y + self.height - 50, 60, 30)
         self.button_hovered = False

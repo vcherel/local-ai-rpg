@@ -9,31 +9,33 @@ class MainMenu:
         self.screen = screen
         self.save_system: SaveSystem = save_system
         self.active = True
-        
+
         # Fonts
         self.title_font = pygame.font.SysFont("arial", 64, bold=True)
         self.button_font = pygame.font.SysFont("arial", 32)
-        
+
         # Button dimensions
-        button_width = 300
-        button_height = 60
-        button_spacing = 20
-        center_x = c.Screen.WIDTH // 2 - button_width // 2
-        center_y = c.Screen.HEIGHT // 2 - button_height
-        
+        self.button_width = 300
+        self.button_height = 60
+        self.button_spacing = 20
+
+        # Calculate positions
+        center_x = c.Screen.WIDTH // 2 - self.button_width // 2
+        center_y = c.Screen.HEIGHT // 2 - self.button_height
+
         # Create button rectangles
-        self.new_game_button = pygame.Rect(center_x, center_y, button_width, button_height)
+        self.new_game_button = pygame.Rect(center_x, center_y, self.button_width, self.button_height)
         self.continue_button = pygame.Rect(
-            center_x, 
-            center_y + button_height + button_spacing, 
-            button_width, 
-            button_height
+            center_x,
+            center_y + self.button_height + self.button_spacing,
+            self.button_width,
+            self.button_height
         )
 
         # Colors
-        self.button_default_color = (70, 130, 70)
-        self.button_hover_color = (50, 100, 50)
-        
+        self.button_default_color = (70, 70, 70)
+        self.button_hover_color = (90, 90, 90)
+
     def handle_click(self, pos):
         """Handle mouse clicks on menu buttons"""
         if self.new_game_button.collidepoint(pos):
@@ -43,33 +45,38 @@ class MainMenu:
         elif self.continue_button.collidepoint(pos):
             return "continue"
         return None
-    
+
     def draw_button(self, rect, text, mouse_pos):
         hover = rect.collidepoint(mouse_pos)
         color = self.button_hover_color if hover else self.button_default_color
+        border_color = c.Colors.YELLOW if hover else c.Colors.WHITE
+
+        # Draw button background
         pygame.draw.rect(self.screen, color, rect)
-        pygame.draw.rect(self.screen, c.Colors.WHITE, rect, 3)
-        
+        pygame.draw.rect(self.screen, border_color, rect, 3)
+
+        # Draw button text
         text_surf = self.button_font.render(text, True, c.Colors.WHITE)
         text_rect = text_surf.get_rect(center=rect.center)
         self.screen.blit(text_surf, text_rect)
 
     def draw(self):
-        """Draw the main menu"""
-        # Background
-        self.screen.fill((20, 20, 30))
+        if not self.active:
+            return
         
-        # Title
+        self.screen.fill(c.Colors.DARK_GRAY)
+
+        # Draw title
         title_text = self.title_font.render("RPG IA de fou malade", True, c.Colors.WHITE)
-        title_rect = title_text.get_rect(center=(c.Screen.WIDTH // 2, 150))
-        self.screen.blit(title_text, title_rect)
-        
+        title_x = (self.screen.get_width() - title_text.get_width()) // 2
+        title_y = 150
+        self.screen.blit(title_text, (title_x, title_y))
+
         # Mouse position
         mouse_pos = pygame.mouse.get_pos()
 
-        # Draw buttons
+        # Draw buttons with hover style
         self.draw_button(self.new_game_button, "Nouvelle Partie", mouse_pos)
-        
         self.draw_button(self.continue_button, "Continuer", mouse_pos)
 
 def run_main_menu(screen, clock, save_system):
