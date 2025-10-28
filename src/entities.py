@@ -180,8 +180,8 @@ class Item:
 
         # Draw the shape centered on the padded surface
         if self.shape == "circle":
-            pygame.draw.circle(item_surface, c.Colors.BLACK, item_center, size + border)
-            pygame.draw.circle(item_surface, self.color, item_center, size)
+            pygame.draw.circle(item_surface, c.Colors.BLACK, item_center, size + border - 5)
+            pygame.draw.circle(item_surface, self.color, item_center, size - 5)
         elif self.shape == "triangle":
             points = [
                 (item_center[0], item_center[1] - size),

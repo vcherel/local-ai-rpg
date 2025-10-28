@@ -199,7 +199,7 @@ class DialogueManager:
                 system_prompt = (
                     f"Tu es {self.current_npc.name}, un PNJ dans un RPG avec ce contexte : {context}."
                     f"Le joueur vient de terminer ta quête."
-                    )
+                )
                 prompt = (
                     f"Le joueur t'a apporté {npc.quest_item.name} ({npc.quest_content}). "
                     f"Remercie-le en une phrase et mentionne sa récompense en pièces."
@@ -213,6 +213,19 @@ class DialogueManager:
                 npc.has_active_quest = False
                 npc.quest_complete = False
                 npc.quest_item = None
+
+            else:
+                # Active quest not yet completed
+                system_prompt = (
+                    f"Tu es {self.current_npc.name}, un PNJ dans un RPG avec ce contexte : {context}."
+                    f"Le joueur est en train d'accomplir ta quête, mais ne l'a pas encore terminée."
+                )
+                prompt = (
+                    f"Rappelle au joueur sa mission : {npc.quest_content}. "
+                    f"Encourage-le brièvement."
+                )
+                self.generator = generate_response_stream_queued(prompt, system_prompt)
+
 
         else:
             # Casual conversation
@@ -402,5 +415,5 @@ class DialogueManager:
         screen.blit(input_surface, (30, input_y + 5))
         
         # Draw instructions
-        instruction = self.small_font.render("ENTRÉE: Envoyer | Flèches Haut/Bas: Défiler chat | ESPACE: Fermer", True, c.Colors.CYAN)
+        instruction = self.small_font.render("ENTRÉE: Envoyer | Flèches Haut/Bas: Défiler chat | ECHAP: Fermer", True, c.Colors.CYAN)
         screen.blit(instruction, (25, box_y + box_height - 25))

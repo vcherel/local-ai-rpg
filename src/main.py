@@ -63,8 +63,8 @@ class Game:
         prompt = (
             "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
         )
-        self.context = generate_response_queued(prompt, system_prompt)
-        # self.context = "Dans le monde d'Aetheris, où les rêves deviennent réalité et s'effondrent aléatoirement chaque nuit, un cartographe de cauchemars est chargé de tracer une porte vers la source des mondes perdus."
+        # self.context = generate_response_queued(prompt, system_prompt)
+        self.context = "Dans le monde d'Aetheris, où les rêves deviennent réalité et s'effondrent aléatoirement chaque nuit, un cartographe de cauchemars est chargé de tracer une porte vers la source des mondes perdus."
         print("Context : ", self.context)
 
     def update_camera(self):
