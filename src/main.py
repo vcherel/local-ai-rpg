@@ -8,13 +8,14 @@ import constants as c
 from camera import Camera
 from entities import Player, NPC, Item, get_npc_name_generator
 from dialogue_manager import DialogueManager
-from llm_request_queue import get_llm_task_count, init_llm_queue
+from llm_request_queue import generate_response_queued, get_llm_task_count
 from loading_indicator import LoadingIndicator
 from menu import InventoryMenu
 from utils import random_coordinates
 
 class Game:
     def __init__(self):
+        # Pygame
         self.screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT))
         self.clock = pygame.time.Clock()
         self.camera = Camera()
@@ -47,7 +48,19 @@ class Game:
         # UI
         self.small_font = pygame.font.SysFont("arial", 22)
         self.loading_indicator = LoadingIndicator()
-    
+
+        # Context
+        system_prompt = (
+            "Tu crées des mondes pour un RPG 2D. "
+            "Chaque monde doit contenir des détails originaux vivants ou intrigants qui peuvent servir de point de départ pour des quêtes ou des histoires."
+        )
+
+        prompt = (
+            "Décris en 1 courte phrase un monde RPG : ambiance, habitants, éléments ou événements intéressants que le joueur peut explorer. "
+        )
+        self.context = generate_response_queued(prompt, system_prompt)
+        print(self.context)
+
     def update_camera(self):
         """Center camera on player with proper offset"""
         self.camera.update_position(self.player.x, self.player.y)
@@ -298,9 +311,6 @@ class Game:
         
         pygame.quit()
         sys.exit()
-
-# Initialize LLM request queue
-init_llm_queue()
 
 # Initialize Pygame
 pygame.init()

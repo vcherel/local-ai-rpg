@@ -132,34 +132,38 @@ class LLMRequestQueue:
 # Global instance
 llm_queue = None
 llm = None
+_init_lock = threading.Lock()
 
-def init_llm_queue():
-    """Initialize the global LLM queue"""
+def get_llm_queue():
+    """Get or initialize the global LLM queue"""
     global llm_queue, llm
-    llm = Llama(
-        model_path="./models/LFM2-2.6B-Q4_0.gguf",
-        n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
-        verbose=False,
-        n_ctx=c.Hyperparameters.CONTEXT_SIZE,
-        flash_attn=True,
-        use_mlock=True,
-        n_threads=8,
-        seed=int(time.time() * 1000) % (2**31)
-    )
-    llm_queue = LLMRequestQueue(llm)
-    llm_queue.start()
+    if llm_queue is None:
+        with _init_lock:
+            # Double-check pattern
+            if llm_queue is None:
+                llm = Llama(
+                    model_path="./models/LFM2-2.6B-Q4_0.gguf",
+                    n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
+                    verbose=False,
+                    n_ctx=c.Hyperparameters.CONTEXT_SIZE,
+                    flash_attn=True,
+                    use_mlock=True,
+                    n_threads=8,
+                    seed=int(time.time() * 1000) % (2**31)
+                )
+                llm_queue = LLMRequestQueue(llm)
+                llm_queue.start()
+    return llm_queue
 
 def get_llm_task_count():
     """Get number of active LLM tasks"""
-    if llm_queue is None:
-        return 0
-    return llm_queue.get_active_task_count()
+    return get_llm_queue().get_active_task_count()
 
 def generate_response_queued(prompt, system_prompt):
-    return llm_queue.generate_response(prompt, system_prompt)
+    return get_llm_queue().generate_response(prompt, system_prompt)
 
 def generate_response_stream_queued(prompt, system_prompt):
-    yield from llm_queue.generate_response_stream(prompt, system_prompt)
+    yield from get_llm_queue().generate_response_stream(prompt, system_prompt)
 
 def generate_response_internal(prompt, system_prompt):
     if system_prompt:

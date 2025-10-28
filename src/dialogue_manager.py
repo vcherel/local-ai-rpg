@@ -171,7 +171,7 @@ class DialogueManager:
         self.generator = generate_response_stream_queued(prompt, system_prompt)
     
     def _generate_npc_dialogue(self, npc: NPC):
-        """Generate initial interaction dialogue with NPC (first message is automatic)"""
+        """Generate initial interaction dialogue with NPC"""
         # Choose type of interaction
         interaction_type = random.choices(
             ["quest", "talk"],
