@@ -9,7 +9,6 @@ from llm_request_queue import generate_response_queued, generate_response_stream
 from entities import NPC, Item, Player
 from utils import random_coordinates
 
-
 class DialogueManager:
     """Manages all dialogue, quest, and NPC interaction logic"""
     

@@ -11,15 +11,15 @@ from entities import Player, NPC, Item
 from dialogue_manager import DialogueManager
 from llm_request_queue import generate_response_queued, get_llm_queue, get_llm_task_count
 from loading_indicator import LoadingIndicator
-from menu import InventoryMenu
+from menu import InventoryMenu, run_main_menu
 from name_generator import NPCNameGenerator
 from utils import random_coordinates
 
 class Game:
-    def __init__(self):
+    def __init__(self, screen, clock):
         # Pygame
-        self.screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT))
-        self.clock = pygame.time.Clock()
+        self.screen = screen
+        self.clock = clock
         self.camera = Camera()
         
         # World items
@@ -320,9 +320,14 @@ class Game:
 
 # Initialize Pygame
 pygame.init()
+screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT))
+clock = pygame.time.Clock()
 
 # Initialize LLM queue
 get_llm_queue()
 
-game = Game()
-game.run()
+# Show main menu
+if run_main_menu(screen, clock):
+    # Start the game
+    game = Game(screen, clock)
+    game.run()
