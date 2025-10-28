@@ -1,3 +1,4 @@
+import threading
 import pygame
 import random
 import math
@@ -50,16 +51,19 @@ class Game:
         self.loading_indicator = LoadingIndicator()
 
         # Context
+        threading.Thread(target=self._generate_context, daemon=True).start()
+
+    def _generate_context(self):
         system_prompt = (
             "Tu crées des mondes pour un RPG 2D. "
-            "Chaque monde doit contenir des détails originaux vivants ou intrigants qui peuvent servir de point de départ pour des quêtes ou des histoires."
+            "Chaque monde doit contenir un détail original vivant ou intrigant qui peut servir de point de départ pour des quêtes ou des histoires."
         )
-
         prompt = (
-            "Décris en 1 courte phrase un monde RPG : ambiance, habitants, éléments ou événements intéressants que le joueur peut explorer. "
+            "En une seule phrase très courte, décris un monde RPG 2D avec son ambiance, ses habitants, "
+            "et un ou élément ou événement intéressant pour des quêtes."
         )
         self.context = generate_response_queued(prompt, system_prompt)
-        print(self.context)
+        print("Context : ", self.context)
 
     def update_camera(self):
         """Center camera on player with proper offset"""
