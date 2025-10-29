@@ -19,17 +19,16 @@ class QuestSystem:
         Returns dict with: {has_quest: bool, quest_description: str, item_name: str}
         """
         system_prompt = (
-            "Tu es un analyseur de conversation pour un jeu RPG. "
-            "Analyse la conversation et détermine si le PNJ a donné une quête au joueur. "
-            "Une quête implique que le PNJ demande au joueur de rapporter un objet spécifique. "
-            "Réponds UNIQUEMENT avec un JSON valide, sans texte supplémentaire."
+            "Tu es un analyseur de conversation RPG. "
+            "Réponds uniquement en JSON valide. "
+            "Indique true seulement si le PNJ demande explicitement au joueur de rapporter un objet précis."
         )
-        
+
         prompt = (
             f"Conversation:\n{conversation_history}\n\n"
-            f"Analyste cette conversation. Réponds avec ce format JSON exact:\n"
-            f'{{"has_quest": true/false, "quest_description": "description brève", "item_name": "nom de l\'objet"}}\n'
-            f"Si pas de quête, utilise: {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
+            f"JSON attendu :\n"
+            f'{{"has_quest": true/false, "quest_description": "description de la quête", "item_name": "nom de l\'objet"}}\n'
+            f"Si aucune quête : {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
         )
         
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
