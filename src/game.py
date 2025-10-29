@@ -52,13 +52,14 @@ class Game:
         self.small_font = pygame.font.SysFont("arial", 22)
         self.loading_indicator = LoadingIndicator()
         self.context_window = ContextWindow(screen.get_width(), screen.get_height())
+        self.window_active = False
 
         # Context
         self.context = self.save_system.load("context", None)
         if self.context is None:
             threading.Thread(target=self._generate_context, daemon=True).start()
         else:
-            self.context_window.set_context(self.context)
+            self.context_window.toggle(self.context)
 
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.items, self.player)
@@ -74,7 +75,7 @@ class Game:
         )
         self.context = generate_response_queued(prompt, system_prompt)
         self.save_system.update("context", self.context)
-        self.context_window.set_context(self.context)
+        self.context_window.toggle(self.context)
 
     def update_camera(self):
         """Center camera on player with proper offset"""
@@ -102,39 +103,30 @@ class Game:
                 return False
             
             if self.context_window.handle_event(event):
-                continue
+                return True
+
+            if self.inventory_menu.handle_event(event):
+                return True
             
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
-                    # Check if inventory button was clicked
-                    if self.inv_button_rect.collidepoint(event.pos):
-                        if not self.dialogue_manager.active:
+            if self.dialogue_manager.handle_event(event):
+                return True
+            
+            if not self.window_active:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left click
+                        if self.inv_button_rect.collidepoint(event.pos):
                             self.inventory_menu.toggle()
-            
-            if event.type == pygame.KEYDOWN:
-                # Chat text input when dialogue is active
-                if self.dialogue_manager.active:
-                    # Handle scrolling with arrow keys
-                    if event.key == pygame.K_UP:
-                        self.dialogue_manager.handle_scroll(1)  # Scroll up
-                    elif event.key == pygame.K_DOWN:
-                        self.dialogue_manager.handle_scroll(-1)  # Scroll down
-                    else:
-                        self.dialogue_manager.handle_text_input(event, self.context)
                 
-                # Game controls
-                if event.key == pygame.K_e and not self.dialogue_manager.active and not self.inventory_menu.active:
-                    self.interact_with_nearby_npc()
-                    if not self.dialogue_manager.active:
-                        self.pickup_nearby_item()
-                
-                if event.key == pygame.K_ESCAPE:
-                    if self.inventory_menu.active:
-                        self.inventory_menu.close()
-                    elif self.dialogue_manager.active:
-                        self.dialogue_manager.close()
-                    elif self.context_window.active:
-                        self.context_window.close
+                if event.type == pygame.KEYDOWN:
+                    # Game controls
+                    if event.key == pygame.K_e:
+                        self.interact_with_nearby_npc()
+                        if not self.dialogue_manager.active:
+                            self.pickup_nearby_item()
+
+                    elif event.key == pygame.K_i:
+                        self.inventory_menu.toggle()
+
         return True
     
     def update_player_movement(self):
@@ -174,7 +166,9 @@ class Game:
         running = True
         last_save_time = pygame.time.get_ticks()
         
-        while running:            
+        while running:
+            self.window_active = self.context_window.active or self.inventory_menu.active or self.dialogue_manager.active
+
             # Handle input
             running = self.handle_input()
             if not running:
@@ -186,11 +180,12 @@ class Game:
             # Update loading indicator
             self.loading_indicator.update()
             
-            # Update player movement
-            self.update_player_movement()
+            if not self.window_active:
+                # Update player movement
+                self.update_player_movement()
             
-            # Update camera
-            self.update_camera()
+                # Update camera
+                self.update_camera()
             
             # Draw everything
             self.game_renderer.draw_world(self.camera, self.floor_details, self.npcs, self.items, self.player)
@@ -199,7 +194,7 @@ class Game:
             self.inventory_menu.draw(self.screen, self.player)
             self.context_window.draw(self.screen)
 
-            # Auto-save every 5 minutes (300,000 ms)
+            # Auto-save every 5 minutes
             current_time = pygame.time.get_ticks()
             if current_time - last_save_time >= 300_000:
                 self.save_data()

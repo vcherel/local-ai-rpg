@@ -55,6 +55,23 @@ class InventoryMenu:
         
         return None
         
+    def handle_event(self, event):
+        if not self.active:
+            return False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                self.close()
+        
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_i:
+                self.close()
+
+            elif event.key == pygame.K_ESCAPE:
+                self.close()
+
+        return True
+
     def draw(self, screen: pygame.Surface, player: Player):
         if not self.active:
             return

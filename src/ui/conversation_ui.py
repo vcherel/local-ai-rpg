@@ -90,7 +90,7 @@ class ConversationUI:
         box_y = c.Screen.HEIGHT - box_height - 25
         
         # Draw main box
-        pygame.draw.rect(screen, c.Colors.DARK_GRAY, (10, box_y, c.Screen.WIDTH - 20, box_height))
+        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (10, box_y, c.Screen.WIDTH - 20, box_height))
         pygame.draw.rect(screen, c.Colors.WHITE, (10, box_y, c.Screen.WIDTH - 20, box_height), 2)
         
         # Draw NPC name
@@ -102,13 +102,6 @@ class ConversationUI:
         
         # Draw input box
         self._draw_input_box(screen, box_y, box_height)
-        
-        # Draw instructions
-        instruction = self.small_font.render(
-            "ENTRÉE: Envoyer | Flèches Haut/Bas: Défiler chat | ECHAP: Fermer",
-            True, c.Colors.CYAN
-        )
-        screen.blit(instruction, (25, box_y + box_height - 25))
     
     def _draw_messages(self, screen: pygame.Surface, box_y: int, npc_name: str, messages: list):
         """Draw scrollable conversation messages"""

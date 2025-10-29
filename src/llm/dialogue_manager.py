@@ -148,6 +148,28 @@ class DialogueManager:
         self.ui.reset()
         self.pending_quest_item_gen = False
         self.pending_reward_extraction = False
+
+    def handle_event(self, event):
+        if not self.active:
+            return False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                self.close()
+
+        elif event.type == pygame.KEYDOWN:
+            # Handle scrolling with arrow keys
+            if event.key == pygame.K_UP:
+                self.handle_scroll(1)  # Scroll up
+            elif event.key == pygame.K_DOWN:
+                self.handle_scroll(-1)  # Scroll down
+            else:
+                self.handle_text_input(event, self.context)
+                
+            if event.key == pygame.K_ESCAPE:
+                self.close()
+
+        return True
     
     def handle_text_input(self, event, context: str):
         """Handle text input for chat"""

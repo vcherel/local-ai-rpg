@@ -41,7 +41,7 @@ class GameRenderer:
         self.draw_offscreen_indicators(camera, items, npcs, player)
     
     def draw_ui(self, player, loading_indicator: LoadingIndicator, active_task_count):
-        """Draw inventory button, coins, controls, and loading indicators"""
+        """Draw inventory button, coins, and loading indicators"""
         # Draw inventory button
         mouse_pos = pygame.mouse.get_pos()
         is_hovering = self.inv_button_rect.collidepoint(mouse_pos)
@@ -62,9 +62,6 @@ class GameRenderer:
         objects_surface = self.small_font.render(objects_text, True, c.Colors.WHITE)
         self.screen.blit(coins_surface, (12, 55))
         self.screen.blit(objects_surface, (12, 90))
-        
-        controls = self.small_font.render("ZQSD : Déplacer | E : Parler/Ramasser", True, c.Colors.WHITE)
-        self.screen.blit(controls, (10, c.Screen.HEIGHT - 25))
         
         if active_task_count > 0:
             loading_indicator.draw_task_indicator(self.screen, c.Screen.WIDTH - 30, 30, active_task_count)
