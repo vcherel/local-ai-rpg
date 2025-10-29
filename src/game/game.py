@@ -24,9 +24,15 @@ class Game:
         self.clock: pygame.time.Clock = clock
         self.camera = Camera()
 
+        # UI
+        self.small_font = pygame.font.SysFont("arial", 22)
+        self.loading_indicator = LoadingIndicator()
+        self.context_window = ContextWindow(screen.get_width(), screen.get_height())
+        self.window_active = False
+
         # Helper
         self.save_system = save_system
-        self.world = World(save_system)
+        self.world = World(self.save_system, self.context_window)
         self.game_renderer = GameRenderer(self.screen)
 
         # Player
@@ -36,16 +42,10 @@ class Game:
         # Inventory menu
         self.inventory_menu = InventoryMenu()
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
-        
-        # UI
-        self.small_font = pygame.font.SysFont("arial", 22)
-        self.loading_indicator = LoadingIndicator()
-        self.context_window = ContextWindow(screen.get_width(), screen.get_height())
-        self.window_active = False
 
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.world.items, self.player)
-        self.npc_name_generator = NPCNameGenerator(self.save_system, get_context_callback=lambda: self.world.context)
+        self.npc_name_generator = NPCNameGenerator(self.save_system)
 
     def update_camera(self):
         """Center camera on player with proper offset"""

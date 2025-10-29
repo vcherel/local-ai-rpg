@@ -9,14 +9,13 @@ from llm.llm_request_queue import generate_response_queued
 class NPCNameGenerator:
     """Background generator for NPC names"""
 
-    def __init__(self, save_system, get_context_callback):
+    def __init__(self, save_system):
         self.name_queue = queue.Queue(maxsize=1)  # Only keep 1 name ready
         self.lock = threading.Lock()
-        self.get_context = get_context_callback
+        self.save_system: SaveSystem = save_system
+        self.get_context = lambda: self.save_system.load("context", None)
         self.is_generating = False
 
-        self.save_system: SaveSystem = save_system
-        
         # Start generating the first name immediately
         self.start_generation()
     

@@ -7,12 +7,11 @@ import core.constants as c
 from game.entities import NPC, Monster
 from game.items import Item
 from llm.llm_request_queue import generate_response_queued
+from ui.context_window import ContextWindow
 
 
 class World:
-    def __init__(self, save_system: SaveSystem):
-        self.save_system = save_system
-        
+    def __init__(self, save_system: SaveSystem, context_window: ContextWindow):        
         # Terrain details
         self.floor_details = [
             (*random_coordinates(), random.choice(["stone", "flower"]))
@@ -24,11 +23,14 @@ class World:
         self.monsters: List[Monster] = [Monster(*random_coordinates()) for _ in range(c.Game.NB_MONSTERS)]
         self.items: List[Item] = [] # TODO: see if they are deleted
 
+        # Context
         self.save_system = save_system
-        # TODO: do not save context ? (let it in save system ?)
+        self.context_window = context_window
         self.context = self.save_system.load("context", None)
         if self.context is None:
             threading.Thread(target=self._generate_context, daemon=True).start()
+        else:
+            self.context_window.toggle(self.context)
 
     def _generate_context(self):
         system_prompt = (
@@ -40,6 +42,7 @@ class World:
         )
         self.context = generate_response_queued(prompt, system_prompt, "Context generation")
         self.save_system.update("context", self.context)
+        self.context_window.toggle(self.context)
 
     def talk_npc(self, player):
         """Check for nearby NPCs and interact"""
