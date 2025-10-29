@@ -129,7 +129,8 @@ class DialogueManager:
         self.active = False
         self.current_npc = None
         self.waiting_for_llm = False
-        self.system_prompt = ""  # Store system prompt for entire conversation
+        self.system_prompt = ""
+        self.conversation_ended = False  # Track if conversation has ended
         
         # Response streaming
         self.generator = None
@@ -149,13 +150,11 @@ class DialogueManager:
         
         if npc.has_active_quest:
             if npc.quest_complete:
-                # Quest just completed
                 system_prompt += (
                     f"Le joueur vient de te rapporter {npc.quest_item.name} que tu avais demandé ({npc.quest_content}). "
                     f"Remercie-le et mentionne sa récompense en pièces. "
                 )
             elif npc.quest_item:
-                # Active quest in progress
                 system_prompt += (
                     f"Tu as demandé au joueur de récupérer {npc.quest_item.name}. "
                 )
@@ -164,7 +163,6 @@ class DialogueManager:
                 else:
                     system_prompt += "Le joueur ne l'a pas encore trouvé. "
         else:
-            # New interaction - NPC can decide naturally
             system_prompt += (
                 "Tu peux avoir des besoins, des problèmes, ou des requêtes. "
                 "Si le joueur te le demande, ou si cela émerge naturellement de la conversation, "
@@ -172,7 +170,11 @@ class DialogueManager:
                 "Tu peux aussi n'avoir aucune quête à donner. "
             )
         
-        system_prompt += "Réponds naturellement en une ou deux phrases courtes."
+        system_prompt += (
+            "Réponds naturellement en une ou deux phrases courtes. "
+            "Ne termine la conversation que si le joueur dit explicitement au revoir ou si le contexte le rend absolument nécessaire. "
+            "Dans ce cas, termine ton message par '[FIN]'."
+        )
         return system_prompt
     
     def interact_with_npc(self, npc: NPC, npc_name_generator, context: str):
@@ -191,6 +193,7 @@ class DialogueManager:
         self.current_npc = npc
         self.active = True
         self.waiting_for_llm = True
+        self.conversation_ended = False
         
         # Reset state
         self.conversation.clear()
@@ -218,8 +221,9 @@ class DialogueManager:
             elif event.key == pygame.K_DOWN:
                 self.handle_scroll(-1)  # Scroll down
             else:
-                self.handle_text_input(event)
-                
+                if not self.conversation_ended:
+                    self.handle_text_input(event)
+            
             if event.key == pygame.K_ESCAPE:
                 self.close()
 
@@ -227,7 +231,7 @@ class DialogueManager:
     
     def handle_text_input(self, event):
         """Handle text input for chat"""
-        if not self.active:
+        if not self.active or self.conversation_ended:
             return
         
         message = self.ui.handle_text_input(event)
@@ -241,9 +245,12 @@ class DialogueManager:
             return
         self.ui.handle_scroll(direction, self.conversation, self.current_npc.name)
     
+    def _check_for_end_signal(self, text: str) -> bool:
+        """Check if the NPC wants to end the conversation"""
+        return '[FIN]' in text
+    
     def update(self):
         """Update dialogue state and process streaming responses"""
-        # Process streaming response
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
@@ -252,28 +259,27 @@ class DialogueManager:
                 self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
+                
+                last_msg = self.conversation.get_last_message()
+                if last_msg and self._check_for_end_signal(last_msg["content"]):
+                    # Clean the message and add end marker
+                    cleaned_content = last_msg["content"].replace('[FIN]', '').strip()
+                    self.conversation.update_last_assistant_message(cleaned_content)
+                    
+                    # Add the "[Conversation Ended]" message
+                    self.conversation.add_system_message("[Conversation Ended]")
+                    self.conversation_ended = True
+                    self.ui.auto_scroll(self.conversation, self.current_npc.name)
+                    
+                    # Execute pending actions immediately when conversation ends
+                    self._execute_pending_actions()
     
     def close(self):
-        """Close dialogue and execute pending actions"""
+        """Close dialogue"""
         if self.active and self.generator is None:
-            # Analyze conversation for quest if NPC doesn't have active quest
             if not self.current_npc.has_active_quest and not self.current_npc.quest_complete:
                 self.pending_quest_analysis = True
-            
-            # Execute pending actions
-            if self.pending_quest_analysis:
-                threading.Thread(
-                    target=self._execute_quest_analysis,
-                    daemon=True
-                ).start()
-                self.pending_quest_analysis = False
-            
-            if self.pending_reward_extraction:
-                threading.Thread(
-                    target=self._execute_reward_extraction,
-                    daemon=True
-                ).start()
-                self.pending_reward_extraction = False
+            self._execute_pending_actions()
             
             # Reset state
             self.active = False
@@ -281,6 +287,23 @@ class DialogueManager:
             self.system_prompt = ""
             self.conversation.clear()
             self.ui.reset()
+            self.conversation_ended = False
+    
+    def _execute_pending_actions(self):
+        """Execute pending quest analysis and reward extraction"""
+        if self.pending_quest_analysis:
+            threading.Thread(
+                target=self._execute_quest_analysis,
+                daemon=True
+            ).start()
+            self.pending_quest_analysis = False
+        
+        if self.pending_reward_extraction:
+            threading.Thread(
+                target=self._execute_reward_extraction,
+                daemon=True
+            ).start()
+            self.pending_reward_extraction = False
     
     def draw(self, screen: pygame.Surface):
         """Draw the dialogue UI"""
@@ -290,13 +313,14 @@ class DialogueManager:
     
     def _send_chat_message(self, message: str):
         """Send a chat message to the NPC"""
+        if self.conversation_ended:
+            return
+        
         self.conversation.add_user_message(message)
         
-        # Format conversation for prompt
         conversation_text = self.conversation.format_for_prompt()
         conversation_text += f"Joueur: {message}"
         
-        # Start streaming response using the same system prompt
         self.generator = generate_response_stream_queued(conversation_text, self.system_prompt, "Continuing conversation")
     
     def _execute_quest_analysis(self):
