@@ -3,16 +3,15 @@ import pygame
 import core.constants as c
 
 class ContextWindow:
-    def __init__(self, screen_width, screen_height):
-        # TODO : remove screen dimensions
+    def __init__(self):
         self.active = False
         self.context_text = None
         
         # Window dimensions
         self.width = 600
         self.height = 200
-        self.x = (screen_width - self.width) // 2
-        self.y = (screen_height - self.height) // 2
+        self.x = c.Screen.ORIGIN_X
+        self.y = c.Screen.ORIGIN_Y - c.Screen.DELTA_Y
         
         # Font
         self.title_font = pygame.font.SysFont("arial", 24, bold=True)

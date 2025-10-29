@@ -27,7 +27,7 @@ class Game:
         # UI
         self.small_font = pygame.font.SysFont("arial", 22)
         self.loading_indicator = LoadingIndicator()
-        self.context_window = ContextWindow(screen.get_width(), screen.get_height())
+        self.context_window = ContextWindow()
         self.window_active = False
 
         # Helper
