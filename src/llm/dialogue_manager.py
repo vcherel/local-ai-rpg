@@ -191,19 +191,19 @@ class DialogueManager:
     
     def _execute_pending_actions(self):
         """Execute pending quest analysis and reward extraction"""
-        if self.pending_quest_analysis:
-            threading.Thread(
-                target=self._execute_quest_analysis,
-                daemon=True
-            ).start()
-            self.pending_quest_analysis = False
-        
         if self.pending_reward_extraction:
             threading.Thread(
                 target=self._execute_reward_extraction,
                 daemon=True
             ).start()
             self.pending_reward_extraction = False
+        
+        if self.pending_quest_analysis:
+            threading.Thread(
+                target=self._execute_quest_analysis,
+                daemon=True
+            ).start()
+            self.pending_quest_analysis = False
     
     def draw(self, screen: pygame.Surface):
         """Draw the dialogue UI"""
