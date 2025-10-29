@@ -67,7 +67,7 @@ class MainMenu:
         self.screen.fill(c.Colors.MENU_BACKGROUND)
 
         # Draw title
-        title_text = self.title_font.render("RPG IA de fou malade", True, c.Colors.WHITE)
+        title_text = self.title_font.render("RPG IA", True, c.Colors.WHITE)
         title_x = (self.screen.get_width() - title_text.get_width()) // 2
         title_y = 150
         self.screen.blit(title_text, (title_x, title_y))

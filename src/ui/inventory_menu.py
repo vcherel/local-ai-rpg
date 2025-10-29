@@ -195,10 +195,5 @@ class InventoryMenu:
             # Draw tooltip text
             menu_surface.blit(tooltip_surface, (tooltip_x + 10, tooltip_y + 5))
         
-        # Draw close instruction
-        close_text = self.font.render("Appuyez sur ECHAP pour fermer", True, c.Colors.ECHAP_TEXT)
-        close_x = (self.width - close_text.get_width()) // 2
-        menu_surface.blit(close_text, (close_x, self.height - self.padding - 25))
-        
         # Blit menu to screen
         screen.blit(menu_surface, (menu_x, menu_y))
