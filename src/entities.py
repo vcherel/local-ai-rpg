@@ -102,12 +102,9 @@ class NPC:
         return ""
 
     def draw(self, screen: pygame.Surface, camera: Camera):
-        """Draw NPC with correct rotation relative to camera"""
-        # Rotate NPC position by camera
         rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
-        
-        # Draw character
         real_angle = self.angle + camera.angle
+        
         draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, real_angle)
         
         # Exclamation mark for active quests
@@ -194,3 +191,18 @@ class Player:
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)
+
+class Monster:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.angle = random.uniform(0, 2 * math.pi)
+
+    def draw(self, screen: pygame.Surface, camera: Camera):
+        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
+        real_angle = self.angle + camera.angle
+
+        draw_character(screen, rotated_x, rotated_y, c.Size.MONSTER, c.Colors.RED, real_angle)
+
+    def distance_to_player(self, player):
+        return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5

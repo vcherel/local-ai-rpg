@@ -4,7 +4,7 @@ from typing import List
 
 import core.constants as c
 from core.camera import Camera
-from entities import Player, NPC
+from entities import Monster, Player, NPC
 from items import Item
 from ui.loading_indicator import LoadingIndicator
 
@@ -15,7 +15,7 @@ class GameRenderer:
         self.small_font = pygame.font.SysFont("arial", 22)
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
     
-    def draw_world(self, camera: Camera, floor_details, npcs: List[NPC], items: List[Item], player: Player):
+    def draw_world(self, camera: Camera, floor_details, npcs: List[NPC], monsters: List[Monster], items: List[Item], player: Player):
         """Draw all world elements"""
         self.screen.fill(c.Colors.GREEN)
         
@@ -30,6 +30,10 @@ class GameRenderer:
         # NPCs
         for npc in npcs:
             npc.draw(self.screen, camera)
+
+        # Monsters
+        for monster in monsters:
+            monster.draw(self.screen, camera)
         
         # Items
         for item in (i for i in items if not i.picked_up):

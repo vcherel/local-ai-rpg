@@ -12,6 +12,7 @@ class Screen:
 class Size:
     PLAYER: int = 30
     NPC: int = 30
+    MONSTER: int = 25
     ITEM: int = 25
 
 @dataclass(frozen=True)
@@ -19,15 +20,19 @@ class Game:
     PLAYER_SPEED: int = 5
     PLAYER_RUN_SPEED: int = 8
     PLAYER_TURN_SPEED: float = 0.03
+
     INTERACTION_DISTANCE: int = 50
+
     WORLD_SIZE: int = 5000
     NB_NPCS: int = 20 * (WORLD_SIZE // 1000)
+    NB_MONSTERS: int = 10 * (WORLD_SIZE // 1000)
     NB_DETAILS: int = 500 * (WORLD_SIZE // 1000)
 
 @dataclass(frozen=True)
 class Colors:
     BLACK: tuple = (0, 0, 0)
     GREEN: tuple = (34, 139, 34)
+    RED: tuple = (201, 30, 22)
     WHITE: tuple = (255, 255, 255)
     YELLOW: tuple = (255, 255, 0)
     CYAN: tuple = (0, 255, 255)

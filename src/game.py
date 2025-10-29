@@ -9,7 +9,7 @@ from core.camera import Camera
 import core.constants as c
 from core.save import SaveSystem
 from core.utils import random_coordinates
-from entities import NPC, Player
+from entities import NPC, Monster, Player
 from items import Item
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import generate_response_queued, get_llm_task_count
@@ -39,11 +39,16 @@ class Game:
         # Game objects
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
         self.npcs: List[NPC] = []
+        self.monsters: List[Monster] = []
         self.items: List[Item] = []
         
         # Spawn NPCs randomly
         for _ in range(c.Game.NB_NPCS):
             self.npcs.append(NPC(*random_coordinates()))
+
+        # Spawn Monsters randomly
+        for _ in range(c.Game.NB_MONSTERS):
+            self.monsters.append(Monster(*random_coordinates()))
         
         # Inventory menu
         self.inventory_menu = InventoryMenu()
@@ -204,7 +209,7 @@ class Game:
                 self.update_camera()
             
             # Draw everything
-            self.game_renderer.draw_world(self.camera, self.floor_details, self.npcs, self.items, self.player)
+            self.game_renderer.draw_world(self.camera, self.floor_details, self.npcs, self.monsters, self.items, self.player)
             self.game_renderer.draw_ui(self.player, self.loading_indicator, get_llm_task_count())
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)
