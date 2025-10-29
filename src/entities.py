@@ -17,50 +17,57 @@ def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tu
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
     
+    # Make surface larger to accommodate rotation
+    base_width = size + border_thickness * 2 + extra_space * 2
+    base_height = size + border_thickness * 2
+    
+    # Add padding for rotation (diagonal of the surface)
+    padding = int(math.sqrt(base_width**2 + base_height**2) - min(base_width, base_height)) // 2 + 10
+    
     char_surf = pygame.Surface(
-        (size + border_thickness * 2 + extra_space * 2, 
-         size + border_thickness * 2),
+        (base_width + padding * 2, base_height + padding * 2),
         pygame.SRCALPHA
     )
     
-    x_offset = extra_space
-
+    x_offset = extra_space + padding
+    y_offset = padding
+    
     # Draw body with border
     pygame.draw.circle(
-        char_surf,
-        c.Colors.BLACK,
-        (x_offset + size // 2 + border_thickness, size // 2 + border_thickness),
+        char_surf, c.Colors.BLACK,
+        (x_offset + size // 2 + border_thickness, y_offset + size // 2 + border_thickness),
         size // 2 + border_thickness
     )
     pygame.draw.circle(
-        char_surf,
-        color,
-        (x_offset + size // 2 + border_thickness, size // 2 + border_thickness),
+        char_surf, color,
+        (x_offset + size // 2 + border_thickness, y_offset + size // 2 + border_thickness),
         size // 2
     )
     
     # Draw arms
-    arm_y = (size + border_thickness * 2) // 3.5
+    arm_y = y_offset + (size + border_thickness * 2) // 3.5
     distance_arm = 10
-
-    def draw_arm(cx):
-        pygame.draw.circle(char_surf, c.Colors.BLACK, (cx, arm_y), arm_radius)
-        pygame.draw.circle(char_surf, color, (cx, arm_y), arm_radius - border_thickness)
-
+    
+    def draw_arm(cx, cy):
+        pygame.draw.circle(char_surf, c.Colors.BLACK, (cx, cy), arm_radius)
+        pygame.draw.circle(char_surf, color, (cx, cy), arm_radius - border_thickness)
+    
     # Left arm
-    left_arm_x = arm_radius + distance_arm
+    left_arm_x = padding + arm_radius + distance_arm
+    left_arm_y = arm_y
     if attack_hand == "left":
-        # extend arm during attack
-        left_arm_x += int(attack_progress * 10)  # extend outward
-    draw_arm(left_arm_x)
-
+        left_arm_x += int(attack_progress * 15)
+        left_arm_y -= int(attack_progress * 15)
+    draw_arm(left_arm_x, left_arm_y)
+    
     # Right arm
-    right_arm_x = size + border_thickness * 2 + extra_space * 2 - arm_radius - distance_arm
+    right_arm_x = base_width + padding - arm_radius - distance_arm
+    right_arm_y = arm_y
     if attack_hand == "right":
-        # extend arm during attack
-        right_arm_x -= int(attack_progress * 10)
-    draw_arm(right_arm_x)
-
+        right_arm_x -= int(attack_progress * 15)
+        right_arm_y -= int(attack_progress * 15)
+    draw_arm(right_arm_x, right_arm_y)
+    
     # Rotate if needed
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
@@ -159,7 +166,7 @@ class Player:
     def update_attack(self, dt):
         """Update attack animation progress"""
         if self.attack_in_progress:
-            self.attack_progress += dt * 0.01  # speed of swing
+            self.attack_progress += dt * 0.008  # speed of swing
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
