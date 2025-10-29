@@ -16,6 +16,3 @@ See all shorcuts :  CTRL + K  ; CTRL + S
 
 ### Install llama_cpp
 CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=75" pip install llama-cpp-python --force-reinstall --no-cache-dir
-
-
-# TODO : Failed to parse quest analysis: Unterminated string starting at: line 1 column 63 (char 62), response: {"has_quest": "false", "quest_description": " ", "item_name": "}"

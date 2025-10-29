@@ -21,7 +21,7 @@ class World:
         # Entities
         self.npcs: List[NPC] = [NPC(*random_coordinates()) for _ in range(c.Game.NB_NPCS)]
         self.monsters: List[Monster] = [Monster(*random_coordinates()) for _ in range(c.Game.NB_MONSTERS)]
-        self.items: List[Item] = [] # TODO: see if they are deleted
+        self.items: List[Item] = []
 
         # Context
         self.save_system = save_system

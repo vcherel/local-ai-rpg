@@ -36,7 +36,6 @@ class Game:
         self.game_renderer = GameRenderer(self.screen)
 
         # Player
-        # TODO: put player in World ?
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
         
         # Inventory menu

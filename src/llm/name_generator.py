@@ -57,6 +57,7 @@ class NPCNameGenerator:
         Get a generated name (waits if necessary)
         """
         # Wait until a name is ready
-        name = self.name_queue.get()
+        name: str = self.name_queue.get()
+        name = name.replace('.', '').strip()
         
         return name

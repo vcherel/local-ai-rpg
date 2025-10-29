@@ -151,8 +151,9 @@ class DialogueManager:
 
                 # Avoid this:  "Elara : Elara : Hello !"
                 if ":" in last_msg["content"]:
-                    cleaned_content = last_msg.split(":", 1)[-1]
-                    self.conversation.update_last_assistant_message(cleaned_content)
+                    cleaned_content = last_msg["content"].split(":", 1)[-1].strip()
+                    if len(cleaned_content) <= 25:
+                        self.conversation.update_last_assistant_message(cleaned_content)
                 
                 # Avoid this: "How are you ?[FIN]"
                 if "[FIN]" in last_msg["content"]:

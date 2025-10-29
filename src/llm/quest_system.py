@@ -19,16 +19,17 @@ class QuestSystem:
         Returns dict with: {has_quest: bool, quest_description: str, item_name: str}
         """
         system_prompt = (
-            "Tu es un analyseur de conversation RPG. "
-            "Réponds uniquement en JSON valide. "
-            "Indique true seulement si le PNJ demande explicitement au joueur de rapporter un objet précis."
+            "Tu es un analyseur de conversation pour un jeu RPG. "
+            "Analyse la conversation et détermine si le PNJ a donné une quête au joueur. "
+            "Une quête implique que le PNJ demande au joueur de rapporter un objet spécifique. "
+            "Réponds UNIQUEMENT avec un JSON valide, sans texte supplémentaire."
         )
-
+        
         prompt = (
             f"Conversation:\n{conversation_history}\n\n"
-            f"JSON attendu :\n"
-            f'{{"has_quest": true/false, "quest_description": "description de la quête", "item_name": "nom de l\'objet"}}\n'
-            f"Si aucune quête : {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
+            f"Analyste cette conversation. Réponds avec ce format JSON exact:\n"
+            f'{{"has_quest": true/false, "quest_description": "description brève", "item_name": "nom de l\'objet"}}\n'
+            f"Si pas de quête, utilise: {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
         )
         
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
@@ -36,27 +37,38 @@ class QuestSystem:
         # Parse JSON response
         try:
             response = response.strip()
-            # Convert true/false to lowercase JSON
-            json_str = response.replace("True", "true").replace("False", "false")
-            # Wrap keys in double quotes
-            response = re.sub(r'(\b\w+\b)\s*:', r'"\1":', response)
-            # Wrap unquoted string values in double quotes
-            response = re.sub(r':\s*([^",\d][^,\n}]*)', r': "\1"', response)
-
-            # Extract the first {...} block
+            # Extract first {...} block
             match = re.search(r"\{.*\}", response, re.DOTALL)
-            if match:
-                json_str = match.group(0)
-                result = json.loads(json_str)
-                return {
-                    'has_quest': result.get('has_quest', False),
-                    'quest_description': result.get('quest_description', ''),
-                    'item_name': result.get('item_name', '')
-                }
+            if not match:
+                return None
+            json_str = match.group(0)
+            
+            json_str = re.sub(r'(\w+)(?=\s*:)', r'"\1"', json_str)
+            json_str = re.sub(r':\s*([,}])', r': ""\1', json_str)
+            json_str = re.sub(r':\s*"?[Tt]rue"?', ': true', json_str)
+            json_str = re.sub(r':\s*"?[Ff]alse"?', ': false', json_str)
+            json_str = re.sub(r':\s*"([^"]*?)"\s*}', r': "\1}"}', json_str)
+            json_str = json_str.replace('}}', '}')
+            
+            result = json.loads(json_str)
+            
+            if 'has_quest' not in result:
+                print("Warning: 'has_quest' field not fetched.")
+            if 'quest_description' not in result:
+                print("Warning: 'quest_description' field not fetched.")
+            if 'item_name' not in result:
+                print("Warning: 'item_name' field not fetched.")
+            
+            return {
+                'has_quest': bool(result.get('has_quest', False)),
+                'quest_description': result.get('quest_description', ''),
+                'item_name': result.get('item_name', '')
+            }
         except Exception as e:
-            print(f"Failed to parse quest analysis: {e}, response: {response}")
+            print(f"Failed to parse quest analysis: {e}, response: {response}\n")
         
-        # Fallback: no quest detected
+        # Fallback
+        print("Warning: Using fallback.")
         return {'has_quest': False, 'quest_description': '', 'item_name': ''}
     
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict):
