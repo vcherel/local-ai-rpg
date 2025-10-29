@@ -4,7 +4,7 @@ from dataclasses import dataclass
 class Screen:
     WIDTH: int = 1800
     HEIGHT: int = 900
-    DELTA_Y: int = 200  # Distance between center and player
+    DELTA_Y: int = 100  # Distance between center and player
     ORIGIN_X: int = WIDTH // 2
     ORIGIN_Y: int = HEIGHT // 2 + DELTA_Y
 
@@ -17,6 +17,7 @@ class Size:
 @dataclass(frozen=True)
 class Game:
     PLAYER_SPEED: int = 5
+    PLAYER_RUN_SPEED: int = 8
     PLAYER_TURN_SPEED: float = 0.03
     INTERACTION_DISTANCE: int = 50
     WORLD_SIZE: int = 5000

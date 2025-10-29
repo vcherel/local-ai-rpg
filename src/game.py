@@ -144,11 +144,15 @@ class Game:
         keys = pygame.key.get_pressed()
         distance = 0
 
+        # Running state
+        self.player.is_running = keys[pygame.K_LSHIFT]
+        actual_speed = c.Game.PLAYER_RUN_SPEED if self.player.is_running else c.Game.PLAYER_SPEED
+
         # Player movement (forward/back relative to camera rotation)
         if keys[pygame.K_z]:
-            distance += c.Game.PLAYER_SPEED
+            distance += actual_speed
         if keys[pygame.K_s]:
-            distance -= c.Game.PLAYER_SPEED / 2  # Backward is slower
+            distance -= actual_speed / 2  # Backward is slower
 
         # Rotate camera using Q/D
         if keys[pygame.K_q]:
@@ -164,9 +168,6 @@ class Game:
 
         # Move player
         self.player.move(distance, self.camera.angle, orientation)
-
-        # Running state
-        self.player.is_running = keys[pygame.K_LSHIFT]
 
         # Attacking state
         dt = self.clock.get_time()

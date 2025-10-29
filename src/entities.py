@@ -173,10 +173,8 @@ class Player:
     
     def move(self, distance, angle, orientation):
         """Move player in the direction they are facing"""
-        run_mul = 2 if self.is_running else 1
-
-        dx = -math.sin(angle) * distance * run_mul
-        dy = -math.cos(angle) * distance * run_mul
+        dx = -math.sin(angle) * distance
+        dy = -math.cos(angle) * distance
 
         self.x += dx
         self.y += dy
