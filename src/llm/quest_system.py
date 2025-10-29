@@ -1,6 +1,6 @@
 import json
 import re
-from core.utils import random_coordinates
+from core.utils import parse_response, random_coordinates
 from game.entities import NPC, Player
 from game.items import Item
 from llm.llm_request_queue import generate_response_queued
@@ -34,42 +34,7 @@ class QuestSystem:
         
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
         
-        # Parse JSON response
-        try:
-            response = response.strip()
-            # Extract first {...} block
-            match = re.search(r"\{.*\}", response, re.DOTALL)
-            if not match:
-                return None
-            json_str = match.group(0)
-            
-            json_str = re.sub(r'(\w+)(?=\s*:)', r'"\1"', json_str)
-            json_str = re.sub(r':\s*([,}])', r': ""\1', json_str)
-            json_str = re.sub(r':\s*"?[Tt]rue"?', ': true', json_str)
-            json_str = re.sub(r':\s*"?[Ff]alse"?', ': false', json_str)
-            json_str = re.sub(r':\s*"([^"]*?)"\s*}', r': "\1}"}', json_str)
-            json_str = json_str.replace('}}', '}')
-            
-            result = json.loads(json_str)
-            
-            if 'has_quest' not in result:
-                print("Warning: 'has_quest' field not fetched.")
-            if 'quest_description' not in result:
-                print("Warning: 'quest_description' field not fetched.")
-            if 'item_name' not in result:
-                print("Warning: 'item_name' field not fetched.")
-            
-            return {
-                'has_quest': bool(result.get('has_quest', False)),
-                'quest_description': result.get('quest_description', ''),
-                'item_name': result.get('item_name', '')
-            }
-        except Exception as e:
-            print(f"Failed to parse quest analysis: {e}, response: {response}\n")
-        
-        # Fallback
-        print("Warning: Using fallback.")
-        return {'has_quest': False, 'quest_description': '', 'item_name': ''}
+        return parse_response(response)
     
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict):
         """Create and register a quest item based on analysis"""

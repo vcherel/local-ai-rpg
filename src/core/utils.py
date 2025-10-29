@@ -1,5 +1,7 @@
 import colorsys
+import json
 import random
+import re
 
 import core.constants as c
 
@@ -59,3 +61,41 @@ class ConversationHistory:
             else:
                 conversation_text += f"PNJ: {msg['content']}\n"
         return conversation_text
+
+def parse_response(response):
+    try:
+        response = response.strip()
+        match = re.search(r"\{.*\}", response, re.DOTALL)
+        if not match:
+            return {'has_quest': False, 'quest_description': '', 'item_name': ''}
+        json_str = match.group(0)
+
+        # Quote keys
+        json_str = re.sub(r'([{,]\s*)(\w+)(?=\s*:)', r'\1"\2"', json_str)
+
+        # Replace booleans
+        json_str = re.sub(r':\s*True', ': true', json_str)
+        json_str = re.sub(r':\s*False', ': false', json_str)
+
+        # Quote unquoted string values (non-boolean, non-empty)
+        json_str = re.sub(
+            r':\s*([^"{},\s][^,}]*)',
+            lambda m: f': "{m.group(1).strip()}"',
+            json_str
+        )
+
+        # Fill empty values
+        json_str = re.sub(r':\s*([,}])', r': ""\1', json_str)
+
+        result = json.loads(json_str)
+        return {
+            'has_quest': bool(result.get('has_quest', False)),
+            'quest_description': result.get('quest_description', ''),
+            'item_name': result.get('item_name', '')
+        }
+    except Exception as e:
+        print(f"Failed to parse quest analysis: {e}, response: {response}\n")
+
+    # Fallback
+    print("Warning: Using fallback.")
+    return {'has_quest': False, 'quest_description': '', 'item_name': ''}
