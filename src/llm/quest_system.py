@@ -1,5 +1,5 @@
-import json
 import re
+from typing import List
 from core.utils import parse_response, random_coordinates
 from game.entities import NPC, Player
 from game.items import Item
@@ -10,7 +10,7 @@ class QuestSystem:
     """Manages quest generation, completion, and rewards"""
     
     def __init__(self, items, player):
-        self.items = items
+        self.items: List[Item] = items
         self.player: Player = player
     
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
@@ -79,6 +79,7 @@ class QuestSystem:
     
     def complete_quest(self, npc: NPC):
         """Mark quest as complete and reset NPC quest state"""
+        self.player.inventory.remove(npc.quest_item)
         npc.has_active_quest = False
         npc.quest_complete = False
         npc.quest_item = None

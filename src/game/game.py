@@ -87,7 +87,7 @@ class Game:
                         else:                       
                             npc = self.world.talk_npc(self.player)
                             if npc is not None:
-                                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world.context)
+                                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
 
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()

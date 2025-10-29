@@ -3,6 +3,7 @@ import pygame
 
 from core.utils import ConversationHistory
 from game.entities import NPC
+from game.world import World
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.name_generator import NPCNameGenerator
 from llm.quest_system import QuestSystem
@@ -63,17 +64,16 @@ class DialogueManager:
         )
         return system_prompt
     
-    def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, context: str):
+    def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, world: World):
         """Start interaction with an NPC"""
         npc.assign_name(npc_name_generator)
         
         # Check if player has quest item
         if npc.has_active_quest and npc.quest_item in self.quest_system.player.inventory:
-            self.quest_system.player.inventory.remove(npc.quest_item)
             npc.quest_complete = True
         
         # Build system prompt once for entire conversation
-        self.system_prompt = self._build_system_prompt(npc, context)
+        self.system_prompt = self._build_system_prompt(npc, world.context)
         
         # Initialize dialogue
         self.current_npc = npc
@@ -89,6 +89,7 @@ class DialogueManager:
         
         # Check if we need to extract reward after this conversation
         if npc.quest_complete:
+            world.items.remove(npc.quest_item)
             self.pending_reward_extraction = True
             self.quest_system.complete_quest(npc)
         
