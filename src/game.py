@@ -137,31 +137,30 @@ class Game:
     
     def update_player_movement(self):
         """Update player position and camera based on keyboard"""
-        if not self.dialogue_manager.active and not self.inventory_menu.active:
-            keys = pygame.key.get_pressed()
-            distance = 0
+        keys = pygame.key.get_pressed()
+        distance = 0
 
-            # Player movement (forward/back relative to camera rotation)
-            if keys[pygame.K_z]:
-                distance += c.Game.PLAYER_SPEED
-            if keys[pygame.K_s]:
-                distance -= c.Game.PLAYER_SPEED / 2  # Backward is slower
+        # Player movement (forward/back relative to camera rotation)
+        if keys[pygame.K_z]:
+            distance += c.Game.PLAYER_SPEED
+        if keys[pygame.K_s]:
+            distance -= c.Game.PLAYER_SPEED / 2  # Backward is slower
 
-            # Rotate camera using Q/D
-            if keys[pygame.K_q]:
-                self.camera.update_angle(c.Game.PLAYER_TURN_SPEED)
-            if keys[pygame.K_d]:
-                self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
+        # Rotate camera using Q/D
+        if keys[pygame.K_q]:
+            self.camera.update_angle(c.Game.PLAYER_TURN_SPEED)
+        if keys[pygame.K_d]:
+            self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
 
-            # Check if it is running
-            if keys[pygame.K_LSHIFT]:
-                self.player.is_running = True
-            else:
-                self.player.is_running = False
+        # Check if it is running
+        if keys[pygame.K_LSHIFT]:
+            self.player.is_running = True
+        else:
+            self.player.is_running = False
 
-            # Move player
-            if distance != 0:
-                self.player.move(distance, self.camera.angle)
+        # Move player
+        if distance != 0:
+            self.player.move(distance, self.camera.angle)
 
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
