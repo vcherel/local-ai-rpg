@@ -7,6 +7,7 @@ class LoadingIndicator:
     def __init__(self):
         self.angle = 0
         self.speed = 5  # Rotation speed
+        self.font = pygame.font.SysFont("arial", 16, bold=True)
     
     def update(self):
         """Update the rotation angle"""
@@ -60,7 +61,6 @@ class LoadingIndicator:
         self.draw_spinner(screen, x, y, 12, (255, 240, 200))
 
         # Task count number
-        font = pygame.font.SysFont("arial", 16, bold=True)
-        text = font.render(str(task_count), True, (255, 255, 200))
+        text = self.font.render(str(task_count), True, (255, 255, 200))
         text_rect = text.get_rect(center=(x, y))
         screen.blit(text, text_rect)
