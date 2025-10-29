@@ -1,18 +1,15 @@
 import math
-import random
 import sys
-import threading
-from typing import List
 import pygame
 
 from core.camera import Camera
 import core.constants as c
 from core.save import SaveSystem
-from core.utils import random_coordinates
-from game.entities import NPC, Monster, Player
+from game.entities import Player
 from game.items import Item
+from game.world import World
 from llm.dialogue_manager import DialogueManager
-from llm.llm_request_queue import generate_response_queued, get_llm_task_count
+from llm.llm_request_queue import get_llm_task_count
 from llm.name_generator import NPCNameGenerator
 from ui.context_window import ContextWindow
 from ui.game_renderer import GameRenderer
@@ -27,28 +24,14 @@ class Game:
         self.clock: pygame.time.Clock = clock
         self.camera = Camera()
 
+        # Helper
         self.save_system = save_system
+        self.world = World(save_system)
         self.game_renderer = GameRenderer(self.screen)
 
-        # World items
-        self.floor_details = [
-            (*random_coordinates(), random.choice(["stone", "flower"]))
-            for _ in range(c.Game.NB_DETAILS)
-        ]
-        
-        # Game objects
+        # Player
+        # TODO: put player in World ?
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
-        self.npcs: List[NPC] = []
-        self.monsters: List[Monster] = []
-        self.items: List[Item] = []
-        
-        # Spawn NPCs randomly
-        for _ in range(c.Game.NB_NPCS):
-            self.npcs.append(NPC(*random_coordinates()))
-
-        # Spawn Monsters randomly
-        for _ in range(c.Game.NB_MONSTERS):
-            self.monsters.append(Monster(*random_coordinates()))
         
         # Inventory menu
         self.inventory_menu = InventoryMenu()
@@ -60,53 +43,13 @@ class Game:
         self.context_window = ContextWindow(screen.get_width(), screen.get_height())
         self.window_active = False
 
-        # Context
-        self.context = self.save_system.load("context", None)
-        if self.context is None:
-            threading.Thread(target=self._generate_context, daemon=True).start()
-        else:
-            self.context_window.toggle(self.context)
-
         # Dialogue manager
-        self.dialogue_manager = DialogueManager(self.items, self.player)
-        self.npc_name_generator = NPCNameGenerator(self.save_system, get_context_callback=lambda: self.context)
-
-    def _generate_context(self):
-        system_prompt = (
-            "Tu crées des mondes pour un RPG. "
-            "Chaque monde doit contenir un détail original qui peut servir de point de départ pour des quêtes."
-        )
-        prompt = (
-            "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
-        )
-        self.context = generate_response_queued(prompt, system_prompt, "Context generation")
-        self.save_system.update("context", self.context)
-        self.context_window.toggle(self.context)
+        self.dialogue_manager = DialogueManager(self.world.items, self.player)
+        self.npc_name_generator = NPCNameGenerator(self.save_system, get_context_callback=lambda: self.world.context)
 
     def update_camera(self):
         """Center camera on player with proper offset"""
         self.camera.update_position(self.player.x, self.player.y)
-    
-    def interact_with_nearby_npc(self):
-        """Check for nearby NPCs and interact"""
-        if self.context is None:
-            # Context not ready yet, skip
-            return
-        
-        for npc in self.npcs:
-            if npc.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
-                self.dialogue_manager.interact_with_npc(
-                    npc, self.npc_name_generator, self.context
-                )
-                break  # Only interact with one NPC at a time
-    
-    def pickup_nearby_item(self):
-        """Check for nearby items and pick them up"""
-        for item in self.items:
-            if not item.picked_up and item.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
-                item.picked_up = True
-                self.player.inventory.append(item)
-                break
 
     def handle_input(self):
         """Handle keyboard and mouse input"""
@@ -135,9 +78,17 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     # Game controls
                     if event.key == pygame.K_e:
-                        self.interact_with_nearby_npc()
-                        if not self.dialogue_manager.active:
-                            self.pickup_nearby_item()
+                        # First we pick item
+                        item: Item = self.world.pickup_item(self.player)
+                        if item is not None:
+                            item.picked_up = True
+                            self.player.inventory.append(item)
+                        
+                        # Then we talk if we did not pick item
+                        else:                       
+                            npc = self.world.talk_npc(self.player)
+                            if npc is not None:
+                                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world.context)
 
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()
@@ -209,7 +160,7 @@ class Game:
                 self.update_camera()
             
             # Draw everything
-            self.game_renderer.draw_world(self.camera, self.floor_details, self.npcs, self.monsters, self.items, self.player)
+            self.game_renderer.draw_world(self.camera, self.world, self.player)
             self.game_renderer.draw_ui(self.player, self.loading_indicator, get_llm_task_count())
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)

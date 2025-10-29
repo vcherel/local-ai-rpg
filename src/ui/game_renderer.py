@@ -6,6 +6,7 @@ import core.constants as c
 from core.camera import Camera
 from game.entities import Monster, Player, NPC
 from game.items import Item
+from game.world import World
 from ui.loading_indicator import LoadingIndicator
 
 
@@ -15,12 +16,12 @@ class GameRenderer:
         self.small_font = pygame.font.SysFont("arial", 22)
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
     
-    def draw_world(self, camera: Camera, floor_details, npcs: List[NPC], monsters: List[Monster], items: List[Item], player: Player):
+    def draw_world(self, camera: Camera, world: World, player: Player):
         """Draw all world elements"""
         self.screen.fill(c.Colors.GREEN)
         
         # Floor details
-        for (x, y, kind) in floor_details:
+        for (x, y, kind) in world.floor_details:
             rotated_x, rotated_y = camera.rotate_point(x, y)
             if kind == "stone":
                 pygame.draw.circle(self.screen, (100, 100, 100), (rotated_x, rotated_y), 3)
@@ -28,22 +29,22 @@ class GameRenderer:
                 pygame.draw.circle(self.screen, (255, 0, 0), (rotated_x, rotated_y), 2)
         
         # NPCs
-        for npc in npcs:
+        for npc in world.npcs:
             npc.draw(self.screen, camera)
 
         # Monsters
-        for monster in monsters:
+        for monster in world.monsters:
             monster.draw(self.screen, camera)
         
         # Items
-        for item in (i for i in items if not i.picked_up):
+        for item in (i for i in world.items if not i.picked_up):
             item.draw(self.screen, camera)
         
         # Player
         player.draw(self.screen)
         
         # Off-screen indicators
-        self.draw_offscreen_indicators(camera, items, npcs, player)
+        self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
     
     def draw_ui(self, player, loading_indicator: LoadingIndicator, active_task_count):
         """Draw inventory button, coins, and loading indicators"""

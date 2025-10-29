@@ -4,6 +4,7 @@ import core.constants as c
 
 class ContextWindow:
     def __init__(self, screen_width, screen_height):
+        # TODO : remove screen dimensions
         self.active = False
         self.context_text = None
         
