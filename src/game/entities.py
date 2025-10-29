@@ -168,18 +168,34 @@ class Player:
         
     
     def move(self, camera: Camera, clock: pygame.time.Clock):
-        """Move player in the direction they are facing"""
+        """Move player toward mouse position"""
         keys = pygame.key.get_pressed()
-        distance = 0
 
         # Running state
         actual_speed = c.Game.PLAYER_RUN_SPEED if keys[pygame.K_LSHIFT] else c.Game.PLAYER_SPEED
 
-        # Player movement (forward/back relative to camera rotation)
-        if keys[pygame.K_z]:
-            distance += actual_speed
-        if keys[pygame.K_s]:
-            distance -= actual_speed / 2  # Backward is slower
+        # Forward/back movement relative to mouse
+        if keys[pygame.K_z] or keys[pygame.K_s]:
+            # Mouse position on screen
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+
+            # Convert mouse screen position to world coordinates
+            world_mouse_x = (mouse_x - c.Screen.ORIGIN_X) * math.cos(-camera.angle) - (mouse_y - c.Screen.ORIGIN_Y) * math.sin(-camera.angle) + camera.x
+            world_mouse_y = (mouse_x - c.Screen.ORIGIN_X) * math.sin(-camera.angle) + (mouse_y - c.Screen.ORIGIN_Y) * math.cos(-camera.angle) + camera.y
+
+            # Vector from player to mouse
+            dx = world_mouse_x - self.x
+            dy = world_mouse_y - self.y
+            dist = math.hypot(dx, dy)
+
+            if dist != 0:
+                dx /= dist
+                dy /= dist
+
+            # Forward/backward
+            speed = actual_speed if keys[pygame.K_z] else -actual_speed / 2
+            self.x += dx * speed
+            self.y += dy * speed
 
         # Rotate camera using Q/D
         if keys[pygame.K_q]:
@@ -187,21 +203,16 @@ class Player:
         if keys[pygame.K_d]:
             camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
 
-        # Calculate orientation toward mouse
+        # Update player orientation toward mouse
         mouse_x, mouse_y = pygame.mouse.get_pos()
         dx = mouse_x - c.Screen.ORIGIN_X
         dy = mouse_y - c.Screen.ORIGIN_Y
         self.orientation = math.atan2(dx, -dy)
 
-        dx = -math.sin(camera.angle) * distance
-        dy = -math.cos(camera.angle) * distance
-
-        self.x += dx
-        self.y += dy
-
         # Attacking state
         dt = clock.get_time()
         self.update_attack(dt)
+
 
     def draw(self, screen: pygame.Surface):
         """Draw player at screen bottom center, looking towards mouse"""
