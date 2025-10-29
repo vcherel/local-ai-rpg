@@ -142,4 +142,4 @@ class ConversationUI:
         
         input_text = self.user_input + "|"
         input_surface = self.input_font.render(input_text, True, c.Colors.WHITE)
-        screen.blit(input_surface, (30, input_y + 5))
+        screen.blit(input_surface, (30, input_y))
