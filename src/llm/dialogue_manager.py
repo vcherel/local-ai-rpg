@@ -171,9 +171,9 @@ class DialogueManager:
             )
         
         system_prompt += (
-            "Réponds naturellement en une ou deux phrases courtes. "
-            "Ne termine la conversation que si le joueur dit explicitement au revoir ou si le contexte le rend absolument nécessaire. "
-            "Dans ce cas, termine ton message par '[FIN]'."
+            "Réponds naturellement en une ou deux phrases courtes et continue la conversation. "
+            "Ne termine jamais un message par '[FIN]' à moins que le joueur dise explicitement au revoir. "
+            "Si le joueur dit au revoir, ajoute '[FIN]' à la fin de ton message."
         )
         return system_prompt
     
@@ -261,6 +261,10 @@ class DialogueManager:
                 self.generator = None
                 
                 last_msg = self.conversation.get_last_message()
+                if ":" in last_msg:
+                    cleaned_content = last_msg.split(":", 1)[-1]
+                    self.conversation.update_last_assistant_message(cleaned_content)
+
                 if last_msg and self._check_for_end_signal(last_msg["content"]):
                     # Clean the message and add end marker
                     cleaned_content = last_msg["content"].replace('[FIN]', '').strip()
