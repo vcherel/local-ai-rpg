@@ -175,7 +175,7 @@ class DialogueManager:
     def close(self):
         """Close dialogue"""
         if self.active and self.generator is None:
-            if not self.current_npc.has_active_quest and not self.current_npc.quest_complete:
+            if not self.current_npc.has_active_quest:
                 self.pending_quest_analysis = True
             self._execute_pending_actions()
             
