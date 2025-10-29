@@ -73,7 +73,7 @@ class Game:
         prompt = (
             "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
         )
-        self.context = generate_response_queued(prompt, system_prompt)
+        self.context = generate_response_queued(prompt, system_prompt, "Context generation")
         self.save_system.update("context", self.context)
         self.context_window.toggle(self.context)
 

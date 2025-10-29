@@ -159,10 +159,12 @@ def get_llm_task_count():
     """Get number of active LLM tasks"""
     return get_llm_queue().get_active_task_count()
 
-def generate_response_queued(prompt, system_prompt):
+def generate_response_queued(prompt, system_prompt, log):
+    print(f"~~~ LLM query : {log} ~~~")
     return get_llm_queue().generate_response(prompt, system_prompt)
 
-def generate_response_stream_queued(prompt, system_prompt):
+def generate_response_stream_queued(prompt, system_prompt, log):
+    print(f"~~~ LLM stream query : {log} ~~~")
     yield from get_llm_queue().generate_response_stream(prompt, system_prompt)
 
 def generate_response_internal(prompt, system_prompt):

@@ -46,7 +46,7 @@ class QuestSystem:
             f"Si pas de quête, utilise: {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
         )
         
-        response = generate_response_queued(prompt, system_prompt)
+        response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
         
         # Parse JSON response
         try:
@@ -116,7 +116,8 @@ class QuestSystem:
         system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
         prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
         
-        reward_str = generate_response_queued(prompt, system_prompt)
+        reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
+        print(f"~~~ Extracted reward : {reward_str} ~~~")
         reward_str = re.sub(r'[^\d]', '', reward_str)
         
         if reward_str:
@@ -212,7 +213,7 @@ class DialogueManager:
         
         # Start conversation with initial greeting
         initial_prompt = "Le joueur s'approche de toi. Salue-le."
-        self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt)
+        self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
 
     def handle_event(self, event):
         if not self.active:
@@ -304,14 +305,14 @@ class DialogueManager:
         conversation_text += f"Joueur: {message}"
         
         # Start streaming response using the same system prompt
-        self.generator = generate_response_stream_queued(conversation_text, self.system_prompt)
+        self.generator = generate_response_stream_queued(conversation_text, self.system_prompt, "Continuing conversation")
     
     def _execute_quest_analysis(self):
         """Analyze conversation for quest in background thread"""
         conversation_text = self.conversation.format_for_prompt()
         if conversation_text:
             quest_info = self.quest_system.analyze_conversation_for_quest(conversation_text)
-            print(f"~~~ Generated these quest infos : {quest_info}")
+            print(f"~~~ Generated these quest infos : {quest_info} ~~~")
             if quest_info['has_quest']:
                 self.quest_system.create_quest_from_analysis(self.current_npc, quest_info)
     

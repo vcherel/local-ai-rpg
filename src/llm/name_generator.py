@@ -47,7 +47,7 @@ class NPCNameGenerator:
         system_prompt = f"Tu es un générateur de PNJ pour un RPG. Contexte: {context}. Réponds uniquement avec UN prénom et/ou UNE profession, sur une seule ligne, sans répétition, sans explication."
         prompt = "Génère un prénom et/ou une profession pour un PNJ de RPG."
         
-        name = generate_response_queued(prompt, system_prompt)
+        name = generate_response_queued(prompt, system_prompt, "Name generation")
         self.name_queue.put(name.strip())
 
         with self.lock:
