@@ -130,6 +130,7 @@ class Player:
     def __init__(self, save_system, coins):
         self.x = c.Game.WORLD_SIZE // 2
         self.y = c.Game.WORLD_SIZE // 2
+        self.orientation = 0
 
         self.save_system: SaveSystem = save_system
         self.inventory: List[Item] = []
@@ -137,7 +138,7 @@ class Player:
 
         self.is_running = False
     
-    def move(self, distance, angle):
+    def move(self, distance, angle, orientation):
         """Move player in the direction they are facing"""
         run_mul = 2 if self.is_running else 1
 
@@ -147,9 +148,11 @@ class Player:
         self.x += dx
         self.y += dy
 
+        self.orientation = orientation
+
     def draw(self, screen: pygame.Surface):
         """Draw player at screen bottom center, always facing up"""
-        draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Size.PLAYER, c.Colors.PLAYER, 0)
+        draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Size.PLAYER, c.Colors.PLAYER, self.orientation)
 
     def add_coins(self, amount):
         self.coins += amount

@@ -152,15 +152,17 @@ class Game:
         if keys[pygame.K_d]:
             self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
 
-        # Check if it is running
-        if keys[pygame.K_LSHIFT]:
-            self.player.is_running = True
-        else:
-            self.player.is_running = False
+        # Running
+        self.player.is_running = keys[pygame.K_LSHIFT]
+
+        # Calculate orientation toward mouse
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        dx = mouse_x - c.Screen.ORIGIN_X
+        dy = mouse_y - c.Screen.ORIGIN_Y
+        orientation = math.atan2(dx, -dy)
 
         # Move player
-        if distance != 0:
-            self.player.move(distance, self.camera.angle)
+        self.player.move(distance, self.camera.angle, orientation)
 
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
