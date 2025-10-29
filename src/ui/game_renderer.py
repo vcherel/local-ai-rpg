@@ -46,9 +46,10 @@ class GameRenderer:
         mouse_pos = pygame.mouse.get_pos()
         is_hovering = self.inv_button_rect.collidepoint(mouse_pos)
         
-        button_color = (80, 80, 80) if is_hovering else (60, 60, 60)
+        button_color = c.Colors.BUTTON_HOVERED if is_hovering else c.Colors.BUTTON
+        border_color = c.Colors.BORDER_HOVERED if is_hovering else c.Colors.BORDER
         pygame.draw.rect(self.screen, button_color, self.inv_button_rect)
-        pygame.draw.rect(self.screen, c.Colors.WHITE, self.inv_button_rect, 2)
+        pygame.draw.rect(self.screen, border_color, self.inv_button_rect, 2)
         
         button_text = self.small_font.render("Inventaire", True, c.Colors.WHITE)
         text_x = self.inv_button_rect.x + (self.inv_button_rect.width - button_text.get_width()) // 2

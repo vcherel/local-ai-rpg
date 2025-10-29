@@ -111,11 +111,11 @@ class InventoryMenu:
                 
                 # Determine cell color based on hover
                 if slot_index == self.hovered_slot and slot_index < len(items_list):
-                    cell_color = (90, 90, 90)
-                    border_color = c.Colors.YELLOW
+                    cell_color = c.Colors.BUTTON_HOVERED
+                    border_color = c.Colors.BORDER_HOVERED
                 else:
-                    cell_color = (70, 70, 70)
-                    border_color = (100, 100, 100)
+                    cell_color = c.Colors.BUTTON
+                    border_color = c.Colors.BORDER
                 
                 # Draw cell background
                 pygame.draw.rect(menu_surface, cell_color,
@@ -179,7 +179,7 @@ class InventoryMenu:
             menu_surface.blit(tooltip_surface, (tooltip_x + 10, tooltip_y + 5))
         
         # Draw close instruction
-        close_text = self.font.render("Appuyez sur ECHAP pour fermer", True, (200, 200, 200))
+        close_text = self.font.render("Appuyez sur ECHAP pour fermer", True, c.Colors.ECHAP_TEXT)
         close_x = (self.width - close_text.get_width()) // 2
         menu_surface.blit(close_text, (close_x, self.height - self.padding - 25))
         

@@ -1,5 +1,6 @@
 import pygame
 
+import core.constants as c
 
 class ContextWindow:
     def __init__(self, screen_width, screen_height):
@@ -62,11 +63,11 @@ class ContextWindow:
 
         #Window background
         window_surface = pygame.Surface((self.width, self.height))
-        window_surface.fill((50, 50, 50))  # dark gray like inventory
-        pygame.draw.rect(window_surface, (255, 255, 255), (0, 0, self.width, self.height), 3)
+        window_surface.fill(c.Colors.MENU_BACKGROUND)  # dark gray like inventory
+        pygame.draw.rect(window_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
 
         # Title
-        title = self.title_font.render("Contexte du monde", True, (255, 255, 255))
+        title = self.title_font.render("Contexte du monde", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         window_surface.blit(title, (title_x, 20))
 
@@ -76,11 +77,11 @@ class ContextWindow:
         # Button styling
         button_rect = pygame.Rect(self.width - 100, self.height - 60, 80, 35)
         if self.button_hovered:
-            button_color = (90, 90, 90)
-            border_color = (255, 215, 0)
+            button_color = c.Colors.BUTTON_HOVERED
+            border_color = c.Colors.BORDER_HOVERED
         else:
-            button_color = (70, 70, 70)
-            border_color = (100, 100, 100)
+            button_color = c.Colors.BUTTON
+            border_color = c.Colors.BORDER
 
         pygame.draw.rect(window_surface, button_color, button_rect, border_radius=6)
         pygame.draw.rect(window_surface, border_color, button_rect, 2, border_radius=6)
@@ -91,7 +92,7 @@ class ContextWindow:
         window_surface.blit(button_text, text_rect)
 
         # Close instruction
-        close_text = self.text_font.render("Appuyez sur ECHAP pour fermer", True, (200, 200, 200))
+        close_text = self.text_font.render("Appuyez sur ECHAP pour fermer", True, c.Colors.ECHAP_TEXT)
         close_x = (self.width - close_text.get_width()) // 2
         window_surface.blit(close_text, (close_x, self.height - 30))
 
@@ -107,7 +108,7 @@ class ContextWindow:
 
         for word in words:
             test_line = ' '.join(current_line + [word])
-            test_surface = self.text_font.render(test_line, True, (255, 255, 255))
+            test_surface = self.text_font.render(test_line, True, c.Colors.WHITE)
             if test_surface.get_width() <= max_width:
                 current_line.append(word)
             else:
@@ -120,7 +121,7 @@ class ContextWindow:
 
         # Draw lines
         for i, line in enumerate(lines):
-            line_surface = self.text_font.render(line, True, (255, 255, 255))
+            line_surface = self.text_font.render(line, True, c.Colors.WHITE)
             surface.blit(line_surface, (x, y + i * 25))
 
     def close(self):

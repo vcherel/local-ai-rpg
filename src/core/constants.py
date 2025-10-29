@@ -29,11 +29,15 @@ class Colors:
     GREEN: tuple = (34, 139, 34)
     WHITE: tuple = (255, 255, 255)
     YELLOW: tuple = (255, 255, 0)
-    GRAY: tuple = (100, 100, 100)
-    DARK_GRAY: tuple = (50, 50, 50)
     CYAN: tuple = (0, 255, 255)
-    RED: tuple = (255, 0, 0)
+
     PLAYER: tuple = (255, 200, 160)
+    ECHAP_TEXT: tuple = (200, 200, 200)
+    MENU_BACKGROUND: tuple = (50, 50, 50)
+    BUTTON: tuple = (70, 70, 70)
+    BORDER: tuple = (100, 100, 100)
+    BUTTON_HOVERED: tuple = (90, 90, 90) 
+    BORDER_HOVERED: tuple = (255, 215, 0)
 
 @dataclass(frozen=True)
 class Hyperparameters:

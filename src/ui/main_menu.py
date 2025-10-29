@@ -33,8 +33,8 @@ class MainMenu:
         )
 
         # Colors
-        self.button_default_color = (70, 70, 70)
-        self.button_hover_color = (90, 90, 90)
+        self.button_default_color = c.Colors.BUTTON
+        self.button_hover_color = c.Colors.BUTTON_HOVERED
 
     def handle_click(self, pos):
         """Handle mouse clicks on menu buttons"""
@@ -49,7 +49,7 @@ class MainMenu:
     def draw_button(self, rect, text, mouse_pos):
         hover = rect.collidepoint(mouse_pos)
         color = self.button_hover_color if hover else self.button_default_color
-        border_color = c.Colors.YELLOW if hover else c.Colors.WHITE
+        border_color = c.Colors.BORDER_HOVERED if hover else c.Colors.BORDER
 
         # Draw button background
         pygame.draw.rect(self.screen, color, rect)
@@ -64,7 +64,7 @@ class MainMenu:
         if not self.active:
             return
         
-        self.screen.fill(c.Colors.DARK_GRAY)
+        self.screen.fill(c.Colors.MENU_BACKGROUND)
 
         # Draw title
         title_text = self.title_font.render("RPG IA de fou malade", True, c.Colors.WHITE)
