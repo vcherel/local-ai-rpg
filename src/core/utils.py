@@ -13,7 +13,7 @@ def random_color():
     return (r, g, b)
 
 def random_coordinates():
-    return tuple(random.randint(0, c.Game.WORLD_SIZE) for _ in range(2))
+    return tuple(random.randint(0, c.World.WORLD_SIZE) for _ in range(2))
 
 class ConversationHistory:
     """Manages conversation message history"""

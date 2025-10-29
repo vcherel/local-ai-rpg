@@ -83,8 +83,8 @@ class NPC:
         self.angle = random.uniform(0, 2 * math.pi)
         self.color = random_color()
 
-        # Name (not attributed initially)
-        self.name = None
+        self.name = None # Not attributed initially
+        self.hp = c.Combat.NPC_HP
 
         # Quest
         self.has_active_quest = False
@@ -137,8 +137,8 @@ class NPC:
 class Player:
     def __init__(self, save_system, coins):
         # Position
-        self.x = c.Game.WORLD_SIZE // 2
-        self.y = c.Game.WORLD_SIZE // 2
+        self.x = c.World.WORLD_SIZE // 2
+        self.y = c.World.WORLD_SIZE // 2
         self.orientation = 0
 
         # Inventory
@@ -150,6 +150,9 @@ class Player:
         self.attack_in_progress = False
         self.attack_progress = 0.0  # 0.0 -> 1.0
         self.attack_hand = "left"  # or "right"
+
+        # Combat
+        self.hp = c.Combat.PLAYER_HP
 
     def start_attack(self):
         """Start an attack animation with a random hand"""
@@ -172,7 +175,7 @@ class Player:
         keys = pygame.key.get_pressed()
 
         # Running state
-        actual_speed = c.Game.PLAYER_RUN_SPEED if keys[pygame.K_LSHIFT] else c.Game.PLAYER_SPEED
+        actual_speed = c.Player.PLAYER_RUN_SPEED if keys[pygame.K_LSHIFT] else c.Player.PLAYER_SPEED
 
         # Forward/back movement relative to mouse
         if keys[pygame.K_z] or keys[pygame.K_s]:
@@ -199,9 +202,9 @@ class Player:
 
         # Rotate camera using Q/D
         if keys[pygame.K_q]:
-            camera.update_angle(c.Game.PLAYER_TURN_SPEED)
+            camera.update_angle(c.Player.PLAYER_TURN_SPEED)
         if keys[pygame.K_d]:
-            camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
+            camera.update_angle(-c.Player.PLAYER_TURN_SPEED)
 
         # Update player orientation toward mouse
         mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -234,6 +237,7 @@ class Monster:
         self.x = x
         self.y = y
         self.angle = random.uniform(0, 2 * math.pi)
+        self.hp = c.Combat.MONSTER_HP
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         rotated_x, rotated_y = camera.rotate_point(self.x, self.y)

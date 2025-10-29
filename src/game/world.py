@@ -15,12 +15,12 @@ class World:
         # Terrain details
         self.floor_details = [
             (*random_coordinates(), random.choice(["stone", "flower"]))
-            for _ in range(c.Game.NB_DETAILS)
+            for _ in range(c.World.NB_DETAILS)
         ]
 
         # Entities
-        self.npcs: List[NPC] = [NPC(*random_coordinates()) for _ in range(c.Game.NB_NPCS)]
-        self.monsters: List[Monster] = [Monster(*random_coordinates()) for _ in range(c.Game.NB_MONSTERS)]
+        self.npcs: List[NPC] = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
+        self.monsters: List[Monster] = [Monster(*random_coordinates()) for _ in range(c.World.NB_MONSTERS)]
         self.items: List[Item] = []
 
         # Context
@@ -51,11 +51,11 @@ class World:
             return
         
         for npc in self.npcs:
-            if npc.distance_to_player(player) < c.Game.INTERACTION_DISTANCE:
+            if npc.distance_to_player(player) < c.Player.INTERACTION_DISTANCE:
                 return npc
     
     def pickup_item(self, player):
         """Check for nearby items and pick them up"""
         for item in self.items:
-            if not item.picked_up and item.distance_to_player(player) < c.Game.INTERACTION_DISTANCE:
+            if not item.picked_up and item.distance_to_player(player) < c.Player.INTERACTION_DISTANCE:
                 return item
