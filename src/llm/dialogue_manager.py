@@ -6,6 +6,7 @@ import pygame
 from typing import List
 
 import core.constants as c
+from llm.name_generator import NPCNameGenerator
 from ui.conversation_ui import ConversationUI
 from entities import NPC, Player
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
@@ -177,7 +178,7 @@ class DialogueManager:
         )
         return system_prompt
     
-    def interact_with_npc(self, npc: NPC, npc_name_generator, context: str):
+    def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, context: str):
         """Start interaction with an NPC"""
         npc.assign_name(npc_name_generator)
         
@@ -210,7 +211,7 @@ class DialogueManager:
         initial_prompt = "Le joueur s'approche de toi. Salue-le."
         self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
 
-    def handle_event(self, event):
+    def handle_event(self, event, npc_name_generator: NPCNameGenerator):
         if not self.active:
             return False
 
@@ -226,6 +227,7 @@ class DialogueManager:
             
             if event.key == pygame.K_ESCAPE:
                 self.close()
+                npc_name_generator.start_generation()
 
         return True
     

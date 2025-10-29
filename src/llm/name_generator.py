@@ -18,9 +18,9 @@ class NPCNameGenerator:
         self.save_system: SaveSystem = save_system
         
         # Start generating the first name immediately
-        self._start_generation()
+        self.start_generation()
     
-    def _start_generation(self):
+    def start_generation(self):
         """Start a background thread to generate a name"""
         with self.lock:
             if self.is_generating or not self.name_queue.empty():
@@ -53,15 +53,11 @@ class NPCNameGenerator:
         with self.lock:
             self.is_generating = False
     
-    def get_name(self, generate_again=True) -> str:
+    def get_name(self) -> str:
         """
-        Get a generated name (waits if necessary), then start generating the next one.
+        Get a generated name (waits if necessary)
         """
         # Wait until a name is ready
         name = self.name_queue.get()
-        
-        # Start generating the next name in background
-        if generate_again:
-            self._start_generation()
         
         return name

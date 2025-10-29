@@ -114,7 +114,7 @@ class Game:
             if self.inventory_menu.handle_event(event):
                 return True
             
-            if self.dialogue_manager.handle_event(event):
+            if self.dialogue_manager.handle_event(event, self.npc_name_generator):
                 return True
             
             if not self.window_active:
@@ -164,7 +164,7 @@ class Game:
                 self.player.move(distance, self.camera.angle)
 
     def save_data(self):
-        self.save_system.update("name", self.npc_name_generator.get_name(generate_again=False))
+        self.save_system.update("name", self.npc_name_generator.get_name())
         self.save_system.save_all()
 
     def run(self):
