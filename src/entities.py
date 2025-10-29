@@ -77,28 +77,27 @@ def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tu
     surface.blit(char_surf, rect)
 
 class NPC:
-    def __init__(self, x, y, npc_id):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
         self.angle = random.uniform(0, 2 * math.pi)
         self.color = random_color()
-        self.id = npc_id
+
+        # Name (not attributed initially)
+        self.name = None
+
+        # Quest
         self.has_active_quest = False
         self.quest_content = None
         self.quest_item: Item = None
         self.quest_complete = False
-        
-        # NPCs start without a specific name
-        self.name = None
-        self.has_been_named = False
     
     def assign_name(self, npc_name_generator: NPCNameGenerator):
-        if not self.has_been_named:
+        if self.name is None:
             self.name = npc_name_generator.get_name()
-            self.has_been_named = True
     
     def get_display_name(self) -> str:
-        if self.has_been_named and self.name:
+        if self.name:
             return self.name
         return ""
 

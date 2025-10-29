@@ -42,8 +42,8 @@ class Game:
         self.items: List[Item] = []
         
         # Spawn NPCs randomly
-        for i in range(c.Game.NB_NPCS):
-            self.npcs.append(NPC(*random_coordinates(), i))
+        for _ in range(c.Game.NB_NPCS):
+            self.npcs.append(NPC(*random_coordinates()))
         
         # Inventory menu
         self.inventory_menu = InventoryMenu()
