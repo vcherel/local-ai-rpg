@@ -51,26 +51,18 @@ class QuestSystem:
         # Parse JSON response
         try:
             response = response.strip()
-            start = response.find('{')
-            end = response.rfind('}') + 1
-            if start != -1 and end > start:
-                json_str = response[start:end]
+            # Convert true/false to lowercase JSON
+            json_str = response.replace("True", "true").replace("False", "false")
+            # Wrap keys in double quotes
+            response = re.sub(r'(\b\w+\b)\s*:', r'"\1":', response)
+            # Wrap unquoted string values in double quotes
+            response = re.sub(r':\s*([^",\d][^,\n}]*)', r': "\1"', response)
 
-                # Ensure keys are quoted
-                json_str = re.sub(r"(['\"])?([a-zA-Z0-9_]+)(['\"])?\s*:", r'"\2":', json_str)
-
-                # Ensure empty fields have valid quoted values ("")
-                json_str = re.sub(r':\s*(,|})', r': ""\1', json_str)
-
-                # Quote unquoted string values (e.g., true, false are handled below)
-                json_str = re.sub(r':\s*([^",{}\[\]\s][^,{}\[\]]*)', r': "\1"', json_str)
-
-                # Normalize booleans
-                json_str = json_str.replace("True", "true").replace("False", "false")
-
-                # Parse safely
+            # Extract the first {...} block
+            match = re.search(r"\{.*\}", response, re.DOTALL)
+            if match:
+                json_str = match.group(0)
                 result = json.loads(json_str)
-
                 return {
                     'has_quest': result.get('has_quest', False),
                     'quest_description': result.get('quest_description', ''),
@@ -312,7 +304,7 @@ class DialogueManager:
         conversation_text = self.conversation.format_for_prompt()
         if conversation_text:
             quest_info = self.quest_system.analyze_conversation_for_quest(conversation_text)
-            print(f"~~~ Generated these quest infos : {quest_info} ~~~")
+            print(f"~~~ Generated these quest infos : {quest_info}")
             if quest_info['has_quest']:
                 self.quest_system.create_quest_from_analysis(self.current_npc, quest_info)
     
