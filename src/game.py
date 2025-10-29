@@ -83,9 +83,15 @@ class Game:
     
     def interact_with_nearby_npc(self):
         """Check for nearby NPCs and interact"""
+        if self.context is None:
+            # Context not ready yet, skip
+            return
+        
         for npc in self.npcs:
             if npc.distance_to_player(self.player) < c.Game.INTERACTION_DISTANCE:
-                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator)
+                self.dialogue_manager.interact_with_npc(
+                    npc, self.npc_name_generator, self.context
+                )
                 break  # Only interact with one NPC at a time
     
     def pickup_nearby_item(self):
@@ -175,7 +181,7 @@ class Game:
                 break
             
             # Update dialogue
-            self.dialogue_manager.update(self.context)
+            self.dialogue_manager.update()
 
             # Update loading indicator
             self.loading_indicator.update()

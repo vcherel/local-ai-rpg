@@ -46,11 +46,10 @@ class ConversationHistory:
         """Clear all messages"""
         self.messages.clear()
     
-    def format_for_prompt(self, exclude_last: bool = True):
+    def format_for_prompt(self):
         """Format conversation history for LLM prompt"""
-        messages = self.messages[:-1] if exclude_last else self.messages
         conversation_text = ""
-        for msg in messages:
+        for msg in self.messages:
             if msg['role'] == 'user':
                 conversation_text += f"Joueur: {msg['content']}\n"
             else:
