@@ -94,40 +94,6 @@ class Game:
                         self.inventory_menu.toggle()
 
         return True
-    
-    def update_player_movement(self):
-        """Update player position and camera based on keyboard"""
-        keys = pygame.key.get_pressed()
-        distance = 0
-
-        # Running state
-        self.player.is_running = keys[pygame.K_LSHIFT]
-        actual_speed = c.Game.PLAYER_RUN_SPEED if self.player.is_running else c.Game.PLAYER_SPEED
-
-        # Player movement (forward/back relative to camera rotation)
-        if keys[pygame.K_z]:
-            distance += actual_speed
-        if keys[pygame.K_s]:
-            distance -= actual_speed / 2  # Backward is slower
-
-        # Rotate camera using Q/D
-        if keys[pygame.K_q]:
-            self.camera.update_angle(c.Game.PLAYER_TURN_SPEED)
-        if keys[pygame.K_d]:
-            self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
-
-        # Calculate orientation toward mouse
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        dx = mouse_x - c.Screen.ORIGIN_X
-        dy = mouse_y - c.Screen.ORIGIN_Y
-        orientation = math.atan2(dx, -dy)
-
-        # Move player
-        self.player.move(distance, self.camera.angle, orientation)
-
-        # Attacking state
-        dt = self.clock.get_time()
-        self.player.update_attack(dt)
 
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
@@ -154,7 +120,7 @@ class Game:
             
             if not self.window_active:
                 # Update player movement
-                self.update_player_movement()
+                self.player.move(self.camera, self.clock)
             
                 # Update camera
                 self.update_camera()

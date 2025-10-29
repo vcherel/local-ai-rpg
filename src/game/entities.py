@@ -147,7 +147,6 @@ class Player:
         self.coins = coins
 
         # Action
-        self.is_running = False
         self.attack_in_progress = False
         self.attack_progress = 0.0  # 0.0 -> 1.0
         self.attack_hand = "left"  # or "right"
@@ -166,16 +165,43 @@ class Player:
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
+        
     
-    def move(self, distance, angle, orientation):
+    def move(self, camera: Camera, clock: pygame.time.Clock):
         """Move player in the direction they are facing"""
-        dx = -math.sin(angle) * distance
-        dy = -math.cos(angle) * distance
+        keys = pygame.key.get_pressed()
+        distance = 0
+
+        # Running state
+        actual_speed = c.Game.PLAYER_RUN_SPEED if keys[pygame.K_LSHIFT] else c.Game.PLAYER_SPEED
+
+        # Player movement (forward/back relative to camera rotation)
+        if keys[pygame.K_z]:
+            distance += actual_speed
+        if keys[pygame.K_s]:
+            distance -= actual_speed / 2  # Backward is slower
+
+        # Rotate camera using Q/D
+        if keys[pygame.K_q]:
+            camera.update_angle(c.Game.PLAYER_TURN_SPEED)
+        if keys[pygame.K_d]:
+            camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
+
+        # Calculate orientation toward mouse
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        dx = mouse_x - c.Screen.ORIGIN_X
+        dy = mouse_y - c.Screen.ORIGIN_Y
+        self.orientation = math.atan2(dx, -dy)
+
+        dx = -math.sin(camera.angle) * distance
+        dy = -math.cos(camera.angle) * distance
 
         self.x += dx
         self.y += dy
 
-        self.orientation = orientation
+        # Attacking state
+        dt = clock.get_time()
+        self.update_attack(dt)
 
     def draw(self, screen: pygame.Surface):
         """Draw player at screen bottom center, looking towards mouse"""
