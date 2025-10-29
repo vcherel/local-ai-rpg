@@ -9,7 +9,8 @@ from core.camera import Camera
 import core.constants as c
 from core.save import SaveSystem
 from core.utils import random_coordinates
-from entities import NPC, Item, Player
+from entities import NPC, Player
+from items import Item
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import generate_response_queued, get_llm_task_count
 from llm.name_generator import NPCNameGenerator
@@ -23,7 +24,7 @@ class Game:
     def __init__(self, screen, clock, save_system: SaveSystem):
         # Pygame
         self.screen = screen
-        self.clock = clock
+        self.clock: pygame.time.Clock = clock
         self.camera = Camera()
 
         self.save_system = save_system
@@ -122,6 +123,9 @@ class Game:
                     if event.button == 1:  # Left click
                         if self.inv_button_rect.collidepoint(event.pos):
                             self.inventory_menu.toggle()
+
+                        else:
+                            self.player.start_attack()
                 
                 if event.type == pygame.KEYDOWN:
                     # Game controls
@@ -152,9 +156,6 @@ class Game:
         if keys[pygame.K_d]:
             self.camera.update_angle(-c.Game.PLAYER_TURN_SPEED)
 
-        # Running
-        self.player.is_running = keys[pygame.K_LSHIFT]
-
         # Calculate orientation toward mouse
         mouse_x, mouse_y = pygame.mouse.get_pos()
         dx = mouse_x - c.Screen.ORIGIN_X
@@ -163,6 +164,13 @@ class Game:
 
         # Move player
         self.player.move(distance, self.camera.angle, orientation)
+
+        # Running state
+        self.player.is_running = keys[pygame.K_LSHIFT]
+
+        # Attacking state
+        dt = self.clock.get_time()
+        self.player.update_attack(dt)
 
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())

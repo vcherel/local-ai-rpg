@@ -8,14 +8,11 @@ import core.constants as c
 from core.camera import Camera
 from core.save import SaveSystem
 from core.utils import random_color
+from items import Item
 from llm.name_generator import NPCNameGenerator
 
-def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float):
-    """Draw a character (player or NPC) with body and arms
-    
-    Args:
-        angle: rotation angle in radians (0 = facing up)
-    """
+def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):
+    """Draw a character with body and arms, including attack animation."""
     border_thickness = 2
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
@@ -45,16 +42,24 @@ def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tu
     # Draw arms
     arm_y = (size + border_thickness * 2) // 3.5
     distance_arm = 10
-    
+
+    def draw_arm(cx):
+        pygame.draw.circle(char_surf, c.Colors.BLACK, (cx, arm_y), arm_radius)
+        pygame.draw.circle(char_surf, color, (cx, arm_y), arm_radius - border_thickness)
+
     # Left arm
     left_arm_x = arm_radius + distance_arm
-    pygame.draw.circle(char_surf, c.Colors.BLACK, (left_arm_x, arm_y), arm_radius)
-    pygame.draw.circle(char_surf, color, (left_arm_x, arm_y), arm_radius - border_thickness)
-    
+    if attack_hand == "left":
+        # extend arm during attack
+        left_arm_x += int(attack_progress * 10)  # extend outward
+    draw_arm(left_arm_x)
+
     # Right arm
     right_arm_x = size + border_thickness * 2 + extra_space * 2 - arm_radius - distance_arm
-    pygame.draw.circle(char_surf, c.Colors.BLACK, (right_arm_x, arm_y), arm_radius)
-    pygame.draw.circle(char_surf, color, (right_arm_x, arm_y), arm_radius - border_thickness)
+    if attack_hand == "right":
+        # extend arm during attack
+        right_arm_x -= int(attack_progress * 10)
+    draw_arm(right_arm_x)
 
     # Rotate if needed
     if angle != 0:
@@ -128,15 +133,36 @@ class NPC:
 
 class Player:
     def __init__(self, save_system, coins):
+        # Position
         self.x = c.Game.WORLD_SIZE // 2
         self.y = c.Game.WORLD_SIZE // 2
         self.orientation = 0
 
+        # Inventory
         self.save_system: SaveSystem = save_system
         self.inventory: List[Item] = []
         self.coins = coins
 
+        # Action
         self.is_running = False
+        self.attack_in_progress = False
+        self.attack_progress = 0.0  # 0.0 -> 1.0
+        self.attack_hand = "left"  # or "right"
+
+    def start_attack(self):
+        """Start an attack animation with a random hand"""
+        if not self.attack_in_progress:
+            self.attack_in_progress = True
+            self.attack_progress = 0.0
+            self.attack_hand = random.choice(["left", "right"])
+
+    def update_attack(self, dt):
+        """Update attack animation progress"""
+        if self.attack_in_progress:
+            self.attack_progress += dt * 0.01  # speed of swing
+            if self.attack_progress >= 1.0:
+                self.attack_progress = 0.0
+                self.attack_in_progress = False
     
     def move(self, distance, angle, orientation):
         """Move player in the direction they are facing"""
@@ -151,86 +177,16 @@ class Player:
         self.orientation = orientation
 
     def draw(self, screen: pygame.Surface):
-        """Draw player at screen bottom center, always facing up"""
-        draw_character(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Size.PLAYER, c.Colors.PLAYER, self.orientation)
+        """Draw player at screen bottom center, looking towards mouse"""
+        draw_character(screen,
+                       c.Screen.ORIGIN_X,
+                       c.Screen.ORIGIN_Y,
+                       c.Size.PLAYER,
+                       c.Colors.PLAYER,
+                       self.orientation,
+                       self.attack_progress,
+                       self.attack_hand)
 
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)
-
-class Item:
-    def __init__(self, x, y, name):
-        self.x = x
-        self.y = y
-        self.angle = random.uniform(0, 2 * math.pi)
-        self.name = name
-        self.color = random_color()
-        self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
-        self.picked_up = False
-    
-    def draw(self, surface: pygame.Surface, camera: Camera=None, x=None, y=None):
-        """Draw item with correct rotation relative to camera"""
-        # Determine position
-        draw_x = x if x is not None else self.x
-        draw_y = y if y is not None else self.y
-
-        if camera:
-            # Rotate item position by camera
-            rotated_x, rotated_y = camera.rotate_point(draw_x, draw_y)
-            visual_angle = self.angle + camera.angle
-        else:
-            rotated_x, rotated_y = draw_x, draw_y
-            visual_angle = 0  # default angle when no camera
-
-        center = (rotated_x, rotated_y)
-        size = c.Size.ITEM // 2
-        border = 2  # outline thickness
-
-        # Add generous padding to prevent clipping during rotation
-        padding = size + border + 4
-        surface_size = c.Size.ITEM + padding * 2
-        item_surface = pygame.Surface((surface_size, surface_size), pygame.SRCALPHA)
-        item_center = (surface_size // 2, surface_size // 2)
-
-        # Draw the shape centered on the padded surface
-        if self.shape == "circle":
-            pygame.draw.circle(item_surface, c.Colors.BLACK, item_center, size + border - 5)
-            pygame.draw.circle(item_surface, self.color, item_center, size - 5)
-        elif self.shape == "triangle":
-            points = [
-                (item_center[0], item_center[1] - size),
-                (item_center[0] - size, item_center[1] + size),
-                (item_center[0] + size, item_center[1] + size)
-            ]
-            pygame.draw.polygon(item_surface, c.Colors.BLACK, points, border)
-            pygame.draw.polygon(item_surface, self.color, points)
-        elif self.shape == "pentagon":
-            points = [
-                (item_center[0], item_center[1] - size),
-                (item_center[0] - size * 0.95, item_center[1] - size * 0.31),
-                (item_center[0] - size * 0.59, item_center[1] + size * 0.81),
-                (item_center[0] + size * 0.59, item_center[1] + size * 0.81),
-                (item_center[0] + size * 0.95, item_center[1] - size * 0.31)
-            ]
-            pygame.draw.polygon(item_surface, c.Colors.BLACK, points, border)
-            pygame.draw.polygon(item_surface, self.color, points)
-        elif self.shape == "star":
-            points = []
-            for i in range(10):
-                angle = i * 36
-                r = size if i % 2 == 0 else size / 2
-                x = item_center[0] + r * math.sin(math.radians(angle))
-                y = item_center[1] - r * math.cos(math.radians(angle))
-                points.append((x, y))
-            pygame.draw.polygon(item_surface, c.Colors.BLACK, points, border)
-            pygame.draw.polygon(item_surface, self.color, points)
-
-        # Rotate with enough space around edges
-        rotated_surface = pygame.transform.rotate(item_surface, math.degrees(-visual_angle))
-        rect = rotated_surface.get_rect(center=center)
-
-        # Blit to screen
-        surface.blit(rotated_surface, rect.topleft)
-
-    def distance_to_player(self, player):
-        return math.hypot(self.x - player.x, self.y - player.y)

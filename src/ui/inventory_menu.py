@@ -1,7 +1,8 @@
 import pygame
 
 import core.constants as c
-from entities import Item, Player
+from entities import Player
+from items import Item
 
 class InventoryMenu:
     def __init__(self):

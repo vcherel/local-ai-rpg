@@ -2,6 +2,7 @@ import json
 import re
 from core.utils import random_coordinates
 from entities import NPC, Player
+from items import Item
 from llm.llm_request_queue import generate_response_queued
 
 
@@ -63,8 +64,6 @@ class QuestSystem:
         """Create and register a quest item based on analysis"""
         if not quest_info['has_quest'] or not quest_info['item_name']:
             return
-        
-        from entities import Item
         
         # Clean item name
         item_name = quest_info['item_name'].strip()
