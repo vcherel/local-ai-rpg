@@ -8,7 +8,7 @@ import core.constants as c
 from core.camera import Camera
 from core.save import SaveSystem
 from core.utils import random_color
-from items import Item
+from game.items import Item
 from llm.name_generator import NPCNameGenerator
 
 def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):

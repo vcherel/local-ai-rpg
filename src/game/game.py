@@ -9,8 +9,8 @@ from core.camera import Camera
 import core.constants as c
 from core.save import SaveSystem
 from core.utils import random_coordinates
-from entities import NPC, Monster, Player
-from items import Item
+from game.entities import NPC, Monster, Player
+from game.items import Item
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import generate_response_queued, get_llm_task_count
 from llm.name_generator import NPCNameGenerator

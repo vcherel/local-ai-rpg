@@ -2,7 +2,7 @@ import threading
 import pygame
 
 from core.utils import ConversationHistory
-from entities import NPC
+from game.entities import NPC
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.name_generator import NPCNameGenerator
 from llm.quest_system import QuestSystem

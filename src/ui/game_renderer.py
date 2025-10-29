@@ -4,8 +4,8 @@ from typing import List
 
 import core.constants as c
 from core.camera import Camera
-from entities import Monster, Player, NPC
-from items import Item
+from game.entities import Monster, Player, NPC
+from game.items import Item
 from ui.loading_indicator import LoadingIndicator
 
 

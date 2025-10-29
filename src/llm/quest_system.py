@@ -1,8 +1,8 @@
 import json
 import re
 from core.utils import random_coordinates
-from entities import NPC, Player
-from items import Item
+from game.entities import NPC, Player
+from game.items import Item
 from llm.llm_request_queue import generate_response_queued
 
 
