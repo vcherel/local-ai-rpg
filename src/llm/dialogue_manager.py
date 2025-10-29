@@ -263,8 +263,15 @@ class DialogueManager:
                 self.generator = None
                 
                 last_msg = self.conversation.get_last_message()
-                if ":" in last_msg:
+
+                # Avoid this:  "Elara : Elara : Hello !"
+                if ":" in last_msg["content"]:
                     cleaned_content = last_msg.split(":", 1)[-1]
+                    self.conversation.update_last_assistant_message(cleaned_content)
+                
+                # Avoid this: "How are you ?[FIN]"
+                if "[FIN]" in last_msg["content"]:
+                    cleaned_content = last_msg["content"].replace("[FIN]", "").strip()
                     self.conversation.update_last_assistant_message(cleaned_content)
 
                 if last_msg and self._check_for_end_signal(last_msg["content"]):
