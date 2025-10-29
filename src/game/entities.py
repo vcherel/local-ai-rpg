@@ -90,7 +90,6 @@ class NPC:
         self.has_active_quest = False
         self.quest_content = None
         self.quest_item: Item = None
-        self.quest_complete = False
     
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
@@ -108,7 +107,7 @@ class NPC:
         draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, real_angle)
         
         # Exclamation mark for active quests
-        if self.has_active_quest and not self.quest_complete:
+        if self.has_active_quest:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)

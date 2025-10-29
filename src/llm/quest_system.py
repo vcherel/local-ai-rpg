@@ -33,7 +33,6 @@ class QuestSystem:
         )
         
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
-        
         return parse_response(response)
     
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict):
@@ -43,6 +42,7 @@ class QuestSystem:
         
         # Clean item name
         item_name = quest_info['item_name'].strip()
+        
         # Remove articles
         for article in ['le ', 'la ', "l'", 'un ', 'une ', 'des ']:
             if item_name.lower().startswith(article):
@@ -53,6 +53,7 @@ class QuestSystem:
         npc.quest_item = Item(*random_coordinates(), item_name)
         npc.quest_content = quest_info['quest_description']
         npc.has_active_quest = True
+        
         self.items.append(npc.quest_item)
     
     def extract_and_give_reward(self, last_message: str):
@@ -67,19 +68,28 @@ class QuestSystem:
         # Fall back to LLM extraction
         system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
         prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
-        
         reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
         print(f"~~~ Extracted reward : {reward_str} ~~~")
         reward_str = re.sub(r'[^\d]', '', reward_str)
-        
         if reward_str:
             reward = int(reward_str)
             if reward > 0:
                 self.player.add_coins(reward)
     
     def complete_quest(self, npc: NPC):
-        """Mark quest as complete and reset NPC quest state"""
-        self.player.inventory.remove(npc.quest_item)
+        """Complete quest: remove item from world/inventory and reset NPC state"""
+        if not npc.quest_item:
+            return
+        
+        # Remove item from player inventory
+        if npc.quest_item in self.player.inventory:
+            self.player.inventory.remove(npc.quest_item)
+        
+        # Remove item from world (in case it wasn't picked up yet)
+        if npc.quest_item in self.items:
+            self.items.remove(npc.quest_item)
+        
+        # Reset NPC quest state
         npc.has_active_quest = False
-        npc.quest_complete = False
         npc.quest_item = None
+

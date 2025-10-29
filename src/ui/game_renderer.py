@@ -128,6 +128,5 @@ class GameRenderer:
                 draw_arrow(item.x, item.y, item.color)
         
         for npc in npcs:
-            if (npc.has_active_quest and not npc.quest_complete 
-                and npc.quest_item in player.inventory):
+            if (npc.has_active_quest and npc.quest_item in player.inventory):
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)

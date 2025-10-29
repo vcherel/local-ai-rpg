@@ -17,26 +17,26 @@ class DialogueManager:
         self.current_npc = None
         self.waiting_for_llm = False
         self.system_prompt = ""
-        self.conversation_ended = False  # Track if conversation has ended
+        self.conversation_ended = False
         
         # Response streaming
         self.generator = None
         
         # Pending actions
         self.pending_quest_analysis = False
-        self.pending_reward_extraction = False
+        self.pending_quest_completion = None  # Store NPC reference for completion
         
         # Components
         self.conversation = ConversationHistory()
         self.ui = ConversationUI()
         self.quest_system = QuestSystem(items, player)
     
-    def _build_system_prompt(self, npc: NPC, context: str) -> str:
+    def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
         """Build the system prompt for the entire conversation"""
         system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG avec ce contexte : {context}. "
         
         if npc.has_active_quest:
-            if npc.quest_complete:
+            if quest_complete:
                 system_prompt += (
                     f"Le joueur vient de te rapporter {npc.quest_item.name} que tu avais demandé ({npc.quest_content}). "
                     f"Remercie-le et mentionne sa récompense en pièces. "
@@ -69,11 +69,13 @@ class DialogueManager:
         npc.assign_name(npc_name_generator)
         
         # Check if player has quest item
+        quest_complete = False
         if npc.has_active_quest and npc.quest_item in self.quest_system.player.inventory:
-            npc.quest_complete = True
+            quest_complete = True
+            self.pending_quest_completion = npc
         
         # Build system prompt once for entire conversation
-        self.system_prompt = self._build_system_prompt(npc, world.context)
+        self.system_prompt = self._build_system_prompt(npc, world.context, quest_complete)
         
         # Initialize dialogue
         self.current_npc = npc
@@ -85,13 +87,6 @@ class DialogueManager:
         self.conversation.clear()
         self.ui.reset()
         self.pending_quest_analysis = False
-        self.pending_reward_extraction = False
-        
-        # Check if we need to extract reward after this conversation
-        if npc.quest_complete:
-            world.items.remove(npc.quest_item)
-            self.pending_reward_extraction = True
-            self.quest_system.complete_quest(npc)
         
         # Start conversation with initial greeting
         initial_prompt = "Le joueur s'approche de toi. Salue-le."
@@ -104,9 +99,9 @@ class DialogueManager:
         elif event.type == pygame.KEYDOWN:
             # Handle scrolling with arrow keys
             if event.key == pygame.K_UP:
-                self.handle_scroll(1)  # Scroll up
+                self.handle_scroll(1)
             elif event.key == pygame.K_DOWN:
-                self.handle_scroll(-1)  # Scroll down
+                self.handle_scroll(-1)
             else:
                 if not self.conversation_ended:
                     self.handle_text_input(event)
@@ -150,13 +145,12 @@ class DialogueManager:
                 
                 last_msg = self.conversation.get_last_message()
 
-                # Avoid this:  "Elara : Elara : Hello !"
+                # Clean up message formatting
                 if ":" in last_msg["content"]:
                     cleaned_content = last_msg["content"].split(":", 1)[-1].strip()
                     if len(cleaned_content) <= 25:
                         self.conversation.update_last_assistant_message(cleaned_content)
                 
-                # Avoid this: "How are you ?[FIN]"
                 if "[FIN]" in last_msg["content"]:
                     cleaned_content = last_msg["content"].replace("[FIN]", "").strip()
                     self.conversation.update_last_assistant_message(cleaned_content)
@@ -171,7 +165,7 @@ class DialogueManager:
                     self.conversation_ended = True
                     self.ui.auto_scroll(self.conversation, self.current_npc.name)
                     
-                    # Execute pending actions immediately when conversation ends
+                    # Execute pending actions when conversation ends naturally
                     self._execute_pending_actions()
     
     def close(self):
@@ -179,6 +173,8 @@ class DialogueManager:
         if self.active and self.generator is None:
             if not self.current_npc.has_active_quest:
                 self.pending_quest_analysis = True
+            
+            # Execute all pending actions
             self._execute_pending_actions()
             
             # Reset state
@@ -188,16 +184,20 @@ class DialogueManager:
             self.conversation.clear()
             self.ui.reset()
             self.conversation_ended = False
+            self.pending_quest_completion = None
     
     def _execute_pending_actions(self):
-        """Execute pending quest analysis and reward extraction"""
-        if self.pending_reward_extraction:
+        """Execute pending quest completion and analysis"""
+        # Quest completion first (uses conversation context for rewards)
+        if self.pending_quest_completion:
             threading.Thread(
-                target=self._execute_reward_extraction,
+                target=self._execute_quest_completion,
+                args=(self.pending_quest_completion,),
                 daemon=True
             ).start()
-            self.pending_reward_extraction = False
+            self.pending_quest_completion = None
         
+        # Quest analysis second (only for new quests)
         if self.pending_quest_analysis:
             threading.Thread(
                 target=self._execute_quest_analysis,
@@ -232,8 +232,12 @@ class DialogueManager:
             if quest_info['has_quest']:
                 self.quest_system.create_quest_from_analysis(self.current_npc, quest_info)
     
-    def _execute_reward_extraction(self):
-        """Execute reward extraction in background thread"""
+    def _execute_quest_completion(self, npc: NPC):
+        """Complete quest: extract reward and clean up"""
         last_msg = self.conversation.get_last_message()
         if last_msg:
+            # Extract and give reward based on NPC's completion message
             self.quest_system.extract_and_give_reward(last_msg["content"])
+        
+        # Now complete the quest (removes items, resets NPC state)
+        self.quest_system.complete_quest(npc)
