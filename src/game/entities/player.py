@@ -93,6 +93,10 @@ class Player:
         # Attacking state
         self.update_attack_anim(dt)
 
+        # Health regeneration
+        if self.hp < c.Player.HP:
+            self.hp = min(self.hp + c.Player.REGEN_RATE * dt, c.Player.HP)
+
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)

@@ -12,7 +12,7 @@ class Screen:
 @dataclass(frozen=True)
 class Player:
     HP: int = 100
-    REGEN: int = 10  # Number of second until 1 point gaine
+    REGEN_RATE: float = 0.001
     SIZE: int = 30
 
     SPEED: int = 5
