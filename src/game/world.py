@@ -58,13 +58,13 @@ class World:
         """Check if a creature was attacked and apply damage or remove it."""
         for monster in self.monsters:
             # Check if monster overlaps with the attack circle
-            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Size.MONSTER // 2:
+            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.World.MONSTER_SIZE // 2:
                 if monster.receive_damage(c.Player.ATTACK_DAMAGE):
                     self.monsters.remove(monster)
                     return
         
         for npc in self.npcs:
-            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Size.NPC // 2:
+            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.World.NPC_SIZE // 2:
                 if npc.receive_damage(c.Player.ATTACK_DAMAGE):
                     self.npcs.remove(npc)
                     return

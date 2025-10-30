@@ -1,9 +1,7 @@
-import math
 import sys
 import pygame
 
 from core.camera import Camera
-import core.constants as c
 from core.save import SaveSystem
 from game.entities import Player
 from game.items import Item

@@ -1,5 +1,3 @@
-import math
-
 import core.constants as c
 
 class Camera:
