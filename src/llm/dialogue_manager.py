@@ -69,6 +69,7 @@ class DialogueManager:
             "Ne termine jamais un message par '[FIN]' à moins que le joueur dise explicitement au revoir. "
             "Si le joueur dit au revoir, ajoute '[FIN]' à la fin de ton message."
         )
+
         return system_prompt
     
     def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, world: World):
@@ -214,6 +215,8 @@ class DialogueManager:
     
     def draw(self, screen: pygame.Surface):
         """Draw the dialogue UI"""
+        self.update()
+
         if not self.active:
             return
         self.ui.draw(screen, self.current_npc.name, self.conversation)

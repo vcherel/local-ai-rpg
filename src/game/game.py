@@ -11,7 +11,6 @@ from llm.llm_request_queue import get_llm_task_count
 from llm.name_generator import NPCNameGenerator
 from ui.context_window import ContextWindow
 from ui.game_renderer import GameRenderer
-from ui.loading_indicator import LoadingIndicator
 from ui.inventory_menu import InventoryMenu
 from ui.quest_menu import QuestMenu
 
@@ -28,8 +27,7 @@ class Game:
         self.clock: pygame.time.Clock = clock
         self.camera = Camera()
 
-        # UI
-        self.loading_indicator = LoadingIndicator()
+        # Context window
         self.context_window = ContextWindow()
         self.window_active = False
 
@@ -128,18 +126,17 @@ class Game:
             running = self.handle_input()
             if not running:
                 break
-
-            self.dialogue_manager.update()
-            self.loading_indicator.update()  # TODO: put in game renderer
             
+            # Move the world
             if not self.window_active:
                 dt = self.clock.get_time()
                 self.player.move(self.camera.get_pos(), dt)
                 self.update_camera()
                 self.world.update(self.player, dt)
             
+            # Draw and update menus
             self.game_renderer.draw_world(self.camera, self.world, self.player)
-            self.game_renderer.draw_ui(self.player, self.loading_indicator, get_llm_task_count())
+            self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)
             self.quest_menu.draw(self.screen, self.dialogue_manager.quest_system)

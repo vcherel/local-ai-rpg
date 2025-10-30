@@ -5,13 +5,13 @@ import pygame
 from typing import List, TYPE_CHECKING
 
 import core.constants as c
+from ui.loading_indicator import LoadingIndicator
 
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.items import Item
     from game.entities.npcs import NPC
     from game.entities.player import Player
-    from ui.loading_indicator import LoadingIndicator
     from game.world import World
 
 
@@ -23,6 +23,7 @@ class GameRenderer:
         self.small_font = pygame.font.SysFont("arial", 22)
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)  # TODO: Remove redundancy
         self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
+        self.loading_indicator = LoadingIndicator()
     
     def draw_world(self, camera: Camera, world: World, player: Player):
         """Draw all world elements"""
@@ -55,7 +56,7 @@ class GameRenderer:
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
     
     # TODO: why we pass loading indicator here ? (change all params)
-    def draw_ui(self, player: Player, loading_indicator: LoadingIndicator, active_task_count):
+    def draw_ui(self, nb_items, nb_coins, active_task_count):
         """Draw inventory button, quest menu button, coins, and loading indicators"""
         # Draw inventory button
         mouse_pos = pygame.mouse.get_pos()
@@ -82,15 +83,16 @@ class GameRenderer:
         text_y = self.quest_button_rect.y + (self.quest_button_rect.height - button_text.get_height()) // 2
         self.screen.blit(button_text, (text_x, text_y))
         
-        coins_text = f"Pièces: {player.coins}"
-        objects_text = f"Objets: {len(player.inventory)}"
+        coins_text = f"Pièces: {nb_coins}"
+        objects_text = f"Objets: {nb_items}"
         coins_surface = self.small_font.render(coins_text, True, c.Colors.WHITE)
         objects_surface = self.small_font.render(objects_text, True, c.Colors.WHITE)
         self.screen.blit(coins_surface, (12, 55))
         self.screen.blit(objects_surface, (12, 90))
         
+        self.loading_indicator.update()
         if active_task_count > 0:
-            loading_indicator.draw_task_indicator(self.screen, c.Screen.WIDTH - 30, 30, active_task_count)
+            self.loading_indicator.draw_task_indicator(self.screen, c.Screen.WIDTH - 30, 30, active_task_count)
     
     def draw_offscreen_indicators(self, camera: Camera, items: List[Item], npcs: List[NPC], player: Player):
         """Draw arrows pointing to off-screen items and NPCs with active quests."""

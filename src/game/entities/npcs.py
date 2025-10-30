@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from llm.quest_system import Quest
 
 
+# TODO: make name lower
 class NPC(Entity):
     """The NPCs we can talk with"""
     def __init__(self, x, y):
