@@ -6,18 +6,16 @@ import random
 import core.constants as c
 from core.camera import Camera
 from core.utils import random_color
-from game.entities.entities import draw_human
+from game.entities.entities import Entity, draw_human
 from game.entities.items import Item
 from llm.name_generator import NPCNameGenerator
 
 
-class NPC:
+class NPC(Entity):
     """The NPCs we can talk with"""
 
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.angle = random.uniform(0, 2 * math.pi)
+        super().__init__(x, y)
         self.color = random_color()
 
         self.name = None # Not attributed initially
