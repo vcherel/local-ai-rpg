@@ -2,7 +2,6 @@ import core.constants as c
 
 class Camera:
     """Handles world-to-screen translation only"""
-
     def __init__(self):
         self.x = 0  # Player's world x
         self.y = 0  # Player's world y

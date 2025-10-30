@@ -4,21 +4,16 @@ import pygame
 
 from core.camera import Camera
 import core.constants as c
-from game.entities.entities import Entity, draw_human
+from game.entities.entities import Attackable, DrawableEntityHP, draw_human
 from game.entities.player import Player
 
 
-class Monster(Entity):
+class Monster(DrawableEntityHP, Attackable):
     """The monsters we can fight"""
-
     def __init__(self, x, y):
-        super().__init__(x, y)
-        self.hp = c.Monster.HP
-        
-        # Attack
-        self.attack_in_progress = False
-        self.attack_progress = 0.0  # 0.0 -> 1.0
-        self.attack_hand = "left"  # or "right"
+        DrawableEntityHP.__init__(self, x, y, c.Colors.RED,
+                                c.Monster.SIZE, c.Monster.HP, c.Monster.HP)
+        Attackable.__init__(self)
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
 
     def start_attack_anim(self, dist):
@@ -83,6 +78,7 @@ class Monster(Entity):
         bar_height = 8
         x = screen_x - bar_width // 2
         y = screen_y + c.Monster.SIZE // 2 + 10
+        self.draw_health_bar(screen, x, y, bar_width, bar_height, self.color)
 
         # Background
         pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))

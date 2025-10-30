@@ -20,7 +20,7 @@ class Player:
     TURN_SPEED: float = 0.03
 
     INTERACTION_DISTANCE: int = 30
-    ATTACK_REACH: int = 15
+    ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
 @dataclass(frozen=True)

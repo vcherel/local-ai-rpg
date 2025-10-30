@@ -6,7 +6,6 @@ import core.constants as c
 
 class Entity:
     """Base class for all positioned entities in the world"""
-    
     def __init__(self, x, y):
         self.x = x
         self.y = y
@@ -20,6 +19,42 @@ class Entity:
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
+
+class Attackable:
+    """Entities that can attack"""
+    def __init__(self):
+        self.attack_in_progress = False
+        self.attack_progress = 0.0
+        self.attack_hand = "left"
+
+    def start_attack_anim(self):
+        if not self.attack_in_progress:
+            self.attack_in_progress = True
+            self.attack_progress = 0.0
+            self.attack_hand = random.choice(["left", "right"])
+
+    def update_attack_anim(self, dt):
+        if self.attack_in_progress:
+            self.attack_progress += dt * c.Entities.SWING_SPEED
+            if self.attack_progress >= 1.0:
+                self.attack_progress = 0.0
+                self.attack_in_progress = False
+
+
+class DrawableEntityHP(Entity):
+    """Entities with drawable health bar"""
+    def __init__(self, x, y, color, size, hp, max_hp):
+        super().__init__(x, y)
+        self.color = color
+        self.size = size
+        self.hp = hp
+        self.max_hp = max_hp
+
+    def draw_health_bar(self, screen, x, y, width, height, color):
+        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, width, height))
+        ratio = max(self.hp / self.max_hp, 0)
+        pygame.draw.rect(screen, color, (x, y, width * ratio, height))
+        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, width, height), 2)
 
 
 def draw_human(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):

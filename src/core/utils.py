@@ -17,7 +17,6 @@ def random_coordinates():
 
 class ConversationHistory:
     """Manages conversation message history"""
-    
     def __init__(self):
         self.messages = []  # List of {"role": "user"/"assistant", "content": str}
     

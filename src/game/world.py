@@ -15,7 +15,6 @@ from ui.context_window import ContextWindow
 
 class World:
     """Handle all world elements (NPCs, Monsters, Items...)"""
-
     def __init__(self, save_system: SaveSystem, context_window: ContextWindow):        
         # Terrain details
         self.floor_details = [

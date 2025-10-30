@@ -1,36 +1,20 @@
 import math
 import pygame
-import random
-from typing import List
 
 import core.constants as c
-from core.camera import Camera
-from core.save import SaveSystem
-from game.entities.entities import draw_human
-from game.entities.items import Item
+from game.entities.entities import Attackable, DrawableEntityHP, draw_human
 
 
-class Player:
+class Player(DrawableEntityHP, Attackable):
     """The unique player of the game"""
-
     def __init__(self, save_system, coins):
-        # Position
-        self.x = c.World.WORLD_SIZE // 2
-        self.y = c.World.WORLD_SIZE // 2
-        self.orientation = 0
+        DrawableEntityHP.__init__(self, c.World.WORLD_SIZE//2, c.World.WORLD_SIZE//2,
+                                c.Colors.PLAYER, c.Player.SIZE, c.Player.HP, c.Player.HP)
+        Attackable.__init__(self)
 
-        # Inventory
-        self.save_system: SaveSystem = save_system
-        self.inventory: List[Item] = []
+        self.save_system = save_system
+        self.inventory = []
         self.coins = coins
-
-        # Action
-        self.attack_in_progress = False
-        self.attack_progress = 0.0  # 0.0 -> 1.0
-        self.attack_hand = "left"  # or "right"
-
-        # Combat
-        self.hp = c.Player.HP
 
     def get_pos(self, distance=None):
         if distance is not None:
@@ -38,21 +22,6 @@ class Player:
             attack_y = self.y - math.cos(self.orientation) * distance
             return (attack_x, attack_y)
         return (self.x, self.y)
-
-    def start_attack_anim(self):
-        """Start an attack animation with a random hand"""
-        if not self.attack_in_progress:
-            self.attack_in_progress = True
-            self.attack_progress = 0.0
-            self.attack_hand = random.choice(["left", "right"])
-
-    def update_attack_anim(self, dt):
-        """Update attack animation progress"""
-        if self.attack_in_progress:
-            self.attack_progress += dt * c.Entities.SWING_SPEED 
-            if self.attack_progress >= 1.0:
-                self.attack_progress = 0.0
-                self.attack_in_progress = False
 
     def move(self, camera_pos, dt):
         """Move player toward mouse position"""
@@ -118,17 +87,10 @@ class Player:
             # Health bar
             bar_width = 800
             bar_height = 30
-            margin_bottom = 30  # distance from bottom edge
+            margin_bottom = 30
             x = c.Screen.WIDTH // 2 - bar_width // 2
             y = c.Screen.HEIGHT - margin_bottom - bar_height
-
-            # Background
-            pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))
-            # Fill according to HP
-            health_ratio = max(self.hp / c.Player.HP, 0)
-            pygame.draw.rect(screen, c.Colors.GREEN, (x, y, bar_width * health_ratio, bar_height))
-            # Border
-            pygame.draw.rect(screen, c.Colors.BORDER, (x, y, bar_width, bar_height), 5)
+            self.draw_health_bar(screen, x, y, bar_width, bar_height, c.Colors.GREEN)
 
             if show_reach:
                 draw_circle(screen, c.Player.ATTACK_REACH, (255, 0, 0, 80), self.orientation)

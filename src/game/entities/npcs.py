@@ -1,30 +1,22 @@
 import math
 import time
 import pygame
-import random
 
 import core.constants as c
 from core.camera import Camera
 from core.utils import random_color
-from game.entities.entities import Entity, draw_human
-from game.entities.items import Item
+from game.entities.entities import DrawableEntityHP, draw_human
 from llm.name_generator import NPCNameGenerator
 
 
-class NPC(Entity):
+class NPC(DrawableEntityHP):
     """The NPCs we can talk with"""
-
     def __init__(self, x, y):
-        super().__init__(x, y)
-        self.color = random_color()
-
-        self.name = None # Not attributed initially
-        self.hp = c.Entities.NPC_HP
-
-        # Quest
+        super().__init__(x, y, random_color(), c.Entities.NPC_SIZE,
+                         c.Entities.NPC_HP, c.Entities.NPC_HP)
+        self.name = None
         self.has_active_quest = False
-        self.quest_content = None
-        self.quest_item: Item = None
+        self.quest_item = None
     
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
@@ -55,14 +47,7 @@ class NPC(Entity):
         bar_height = 8
         x = screen_x - bar_width // 2
         y = screen_y + c.Entities.NPC_HP // 2 + 10
-
-        # Background
-        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))
-        # Health
-        health_ratio = max(self.hp / c.Entities.NPC_HP, 0)
-        pygame.draw.rect(screen, self.color, (x, y, bar_width * health_ratio, bar_height))
-        # Border
-        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, bar_width, bar_height), 2)
+        self.draw_health_bar(screen, x, y, bar_width, bar_height, self.color)
         
         # Exclamation mark for active quests
         if self.has_active_quest:

@@ -18,7 +18,6 @@ from ui.inventory_menu import InventoryMenu
 
 class Game:
     """Handle the game inputs, camera, data"""
-
     def __init__(self, screen, clock, save_system: SaveSystem):
         # Pygame
         self.screen = screen
