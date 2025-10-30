@@ -133,7 +133,6 @@ class NPC:
     
     def receive_damage(self, damage):
         """Returns True if the NPC died"""
-        print("NPC HIT")
         self.hp -= damage
         if self.hp <= 1:
             return True
@@ -266,7 +265,6 @@ class Monster:
     
     def receive_damage(self, damage):
         """Returns True if the monster died"""
-        print("MONSTER HIT")
         self.hp -= damage
         if self.hp <= 1:
             return True
