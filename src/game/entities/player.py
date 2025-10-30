@@ -2,15 +2,13 @@ import math
 import pygame
 
 import core.constants as c
-from game.entities.entities import Attackable, DrawableEntityHP, draw_human
+from game.entities.entities import Entity, draw_human
 
 
-class Player(DrawableEntityHP, Attackable):
+class Player(Entity):
     """The unique player of the game"""
     def __init__(self, save_system, coins):
-        DrawableEntityHP.__init__(self, c.World.WORLD_SIZE//2, c.World.WORLD_SIZE//2,
-                                c.Colors.PLAYER, c.Player.SIZE, c.Player.HP, c.Player.HP)
-        Attackable.__init__(self)
+        super().__init__(c.World.WORLD_SIZE//2, c.World.WORLD_SIZE//2, c.Colors.PLAYER, c.Player.SIZE, c.Player.HP, c.Player.HP)
 
         self.save_system = save_system
         self.inventory = []

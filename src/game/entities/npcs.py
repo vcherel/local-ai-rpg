@@ -5,11 +5,11 @@ import pygame
 import core.constants as c
 from core.camera import Camera
 from core.utils import random_color
-from game.entities.entities import DrawableEntityHP, draw_human
+from game.entities.entities import Entity, draw_human
 from llm.name_generator import NPCNameGenerator
 
 
-class NPC(DrawableEntityHP):
+class NPC(Entity):
     """The NPCs we can talk with"""
     def __init__(self, x, y):
         super().__init__(x, y, random_color(), c.Entities.NPC_SIZE,
@@ -26,16 +26,6 @@ class NPC(DrawableEntityHP):
         if self.name:
             return self.name
         return ""
-    
-    def receive_damage(self, damage):
-        """Returns True if the NPC died"""
-        self.hp -= damage
-        if self.hp <= 0:
-            return True
-        return False
-
-    def distance_to_point(self, point):
-        return math.hypot(self.x - point[0], self.y - point[1])
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)

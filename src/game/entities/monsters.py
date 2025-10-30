@@ -4,20 +4,18 @@ import pygame
 
 from core.camera import Camera
 import core.constants as c
-from game.entities.entities import Attackable, DrawableEntityHP, draw_human
+from game.entities.entities import Entity, draw_human
 from game.entities.player import Player
 
 
-class Monster(DrawableEntityHP, Attackable):
+class Monster(Entity):
     """The monsters we can fight"""
     def __init__(self, x, y):
-        DrawableEntityHP.__init__(self, x, y, c.Colors.RED,
-                                c.Monster.SIZE, c.Monster.HP, c.Monster.HP)
-        Attackable.__init__(self)
+        super().__init__(x, y, c.Colors.RED, c.Monster.SIZE, c.Monster.HP, c.Monster.HP)
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
 
     def start_attack_anim(self, dist):
-        """Start an attack animation with a random hand"""
+        """Return True in case of hit to the player"""
         if not self.attack_in_progress:
             self.attack_in_progress = True
             self.attack_progress = 0.0
@@ -27,14 +25,6 @@ class Monster(DrawableEntityHP, Attackable):
                 return True
         
         return False
-
-    def update_attack_anim(self, dt):
-        """Update attack animation progress"""
-        if self.attack_in_progress:
-            self.attack_progress += dt * c.Entities.SWING_SPEED 
-            if self.attack_progress >= 1.0:
-                self.attack_progress = 0.0
-                self.attack_in_progress = False
 
     def move(self, player: Player, dt):
         # Calculate vector to player
