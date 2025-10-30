@@ -26,7 +26,7 @@ class Player:
 @dataclass(frozen=True)
 class Entities:
     MONSTER_SIZE: int = 25
-    MONSTER_HP: int = 30
+    MONSTER_HP: int = 10
     MONSTER_SPEED: int = 4
     MONSTER_ATTACK_RANGE: int = 10
     MONSTER_DAMAGE: int = 3

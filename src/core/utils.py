@@ -88,11 +88,24 @@ def parse_response(response):
         json_str = re.sub(r':\s*([,}])', r': ""\1', json_str)
 
         result = json.loads(json_str)
-        return {
-            'has_quest': bool(result.get('has_quest', False)),
-            'quest_description': result.get('quest_description', ''),
-            'item_name': result.get('item_name', '')
-        }
+
+        fields = ['has_quest', 'quest_description', 'item_name']
+        result_dict = {}
+
+        for field in fields:
+            if field not in result:
+                print(f"Warning: '{field}' not found, using default value.")
+            # Assign default values if field is missing
+            if field == 'has_quest':
+                result_dict[field] = bool(result.get(field, False))
+            else:
+                result_dict[field] = result.get(field, '')
+
+        if result_dict['has_quest'] and not (result_dict['quest_description'] or result_dict['item_name']):
+            return {'has_quest': False, 'quest_description': '', 'item_name': ''}
+
+        return result_dict
+    
     except Exception as e:
         print(f"Failed to parse quest analysis: {e}, response: {response}\n")
 
