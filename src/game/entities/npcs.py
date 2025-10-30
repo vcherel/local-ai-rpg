@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from llm.quest_system import Quest
 
 
-# TODO: make name lower
 class NPC(Entity):
     """The NPCs we can talk with"""
     def __init__(self, x, y):
@@ -68,6 +67,6 @@ class NPC(Entity):
             name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30))
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(bg_surface, (0, 0, 0, 150), bg_surface.get_rect(), border_radius=6)
+            pygame.draw.rect(bg_surface, c.Colors.TRANSPARENT, bg_surface.get_rect(), border_radius=6)
             screen.blit(bg_surface, bg_rect)
             screen.blit(name_surface, name_rect)

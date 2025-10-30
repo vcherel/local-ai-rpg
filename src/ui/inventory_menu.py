@@ -101,7 +101,7 @@ class InventoryMenu:
         
         # Draw semi-transparent background overlay
         overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 150))
+        overlay.fill(c.Colors.TRANSPARENT)
         self.screen.blit(overlay, (0, 0))
         
         # Draw menu background
@@ -175,7 +175,7 @@ class InventoryMenu:
                     if count > 1:
                         count_text = self.font.render(f"x{count}", True, c.Colors.WHITE)
                         count_bg = pygame.Surface((count_text.get_width() + 4, count_text.get_height() + 2), pygame.SRCALPHA)
-                        count_bg.fill((0, 0, 0, 150))
+                        count_bg.fill(c.Colors.TRANSPARENT)
                         menu_surface.blit(count_bg, (cell_x + self.cell_size - count_text.get_width() - 6, 
                                                      cell_y + self.cell_size - count_text.get_height() - 4))
                         menu_surface.blit(count_text, (cell_x + self.cell_size - count_text.get_width() - 4, 
@@ -203,7 +203,7 @@ class InventoryMenu:
             
             # Draw tooltip background
             tooltip_bg = pygame.Surface((tooltip_width, tooltip_height), pygame.SRCALPHA)
-            tooltip_bg.fill((0, 0, 0, 150))
+            tooltip_bg.fill(c.Colors.TRANSPARENT)
             menu_surface.blit(tooltip_bg, (tooltip_x, tooltip_y))
             pygame.draw.rect(menu_surface, c.Colors.YELLOW, 
                            (tooltip_x, tooltip_y, tooltip_width, tooltip_height), 2)

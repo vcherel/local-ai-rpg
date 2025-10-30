@@ -51,7 +51,7 @@ class ContextWindow:
 
         # Semi-transparent dark overlay
         overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 150)) 
+        overlay.fill(c.Colors.TRANSPARENT) 
         self.screen.blit(overlay, (0, 0))
 
         # --- Centered window position ---

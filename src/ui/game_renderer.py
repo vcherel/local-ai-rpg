@@ -55,7 +55,6 @@ class GameRenderer:
         # Off-screen indicators
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
     
-    # TODO: why we pass loading indicator here ? (change all params)
     def draw_ui(self, nb_items, nb_coins, active_task_count):
         """Draw inventory button, quest menu button, coins, and loading indicators"""
         # Draw inventory button

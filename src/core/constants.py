@@ -66,6 +66,7 @@ class Colors:
     BORDER: tuple = (100, 100, 100)
     BUTTON_HOVERED: tuple = (90, 90, 90) 
     BORDER_HOVERED: tuple = (255, 215, 0)
+    TRANSPARENT: tuple = (0, 0, 0, 150)
 
 
 @dataclass(frozen=True)

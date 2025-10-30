@@ -96,13 +96,12 @@ class QuestMenu:
         
         # Draw semi-transparent background overlay
         overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-        # TODO: add all colors to constants
-        overlay.fill((0, 0, 0, 150))
+        overlay.fill(c.Colors.TRANSPARENT)
         self.screen.blit(overlay, (0, 0))
         
         # Draw menu background
         menu_surface = pygame.Surface((self.width, self.height))
-        menu_surface.fill((50, 50, 50))
+        menu_surface.fill(c.Colors.MENU_BACKGROUND)
         pygame.draw.rect(menu_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
         
         # Draw title
@@ -176,24 +175,8 @@ class QuestMenu:
                 # Item requirement
                 item_y = card_y + self.card_height - 25
                 item_text = f"Objet: {quest.item_name}"
-                item_color = c.Colors.GREEN if quest.is_completed else c.Colors.WHITE
-                item_surface = self.font.render(item_text, True, item_color)
+                item_surface = self.font.render(item_text, True, c.Colors.WHITE)
                 menu_surface.blit(item_surface, (text_x, item_y))
-                
-                # Completion status badge
-                # TODO: hide completed
-                if quest.is_completed:
-                    status_text = "✓"
-                    status_surface = self.font.render(status_text, True, c.Colors.WHITE)
-                    status_bg = pygame.Surface(
-                        (status_surface.get_width() + 10, status_surface.get_height() + 6),
-                        pygame.SRCALPHA
-                    )
-                    status_bg.fill((40, 120, 40, 220))
-                    badge_x = self.padding + self.card_width - status_surface.get_width() - 20
-                    badge_y = card_y + 10
-                    menu_surface.blit(status_bg, (badge_x - 5, badge_y - 3))
-                    menu_surface.blit(status_surface, (badge_x, badge_y))
             
             # Draw scroll indicator if needed
             if quest_count > self.max_visible_quests:
