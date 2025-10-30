@@ -111,6 +111,21 @@ class Player:
                         self.orientation,
                         self.attack_progress,
                         self.attack_hand)
+            
+            # Health bar
+            bar_width = 800
+            bar_height = 30
+            margin_bottom = 30  # distance from bottom edge
+            x = c.Screen.WIDTH // 2 - bar_width // 2
+            y = c.Screen.HEIGHT - margin_bottom - bar_height
+
+            # Background
+            pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))
+            # Fill according to HP
+            health_ratio = max(self.hp / c.Player.HP, 0)
+            pygame.draw.rect(screen, c.Colors.GREEN, (x, y, bar_width * health_ratio, bar_height))
+            # Border
+            pygame.draw.rect(screen, c.Colors.BORDER, (x, y, bar_width, bar_height), 5)
 
             if show_reach:
                 draw_circle(screen, c.Player.ATTACK_REACH, (255, 0, 0, 80), self.orientation)
