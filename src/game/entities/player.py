@@ -32,6 +32,13 @@ class Player:
         # Combat
         self.hp = c.Player.HP
 
+    def get_pos(self, distance=None):
+        if distance is not None:
+            attack_x = self.x + math.sin(self.orientation) * distance
+            attack_y = self.y - math.cos(self.orientation) * distance
+            return (attack_x, attack_y)
+        return (self.x, self.y)
+
     def start_attack_anim(self):
         """Start an attack animation with a random hand"""
         if not self.attack_in_progress:
@@ -46,11 +53,6 @@ class Player:
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
-
-    def get_front_pos(self, distance):
-        attack_x = self.x + math.sin(self.orientation) * distance
-        attack_y = self.y - math.cos(self.orientation) * distance
-        return (attack_x, attack_y)
 
     def move(self, camera: Camera, clock: pygame.time.Clock):
         """Move player toward mouse position"""
@@ -92,7 +94,7 @@ class Player:
         dt = clock.get_time()
         self.update_attack_anim(dt)
 
-    def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False):
+    def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False, show_detection=False):
             """Draw player at screen bottom center, looking towards mouse"""
             draw_human(screen,
                         c.Screen.ORIGIN_X,
@@ -104,30 +106,34 @@ class Player:
                         self.attack_hand)
 
             if show_reach:
-                draw_reach(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, self.orientation, c.Player.ATTACK_REACH, (255, 0, 0, 80))
+                draw_circle(screen, c.Player.ATTACK_REACH, (255, 0, 0, 80), self.orientation)
 
             if show_interaction:
-                draw_reach(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, self.orientation, c.Player.INTERACTION_DISTANCE, (0, 255, 0, 80))
+                draw_circle(screen, c.Player.INTERACTION_DISTANCE, (0, 255, 0, 80), self.orientation)
+
+            if show_detection:
+                draw_circle(screen, c.World.DETECTION_RANGE, (0, 0, 255, 80))
 
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)
 
 
-def draw_reach(screen: pygame.Surface, origin_x, origin_y, orientation, reach_distance, color):
-    # Calculate reach position
-    reach_x = origin_x + math.sin(orientation) * reach_distance
-    reach_y = origin_y - math.cos(orientation) * reach_distance
+def draw_circle(screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_X, origin_y=c.Screen.ORIGIN_Y, orientation=None):
+    if orientation is not None:
+        # Calculate reach position
+        origin_x = origin_x + math.sin(orientation) * radius
+        origin_y = origin_y - math.cos(orientation) * radius
                 
     # Create translucent surface
-    reach_surface = pygame.Surface((reach_distance * 2, reach_distance * 2), pygame.SRCALPHA)
+    reach_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
     pygame.draw.circle(
         reach_surface,
         color,
-        (reach_distance, reach_distance),
-        reach_distance,
+        (radius, radius),
+        radius,
         2  # thickness
     )
                 
     # Blit to main screen
-    screen.blit(reach_surface, (reach_x - reach_distance, reach_y - reach_distance))
+    screen.blit(reach_surface, (origin_x - radius, origin_y - radius))

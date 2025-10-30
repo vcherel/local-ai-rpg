@@ -49,7 +49,7 @@ class Game:
 
     def update_camera(self):
         """Center camera on player with proper offset"""
-        self.camera.update_position(self.player.x, self.player.y)
+        self.camera.update_position(self.player.get_pos())
 
     def handle_input(self):
         """Handle keyboard and mouse input"""
@@ -76,8 +76,7 @@ class Game:
                         # Attack
                         else:
                             self.player.start_attack_anim()
-                            pos = self.player.get_front_pos(c.Player.ATTACK_REACH)
-                            self.world.handle_attack(pos)
+                            self.world.handle_attack(self.player)
                 
                 if event.type == pygame.KEYDOWN:
                     # Game controls
@@ -128,6 +127,8 @@ class Game:
             
                 # Update camera
                 self.update_camera()
+
+                self.world.update(self.player)
             
             # Draw everything
             self.game_renderer.draw_world(self.camera, self.world, self.player)

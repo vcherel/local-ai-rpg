@@ -55,13 +55,15 @@ class World:
             # Context not ready yet, skip
             return
         
+        pos = player.get_pos(c.Player.INTERACTION_DISTANCE)
         for npc in self.npcs:
-            pos = player.get_front_pos(c.Player.INTERACTION_DISTANCE)
             if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.World.NPC_SIZE // 2:
                 return npc
             
-    def handle_attack(self, pos):
+    def handle_attack(self, player: Player):
         """Check if a creature was attacked and apply damage or remove it."""
+        pos = player.get_pos(c.Player.ATTACK_REACH)
+
         for monster in self.monsters:
             # Check if monster overlaps with the attack circle
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.World.MONSTER_SIZE // 2:
@@ -79,5 +81,12 @@ class World:
     def pickup_item(self, player: Player):
         """Check for nearby items and pick them up"""
         for item in self.items:
-            if not item.picked_up and item.distance_to_point((player.x, player.y)) < c.Player.INTERACTION_DISTANCE:
+            if not item.picked_up and item.distance_to_point(player.get_pos()) < c.Player.INTERACTION_DISTANCE:
                 return item
+
+    def update(self, player: Player):
+        # If player is in detection range, monster is attracted to player
+        pos = player.get_pos()
+        for monster in self.monsters:
+            if monster.distance_to_point(pos) < c.World.DETECTION_RANGE + c.World.MONSTER_SIZE // 2:
+                print("SEEN")

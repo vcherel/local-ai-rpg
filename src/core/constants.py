@@ -24,6 +24,7 @@ class Player:
 @dataclass(frozen=True)
 class World:
     WORLD_SIZE: int = 5000
+    DETECTION_RANGE = 500
 
     NB_NPCS: int = 20
     NB_MONSTERS: int = 100
@@ -35,6 +36,8 @@ class World:
 
     NPC_HP: int = 30
     MONSTER_HP: int = 30
+
+    MONSTER_SPEED: int = 6
 
 @dataclass(frozen=True)
 class Colors:

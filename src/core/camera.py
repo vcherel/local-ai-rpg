@@ -7,10 +7,10 @@ class Camera:
         self.x = 0  # Player's world x
         self.y = 0  # Player's world y
     
-    def update_position(self, x, y):
+    def update_position(self, pos):
         """Update camera position"""
-        self.x = x
-        self.y = y
+        self.x = pos[0]
+        self.y = pos[1]
     
     def world_to_screen(self, x, y):
         """Convert world coordinates to screen coordinates"""
