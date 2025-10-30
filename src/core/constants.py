@@ -18,7 +18,7 @@ class Size:
 @dataclass(frozen=True)
 class Player:
     PLAYER_SPEED: int = 5
-    PLAYER_RUN_SPEED: int = 8
+    PLAYER_RUN_SPEED: int = 7
     PLAYER_TURN_SPEED: float = 0.03
 
     INTERACTION_DISTANCE: int = 30  # TODO: Make interaction in front of player
@@ -35,8 +35,8 @@ class World:
 @dataclass(frozen=True)
 class Combat:
     PLAYER_HP: int = 100
-    NPC_HP: int = 50
-    MONSTER_HP: int = 20
+    NPC_HP: int = 30
+    MONSTER_HP: int = 50
 
 @dataclass(frozen=True)
 class Colors:

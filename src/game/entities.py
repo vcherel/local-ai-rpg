@@ -77,6 +77,7 @@ def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tu
     rect = char_surf.get_rect(center=(x, y))
     surface.blit(char_surf, rect)
 
+
 class NPC:
     def __init__(self, x, y):
         self.x = x
@@ -102,17 +103,16 @@ class NPC:
         return ""
 
     def draw(self, screen: pygame.Surface, camera: Camera):
-        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
-        real_angle = self.angle + camera.angle
+        screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         
-        draw_character(screen, rotated_x, rotated_y, c.Size.NPC, self.color, real_angle)
+        draw_character(screen, screen_x, screen_y, c.Size.NPC, self.color, self.angle)
         
         # Exclamation mark for active quests
         if self.has_active_quest:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
-            text_rect = text.get_rect(center=(rotated_x, rotated_y - c.Size.NPC // 2 - 20 + bob_offset))
+            text_rect = text.get_rect(center=(screen_x, screen_y - c.Size.NPC // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
         
         # Name label
@@ -120,7 +120,7 @@ class NPC:
         if display_name:
             name_font = pygame.font.SysFont("arial", 16)
             name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-            name_rect = name_surface.get_rect(center=(rotated_x, rotated_y + c.Size.NPC // 2 + 15))
+            name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Size.NPC // 2 + 15))
             
             # Background box
             bg_rect = name_rect.inflate(10, 4)
@@ -140,6 +140,7 @@ class NPC:
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
+
 
 class Player:
     def __init__(self, save_system, coins):
@@ -178,14 +179,9 @@ class Player:
 
     def get_attack_pos(self):
         """Return the world position of the player's attack (tip of the swing)."""
-        # Compute lateral hand offset relative to facing direction
-        hand_x = self.x + math.cos(self.orientation + math.pi / 2) * self.orientation
-        hand_y = self.y + math.sin(self.orientation + math.pi / 2) * self.orientation
-
-        # Attack tip position in world coordinates
-        attack_x = hand_x + math.sin(self.orientation) * c.Player.ATTACK_REACH
-        attack_y = hand_y - math.cos(self.orientation) * c.Player.ATTACK_REACH
-
+        # Attack tip position in world coordinates (forward from player)
+        attack_x = self.x + math.sin(self.orientation) * c.Player.ATTACK_REACH
+        attack_y = self.y - math.cos(self.orientation) * c.Player.ATTACK_REACH
         return (attack_x, attack_y)
 
     def move(self, camera: Camera, clock: pygame.time.Clock):
@@ -201,8 +197,8 @@ class Player:
             mouse_x, mouse_y = pygame.mouse.get_pos()
 
             # Convert mouse screen position to world coordinates
-            world_mouse_x = (mouse_x - c.Screen.ORIGIN_X) * math.cos(-camera.angle) - (mouse_y - c.Screen.ORIGIN_Y) * math.sin(-camera.angle) + camera.x
-            world_mouse_y = (mouse_x - c.Screen.ORIGIN_X) * math.sin(-camera.angle) + (mouse_y - c.Screen.ORIGIN_Y) * math.cos(-camera.angle) + camera.y
+            world_mouse_x = mouse_x - c.Screen.ORIGIN_X + camera.x
+            world_mouse_y = mouse_y - c.Screen.ORIGIN_Y + camera.y
 
             # Vector from player to mouse
             dx = world_mouse_x - self.x
@@ -218,12 +214,6 @@ class Player:
             self.x += dx * speed
             self.y += dy * speed
 
-        # Rotate camera using Q/D
-        if keys[pygame.K_q]:
-            camera.update_angle(c.Player.PLAYER_TURN_SPEED)
-        if keys[pygame.K_d]:
-            camera.update_angle(-c.Player.PLAYER_TURN_SPEED)
-
         # Update player orientation toward mouse
         mouse_x, mouse_y = pygame.mouse.get_pos()
         dx = mouse_x - c.Screen.ORIGIN_X
@@ -234,8 +224,7 @@ class Player:
         dt = clock.get_time()
         self.update_attack_anim(dt)
 
-
-    def draw(self, screen: pygame.Surface):
+    def draw(self, screen: pygame.Surface, show_reach=False):
         """Draw player at screen bottom center, looking towards mouse"""
         draw_character(screen,
                        c.Screen.ORIGIN_X,
@@ -245,10 +234,14 @@ class Player:
                        self.orientation,
                        self.attack_progress,
                        self.attack_hand)
+        
+        if show_reach:
+            pass
 
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)
+
 
 class Monster:
     def __init__(self, x, y):
@@ -258,10 +251,8 @@ class Monster:
         self.hp = c.Combat.MONSTER_HP
 
     def draw(self, screen: pygame.Surface, camera: Camera):
-        rotated_x, rotated_y = camera.rotate_point(self.x, self.y)
-        real_angle = self.angle + camera.angle
-
-        draw_character(screen, rotated_x, rotated_y, c.Size.MONSTER, c.Colors.RED, real_angle)
+        screen_x, screen_y = camera.world_to_screen(self.x, self.y)
+        draw_character(screen, screen_x, screen_y, c.Size.MONSTER, c.Colors.RED, self.angle)
     
     def receive_damage(self, damage):
         """Returns True if the monster died"""

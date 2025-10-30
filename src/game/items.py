@@ -18,29 +18,29 @@ class Item:
         self.picked_up = False
     
     def draw(self, surface: pygame.Surface, camera: Camera=None, x=None, y=None):
-        """Draw item with correct rotation relative to camera"""
+        """Draw item with correct position"""
         # Determine position
         draw_x = x if x is not None else self.x
         draw_y = y if y is not None else self.y
-
+        
         if camera:
-            # Rotate item position by camera
-            rotated_x, rotated_y = camera.rotate_point(draw_x, draw_y)
-            visual_angle = self.angle + camera.angle
+            # Convert world position to screen position
+            screen_x, screen_y = camera.world_to_screen(draw_x, draw_y)
+            visual_angle = self.angle
         else:
-            rotated_x, rotated_y = draw_x, draw_y
+            screen_x, screen_y = draw_x, draw_y
             visual_angle = 0  # default angle when no camera
-
-        center = (rotated_x, rotated_y)
+        
+        center = (screen_x, screen_y)
         size = c.Size.ITEM // 2
         border = 2  # outline thickness
-
+        
         # Add generous padding to prevent clipping during rotation
         padding = size + border + 4
         surface_size = c.Size.ITEM + padding * 2
         item_surface = pygame.Surface((surface_size, surface_size), pygame.SRCALPHA)
         item_center = (surface_size // 2, surface_size // 2)
-
+        
         # Draw the shape centered on the padded surface
         if self.shape == "circle":
             pygame.draw.circle(item_surface, c.Colors.BLACK, item_center, size + border - 5)
@@ -73,13 +73,13 @@ class Item:
                 points.append((x, y))
             pygame.draw.polygon(item_surface, c.Colors.BLACK, points, border)
             pygame.draw.polygon(item_surface, self.color, points)
-
+        
         # Rotate with enough space around edges
         rotated_surface = pygame.transform.rotate(item_surface, math.degrees(-visual_angle))
         rect = rotated_surface.get_rect(center=center)
-
+        
         # Blit to screen
         surface.blit(rotated_surface, rect.topleft)
-
+    
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])

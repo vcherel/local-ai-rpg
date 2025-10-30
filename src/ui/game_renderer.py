@@ -16,17 +16,17 @@ class GameRenderer:
         self.small_font = pygame.font.SysFont("arial", 22)
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
     
-    def draw_world(self, camera: Camera, world: World, player: Player):
+    def draw_world(self, camera: Camera, world, player: Player):
         """Draw all world elements"""
         self.screen.fill(c.Colors.GREEN)
         
         # Floor details
         for (x, y, kind) in world.floor_details:
-            rotated_x, rotated_y = camera.rotate_point(x, y)
+            screen_x, screen_y = camera.world_to_screen(x, y)
             if kind == "stone":
-                pygame.draw.circle(self.screen, (100, 100, 100), (rotated_x, rotated_y), 3)
+                pygame.draw.circle(self.screen, (100, 100, 100), (screen_x, screen_y), 3)
             else:
-                pygame.draw.circle(self.screen, (255, 0, 0), (rotated_x, rotated_y), 2)
+                pygame.draw.circle(self.screen, (255, 0, 0), (screen_x, screen_y), 2)
         
         # NPCs
         for npc in world.npcs:
@@ -46,7 +46,7 @@ class GameRenderer:
         # Off-screen indicators
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
     
-    def draw_ui(self, player, loading_indicator: LoadingIndicator, active_task_count):
+    def draw_ui(self, player, loading_indicator, active_task_count):
         """Draw inventory button, coins, and loading indicators"""
         # Draw inventory button
         mouse_pos = pygame.mouse.get_pos()
@@ -78,7 +78,7 @@ class GameRenderer:
         arrow_size = 32
         
         def draw_arrow(target_x, target_y, color):
-            screen_x, screen_y = camera.rotate_point(target_x, target_y)
+            screen_x, screen_y = camera.world_to_screen(target_x, target_y)
             
             if 0 <= screen_x <= c.Screen.WIDTH and 0 <= screen_y <= c.Screen.HEIGHT:
                 return
