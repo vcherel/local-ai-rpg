@@ -1,12 +1,19 @@
+from __future__ import annotations
+
 import math
 import pygame
-from typing import List
+from typing import List, TYPE_CHECKING
 
 import core.constants as c
-from core.camera import Camera
-from game.entities.items import Item
-from game.entities.npcs import NPC
-from game.entities.player import Player
+
+if TYPE_CHECKING:
+    from core.camera import Camera
+    from game.entities.items import Item
+    from game.entities.npcs import NPC
+    from game.entities.player import Player
+    from ui.loading_indicator import LoadingIndicator
+    from game.world import World
+
 
 
 class GameRenderer:
@@ -17,7 +24,7 @@ class GameRenderer:
         self.small_font = pygame.font.SysFont("arial", 22)
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
     
-    def draw_world(self, camera: Camera, world, player: Player):
+    def draw_world(self, camera: Camera, world: World, player: Player):
         """Draw all world elements"""
         self.screen.fill(c.Colors.GREEN)
         
@@ -47,7 +54,7 @@ class GameRenderer:
         # Off-screen indicators
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
     
-    def draw_ui(self, player, loading_indicator, active_task_count):
+    def draw_ui(self, player: Player, loading_indicator: LoadingIndicator, active_task_count):
         """Draw inventory button, coins, and loading indicators"""
         # Draw inventory button
         mouse_pos = pygame.mouse.get_pos()
@@ -80,7 +87,6 @@ class GameRenderer:
         
         def draw_arrow(target_x, target_y, color):
             screen_x, screen_y = camera.world_to_screen(target_x, target_y)
-            
             if 0 <= screen_x <= c.Screen.WIDTH and 0 <= screen_y <= c.Screen.HEIGHT:
                 return
             
@@ -89,13 +95,11 @@ class GameRenderer:
             dx = screen_x - center_x
             dy = screen_y - center_y
             distance = math.hypot(dx, dy)
-            
             if distance == 0:
                 return
             
             dx /= distance
             dy /= distance
-            
             arrow_x = center_x + dx * (c.Screen.WIDTH // 2 - margin)
             arrow_y = center_y + dy * (c.Screen.HEIGHT // 2 - margin)
             arrow_x = max(margin, min(arrow_x, c.Screen.WIDTH - margin))
@@ -119,15 +123,18 @@ class GameRenderer:
                 (p[0] - arrow_x + arrow_size * 1.5, p[1] - arrow_y + arrow_size * 1.5)
                 for p in rotated_points
             ]
+            
             arrow_color = (*color, 120)
             pygame.draw.polygon(arrow_surface, arrow_color, local_points)
             pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
             self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
         
+        # Draw arrows for unpicked items
         for item in items:
             if not item.picked_up:
                 draw_arrow(item.x, item.y, item.color)
         
+        # Draw arrows for NPCs with completable quests
         for npc in npcs:
-            if (npc.has_active_quest and npc.quest_item in player.inventory):
+            if (npc.has_active_quest and npc.quest.item in player.inventory):
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)

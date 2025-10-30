@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import sys
 import pygame
+from typing import TYPE_CHECKING
 
 import core.constants as c
-from core.save import SaveSystem
+
+if TYPE_CHECKING:
+    from core.save import SaveSystem
 
 class MainMenu:
     """Main Menu of the game (New game, Continue)"""
 
     def __init__(self, screen, save_system):
-        self.screen = screen
+        self.screen: pygame.Surface = screen
         self.save_system: SaveSystem = save_system
         self.active = True
 
@@ -48,7 +53,7 @@ class MainMenu:
             return "continue"
         return None
 
-    def draw_button(self, rect, text, mouse_pos):
+    def draw_button(self, rect: pygame.Rect, text, mouse_pos):
         hover = rect.collidepoint(mouse_pos)
         color = self.button_hover_color if hover else self.button_default_color
         border_color = c.Colors.BORDER_HOVERED if hover else c.Colors.BORDER

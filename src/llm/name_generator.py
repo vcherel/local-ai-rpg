@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import queue
 import threading
 import time
+from typing import TYPE_CHECKING
 
-from core.save import SaveSystem
 from llm.llm_request_queue import generate_response_queued
+
+if TYPE_CHECKING:
+    from core.save import SaveSystem
 
 
 class NPCNameGenerator:

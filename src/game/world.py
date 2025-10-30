@@ -1,16 +1,20 @@
+from __future__ import annotations
+
 import random
 import threading
-from typing import List
+from typing import List, TYPE_CHECKING
 
-from core.save import SaveSystem
 from core.utils import random_coordinates
 import core.constants as c
-from game.entities.items import Item
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
-from game.entities.player import Player
 from llm.llm_request_queue import generate_response_queued
-from ui.context_window import ContextWindow
+
+if TYPE_CHECKING:
+    from game.entities.items import Item
+    from core.save import SaveSystem
+    from game.entities.player import Player
+    from ui.context_window import ContextWindow
 
 
 class World:

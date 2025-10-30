@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import math
 import random
+from typing import TYPE_CHECKING
 
 import pygame
-from core.camera import Camera
 import core.constants as c
 from core.utils import random_color
+
+if TYPE_CHECKING:
+    from core.camera import Camera
 
 
 class Item:

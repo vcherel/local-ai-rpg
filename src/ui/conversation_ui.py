@@ -1,8 +1,12 @@
-from typing import List
+from __future__ import annotations
+
+from typing import List, TYPE_CHECKING
 import pygame
 
-from core.utils import ConversationHistory
 import core.constants as c
+
+if TYPE_CHECKING:
+    from core.utils import ConversationHistory
 
 
 class ConversationUI:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pygame
 
 import core.constants as c
@@ -39,7 +41,7 @@ class ContextWindow:
 
         return True
     
-    def draw(self, screen):
+    def draw(self, screen: pygame.Surface):
         if not self.active or self.context_text is None:
             return
 

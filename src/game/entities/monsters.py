@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import math
 import random
-import pygame
+from typing import TYPE_CHECKING
 
-from core.camera import Camera
 import core.constants as c
-from game.entities.entities import Entity, draw_human
-from game.entities.player import Player
+from game.entities.entities import Entity
+
+if TYPE_CHECKING:
+    from core.camera import Camera
+    from game.entities.player import Player
 
 
 class Monster(Entity):

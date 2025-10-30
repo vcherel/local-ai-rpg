@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import math
 import pygame
+from typing import TYPE_CHECKING
 
 import core.constants as c
-from game.entities.entities import Entity, draw_human
+from game.entities.entities import Entity
+
+if TYPE_CHECKING:
+    from core.save import SaveSystem
 
 
 class Player(Entity):
@@ -10,7 +16,7 @@ class Player(Entity):
     def __init__(self, save_system, coins):
         super().__init__(c.World.WORLD_SIZE//2, c.World.WORLD_SIZE//2, c.Colors.PLAYER, c.Player.SIZE, c.Player.HP, c.Player.HP)
 
-        self.save_system = save_system
+        self.save_system: SaveSystem = save_system
         self.inventory = []
         self.coins = coins
 

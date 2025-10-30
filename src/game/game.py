@@ -1,11 +1,10 @@
-import sys
+from __future__ import annotations
+
 import pygame
+from typing import TYPE_CHECKING
 
 from core.camera import Camera
-from core.save import SaveSystem
-import core.constants as c
 from game.entities.player import Player
-from game.entities.items import Item
 from game.world import World
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import get_llm_task_count
@@ -14,6 +13,10 @@ from ui.context_window import ContextWindow
 from ui.game_renderer import GameRenderer
 from ui.loading_indicator import LoadingIndicator
 from ui.inventory_menu import InventoryMenu
+
+if TYPE_CHECKING:
+    from core.save import SaveSystem
+    from game.entities.items import Item
 
 
 class Game:

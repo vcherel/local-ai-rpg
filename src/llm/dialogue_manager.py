@@ -1,13 +1,18 @@
+from __future__ import annotations
+
 import threading
 import pygame
+from typing import TYPE_CHECKING
 
 from core.utils import ConversationHistory
-from game.entities.npcs import NPC
-from game.world import World
 from llm.llm_request_queue import generate_response_stream_queued
-from llm.name_generator import NPCNameGenerator
 from llm.quest_system import QuestSystem
 from ui.conversation_ui import ConversationUI
+
+if TYPE_CHECKING:
+    from game.entities.npcs import NPC
+    from game.world import World
+    from llm.name_generator import NPCNameGenerator
 
 
 class DialogueManager:
@@ -37,16 +42,17 @@ class DialogueManager:
         system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG avec ce contexte : {context}. "
         
         if npc.has_active_quest:
+            quest = npc.quest
             if quest_complete:
                 system_prompt += (
-                    f"Le joueur vient de te rapporter {npc.quest_item.name} que tu avais demandé ({npc.quest_content}). "
+                    f"Le joueur vient de te rapporter {quest.item_name} que tu avais demandé ({quest.description}). "
                     f"Remercie-le et mentionne sa récompense en pièces. "
                 )
-            elif npc.quest_item:
+            elif quest.item:
                 system_prompt += (
-                    f"Tu as demandé au joueur de récupérer {npc.quest_item.name}. "
+                    f"Tu as demandé au joueur de récupérer {quest.item_name}. "
                 )
-                if npc.quest_item in self.quest_system.player.inventory:
+                if quest.item in self.quest_system.player.inventory:
                     system_prompt += "Le joueur l'a maintenant dans son inventaire. "
                 else:
                     system_prompt += "Le joueur ne l'a pas encore trouvé. "
@@ -71,7 +77,7 @@ class DialogueManager:
         
         # Check if player has quest item
         quest_complete = False
-        if npc.has_active_quest and npc.quest_item in self.quest_system.player.inventory:
+        if npc.has_active_quest and npc.quest.item in self.quest_system.player.inventory:
             quest_complete = True
             self.pending_quest_completion = npc
         
@@ -236,9 +242,10 @@ class DialogueManager:
     def _execute_quest_completion(self, npc: NPC):
         """Complete quest: extract reward and clean up"""
         last_msg = self.conversation.get_last_message()
-        if last_msg:
+        if last_msg and npc.quest:
             # Extract and give reward based on NPC's completion message
-            self.quest_system.extract_and_give_reward(last_msg["content"])
+            reward = self.quest_system.extract_and_give_reward(last_msg["content"])
+            npc.quest.reward_coins = reward
         
-        # Now complete the quest (removes items, resets NPC state)
+        # Now complete the quest (removes items, marks as completed)
         self.quest_system.complete_quest(npc)

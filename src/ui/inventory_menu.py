@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import pygame
+from typing import TYPE_CHECKING
 
 import core.constants as c
-from game.entities.items import Item
-from game.entities.player import Player
+
+if TYPE_CHECKING:
+    from game.entities.items import Item
+    from game.entities.player import Player
+
 
 class InventoryMenu:
     """Inventoy Menu display"""

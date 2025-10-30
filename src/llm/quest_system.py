@@ -1,18 +1,24 @@
+from __future__ import annotations
+
 import re
-from typing import List
+from typing import List, TYPE_CHECKING
+
 from core.utils import parse_response, random_coordinates
 from game.entities.items import Item
-from game.entities.npcs import NPC
-from game.entities.player import Player
+from game.quest import Quest
 from llm.llm_request_queue import generate_response_queued
+
+if TYPE_CHECKING:
+    from game.entities.npcs import NPC
+    from game.entities.player import Player
 
 
 class QuestSystem:
     """Manages quest generation, completion, and rewards"""
-    
     def __init__(self, items, player):
         self.items: List[Item] = items
         self.player: Player = player
+        self.active_quests: List[Quest] = []  # Track all active quests
     
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
         """
@@ -42,8 +48,7 @@ class QuestSystem:
             return
         
         # Clean item name
-        item_name = quest_info['item_name'].strip()
-        
+        item_name: str = quest_info['item_name'].strip()
         # Remove articles
         for article in ['le ', 'la ', "l'", 'un ', 'une ', 'des ']:
             if item_name.lower().startswith(article):
@@ -51,45 +56,62 @@ class QuestSystem:
                 break
         
         # Create quest item
-        npc.quest_item = Item(*random_coordinates(), item_name)
-        npc.quest_content = quest_info['quest_description']
-        npc.has_active_quest = True
+        quest_item = Item(*random_coordinates(), item_name)
+        self.items.append(quest_item)
         
-        self.items.append(npc.quest_item)
+        # Create quest object
+        quest = Quest(
+            npc_name=npc.name,
+            description=quest_info['quest_description'],
+            item_name=item_name,
+            item=quest_item
+        )
+        
+        # Assign quest to NPC and track it
+        npc.quest = quest
+        self.active_quests.append(quest)
     
-    def extract_and_give_reward(self, last_message: str):
+    def extract_and_give_reward(self, last_message: str) -> int:
         """Extract coin reward from completion message and give to player"""
         # First try direct number extraction
         match = re.search(r'\b(\d+)\b', last_message)
         if match:
             reward = int(match.group(1))
             self.player.add_coins(reward)
-            return
+            return reward
         
         # Fall back to LLM extraction
         system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
         prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
         reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
         print(f"~~~ Extracted reward : {reward_str} ~~~")
+        
         reward_str = re.sub(r'[^\d]', '', reward_str)
         if reward_str:
             reward = int(reward_str)
             if reward > 0:
                 self.player.add_coins(reward)
+                return reward
+        return 0
     
     def complete_quest(self, npc: NPC):
         """Complete quest: remove item from world/inventory and reset NPC state"""
-        if not npc.quest_item:
+        if not npc.quest or not npc.quest.item:
             return
         
+        quest = npc.quest
+        
         # Remove item from player inventory
-        if npc.quest_item in self.player.inventory:
-            self.player.inventory.remove(npc.quest_item)
+        if quest.item in self.player.inventory:
+            self.player.inventory.remove(quest.item)
         
         # Remove item from world (in case it wasn't picked up yet)
-        if npc.quest_item in self.items:
-            self.items.remove(npc.quest_item)
+        if quest.item in self.items:
+            self.items.remove(quest.item)
         
-        # Reset NPC quest state
-        npc.has_active_quest = False
-        npc.quest_item = None
+        # Mark quest as completed
+        quest.is_completed = True
+        
+        # Remove from active quests
+        if quest in self.active_quests:
+            self.active_quests.remove(quest)
