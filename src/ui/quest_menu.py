@@ -70,20 +70,14 @@ class QuestMenu:
     def handle_event(self, event, quest_system):
         if not self.active:
             return False
-        
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # Left click
-                self.close()
-            elif event.button == 4:  # Scroll up
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
                 self.scroll_offset = max(0, self.scroll_offset - 1)
-            elif event.button == 5:  # Scroll down
+            elif event.key == pygame.K_DOWN:
                 max_scroll = max(0, len(quest_system.active_quests) - self.max_visible_quests)
                 self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
-        
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_q:
-                self.close()
-            elif event.key == pygame.K_ESCAPE:
+            elif event.key in (pygame.K_q, pygame.K_ESCAPE):
                 self.close()
 
         return True
