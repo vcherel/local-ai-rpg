@@ -28,27 +28,27 @@ class Game:
         self.camera = Camera()
 
         # Context window
-        self.context_window = ContextWindow()
+        self.context_window = ContextWindow(self.screen)
         self.window_active = False
+
+        # Inventory menu
+        self.inventory_menu = InventoryMenu(self.screen)
+        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
+
+        # Quest menu
+        self.quest_menu = QuestMenu(self.screen)
+        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
 
         # Helper
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window)
-        self.game_renderer = GameRenderer(self.screen)  # TODO: do not pass screen
+        self.game_renderer = GameRenderer(self.screen, self.inv_button_rect, self.quest_button_rect)
 
         # Player
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
-        
-        # Inventory menu
-        self.inventory_menu = InventoryMenu()
-        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
-
-        # Quest menu
-        self.quest_menu = QuestMenu()
-        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
 
         # Dialogue manager
-        self.dialogue_manager = DialogueManager(self.world.items, self.player)
+        self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player)
         self.npc_name_generator = NPCNameGenerator(self.save_system)
 
     def update_camera(self):
@@ -137,10 +137,10 @@ class Game:
             # Draw and update menus
             self.game_renderer.draw_world(self.camera, self.world, self.player)
             self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
-            self.dialogue_manager.draw(self.screen)
-            self.inventory_menu.draw(self.screen, self.player)
-            self.quest_menu.draw(self.screen, self.dialogue_manager.quest_system)
-            self.context_window.draw(self.screen)
+            self.dialogue_manager.draw()
+            self.inventory_menu.draw(self.player)
+            self.quest_menu.draw(self.dialogue_manager.quest_system)
+            self.context_window.draw()
 
             current_time = pygame.time.get_ticks()
             if current_time - last_save_time >= 300_000:

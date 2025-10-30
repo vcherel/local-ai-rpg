@@ -18,11 +18,11 @@ if TYPE_CHECKING:
 class GameRenderer:
     """Render all game elements"""
 
-    def __init__(self, screen):
+    def __init__(self, screen, inv_button_rect, quest_button_rect):
         self.screen: pygame.Surface = screen
         self.small_font = pygame.font.SysFont("arial", 22)
-        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)  # TODO: Remove redundancy
-        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
+        self.inv_button_rect: pygame.Rect = inv_button_rect
+        self.quest_button_rect: pygame.Rect = quest_button_rect
         self.loading_indicator = LoadingIndicator()
     
     def draw_world(self, camera: Camera, world: World, player: Player):

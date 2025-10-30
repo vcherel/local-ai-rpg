@@ -12,7 +12,9 @@ if TYPE_CHECKING:
 class ConversationUI:
     """Handles all UI rendering and input for dialogue with NPCs"""
     
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen: pygame.Surface = screen
+
         # Fonts
         self.font = pygame.font.SysFont("arial", 28, bold=True)
         self.message_font = pygame.font.SysFont("arial", 20)
@@ -88,24 +90,24 @@ class ConversationUI:
         
         return lines
     
-    def draw(self, screen: pygame.Surface, npc_name: str, history: ConversationHistory):
+    def draw(self, npc_name: str, history: ConversationHistory):
         """Draw dialogue box with conversation"""
         box_height = 300
         box_y = c.Screen.HEIGHT - box_height - 25
         
         # Draw main box
-        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (10, box_y, c.Screen.WIDTH - 20, box_height))
-        pygame.draw.rect(screen, c.Colors.WHITE, (10, box_y, c.Screen.WIDTH - 20, box_height), 2)
+        pygame.draw.rect(self.screen, c.Colors.MENU_BACKGROUND, (10, box_y, c.Screen.WIDTH - 20, box_height))
+        pygame.draw.rect(self.screen, c.Colors.WHITE, (10, box_y, c.Screen.WIDTH - 20, box_height), 2)
         
         # Draw NPC name
         name_surface = self.font.render(npc_name, True, c.Colors.YELLOW)
-        screen.blit(name_surface, (25, box_y + 10))
+        self.screen.blit(name_surface, (25, box_y + 10))
         
         # Draw messages
-        self._draw_messages(screen, box_y, npc_name, history.messages)
+        self._draw_messages(self.screen, box_y, npc_name, history.messages)
         
         # Draw input box
-        self._draw_input_box(screen, box_y, box_height)
+        self._draw_input_box(self.screen, box_y, box_height)
     
     def _draw_messages(self, screen: pygame.Surface, box_y: int, npc_name: str, messages: list):
         """Draw scrollable conversation messages"""

@@ -13,8 +13,10 @@ if TYPE_CHECKING:
 class QuestMenu:
     """Quest Menu display"""
 
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen: pygame.Surface = screen
         self.active = False
+
         self.font = pygame.font.SysFont("arial", 18)
         self.title_font = pygame.font.SysFont("arial", 32, bold=True)
         self.heading_font = pygame.font.SysFont("arial", 22, bold=True)
@@ -87,12 +89,13 @@ class QuestMenu:
 
         return True
 
-    def draw(self, screen: pygame.Surface, quest_system: QuestSystem):
+    def draw(self, quest_system: QuestSystem):
         if not self.active:
             return
             
-        screen_width = screen.get_width()
-        screen_height = screen.get_height()
+        # TODO: replace by constants
+        screen_width = self.screen.get_width()
+        screen_height = self.screen.get_height()
         
         # Calculate centered position
         menu_x = (screen_width - self.width) // 2
@@ -100,8 +103,9 @@ class QuestMenu:
         
         # Draw semi-transparent background overlay
         overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+        # TODO: add all colors to constants
         overlay.fill((0, 0, 0, 150))
-        screen.blit(overlay, (0, 0))
+        self.screen.blit(overlay, (0, 0))
         
         # Draw menu background
         menu_surface = pygame.Surface((self.width, self.height))
@@ -192,8 +196,9 @@ class QuestMenu:
                 menu_surface.blit(item_surface, (text_x, item_y))
                 
                 # Completion status badge
+                # TODO: hide completed
                 if quest.is_completed:
-                    status_text = "✓ COMPLÈTE"
+                    status_text = "✓"
                     status_surface = self.font.render(status_text, True, c.Colors.WHITE)
                     status_bg = pygame.Surface(
                         (status_surface.get_width() + 10, status_surface.get_height() + 6),
@@ -210,7 +215,7 @@ class QuestMenu:
                 self._draw_scroll_indicator(menu_surface, quest_count)
         
         # Blit menu to screen
-        screen.blit(menu_surface, (menu_x, menu_y))
+        self.screen.blit(menu_surface, (menu_x, menu_y))
     
     def _wrap_text(self, text: str, max_width):
         """Wrap text to fit within max_width pixels"""

@@ -7,7 +7,8 @@ import core.constants as c
 class ContextWindow:
     """Display the window that gives information about the world"""
     
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen: pygame.Surface = screen
         self.active = False
         self.context_text = None
         
@@ -41,17 +42,17 @@ class ContextWindow:
 
         return True
     
-    def draw(self, screen: pygame.Surface):
+    def draw(self):
         if not self.active or self.context_text is None:
             return
 
-        screen_width = screen.get_width()
-        screen_height = screen.get_height()
+        screen_width = self.screen.get_width()  # TODO: replace by constant
+        screen_height = self.screen.get_height()
 
         # Semi-transparent dark overlay
         overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150)) 
-        screen.blit(overlay, (0, 0))
+        self.screen.blit(overlay, (0, 0))
 
         # --- Centered window position ---
         window_x = (screen_width - self.width) // 2
@@ -71,9 +72,9 @@ class ContextWindow:
         self._draw_wrapped_text(window_surface, self.context_text, 30, 70, self.width - 60)
 
         # Draw final window to screen
-        screen.blit(window_surface, (window_x, window_y))
+        self.screen.blit(window_surface, (window_x, window_y))
 
-    def _draw_wrapped_text(self, surface, text, x, y, max_width):
+    def _draw_wrapped_text(self, surface: pygame.Surface, text: str, x, y, max_width):
         """Draw text with word wrapping"""
         words = text.split(' ')
         lines = []

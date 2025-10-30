@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 class DialogueManager:
     """Manage the Dialogue window in its entirety"""
-    def __init__(self, items, player):
+    def __init__(self, screen, items, player):
         # Core state
         self.active = False
         self.current_npc = None
@@ -34,7 +34,7 @@ class DialogueManager:
         
         # Components
         self.conversation = ConversationHistory()
-        self.ui = ConversationUI()
+        self.ui = ConversationUI(screen)
         self.quest_system = QuestSystem(items, player)  # TODO: why is it not in game ?
     
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
@@ -213,13 +213,13 @@ class DialogueManager:
             ).start()
             self.pending_quest_analysis = False
     
-    def draw(self, screen: pygame.Surface):
+    def draw(self):
         """Draw the dialogue UI"""
         self.update()
 
         if not self.active:
             return
-        self.ui.draw(screen, self.current_npc.name, self.conversation)
+        self.ui.draw(self.current_npc.name, self.conversation)
     
     def _send_chat_message(self, message: str):
         """Send a chat message to the NPC"""

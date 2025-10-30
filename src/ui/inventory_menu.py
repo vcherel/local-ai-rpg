@@ -10,17 +10,23 @@ if TYPE_CHECKING:
     from game.entities.player import Player
 
 
+# TODO: make menus more efficient
 class InventoryMenu:
     """Inventoy Menu display"""
 
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen: pygame.Surface = screen
         self.active = False
+
+        # TODO: constant font
         self.font = pygame.font.SysFont("arial", 20)
         self.title_font = pygame.font.SysFont("arial", 32, bold=True)
+
         # Menu dimensions
         self.width = 600
         self.height = 500
         self.padding = 20
+
         # Grid settings
         self.grid_cols = 6
         self.grid_rows = 4
@@ -81,12 +87,13 @@ class InventoryMenu:
 
         return True
 
-    def draw(self, screen: pygame.Surface, player: Player):
+    def draw(self, player: Player):
         if not self.active:
             return
             
-        screen_width = screen.get_width()
-        screen_height = screen.get_height()
+        # TODO: replace by constants
+        screen_width = self.screen.get_width()
+        screen_height = self.screen.get_height()
         
         # Calculate centered position
         menu_x = (screen_width - self.width) // 2
@@ -95,7 +102,7 @@ class InventoryMenu:
         # Draw semi-transparent background overlay
         overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
-        screen.blit(overlay, (0, 0))
+        self.screen.blit(overlay, (0, 0))
         
         # Draw menu background
         menu_surface = pygame.Surface((self.width, self.height))
@@ -205,4 +212,4 @@ class InventoryMenu:
             menu_surface.blit(tooltip_surface, (tooltip_x + 10, tooltip_y + 5))
         
         # Blit menu to screen
-        screen.blit(menu_surface, (menu_x, menu_y))
+        self.screen.blit(menu_surface, (menu_x, menu_y))
