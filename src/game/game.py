@@ -109,46 +109,37 @@ class Game:
         while running:
             self.window_active = self.context_window.active or self.inventory_menu.active or self.dialogue_manager.active
 
-            # Handle input
             running = self.handle_input()
             if not running:
                 break
-            
-            # Update dialogue
-            self.dialogue_manager.update()
 
-            # Update loading indicator
+            self.dialogue_manager.update()
             self.loading_indicator.update()
             
-            # Handle movements in game
             if not self.window_active:
                 dt = self.clock.get_time()
-
-                # Update player movement
                 self.player.move(self.camera.get_pos(), dt)
-            
-                # Update camera
                 self.update_camera()
-
                 self.world.update(self.player, dt)
             
-            # Draw everything
             self.game_renderer.draw_world(self.camera, self.world, self.player)
             self.game_renderer.draw_ui(self.player, self.loading_indicator, get_llm_task_count())
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)
             self.context_window.draw(self.screen)
 
-            # Auto-save every 5 minutes
             current_time = pygame.time.get_ticks()
             if current_time - last_save_time >= 300_000:
                 self.save_data()
                 last_save_time = current_time
                 print("Game auto-saved.")
-            
+
+            if self.player.hp <= 0:
+                print("DEAD")
+                self.save_data()
+                return  # Exit game loop and return to main menu
+
             pygame.display.flip()
             self.clock.tick(60)
-        
+
         self.save_data()
-        pygame.quit()
-        sys.exit()

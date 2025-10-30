@@ -1,3 +1,4 @@
+import sys
 import pygame
 
 import core.constants as c
@@ -18,8 +19,12 @@ get_llm_queue()
 # Initialize memory
 save_system = SaveSystem()
 
-# Show main menu
-if run_main_menu(screen, clock, save_system):
-    # Start the game
-    game = Game(screen, clock, save_system)
-    game.run()
+while True:
+    if run_main_menu(screen, clock, save_system):
+        game = Game(screen, clock, save_system)
+        game.run()
+    else:
+        break  # Exit main menu = quit game
+
+pygame.quit()
+sys.exit()
