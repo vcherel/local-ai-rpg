@@ -56,20 +56,18 @@ class World:
             
     def handle_attack(self, pos):
         """Check if a creature was attacked and apply damage or remove it."""
-        # TODO: unify entity classes
         for monster in self.monsters:
-            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH:
+            # Check if monster overlaps with the attack circle
+            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Size.MONSTER // 2:
                 if monster.receive_damage(c.Player.ATTACK_DAMAGE):
-                    # Monster died
                     self.monsters.remove(monster)
-                return
-            
+                    return
+        
         for npc in self.npcs:
-            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH:
+            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Size.NPC // 2:
                 if npc.receive_damage(c.Player.ATTACK_DAMAGE):
-                    # NPC died
                     self.npcs.remove(npc)
-                return
+                    return
         return
     
     def pickup_item(self, player: Player):

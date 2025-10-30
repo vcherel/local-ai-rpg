@@ -22,7 +22,7 @@ class Player:
     PLAYER_TURN_SPEED: float = 0.03
 
     INTERACTION_DISTANCE: int = 30  # TODO: Make interaction in front of player
-    ATTACK_REACH: int = 20
+    ATTACK_REACH: int = 15
     ATTACK_DAMAGE: int = 5
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from game.items import Item
 from llm.name_generator import NPCNameGenerator
 
 # TODO : divide files
+# TODO : unify classes
 def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):
     """Draw a character with body and arms, including attack animation."""
     border_thickness = 2
@@ -225,18 +226,31 @@ class Player:
         self.update_attack_anim(dt)
 
     def draw(self, screen: pygame.Surface, show_reach=False):
-        """Draw player at screen bottom center, looking towards mouse"""
-        draw_character(screen,
-                       c.Screen.ORIGIN_X,
-                       c.Screen.ORIGIN_Y,
-                       c.Size.PLAYER,
-                       c.Colors.PLAYER,
-                       self.orientation,
-                       self.attack_progress,
-                       self.attack_hand)
-        
-        if show_reach:
-            pass
+            """Draw player at screen bottom center, looking towards mouse"""
+            draw_character(screen,
+                        c.Screen.ORIGIN_X,
+                        c.Screen.ORIGIN_Y,
+                        c.Size.PLAYER,
+                        c.Colors.PLAYER,
+                        self.orientation,
+                        self.attack_progress,
+                        self.attack_hand)
+            
+            if show_reach:
+                # Calculate attack reach position on screen
+                screen_attack_x = c.Screen.ORIGIN_X + math.sin(self.orientation) * c.Player.ATTACK_REACH
+                screen_attack_y = c.Screen.ORIGIN_Y - math.cos(self.orientation) * c.Player.ATTACK_REACH
+                
+                # Draw translucent reach circle
+                reach_surface = pygame.Surface((c.Player.ATTACK_REACH * 2, c.Player.ATTACK_REACH * 2), pygame.SRCALPHA)
+                pygame.draw.circle(
+                    reach_surface,
+                    (255, 0, 0, 80),  # RGBA with alpha
+                    (c.Player.ATTACK_REACH, c.Player.ATTACK_REACH),
+                    c.Player.ATTACK_REACH,
+                    2  # thickness
+                )
+                screen.blit(reach_surface, (screen_attack_x - c.Player.ATTACK_REACH, screen_attack_y - c.Player.ATTACK_REACH))
 
     def add_coins(self, amount):
         self.coins += amount
