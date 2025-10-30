@@ -46,17 +46,14 @@ class ContextWindow:
         if not self.active or self.context_text is None:
             return
 
-        screen_width = self.screen.get_width()  # TODO: replace by constant
-        screen_height = self.screen.get_height()
-
         # Semi-transparent dark overlay
-        overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
         overlay.fill(c.Colors.TRANSPARENT) 
         self.screen.blit(overlay, (0, 0))
 
-        # --- Centered window position ---
-        window_x = (screen_width - self.width) // 2
-        window_y = (screen_height - self.height) // 2
+        # Centered window position
+        window_x = (c.Screen.WIDTH - self.width) // 2
+        window_y = (c.Screen.HEIGHT - self.height) // 2
 
         #Window background
         window_surface = pygame.Surface((self.width, self.height))

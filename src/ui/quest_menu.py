@@ -85,17 +85,13 @@ class QuestMenu:
     def draw(self, quest_system: QuestSystem):
         if not self.active:
             return
-            
-        # TODO: replace by constants
-        screen_width = self.screen.get_width()
-        screen_height = self.screen.get_height()
         
         # Calculate centered position
-        menu_x = (screen_width - self.width) // 2
-        menu_y = (screen_height - self.height) // 2
+        menu_x = (c.Screen.WIDTH - self.width) // 2
+        menu_y = (c.Screen.HEIGHT - self.height) // 2
         
         # Draw semi-transparent background overlay
-        overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
         overlay.fill(c.Colors.TRANSPARENT)
         self.screen.blit(overlay, (0, 0))
         
