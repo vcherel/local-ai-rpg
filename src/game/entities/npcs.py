@@ -34,6 +34,16 @@ class NPC(Entity):
         if self.name:
             return self.name
         return ""
+    
+    def receive_damage(self, damage):
+        """Returns True if the NPC died"""
+        self.hp -= damage
+        if self.hp <= 1:
+            return True
+        return False
+
+    def distance_to_point(self, point):
+        return math.hypot(self.x - point[0], self.y - point[1])
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
@@ -63,13 +73,3 @@ class NPC(Entity):
             
             # Draw name
             screen.blit(name_surface, name_rect)
-    
-    def receive_damage(self, damage):
-        """Returns True if the NPC died"""
-        self.hp -= damage
-        if self.hp <= 1:
-            return True
-        return False
-
-    def distance_to_point(self, point):
-        return math.hypot(self.x - point[0], self.y - point[1])

@@ -18,7 +18,10 @@ class Item:
         self.color = random_color()
         self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
-    
+            
+    def distance_to_point(self, point):
+        return math.hypot(self.x - point[0], self.y - point[1])
+
     def draw(self, surface: pygame.Surface, camera: Camera=None, x=None, y=None):
         """Draw item with correct position"""
         # Determine position
@@ -52,9 +55,6 @@ class Item:
         
         # Blit to screen
         surface.blit(rotated_surface, rect.topleft)
-    
-    def distance_to_point(self, point):
-        return math.hypot(self.x - point[0], self.y - point[1])
 
 def draw_shape_with_border(surface, shape, center, size, color, border_width):
     """Draw a shape with a border using get_polygon_points"""

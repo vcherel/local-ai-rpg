@@ -36,17 +36,6 @@ class Monster(Entity):
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
 
-    def draw(self, screen: pygame.Surface, camera: Camera):
-        screen_x, screen_y = camera.world_to_screen(self.x, self.y)
-        draw_human(screen,
-                   screen_x,
-                   screen_y,
-                   c.Entities.MONSTER_SIZE,
-                   c.Colors.RED,
-                   self.orientation,
-                   self.attack_progress,
-                   self.attack_hand)
-
     def move(self, player: Player, dt):
         # Calculate vector to player
         dx = player.x + self.target_offset[0] - self.x
@@ -70,3 +59,14 @@ class Monster(Entity):
     
         # Attacking state
         self.update_attack_anim(dt)
+
+    def draw(self, screen: pygame.Surface, camera: Camera):
+        screen_x, screen_y = camera.world_to_screen(self.x, self.y)
+        draw_human(screen,
+                   screen_x,
+                   screen_y,
+                   c.Entities.MONSTER_SIZE,
+                   c.Colors.RED,
+                   self.orientation,
+                   self.attack_progress,
+                   self.attack_hand)

@@ -12,14 +12,14 @@ class Entity:
         self.y = y
         self.orientation = random.uniform(0, 2 * math.pi)
         self.hp = 0  # Override in subclasses
-    
-    def distance_to_point(self, point):
-        return math.hypot(self.x - point[0], self.y - point[1])
-    
+        
     def receive_damage(self, damage):
         """Returns True if the entity died"""
         self.hp -= damage
         return self.hp <= 1
+
+    def distance_to_point(self, point):
+        return math.hypot(self.x - point[0], self.y - point[1])
 
 
 def draw_human(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):

@@ -93,6 +93,10 @@ class Player:
         # Attacking state
         self.update_attack_anim(dt)
 
+    def add_coins(self, amount):
+        self.coins += amount
+        self.save_system.update("coins", self.coins)
+
     def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False, show_detection=False):
             """Draw player at screen bottom center, looking towards mouse"""
             draw_human(screen,
@@ -112,11 +116,6 @@ class Player:
 
             if show_detection:
                 draw_circle(screen, c.World.DETECTION_RANGE, (0, 0, 255, 80))
-
-    def add_coins(self, amount):
-        self.coins += amount
-        self.save_system.update("coins", self.coins)
-
 
 def draw_circle(screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_X, origin_y=c.Screen.ORIGIN_Y, orientation=None):
     if orientation is not None:
