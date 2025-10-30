@@ -56,37 +56,34 @@ class Item:
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
 
-
 def draw_shape_with_border(surface, shape, center, size, color, border_width):
-    """Draw a shape with a border"""
+    """Draw a shape with a border using get_polygon_points"""
     if shape == "circle":
-        pygame.draw.circle(surface, c.Colors.BLACK, center, size + border_width - 5)
-        pygame.draw.circle(surface, color, center, size - 5)
-    elif shape == "triangle":
-        points = [
-            (center[0], center[1] - size),
-            (center[0] - size, center[1] + size),
-            (center[0] + size, center[1] + size)
-        ]
+        pygame.draw.circle(surface, c.Colors.BLACK, center, size + border_width)
+        pygame.draw.circle(surface, color, center, size)
+    else:
+        if shape == "triangle":
+            points = get_polygon_points(center, size, 3)
+        elif shape == "pentagon":
+            points = get_polygon_points(center, size, 5)
+        elif shape == "star":
+            points = get_polygon_points(center, size, 10, inner_radius_factor=0.5)
+        else:
+            raise ValueError(f"Unknown shape: {shape}")
+
         pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
         pygame.draw.polygon(surface, color, points)
-    elif shape == "pentagon":
-        points = [
-            (center[0], center[1] - size),
-            (center[0] - size * 0.95, center[1] - size * 0.31),
-            (center[0] - size * 0.59, center[1] + size * 0.81),
-            (center[0] + size * 0.59, center[1] + size * 0.81),
-            (center[0] + size * 0.95, center[1] - size * 0.31)
-        ]
-        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
-        pygame.draw.polygon(surface, color, points)
-    elif shape == "star":
-        points = []
-        for i in range(10):
-            angle = i * 36
-            r = size if i % 2 == 0 else size / 2
-            x = center[0] + r * math.sin(math.radians(angle))
-            y = center[1] - r * math.cos(math.radians(angle))
-            points.append((x, y))
-        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)    
-        pygame.draw.polygon(surface, color, points)
+
+def get_polygon_points(center, size, num_points, inner_radius_factor=None):
+    """Generate points for regular polygons or stars"""
+    points = []
+    for i in range(num_points):
+        angle = i * (360 / num_points)
+        if inner_radius_factor and i % 2 == 1:
+            r = size * inner_radius_factor
+        else:
+            r = size
+        x = center[0] + r * math.sin(math.radians(angle))
+        y = center[1] - r * math.cos(math.radians(angle))
+        points.append((x, y))
+    return points
