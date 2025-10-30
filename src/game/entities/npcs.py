@@ -38,7 +38,7 @@ class NPC(Entity):
     def receive_damage(self, damage):
         """Returns True if the NPC died"""
         self.hp -= damage
-        if self.hp <= 1:
+        if self.hp <= 0:
             return True
         return False
 

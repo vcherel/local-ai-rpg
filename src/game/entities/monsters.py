@@ -13,7 +13,7 @@ class Monster(Entity):
 
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.hp = c.Entities.MONSTER_HP
+        self.hp = c.Monster.HP
         
         # Attack
         self.attack_in_progress = False
@@ -21,12 +21,17 @@ class Monster(Entity):
         self.attack_hand = "left"  # or "right"
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
 
-    def start_attack_anim(self):
+    def start_attack_anim(self, dist):
         """Start an attack animation with a random hand"""
         if not self.attack_in_progress:
             self.attack_in_progress = True
             self.attack_progress = 0.0
             self.attack_hand = random.choice(["left", "right"])
+
+            if dist < c.Monster.ATTACK_RANGE + c.Player.SIZE // 2:
+                return True
+        
+        return False
 
     def update_attack_anim(self, dt):
         """Update attack animation progress"""
@@ -46,13 +51,15 @@ class Monster(Entity):
         self.orientation = math.atan2(dy, dx)
 
         # Move toward player if not too close and if in range
-        if c.Entities.MONSTER_ATTACK_RANGE < dist < c.World.DETECTION_RANGE + c.Entities.MONSTER_SIZE // 2:
-            self.x += math.cos(self.orientation) * c.Entities.MONSTER_SPEED
-            self.y += math.sin(self.orientation) * c.Entities.MONSTER_SPEED
+        if c.Monster.ATTACK_RANGE < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
+            self.x += math.cos(self.orientation) * c.Monster.SPEED
+            self.y += math.sin(self.orientation) * c.Monster.SPEED
 
         # Attack player if close enough
-        if dist < c.Entities.MONSTER_ATTACK_RANGE * 10:
-            self.start_attack_anim()
+        if dist < c.Monster.ATTACK_RANGE * 10:
+            hit = self.start_attack_anim(dist)
+            if hit:
+                player.receive_damage(c.Monster.DAMAGE)
             
         # Look at player
         self.orientation += math.pi / 2
@@ -65,7 +72,7 @@ class Monster(Entity):
         draw_human(screen,
                    screen_x,
                    screen_y,
-                   c.Entities.MONSTER_SIZE,
+                   c.Monster.SIZE,
                    c.Colors.RED,
                    self.orientation,
                    self.attack_progress,

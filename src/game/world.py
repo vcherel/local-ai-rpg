@@ -65,7 +65,7 @@ class World:
 
         for monster in self.monsters:
             # Check if monster overlaps with the attack circle
-            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.MONSTER_SIZE // 2:
+            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Monster.SIZE // 2:
                 if monster.receive_damage(c.Player.ATTACK_DAMAGE):
                     self.monsters.remove(monster)
                     return

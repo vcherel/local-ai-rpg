@@ -16,7 +16,7 @@ class Entity:
     def receive_damage(self, damage):
         """Returns True if the entity died"""
         self.hp -= damage
-        return self.hp <= 1
+        return self.hp <= 0
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])

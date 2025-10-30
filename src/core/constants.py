@@ -22,16 +22,17 @@ class Player:
     ATTACK_REACH: int = 15
     ATTACK_DAMAGE: int = 5
 
+@dataclass(frozen=True)
+class Monster:
+    SIZE: int = 25
+    HP: int = 10
+    SPEED: int = 4
+    ATTACK_RANGE: int = 10
+    DAMAGE: int = 3
+    ATTACK_COOLDOWN: int = 1000
 
 @dataclass(frozen=True)
 class Entities:
-    MONSTER_SIZE: int = 25
-    MONSTER_HP: int = 10
-    MONSTER_SPEED: int = 4
-    MONSTER_ATTACK_RANGE: int = 10
-    MONSTER_DAMAGE: int = 3
-    MONSTER_ATTACK_COOLDOWN: int = 1000
-
     NPC_SIZE: int = 30
     ITEM_SIZE: int = 25
     NPC_HP: int = 30
