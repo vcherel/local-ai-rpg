@@ -15,10 +15,11 @@ class Monster(Entity):
         super().__init__(x, y)
         self.hp = c.Entities.MONSTER_HP
         
-        # Action
+        # Attack
         self.attack_in_progress = False
         self.attack_progress = 0.0  # 0.0 -> 1.0
         self.attack_hand = "left"  # or "right"
+        self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
 
     def start_attack_anim(self):
         """Start an attack animation with a random hand"""
@@ -48,8 +49,8 @@ class Monster(Entity):
 
     def move(self, player: Player, dt):
         # Calculate vector to player
-        dx = player.x - self.x
-        dy = player.y - self.y
+        dx = player.x + self.target_offset[0] - self.x
+        dy = player.y + self.target_offset[1] - self.y
         dist = math.hypot(dx, dy)
 
         # Angle toward player
