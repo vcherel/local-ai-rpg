@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 # TODO: gather code from menus
 class QuestMenu:
     """Quest Menu display"""
-
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
         self.active = False
@@ -150,19 +149,11 @@ class QuestMenu:
                 
                 # Determine card colors based on hover and completion
                 if visible_index == self.hovered_quest_index:
-                    if quest.is_completed:
-                        card_color = (40, 80, 40)  # Dark green hover
-                        border_color = (100, 200, 100)  # Light green
-                    else:
-                        card_color = c.Colors.BUTTON_HOVERED
-                        border_color = c.Colors.BORDER_HOVERED
+                    card_color = c.Colors.BUTTON_HOVERED
+                    border_color = c.Colors.BORDER_HOVERED
                 else:
-                    if quest.is_completed:
-                        card_color = (30, 60, 30)  # Dark green
-                        border_color = (80, 160, 80)  # Green
-                    else:
-                        card_color = c.Colors.BUTTON
-                        border_color = c.Colors.BORDER
+                    card_color = c.Colors.BUTTON
+                    border_color = c.Colors.BORDER
                 
                 # Draw card background
                 pygame.draw.rect(menu_surface, card_color,
