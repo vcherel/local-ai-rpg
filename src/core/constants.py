@@ -21,16 +21,8 @@ class Player:
     ATTACK_REACH: int = 15
     ATTACK_DAMAGE: int = 5
 
-# TODO: add monster
 @dataclass(frozen=True)
-class World:
-    WORLD_SIZE: int = 5000
-    DETECTION_RANGE = 500
-
-    NB_NPCS: int = 20
-    NB_MONSTERS: int = 100
-    NB_DETAILS: int = 5000
-
+class Entities:
     NPC_SIZE: int = 30
     MONSTER_SIZE: int = 25
     ITEM_SIZE: int = 25
@@ -39,6 +31,15 @@ class World:
     MONSTER_HP: int = 30
 
     MONSTER_SPEED: int = 4
+    
+@dataclass(frozen=True)
+class World:
+    WORLD_SIZE: int = 5000
+    DETECTION_RANGE = 500
+
+    NB_NPCS: int = 20
+    NB_MONSTERS: int = 100
+    NB_DETAILS: int = 5000
 
 @dataclass(frozen=True)
 class Colors:

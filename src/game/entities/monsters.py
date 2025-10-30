@@ -11,11 +11,11 @@ class Monster(Entity):
 
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.hp = c.World.MONSTER_HP
+        self.hp = c.Entities.MONSTER_HP
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
-        draw_human(screen, screen_x, screen_y, c.World.MONSTER_SIZE, c.Colors.RED, self.angle)
+        draw_human(screen, screen_x, screen_y, c.Entities.MONSTER_SIZE, c.Colors.RED, self.angle)
 
     def attack_player(self, pos):
         # Calculate angle towards player
@@ -24,7 +24,7 @@ class Monster(Entity):
         self.angle = math.atan2(dy, dx)
         
         # Move in that direction
-        self.x += math.cos(self.angle) * c.World.MONSTER_SPEED
-        self.y += math.sin(self.angle) * c.World.MONSTER_SPEED
+        self.x += math.cos(self.angle) * c.Entities.MONSTER_SPEED
+        self.y += math.sin(self.angle) * c.Entities.MONSTER_SPEED
 
         self.angle += math.pi / 2

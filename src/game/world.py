@@ -57,7 +57,7 @@ class World:
         
         pos = player.get_pos(c.Player.INTERACTION_DISTANCE)
         for npc in self.npcs:
-            if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.World.NPC_SIZE // 2:
+            if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.Entities.NPC_SIZE // 2:
                 return npc
             
     def handle_attack(self, player: Player):
@@ -66,13 +66,13 @@ class World:
 
         for monster in self.monsters:
             # Check if monster overlaps with the attack circle
-            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.World.MONSTER_SIZE // 2:
+            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.MONSTER_SIZE // 2:
                 if monster.receive_damage(c.Player.ATTACK_DAMAGE):
                     self.monsters.remove(monster)
                     return
         
         for npc in self.npcs:
-            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.World.NPC_SIZE // 2:
+            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
                 if npc.receive_damage(c.Player.ATTACK_DAMAGE):
                     self.npcs.remove(npc)
                     return
@@ -88,5 +88,5 @@ class World:
         # If player is in detection range, monster is attracted to player
         pos = player.get_pos()
         for monster in self.monsters:
-            if monster.distance_to_point(pos) < c.World.DETECTION_RANGE + c.World.MONSTER_SIZE // 2:
+            if monster.distance_to_point(pos) < c.World.DETECTION_RANGE + c.Entities.MONSTER_SIZE // 2:
                 monster.attack_player(pos)

@@ -34,12 +34,12 @@ class Item:
             visual_angle = 0  # default angle when no camera
         
         center = (screen_x, screen_y)
-        size = c.World.ITEM_SIZE // 2
+        size = c.Entities.ITEM_SIZE // 2
         border_width = 2  # outline thickness
         
         # Add generous padding to prevent clipping during rotation
         padding = size + border_width + 4
-        surface_size = c.World.ITEM_SIZE + padding * 2
+        surface_size = c.Entities.ITEM_SIZE + padding * 2
         item_surface = pygame.Surface((surface_size, surface_size), pygame.SRCALPHA)
         item_center = (surface_size // 2, surface_size // 2)
         

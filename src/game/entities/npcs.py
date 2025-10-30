@@ -19,7 +19,7 @@ class NPC(Entity):
         self.color = random_color()
 
         self.name = None # Not attributed initially
-        self.hp = c.World.NPC_HP
+        self.hp = c.Entities.NPC_HP
 
         # Quest
         self.has_active_quest = False
@@ -38,14 +38,14 @@ class NPC(Entity):
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         
-        draw_human(screen, screen_x, screen_y, c.World.NPC_SIZE, self.color, self.angle)
+        draw_human(screen, screen_x, screen_y, c.Entities.NPC_SIZE, self.color, self.angle)
         
         # Exclamation mark for active quests
         if self.has_active_quest:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
-            text_rect = text.get_rect(center=(screen_x, screen_y - c.World.NPC_SIZE // 2 - 20 + bob_offset))
+            text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
         
         # Name label
@@ -53,7 +53,7 @@ class NPC(Entity):
         if display_name:
             name_font = pygame.font.SysFont("arial", 16)
             name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-            name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.World.NPC_SIZE // 2 + 15))
+            name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 15))
             
             # Background box
             bg_rect = name_rect.inflate(10, 4)
