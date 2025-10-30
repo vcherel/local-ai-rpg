@@ -49,12 +49,12 @@ class Player:
     def update_attack_anim(self, dt):
         """Update attack animation progress"""
         if self.attack_in_progress:
-            self.attack_progress += dt * 0.008  # speed of swing
+            self.attack_progress += dt * c.Entities.SWING_SPEED 
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
 
-    def move(self, camera: Camera, clock: pygame.time.Clock):
+    def move(self, camera_pos, dt):
         """Move player toward mouse position"""
         keys = pygame.key.get_pressed()
 
@@ -67,8 +67,8 @@ class Player:
             mouse_x, mouse_y = pygame.mouse.get_pos()
 
             # Convert mouse screen position to world coordinates
-            world_mouse_x = mouse_x - c.Screen.ORIGIN_X + camera.x
-            world_mouse_y = mouse_y - c.Screen.ORIGIN_Y + camera.y
+            world_mouse_x = mouse_x - c.Screen.ORIGIN_X + camera_pos[0]
+            world_mouse_y = mouse_y - c.Screen.ORIGIN_Y + camera_pos[1]
 
             # Vector from player to mouse
             dx = world_mouse_x - self.x
@@ -91,7 +91,6 @@ class Player:
         self.orientation = math.atan2(dx, -dy)
 
         # Attacking state
-        dt = clock.get_time()
         self.update_attack_anim(dt)
 
     def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False, show_detection=False):

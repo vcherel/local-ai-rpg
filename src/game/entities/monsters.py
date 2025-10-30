@@ -1,30 +1,71 @@
 import math
+import random
 import pygame
 
 from core.camera import Camera
 import core.constants as c
 from game.entities.entities import Entity, draw_human
+from game.entities.player import Player
 
 
 class Monster(Entity):
-    """The monsters we can kill"""
+    """The monsters we can fight"""
 
     def __init__(self, x, y):
         super().__init__(x, y)
         self.hp = c.Entities.MONSTER_HP
+        
+        # Action
+        self.attack_in_progress = False
+        self.attack_progress = 0.0  # 0.0 -> 1.0
+        self.attack_hand = "left"  # or "right"
+
+    def start_attack_anim(self):
+        """Start an attack animation with a random hand"""
+        if not self.attack_in_progress:
+            self.attack_in_progress = True
+            self.attack_progress = 0.0
+            self.attack_hand = random.choice(["left", "right"])
+
+    def update_attack_anim(self, dt):
+        """Update attack animation progress"""
+        if self.attack_in_progress:
+            self.attack_progress += dt * c.Entities.SWING_SPEED 
+            if self.attack_progress >= 1.0:
+                self.attack_progress = 0.0
+                self.attack_in_progress = False
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
-        draw_human(screen, screen_x, screen_y, c.Entities.MONSTER_SIZE, c.Colors.RED, self.angle)
+        draw_human(screen,
+                   screen_x,
+                   screen_y,
+                   c.Entities.MONSTER_SIZE,
+                   c.Colors.RED,
+                   self.orientation,
+                   self.attack_progress,
+                   self.attack_hand)
 
-    def attack_player(self, pos):
-        # Calculate angle towards player
-        dx = pos[0] - self.x
-        dy = pos[1] - self.y
-        self.angle = math.atan2(dy, dx)
-        
-        # Move in that direction
-        self.x += math.cos(self.angle) * c.Entities.MONSTER_SPEED
-        self.y += math.sin(self.angle) * c.Entities.MONSTER_SPEED
+    def move(self, player: Player, dt):
+        # Calculate vector to player
+        dx = player.x - self.x
+        dy = player.y - self.y
+        dist = math.hypot(dx, dy)
 
-        self.angle += math.pi / 2
+        # Angle toward player
+        self.orientation = math.atan2(dy, dx)
+
+        # Move toward player if not too close and if in range
+        if c.Entities.MONSTER_ATTACK_RANGE < dist < c.World.DETECTION_RANGE + c.Entities.MONSTER_SIZE // 2:
+            self.x += math.cos(self.orientation) * c.Entities.MONSTER_SPEED
+            self.y += math.sin(self.orientation) * c.Entities.MONSTER_SPEED
+
+        # Attack player if close enough
+        if dist < c.Entities.MONSTER_ATTACK_RANGE * 10:
+            self.start_attack_anim()
+            
+        # Look at player
+        self.orientation += math.pi / 2
+    
+        # Attacking state
+        self.update_attack_anim(dt)

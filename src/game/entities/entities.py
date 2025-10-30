@@ -10,7 +10,7 @@ class Entity:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.angle = random.uniform(0, 2 * math.pi)
+        self.orientation = random.uniform(0, 2 * math.pi)
         self.hp = 0  # Override in subclasses
     
     def distance_to_point(self, point):

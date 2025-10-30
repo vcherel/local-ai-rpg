@@ -8,6 +8,7 @@ class Screen:
     ORIGIN_X: int = WIDTH // 2
     ORIGIN_Y: int = HEIGHT // 2 + DELTA_Y
 
+
 @dataclass(frozen=True)
 class Player:
     HP: int = 100
@@ -21,17 +22,22 @@ class Player:
     ATTACK_REACH: int = 15
     ATTACK_DAMAGE: int = 5
 
+
 @dataclass(frozen=True)
 class Entities:
-    NPC_SIZE: int = 30
     MONSTER_SIZE: int = 25
-    ITEM_SIZE: int = 25
-
-    NPC_HP: int = 30
     MONSTER_HP: int = 30
-
     MONSTER_SPEED: int = 4
-    
+    MONSTER_ATTACK_RANGE: int = 10
+    MONSTER_DAMAGE: int = 3
+    MONSTER_ATTACK_COOLDOWN: int = 1000
+
+    NPC_SIZE: int = 30
+    ITEM_SIZE: int = 25
+    NPC_HP: int = 30
+    SWING_SPEED: float = 0.007
+
+
 @dataclass(frozen=True)
 class World:
     WORLD_SIZE: int = 5000
@@ -40,6 +46,7 @@ class World:
     NB_NPCS: int = 20
     NB_MONSTERS: int = 100
     NB_DETAILS: int = 5000
+
 
 @dataclass(frozen=True)
 class Colors:
@@ -57,6 +64,7 @@ class Colors:
     BORDER: tuple = (100, 100, 100)
     BUTTON_HOVERED: tuple = (90, 90, 90) 
     BORDER_HOVERED: tuple = (255, 215, 0)
+
 
 @dataclass(frozen=True)
 class Hyperparameters:

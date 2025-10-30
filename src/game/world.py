@@ -50,7 +50,6 @@ class World:
         self.context_window.toggle(self.context)
 
     def talk_npc(self, player: Player):
-        """Check for nearby NPCs and interact"""
         if self.context is None:
             # Context not ready yet, skip
             return
@@ -61,7 +60,7 @@ class World:
                 return npc
             
     def handle_attack(self, player: Player):
-        """Check if a creature was attacked and apply damage or remove it."""
+        player.start_attack_anim()
         pos = player.get_pos(c.Player.ATTACK_REACH)
 
         for monster in self.monsters:
@@ -84,9 +83,6 @@ class World:
             if not item.picked_up and item.distance_to_point(player.get_pos()) < c.Player.INTERACTION_DISTANCE:
                 return item
 
-    def update(self, player: Player):
-        # If player is in detection range, monster is attracted to player
-        pos = player.get_pos()
+    def update(self, player: Player, dt):
         for monster in self.monsters:
-            if monster.distance_to_point(pos) < c.World.DETECTION_RANGE + c.Entities.MONSTER_SIZE // 2:
-                monster.attack_player(pos)
+            monster.move(player, dt)

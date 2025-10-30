@@ -7,7 +7,10 @@ class Camera:
         self.x = 0  # Player's world x
         self.y = 0  # Player's world y
     
-    def update_position(self, pos):
+    def get_pos(self):
+        return (self.x, self.y)
+
+    def set_pos(self, pos):
         """Update camera position"""
         self.x = pos[0]
         self.y = pos[1]

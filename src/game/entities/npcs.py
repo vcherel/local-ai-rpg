@@ -38,7 +38,7 @@ class NPC(Entity):
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         
-        draw_human(screen, screen_x, screen_y, c.Entities.NPC_SIZE, self.color, self.angle)
+        draw_human(screen, screen_x, screen_y, c.Entities.NPC_SIZE, self.color, self.orientation)
         
         # Exclamation mark for active quests
         if self.has_active_quest:
