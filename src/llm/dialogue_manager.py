@@ -35,7 +35,7 @@ class DialogueManager:
         # Components
         self.conversation = ConversationHistory()
         self.ui = ConversationUI()
-        self.quest_system = QuestSystem(items, player)
+        self.quest_system = QuestSystem(items, player)  # TODO: why is it not in game ?
     
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
         """Build the system prompt for the entire conversation"""

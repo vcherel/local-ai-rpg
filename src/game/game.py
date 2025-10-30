@@ -13,6 +13,7 @@ from ui.context_window import ContextWindow
 from ui.game_renderer import GameRenderer
 from ui.loading_indicator import LoadingIndicator
 from ui.inventory_menu import InventoryMenu
+from ui.quest_menu import QuestMenu
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -28,7 +29,6 @@ class Game:
         self.camera = Camera()
 
         # UI
-        self.small_font = pygame.font.SysFont("arial", 22)
         self.loading_indicator = LoadingIndicator()
         self.context_window = ContextWindow()
         self.window_active = False
@@ -36,7 +36,7 @@ class Game:
         # Helper
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window)
-        self.game_renderer = GameRenderer(self.screen)
+        self.game_renderer = GameRenderer(self.screen)  # TODO: do not pass screen
 
         # Player
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
@@ -44,6 +44,10 @@ class Game:
         # Inventory menu
         self.inventory_menu = InventoryMenu()
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
+
+        # Quest menu
+        self.quest_menu = QuestMenu()
+        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
 
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.world.items, self.player)
@@ -68,12 +72,19 @@ class Game:
             if self.dialogue_manager.handle_event(event, self.npc_name_generator):
                 return True
             
+            if self.quest_menu.handle_event(event, self.dialogue_manager.quest_system):
+                return True
+            
             if not self.window_active:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         # Open inventory
                         if self.inv_button_rect.collidepoint(event.pos):
                             self.inventory_menu.toggle()
+
+                        # Open quest menu
+                        elif self.quest_button_rect.collidepoint(event.pos):
+                            self.quest_menu.toggle()
 
                         # Attack
                         else:
@@ -96,6 +107,9 @@ class Game:
 
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()
+                    
+                    elif event.key == pygame.K_q:
+                        self.quest_menu.toggle()
 
         return True
 
@@ -116,7 +130,7 @@ class Game:
                 break
 
             self.dialogue_manager.update()
-            self.loading_indicator.update()
+            self.loading_indicator.update()  # TODO: put in game renderer
             
             if not self.window_active:
                 dt = self.clock.get_time()
@@ -128,6 +142,7 @@ class Game:
             self.game_renderer.draw_ui(self.player, self.loading_indicator, get_llm_task_count())
             self.dialogue_manager.draw(self.screen)
             self.inventory_menu.draw(self.screen, self.player)
+            self.quest_menu.draw(self.screen, self.dialogue_manager.quest_system)
             self.context_window.draw(self.screen)
 
             current_time = pygame.time.get_ticks()
@@ -137,7 +152,6 @@ class Game:
                 print("Game auto-saved.")
 
             if self.player.hp <= 0:
-                print("DEAD")
                 self.save_data()
                 return  # Exit game loop and return to main menu
 

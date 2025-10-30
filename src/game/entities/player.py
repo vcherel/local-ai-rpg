@@ -53,7 +53,7 @@ class Player(Entity):
                 dy /= dist
 
             # Forward/backward
-            speed = actual_speed if keys[pygame.K_z] else -actual_speed / 2
+            speed = actual_speed if keys[pygame.K_z] else -actual_speed / 1.5
             self.x += dx * speed
             self.y += dy * speed
 

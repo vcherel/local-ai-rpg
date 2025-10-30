@@ -15,14 +15,14 @@ if TYPE_CHECKING:
     from game.world import World
 
 
-
 class GameRenderer:
     """Render all game elements"""
 
     def __init__(self, screen):
-        self.screen = screen
+        self.screen: pygame.Surface = screen
         self.small_font = pygame.font.SysFont("arial", 22)
-        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
+        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)  # TODO: Remove redundancy
+        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
     
     def draw_world(self, camera: Camera, world: World, player: Player):
         """Draw all world elements"""
@@ -54,8 +54,9 @@ class GameRenderer:
         # Off-screen indicators
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
     
+    # TODO: why we pass loading indicator here ? (change all params)
     def draw_ui(self, player: Player, loading_indicator: LoadingIndicator, active_task_count):
-        """Draw inventory button, coins, and loading indicators"""
+        """Draw inventory button, quest menu button, coins, and loading indicators"""
         # Draw inventory button
         mouse_pos = pygame.mouse.get_pos()
         is_hovering = self.inv_button_rect.collidepoint(mouse_pos)
@@ -68,6 +69,17 @@ class GameRenderer:
         button_text = self.small_font.render("Inventaire", True, c.Colors.WHITE)
         text_x = self.inv_button_rect.x + (self.inv_button_rect.width - button_text.get_width()) // 2
         text_y = self.inv_button_rect.y + (self.inv_button_rect.height - button_text.get_height()) // 2
+        self.screen.blit(button_text, (text_x, text_y))
+
+        # Draw quest button (after inventory button)
+        is_hovering_quest = self.quest_button_rect.collidepoint(mouse_pos)
+        button_color = c.Colors.BUTTON_HOVERED if is_hovering_quest else c.Colors.BUTTON
+        border_color = c.Colors.BORDER_HOVERED if is_hovering_quest else c.Colors.BORDER
+        pygame.draw.rect(self.screen, button_color, self.quest_button_rect)
+        pygame.draw.rect(self.screen, border_color, self.quest_button_rect, 2)
+        button_text = self.small_font.render("Quêtes", True, c.Colors.WHITE)
+        text_x = self.quest_button_rect.x + (self.quest_button_rect.width - button_text.get_width()) // 2
+        text_y = self.quest_button_rect.y + (self.quest_button_rect.height - button_text.get_height()) // 2
         self.screen.blit(button_text, (text_x, text_y))
         
         coins_text = f"Pièces: {player.coins}"
