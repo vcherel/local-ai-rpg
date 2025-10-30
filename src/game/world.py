@@ -89,4 +89,4 @@ class World:
         pos = player.get_pos()
         for monster in self.monsters:
             if monster.distance_to_point(pos) < c.World.DETECTION_RANGE + c.World.MONSTER_SIZE // 2:
-                print("SEEN")
+                monster.attack_player(pos)

@@ -21,9 +21,6 @@ class Entity:
         self.hp -= damage
         return self.hp <= 1
 
-    def draw(self):
-        pass # Override in subclasses
-
 
 def draw_human(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):
     """Draw a character with body and arms, including attack animation."""

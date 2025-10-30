@@ -21,6 +21,7 @@ class Player:
     ATTACK_REACH: int = 15
     ATTACK_DAMAGE: int = 5
 
+# TODO: add monster
 @dataclass(frozen=True)
 class World:
     WORLD_SIZE: int = 5000
@@ -37,7 +38,7 @@ class World:
     NPC_HP: int = 30
     MONSTER_HP: int = 30
 
-    MONSTER_SPEED: int = 6
+    MONSTER_SPEED: int = 4
 
 @dataclass(frozen=True)
 class Colors:
