@@ -77,3 +77,18 @@ class Monster(Entity):
                    self.orientation,
                    self.attack_progress,
                    self.attack_hand)
+        
+        # Health Bar
+        bar_width = 60
+        bar_height = 8
+        x = screen_x - bar_width // 2
+        y = screen_y + c.Monster.SIZE // 2 + 10
+
+        # Background
+        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))
+        # Health
+        health_ratio = max(self.hp / c.Monster.HP, 0)
+        pygame.draw.rect(screen, c.Colors.RED, (x, y, bar_width * health_ratio, bar_height))
+        # Border
+        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, bar_width, bar_height), 2)
+

@@ -99,7 +99,6 @@ class Player:
 
     def receive_damage(self, damage):
         self.hp -= damage
-        print(self.hp)
 
     def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False, show_detection=False):
             """Draw player at screen bottom center, looking towards mouse"""

@@ -49,6 +49,20 @@ class NPC(Entity):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         
         draw_human(screen, screen_x, screen_y, c.Entities.NPC_SIZE, self.color, self.orientation)
+
+        # Health Bar
+        bar_width = 60
+        bar_height = 8
+        x = screen_x - bar_width // 2
+        y = screen_y + c.Entities.NPC_HP // 2 + 10
+
+        # Background
+        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))
+        # Health
+        health_ratio = max(self.hp / c.Entities.NPC_HP, 0)
+        pygame.draw.rect(screen, self.color, (x, y, bar_width * health_ratio, bar_height))
+        # Border
+        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, bar_width, bar_height), 2)
         
         # Exclamation mark for active quests
         if self.has_active_quest:
