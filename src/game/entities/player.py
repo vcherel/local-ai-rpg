@@ -102,24 +102,6 @@ class Player:
                         self.orientation,
                         self.attack_progress,
                         self.attack_hand)
-            
-            def draw_reach(screen: pygame.Surface, origin_x, origin_y, orientation, reach_distance, color):
-                # Calculate reach position
-                reach_x = origin_x + math.sin(orientation) * reach_distance
-                reach_y = origin_y - math.cos(orientation) * reach_distance
-                
-                # Create translucent surface
-                reach_surface = pygame.Surface((reach_distance * 2, reach_distance * 2), pygame.SRCALPHA)
-                pygame.draw.circle(
-                    reach_surface,
-                    color,
-                    (reach_distance, reach_distance),
-                    reach_distance,
-                    2  # thickness
-                )
-                
-                # Blit to main screen
-                screen.blit(reach_surface, (reach_x - reach_distance, reach_y - reach_distance))
 
             if show_reach:
                 draw_reach(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, self.orientation, c.Player.ATTACK_REACH, (255, 0, 0, 80))
@@ -130,3 +112,22 @@ class Player:
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)
+
+
+def draw_reach(screen: pygame.Surface, origin_x, origin_y, orientation, reach_distance, color):
+    # Calculate reach position
+    reach_x = origin_x + math.sin(orientation) * reach_distance
+    reach_y = origin_y - math.cos(orientation) * reach_distance
+                
+    # Create translucent surface
+    reach_surface = pygame.Surface((reach_distance * 2, reach_distance * 2), pygame.SRCALPHA)
+    pygame.draw.circle(
+        reach_surface,
+        color,
+        (reach_distance, reach_distance),
+        reach_distance,
+        2  # thickness
+    )
+                
+    # Blit to main screen
+    screen.blit(reach_surface, (reach_x - reach_distance, reach_y - reach_distance))
