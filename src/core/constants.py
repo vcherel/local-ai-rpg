@@ -10,7 +10,7 @@ class Screen:
 
 @dataclass(frozen=True)
 class Size:
-    PLAYER: int = 30
+    PLAYER: int = 30  # TODO change constants class
     NPC: int = 30
     MONSTER: int = 25
     ITEM: int = 25
@@ -20,7 +20,10 @@ class Player:
     PLAYER_SPEED: int = 5
     PLAYER_RUN_SPEED: int = 8
     PLAYER_TURN_SPEED: float = 0.03
-    INTERACTION_DISTANCE: int = 50
+
+    INTERACTION_DISTANCE: int = 100
+    ATTACK_REACH: int = 30
+    ATTACK_DAMAGE: int = 5
 
 @dataclass(frozen=True)
 class World:

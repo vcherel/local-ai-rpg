@@ -11,6 +11,7 @@ from core.utils import random_color
 from game.items import Item
 from llm.name_generator import NPCNameGenerator
 
+# TODO : divide files
 def draw_character(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):
     """Draw a character with body and arms, including attack animation."""
     border_thickness = 2
@@ -129,9 +130,17 @@ class NPC:
             
             # Draw name
             screen.blit(name_surface, name_rect)
+    
+    def receive_damage(self, damage):
+        """Returns True if the NPC died"""
+        print("NPC HIT")
+        self.hp -= damage
+        if self.hp <= 1:
+            return True
+        return False
 
-    def distance_to_player(self, player):
-        return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
+    def distance_to_point(self, point):
+        return math.hypot(self.x - point[0], self.y - point[1])
 
 class Player:
     def __init__(self, save_system, coins):
@@ -153,22 +162,33 @@ class Player:
         # Combat
         self.hp = c.Combat.PLAYER_HP
 
-    def start_attack(self):
+    def start_attack_anim(self):
         """Start an attack animation with a random hand"""
         if not self.attack_in_progress:
             self.attack_in_progress = True
             self.attack_progress = 0.0
             self.attack_hand = random.choice(["left", "right"])
 
-    def update_attack(self, dt):
+    def update_attack_anim(self, dt):
         """Update attack animation progress"""
         if self.attack_in_progress:
             self.attack_progress += dt * 0.008  # speed of swing
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
-        
-    
+
+    def get_attack_pos(self):
+        """Return the world position of the player's attack (tip of the swing)."""
+        # Compute lateral hand offset relative to facing direction
+        hand_x = self.x + math.cos(self.orientation + math.pi / 2) * self.orientation
+        hand_y = self.y + math.sin(self.orientation + math.pi / 2) * self.orientation
+
+        # Attack tip position in world coordinates
+        attack_x = hand_x + math.sin(self.orientation) * c.Player.ATTACK_REACH
+        attack_y = hand_y - math.cos(self.orientation) * c.Player.ATTACK_REACH
+
+        return (attack_x, attack_y)
+
     def move(self, camera: Camera, clock: pygame.time.Clock):
         """Move player toward mouse position"""
         keys = pygame.key.get_pressed()
@@ -213,7 +233,7 @@ class Player:
 
         # Attacking state
         dt = clock.get_time()
-        self.update_attack(dt)
+        self.update_attack_anim(dt)
 
 
     def draw(self, screen: pygame.Surface):
@@ -243,6 +263,14 @@ class Monster:
         real_angle = self.angle + camera.angle
 
         draw_character(screen, rotated_x, rotated_y, c.Size.MONSTER, c.Colors.RED, real_angle)
+    
+    def receive_damage(self, damage):
+        """Returns True if the monster died"""
+        print("MONSTER HIT")
+        self.hp -= damage
+        if self.hp <= 1:
+            return True
+        return False
 
-    def distance_to_player(self, player):
-        return ((self.x - player.x)**2 + (self.y - player.y)**2)**0.5
+    def distance_to_point(self, point):
+        return math.hypot(self.x - point[0], self.y - point[1])

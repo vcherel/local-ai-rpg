@@ -68,11 +68,15 @@ class Game:
             if not self.window_active:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
+                        # Open inventory
                         if self.inv_button_rect.collidepoint(event.pos):
                             self.inventory_menu.toggle()
 
+                        # Attack
                         else:
-                            self.player.start_attack()
+                            self.player.start_attack_anim()
+                            pos = self.player.get_attack_pos()
+                            self.world.handle_attack(pos)
                 
                 if event.type == pygame.KEYDOWN:
                     # Game controls

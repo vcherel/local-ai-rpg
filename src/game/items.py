@@ -81,5 +81,5 @@ class Item:
         # Blit to screen
         surface.blit(rotated_surface, rect.topleft)
 
-    def distance_to_player(self, player):
-        return math.hypot(self.x - player.x, self.y - player.y)
+    def distance_to_point(self, point):
+        return math.hypot(self.x - point[0], self.y - point[1])
