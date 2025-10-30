@@ -71,33 +71,30 @@ class Player(Entity):
     def receive_damage(self, damage):
         self.hp -= damage
 
-    def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False, show_detection=False):
-            """Draw player at screen bottom center, looking towards mouse"""
-            draw_human(screen,
-                        c.Screen.ORIGIN_X,
-                        c.Screen.ORIGIN_Y,
-                        c.Player.SIZE,
-                        c.Colors.PLAYER,
-                        self.orientation,
-                        self.attack_progress,
-                        self.attack_hand)
-            
-            # Health bar
-            bar_width = 800
-            bar_height = 30
-            margin_bottom = 30
-            x = c.Screen.WIDTH // 2 - bar_width // 2
-            y = c.Screen.HEIGHT - margin_bottom - bar_height
-            self.draw_health_bar(screen, x, y, bar_width, bar_height, c.Colors.GREEN)
+    def draw(self, screen, show_reach=False, show_interaction=False, show_detection=False):
+        # Draw player using Entity base logic
+        super().draw(
+            screen,
+            c.Screen.ORIGIN_X,
+            c.Screen.ORIGIN_Y,
+            c.Player.SIZE,
+            c.Colors.PLAYER,
+            self.orientation,
+            self.attack_progress,
+            self.attack_hand,
+            bar_width=800,
+            bar_height=30,
+            health_bar_offset=360
+        )
 
-            if show_reach:
-                draw_circle(screen, c.Player.ATTACK_REACH, (255, 0, 0, 80), self.orientation)
+        # Optional overlays
+        if show_reach:
+            draw_circle(screen, c.Player.ATTACK_REACH, (255, 0, 0, 80), self.orientation)
+        if show_interaction:
+            draw_circle(screen, c.Player.INTERACTION_DISTANCE, (0, 255, 0, 80), self.orientation)
+        if show_detection:
+            draw_circle(screen, c.World.DETECTION_RANGE, (0, 0, 255, 80))
 
-            if show_interaction:
-                draw_circle(screen, c.Player.INTERACTION_DISTANCE, (0, 255, 0, 80), self.orientation)
-
-            if show_detection:
-                draw_circle(screen, c.World.DETECTION_RANGE, (0, 0, 255, 80))
 
 def draw_circle(screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_X, origin_y=c.Screen.ORIGIN_Y, orientation=None):
     if orientation is not None:

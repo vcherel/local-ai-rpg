@@ -26,12 +26,6 @@ class Entity:
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
     
-    def draw_health_bar(self, screen, x, y, width, height, color):
-        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, width, height))
-        ratio = max(self.hp / self.max_hp, 0)
-        pygame.draw.rect(screen, color, (x, y, width * ratio, height))
-        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, width, height), 2)
-
     def start_attack_anim(self):
         if not self.attack_in_progress:
             self.attack_in_progress = True
@@ -44,6 +38,30 @@ class Entity:
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
+
+    def draw_health_bar(self, screen, x, y, width, height, color, border_width):
+        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, width, height))
+        ratio = max(self.hp / self.max_hp, 0)
+        pygame.draw.rect(screen, color, (x, y, width * ratio, height))
+        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, width, height), border_width)
+
+    def draw_character(self, screen, x, y, size, color, angle=0.0, attack_progress=0.0, attack_hand=None):
+        draw_human(screen, x, y, size, color, angle, attack_progress, attack_hand)
+
+    def draw(self, screen, x, y, size, color, angle=0.0, attack_progress=0.0, attack_hand=None,
+             bar_width=60, bar_height=8, health_bar_offset=10):
+        """Generic entity drawing (body + health bar)."""
+        # Character
+        self.draw_character(screen, x, y, size, color, angle, attack_progress, attack_hand)
+
+        # Health bar
+        bar_x = x - bar_width // 2
+        bar_y = y + size // 2 + health_bar_offset
+        border_width = 2
+        if color == c.Colors.PLAYER:
+            color = c.Colors.GREEN
+            border_width = 4
+        self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, color, border_width)
 
 
 def draw_human(surface: pygame.Surface, x: int, y: int, size: int, color: tuple, angle: float, attack_progress: float = 0.0, attack_hand: str = None):

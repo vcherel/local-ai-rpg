@@ -52,29 +52,18 @@ class Monster(Entity):
         # Attacking state
         self.update_attack_anim(dt)
 
-    def draw(self, screen: pygame.Surface, camera: Camera):
+    def draw(self, screen, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
-        draw_human(screen,
-                   screen_x,
-                   screen_y,
-                   c.Monster.SIZE,
-                   c.Colors.RED,
-                   self.orientation,
-                   self.attack_progress,
-                   self.attack_hand)
-        
-        # Health Bar
-        bar_width = 60
-        bar_height = 8
-        x = screen_x - bar_width // 2
-        y = screen_y + c.Monster.SIZE // 2 + 10
-        self.draw_health_bar(screen, x, y, bar_width, bar_height, self.color)
-
-        # Background
-        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, bar_width, bar_height))
-        # Health
-        health_ratio = max(self.hp / c.Monster.HP, 0)
-        pygame.draw.rect(screen, c.Colors.RED, (x, y, bar_width * health_ratio, bar_height))
-        # Border
-        pygame.draw.rect(screen, c.Colors.BORDER, (x, y, bar_width, bar_height), 2)
-
+        super().draw(
+            screen,
+            screen_x,
+            screen_y,
+            c.Monster.SIZE,
+            c.Colors.RED,
+            self.orientation,
+            self.attack_progress,
+            self.attack_hand,
+            bar_width=60,
+            bar_height=8,
+            health_bar_offset=10
+        )
