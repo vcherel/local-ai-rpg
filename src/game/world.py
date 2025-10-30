@@ -56,7 +56,8 @@ class World:
             return
         
         for npc in self.npcs:
-            if npc.distance_to_point((player.x, player.y)) < c.Player.INTERACTION_DISTANCE:
+            pos = player.get_front_pos(c.Player.INTERACTION_DISTANCE)
+            if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.World.NPC_SIZE // 2:
                 return npc
             
     def handle_attack(self, pos):

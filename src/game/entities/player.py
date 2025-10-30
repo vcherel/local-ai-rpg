@@ -47,11 +47,9 @@ class Player:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False
 
-    def get_attack_pos(self):
-        """Return the world position of the player's attack (tip of the swing)."""
-        # Attack tip position in world coordinates (forward from player)
-        attack_x = self.x + math.sin(self.orientation) * c.Player.ATTACK_REACH
-        attack_y = self.y - math.cos(self.orientation) * c.Player.ATTACK_REACH
+    def get_front_pos(self, distance):
+        attack_x = self.x + math.sin(self.orientation) * distance
+        attack_y = self.y - math.cos(self.orientation) * distance
         return (attack_x, attack_y)
 
     def move(self, camera: Camera, clock: pygame.time.Clock):
@@ -94,7 +92,7 @@ class Player:
         dt = clock.get_time()
         self.update_attack_anim(dt)
 
-    def draw(self, screen: pygame.Surface, show_reach=False):
+    def draw(self, screen: pygame.Surface, show_reach=False, show_interaction=False):
             """Draw player at screen bottom center, looking towards mouse"""
             draw_human(screen,
                         c.Screen.ORIGIN_X,
@@ -105,21 +103,29 @@ class Player:
                         self.attack_progress,
                         self.attack_hand)
             
-            if show_reach:
-                # Calculate attack reach position on screen
-                screen_attack_x = c.Screen.ORIGIN_X + math.sin(self.orientation) * c.Player.ATTACK_REACH
-                screen_attack_y = c.Screen.ORIGIN_Y - math.cos(self.orientation) * c.Player.ATTACK_REACH
+            def draw_reach(screen: pygame.Surface, origin_x, origin_y, orientation, reach_distance, color):
+                # Calculate reach position
+                reach_x = origin_x + math.sin(orientation) * reach_distance
+                reach_y = origin_y - math.cos(orientation) * reach_distance
                 
-                # Draw translucent reach circle
-                reach_surface = pygame.Surface((c.Player.ATTACK_REACH * 2, c.Player.ATTACK_REACH * 2), pygame.SRCALPHA)
+                # Create translucent surface
+                reach_surface = pygame.Surface((reach_distance * 2, reach_distance * 2), pygame.SRCALPHA)
                 pygame.draw.circle(
                     reach_surface,
-                    (255, 0, 0, 80),  # RGBA with alpha
-                    (c.Player.ATTACK_REACH, c.Player.ATTACK_REACH),
-                    c.Player.ATTACK_REACH,
+                    color,
+                    (reach_distance, reach_distance),
+                    reach_distance,
                     2  # thickness
                 )
-                screen.blit(reach_surface, (screen_attack_x - c.Player.ATTACK_REACH, screen_attack_y - c.Player.ATTACK_REACH))
+                
+                # Blit to main screen
+                screen.blit(reach_surface, (reach_x - reach_distance, reach_y - reach_distance))
+
+            if show_reach:
+                draw_reach(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, self.orientation, c.Player.ATTACK_REACH, (255, 0, 0, 80))
+
+            if show_interaction:
+                draw_reach(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, self.orientation, c.Player.INTERACTION_DISTANCE, (0, 255, 0, 80))
 
     def add_coins(self, amount):
         self.coins += amount

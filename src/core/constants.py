@@ -17,7 +17,7 @@ class Player:
     RUN_SPEED: int = 7
     TURN_SPEED: float = 0.03
 
-    INTERACTION_DISTANCE: int = 30  # TODO: Make interaction in front of player
+    INTERACTION_DISTANCE: int = 30
     ATTACK_REACH: int = 15
     ATTACK_DAMAGE: int = 5
 

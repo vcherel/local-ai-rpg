@@ -3,6 +3,7 @@ import pygame
 
 from core.camera import Camera
 from core.save import SaveSystem
+import core.constants as c
 from game.entities.player import Player
 from game.entities.items import Item
 from game.world import World
@@ -75,7 +76,7 @@ class Game:
                         # Attack
                         else:
                             self.player.start_attack_anim()
-                            pos = self.player.get_attack_pos()
+                            pos = self.player.get_front_pos(c.Player.ATTACK_REACH)
                             self.world.handle_attack(pos)
                 
                 if event.type == pygame.KEYDOWN:
