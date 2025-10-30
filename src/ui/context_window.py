@@ -3,6 +3,8 @@ import pygame
 import core.constants as c
 
 class ContextWindow:
+    """Display the window that gives information about the world"""
+    
     def __init__(self):
         self.active = False
         self.context_text = None
@@ -68,7 +70,6 @@ class ContextWindow:
 
         # Draw final window to screen
         screen.blit(window_surface, (window_x, window_y))
-
 
     def _draw_wrapped_text(self, surface, text, x, y, max_width):
         """Draw text with word wrapping"""

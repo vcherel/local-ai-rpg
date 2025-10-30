@@ -1,13 +1,17 @@
 import json
 import os
 
+
 class SaveSystem:
     """
+    Save key elements of the game to continue
+
     Keys:
         - context: World context (str)
         - coins: Player coins (int)
         - name: Next NPC name (str)
     """
+
     def __init__(self, filename="./assets/save.json"):
         self.filename = filename
         self.data = self._load_all()

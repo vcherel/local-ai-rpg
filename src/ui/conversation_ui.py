@@ -6,7 +6,7 @@ import core.constants as c
 
 
 class ConversationUI:
-    """Handles all UI rendering and input for dialogue"""
+    """Handles all UI rendering and input for dialogue with NPCs"""
     
     def __init__(self):
         # Fonts

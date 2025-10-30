@@ -3,8 +3,8 @@ import pygame
 
 from core.camera import Camera
 from core.save import SaveSystem
-from game.entities import Player
-from game.items import Item
+from game.entities.player import Player
+from game.entities.items import Item
 from game.world import World
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import get_llm_task_count
@@ -16,6 +16,8 @@ from ui.inventory_menu import InventoryMenu
 
 
 class Game:
+    """Handle the game inputs, camera, data"""
+
     def __init__(self, screen, clock, save_system: SaveSystem):
         # Pygame
         self.screen = screen

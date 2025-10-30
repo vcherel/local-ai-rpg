@@ -8,6 +8,8 @@ from core.utils import random_color
 
 
 class Item:
+    """The items we can take from the ground and have in inventory"""
+
     def __init__(self, x, y, name):
         self.x = x
         self.y = y

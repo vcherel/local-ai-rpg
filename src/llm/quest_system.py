@@ -1,8 +1,9 @@
 import re
 from typing import List
 from core.utils import parse_response, random_coordinates
-from game.entities import NPC, Player
-from game.items import Item
+from game.entities.items import Item
+from game.entities.npcs import NPC
+from game.entities.player import Player
 from llm.llm_request_queue import generate_response_queued
 
 
@@ -92,4 +93,3 @@ class QuestSystem:
         # Reset NPC quest state
         npc.has_active_quest = False
         npc.quest_item = None
-

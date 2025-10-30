@@ -2,7 +2,7 @@ import math
 import pygame
 
 class LoadingIndicator:
-    """Visual loading indicator for various game states"""
+    """Visual loading indicator for LLM background treatments"""
     
     def __init__(self):
         self.angle = 0
@@ -44,7 +44,6 @@ class LoadingIndicator:
             offset_points = [(px - x + radius + 3, py - y + radius + 3) for px, py in points]
             pygame.draw.lines(arc_surface, arc_color, False, offset_points, 3)
             screen.blit(arc_surface, (x - radius - 3, y - radius - 3))
-
 
     def draw_task_indicator(self, screen, x, y, task_count):
         # Semi-transparent background

@@ -1,16 +1,21 @@
 import random
 import threading
 from typing import List
+
 from core.save import SaveSystem
 from core.utils import random_coordinates
 import core.constants as c
-from game.entities import NPC, Monster, Player
-from game.items import Item
+from game.entities.items import Item
+from game.entities.monsters import Monster
+from game.entities.npcs import NPC
+from game.entities.player import Player
 from llm.llm_request_queue import generate_response_queued
 from ui.context_window import ContextWindow
 
 
 class World:
+    """Handle all world elements (NPCs, Monsters, Items...)"""
+
     def __init__(self, save_system: SaveSystem, context_window: ContextWindow):        
         # Terrain details
         self.floor_details = [

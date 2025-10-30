@@ -2,7 +2,7 @@ import threading
 import pygame
 
 from core.utils import ConversationHistory
-from game.entities import NPC
+from game.entities.npcs import NPC
 from game.world import World
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.name_generator import NPCNameGenerator
@@ -10,7 +10,8 @@ from llm.quest_system import QuestSystem
 from ui.conversation_ui import ConversationUI
 
 
-class DialogueManager:  
+class DialogueManager:
+    """Manage the Dialogue window in its entirety"""
     def __init__(self, items, player):
         # Core state
         self.active = False

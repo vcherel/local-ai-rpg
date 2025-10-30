@@ -34,7 +34,7 @@ class World:
     ITEM_SIZE: int = 25
 
     NPC_HP: int = 30
-    MONSTER_HP: int = 50
+    MONSTER_HP: int = 30
 
 @dataclass(frozen=True)
 class Colors:

@@ -5,6 +5,8 @@ import core.constants as c
 from core.save import SaveSystem
 
 class MainMenu:
+    """Main Menu of the game (New game, Continue)"""
+
     def __init__(self, screen, save_system):
         self.screen = screen
         self.save_system: SaveSystem = save_system

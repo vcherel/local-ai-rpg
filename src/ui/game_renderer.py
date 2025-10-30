@@ -4,13 +4,14 @@ from typing import List
 
 import core.constants as c
 from core.camera import Camera
-from game.entities import Monster, Player, NPC
-from game.items import Item
-from game.world import World
-from ui.loading_indicator import LoadingIndicator
+from game.entities.items import Item
+from game.entities.npcs import NPC
+from game.entities.player import Player
 
 
 class GameRenderer:
+    """Render all game elements"""
+
     def __init__(self, screen):
         self.screen = screen
         self.small_font = pygame.font.SysFont("arial", 22)
