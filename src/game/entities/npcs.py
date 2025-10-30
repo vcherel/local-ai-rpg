@@ -65,9 +65,9 @@ class NPC(Entity):
         if display_name:
             name_font = pygame.font.SysFont("arial", 16)
             name_surface = name_font.render(display_name, True, c.Colors.WHITE)
-            name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 15))
+            name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30))
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(bg_surface, (0, 0, 0, 180), bg_surface.get_rect(), border_radius=6)
+            pygame.draw.rect(bg_surface, (0, 0, 0, 150), bg_surface.get_rect(), border_radius=6)
             screen.blit(bg_surface, bg_rect)
             screen.blit(name_surface, name_rect)
