@@ -20,7 +20,6 @@ class GameRenderer:
 
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
-        self.small_font = pygame.font.SysFont("arial", 22)
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
         self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
         self.loading_indicator = LoadingIndicator()
@@ -66,7 +65,7 @@ class GameRenderer:
         pygame.draw.rect(self.screen, button_color, self.inv_button_rect)
         pygame.draw.rect(self.screen, border_color, self.inv_button_rect, 2)
         
-        button_text = self.small_font.render("Inventaire", True, c.Colors.WHITE)
+        button_text = c.Fonts.button.render("Inventaire", True, c.Colors.WHITE)
         text_x = self.inv_button_rect.x + (self.inv_button_rect.width - button_text.get_width()) // 2
         text_y = self.inv_button_rect.y + (self.inv_button_rect.height - button_text.get_height()) // 2
         self.screen.blit(button_text, (text_x, text_y))
@@ -77,15 +76,15 @@ class GameRenderer:
         border_color = c.Colors.BORDER_HOVERED if is_hovering_quest else c.Colors.BORDER
         pygame.draw.rect(self.screen, button_color, self.quest_button_rect)
         pygame.draw.rect(self.screen, border_color, self.quest_button_rect, 2)
-        button_text = self.small_font.render("Quêtes", True, c.Colors.WHITE)
+        button_text = c.Fonts.button.render("Quêtes", True, c.Colors.WHITE)
         text_x = self.quest_button_rect.x + (self.quest_button_rect.width - button_text.get_width()) // 2
         text_y = self.quest_button_rect.y + (self.quest_button_rect.height - button_text.get_height()) // 2
         self.screen.blit(button_text, (text_x, text_y))
         
         coins_text = f"Pièces: {nb_coins}"
         objects_text = f"Objets: {nb_items}"
-        coins_surface = self.small_font.render(coins_text, True, c.Colors.WHITE)
-        objects_surface = self.small_font.render(objects_text, True, c.Colors.WHITE)
+        coins_surface = c.Fonts.text.render(coins_text, True, c.Colors.WHITE)
+        objects_surface = c.Fonts.text.render(objects_text, True, c.Colors.WHITE)
         self.screen.blit(coins_surface, (12, 55))
         self.screen.blit(objects_surface, (12, 90))
         

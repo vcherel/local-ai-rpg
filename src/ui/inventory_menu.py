@@ -10,17 +10,12 @@ if TYPE_CHECKING:
     from game.entities.player import Player
 
 
-# TODO: make menus more efficient
 class InventoryMenu:
     """Inventoy Menu display"""
 
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
         self.active = False
-
-        # TODO: constant font
-        self.font = pygame.font.SysFont("arial", 20)
-        self.title_font = pygame.font.SysFont("arial", 32, bold=True)
 
         # Menu dimensions
         self.width = 600
@@ -106,12 +101,12 @@ class InventoryMenu:
         pygame.draw.rect(menu_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
         
         # Draw title
-        title = self.title_font.render("Inventaire", True, c.Colors.WHITE)
+        title = c.Fonts.title.render("Inventaire", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         menu_surface.blit(title, (title_x, self.padding))
         
         # Draw coins
-        coins_text = self.font.render(f"Pièces: {player.coins}", True, c.Colors.YELLOW)
+        coins_text = c.Fonts.text.render(f"Pièces: {player.coins}", True, c.Colors.YELLOW)
         menu_surface.blit(coins_text, (self.padding, self.padding + 50))
         
         # Get mouse position
@@ -169,7 +164,7 @@ class InventoryMenu:
                     
                     # Draw count if more than 1
                     if count > 1:
-                        count_text = self.font.render(f"x{count}", True, c.Colors.WHITE)
+                        count_text = c.Fonts.text.render(f"x{count}", True, c.Colors.WHITE)
                         count_bg = pygame.Surface((count_text.get_width() + 4, count_text.get_height() + 2), pygame.SRCALPHA)
                         count_bg.fill(c.Colors.TRANSPARENT)
                         menu_surface.blit(count_bg, (cell_x + self.cell_size - count_text.get_width() - 6, 
@@ -183,7 +178,7 @@ class InventoryMenu:
             item: Item = item_data['item']
             
             tooltip_text = item.name
-            tooltip_surface = self.font.render(tooltip_text, True, c.Colors.WHITE)
+            tooltip_surface = c.Fonts.text.render(tooltip_text, True, c.Colors.WHITE)
             tooltip_width = tooltip_surface.get_width() + 20
             tooltip_height = tooltip_surface.get_height() + 10
             

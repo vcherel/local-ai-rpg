@@ -1,19 +1,20 @@
 import math
 import pygame
 
+import core.constants as c
+
 class LoadingIndicator:
     """Visual loading indicator for LLM background treatments"""
     
     def __init__(self):
         self.angle = 0
         self.speed = 5  # Rotation speed
-        self.font = pygame.font.SysFont("arial", 16, bold=True)
     
     def update(self):
         """Update the rotation angle"""
         self.angle = (self.angle + self.speed) % 360
     
-    def draw_spinner(self, screen, x, y, radius=12, color=(255, 220, 150)):
+    def draw_spinner(self, screen: pygame.Surface, x, y, radius=12, color=(255, 220, 150)):
         num_segments = 12
         segment_angle = 360 / num_segments
 
@@ -45,7 +46,7 @@ class LoadingIndicator:
             pygame.draw.lines(arc_surface, arc_color, False, offset_points, 3)
             screen.blit(arc_surface, (x - radius - 3, y - radius - 3))
 
-    def draw_task_indicator(self, screen, x, y, task_count):
+    def draw_task_indicator(self, screen: pygame.Surface, x, y, task_count):
         # Semi-transparent background
         bg_surface = pygame.Surface((40, 40), pygame.SRCALPHA)
         pygame.draw.circle(bg_surface, (0, 0, 0, 180), (20, 20), 18)
@@ -60,6 +61,6 @@ class LoadingIndicator:
         self.draw_spinner(screen, x, y, 12, (255, 240, 200))
 
         # Task count number
-        text = self.font.render(str(task_count), True, (255, 255, 200))
+        text = c.Fonts.button.render(str(task_count), True, (255, 255, 200))
         text_rect = text.get_rect(center=(x, y))
         screen.blit(text, text_rect)

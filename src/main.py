@@ -12,6 +12,7 @@ from ui.main_menu import run_main_menu
 pygame.init()
 screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT))
 clock = pygame.time.Clock()
+c.Fonts = c.Fonts.load()
 
 # Initialize LLM queue
 get_llm_queue()

@@ -15,12 +15,6 @@ class ConversationUI:
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
 
-        # Fonts
-        self.font = pygame.font.SysFont("arial", 28, bold=True)
-        self.message_font = pygame.font.SysFont("arial", 20)
-        self.input_font = pygame.font.SysFont("arial", 24)
-        self.small_font = pygame.font.SysFont("arial", 18)
-        
         # Scroll state
         self.scroll_offset = 0
         self.max_visible_height = 170
@@ -78,7 +72,7 @@ class ConversationUI:
         
         for word in words:
             test_line = ' '.join(current_line + [word])
-            if self.message_font.size(test_line)[0] < c.Screen.WIDTH - 60:
+            if c.Fonts.medium.size(test_line)[0] < c.Screen.WIDTH - 60:
                 current_line.append(word)
             else:
                 if current_line:
@@ -100,7 +94,7 @@ class ConversationUI:
         pygame.draw.rect(self.screen, c.Colors.WHITE, (10, box_y, c.Screen.WIDTH - 20, box_height), 2)
         
         # Draw NPC name
-        name_surface = self.font.render(npc_name, True, c.Colors.YELLOW)
+        name_surface = c.Fonts.title.render(npc_name, True, c.Colors.YELLOW)
         self.screen.blit(name_surface, (25, box_y + 10))
         
         # Draw messages
@@ -131,7 +125,7 @@ class ConversationUI:
             
             lines = self._wrap_text(prefix + msg["content"])
             for line in lines:
-                text_surface = self.message_font.render(line, True, color)
+                text_surface = c.Fonts.medium.render(line, True, color)
                 screen.blit(text_surface, (25, y_offset))
                 y_offset += self.line_height
         
@@ -140,7 +134,7 @@ class ConversationUI:
         # Draw scroll indicator
         if total_height > self.max_visible_height and self.scroll_offset < total_height - self.max_visible_height:
             scroll_text = "↑ Défiler pour voir plus"
-            scroll_surface = self.small_font.render(scroll_text, True, c.Colors.YELLOW)
+            scroll_surface = c.Fonts.text.render(scroll_text, True, c.Colors.YELLOW)
             screen.blit(scroll_surface, (c.Screen.WIDTH - 250, message_area_y - 35))
     
     def _draw_input_box(self, screen: pygame.Surface, box_y: int, box_height: int):
@@ -150,5 +144,5 @@ class ConversationUI:
         pygame.draw.rect(screen, c.Colors.WHITE, (20, input_y, c.Screen.WIDTH - 40, 35), 2)
         
         input_text = self.user_input + "|"
-        input_surface = self.input_font.render(input_text, True, c.Colors.WHITE)
+        input_surface = c.Fonts.medium.render(input_text, True, c.Colors.WHITE)
         screen.blit(input_surface, (30, input_y + 1))  # + is to fix y position of input text

@@ -17,10 +17,6 @@ class MainMenu:
         self.save_system: SaveSystem = save_system
         self.active = True
 
-        # Fonts
-        self.title_font = pygame.font.SysFont("arial", 64, bold=True)
-        self.button_font = pygame.font.SysFont("arial", 32)
-
         # Button dimensions
         self.button_width = 300
         self.button_height = 60
@@ -63,7 +59,7 @@ class MainMenu:
         pygame.draw.rect(self.screen, border_color, rect, 3)
 
         # Draw button text
-        text_surf = self.button_font.render(text, True, c.Colors.WHITE)
+        text_surf = c.Fonts.title.render(text, True, c.Colors.WHITE)
         text_rect = text_surf.get_rect(center=rect.center)
         self.screen.blit(text_surf, text_rect)
 
@@ -74,7 +70,7 @@ class MainMenu:
         self.screen.fill(c.Colors.MENU_BACKGROUND)
 
         # Draw title
-        title_text = self.title_font.render("RPG IA", True, c.Colors.WHITE)
+        title_text = c.Fonts.big_title.render("RPG IA", True, c.Colors.WHITE)
         title_x = (self.screen.get_width() - title_text.get_width()) // 2
         title_y = 150
         self.screen.blit(title_text, (title_x, title_y))

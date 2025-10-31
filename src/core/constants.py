@@ -1,3 +1,4 @@
+import pygame
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
@@ -76,3 +77,26 @@ class Hyperparameters:
     MAX_TOKENS: int = 200
     TEMPERATURE: float = 0.8
     REPETITION_PENALTY: float = 1.2
+
+
+@dataclass(frozen=True)
+class Fonts:
+    big_title: pygame.font.Font
+    title: pygame.font.Font
+    heading: pygame.font.Font
+    text: pygame.font.Font
+    small: pygame.font.Font
+    medium: pygame.font.Font
+    button: pygame.font.Font
+
+    @staticmethod
+    def load() -> "Fonts":
+        return Fonts(
+            big_title=pygame.font.SysFont("arial", 64, bold=True),
+            title=pygame.font.SysFont("arial", 32, bold=True),
+            heading=pygame.font.SysFont("arial", 22, bold=True),
+            text=pygame.font.SysFont("arial", 20),
+            small=pygame.font.SysFont("arial", 16),
+            medium=pygame.font.SysFont("arial", 22),
+            button=pygame.font.SysFont("arial", 20, bold=True),
+        )

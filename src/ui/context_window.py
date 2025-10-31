@@ -17,10 +17,6 @@ class ContextWindow:
         self.height = 200
         self.x = c.Screen.ORIGIN_X
         self.y = c.Screen.ORIGIN_Y - c.Screen.DELTA_Y
-        
-        # Font
-        self.title_font = pygame.font.SysFont("arial", 24, bold=True)
-        self.text_font = pygame.font.SysFont("arial", 18)
     
     def toggle(self, context):
         """Set the context and show the window"""
@@ -61,7 +57,7 @@ class ContextWindow:
         pygame.draw.rect(window_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
 
         # Title
-        title = self.title_font.render("Contexte du monde", True, c.Colors.WHITE)
+        title = c.Fonts.heading.render("Contexte du monde", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         window_surface.blit(title, (title_x, 20))
 
@@ -79,7 +75,7 @@ class ContextWindow:
 
         for word in words:
             test_line = ' '.join(current_line + [word])
-            test_surface = self.text_font.render(test_line, True, c.Colors.WHITE)
+            test_surface = c.Fonts.text.render(test_line, True, c.Colors.WHITE)
             if test_surface.get_width() <= max_width:
                 current_line.append(word)
             else:
@@ -92,7 +88,7 @@ class ContextWindow:
 
         # Draw lines
         for i, line in enumerate(lines):
-            line_surface = self.text_font.render(line, True, c.Colors.WHITE)
+            line_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
             surface.blit(line_surface, (x, y + i * 25))
 
     def close(self):

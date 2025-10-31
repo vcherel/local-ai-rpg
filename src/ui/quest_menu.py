@@ -16,10 +16,6 @@ class QuestMenu:
         self.screen: pygame.Surface = screen
         self.active = False
 
-        self.font = pygame.font.SysFont("arial", 18)
-        self.title_font = pygame.font.SysFont("arial", 32, bold=True)
-        self.heading_font = pygame.font.SysFont("arial", 22, bold=True)
-
         # Menu dimensions
         self.width = 700
         self.height = 550
@@ -101,13 +97,13 @@ class QuestMenu:
         pygame.draw.rect(menu_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
         
         # Draw title
-        title = self.title_font.render("Quêtes Actives", True, c.Colors.WHITE)
+        title = c.Fonts.title.render("Quêtes Actives", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         menu_surface.blit(title, (title_x, self.padding))
         
         # Draw quest count
         quest_count = len(quest_system.active_quests)
-        count_text = self.font.render(f"Quêtes: {quest_count}", True, c.Colors.YELLOW)
+        count_text = c.Fonts.text.render(f"Quêtes: {quest_count}", True, c.Colors.YELLOW)
         menu_surface.blit(count_text, (self.padding, self.padding + 50))
         
         # Get mouse position for hover detection
@@ -118,7 +114,7 @@ class QuestMenu:
         
         # Draw quests
         if quest_count == 0:
-            no_quests_text = self.heading_font.render(
+            no_quests_text = c.Fonts.heading.render(
                 "Aucune quête active", True, c.Colors.WHITE
             )
             text_x = (self.width - no_quests_text.get_width()) // 2
@@ -155,7 +151,7 @@ class QuestMenu:
                 text_y = card_y + 10
                 
                 # NPC name
-                npc_text = self.heading_font.render(quest.npc_name, True, c.Colors.YELLOW)
+                npc_text = c.Fonts.heading.render(quest.npc_name, True, c.Colors.YELLOW)
                 menu_surface.blit(npc_text, (text_x, text_y))
                 
                 # Quest description (wrapped if too long)

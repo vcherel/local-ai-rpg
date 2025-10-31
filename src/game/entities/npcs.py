@@ -62,8 +62,7 @@ class NPC(Entity):
         # Name label
         display_name = self.get_display_name()
         if display_name:
-            name_font = pygame.font.SysFont("arial", 16)
-            name_surface = name_font.render(display_name, True, c.Colors.WHITE)
+            name_surface = c.Fonts.small.render(display_name, True, c.Colors.WHITE)
             name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30))
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
