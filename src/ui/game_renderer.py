@@ -22,7 +22,7 @@ class GameRenderer:
         self.screen: pygame.Surface = screen
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
         self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
-        self.loading_indicator = LoadingIndicator()
+        self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
     
     def draw_world(self, camera: Camera, world: World, player: Player):
         """Draw all world elements"""
@@ -90,7 +90,7 @@ class GameRenderer:
         
         self.loading_indicator.update()
         if active_task_count > 0:
-            self.loading_indicator.draw_task_indicator(self.screen, c.Screen.WIDTH - 30, 30, active_task_count)
+            self.loading_indicator.draw_task_indicator(active_task_count)
     
     def draw_offscreen_indicators(self, camera: Camera, items: List[Item], npcs: List[NPC], player: Player):
         """Draw arrows pointing to off-screen items and NPCs with active quests."""
