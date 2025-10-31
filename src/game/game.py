@@ -29,20 +29,13 @@ class Game:
 
         # Context window
         self.context_window = ContextWindow(self.screen)
-        self.window_active = False
-
-        # Inventory menu
         self.inventory_menu = InventoryMenu(self.screen)
-        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
-
-        # Quest menu
         self.quest_menu = QuestMenu(self.screen)
-        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
 
         # Helper
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window)
-        self.game_renderer = GameRenderer(self.screen, self.inv_button_rect, self.quest_button_rect)
+        self.game_renderer = GameRenderer(self.screen)
 
         # Player
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
@@ -50,6 +43,7 @@ class Game:
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player)
         self.npc_name_generator = NPCNameGenerator(self.save_system)
+        self.window_active = False  # To know if one of the window is active
 
     def update_camera(self):
         """Center camera on player with proper offset"""
@@ -77,11 +71,11 @@ class Game:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         # Open inventory
-                        if self.inv_button_rect.collidepoint(event.pos):
+                        if self.game_renderer.inv_button_rect.collidepoint(event.pos):
                             self.inventory_menu.toggle()
 
                         # Open quest menu
-                        elif self.quest_button_rect.collidepoint(event.pos):
+                        elif self.game_renderer.quest_button_rect.collidepoint(event.pos):
                             self.quest_menu.toggle()
 
                         # Attack
