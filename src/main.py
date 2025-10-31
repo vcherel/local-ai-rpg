@@ -5,7 +5,7 @@ import core.constants as c
 from core.save import SaveSystem
 from game.game import Game
 from llm.llm_request_queue import get_llm_queue
-from ui.main_menu import run_main_menu
+from ui.menus.main_menu import run_main_menu
 
 
 # Initialize Pygame

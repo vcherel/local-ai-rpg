@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import pygame
 
 import core.constants as c
 
-class ContextWindow:
+class ContextMenu:
     """Display the window that gives information about the world"""
     
     def __init__(self, screen):

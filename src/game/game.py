@@ -9,10 +9,10 @@ from game.world import World
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import get_llm_task_count
 from llm.name_generator import NPCNameGenerator
-from ui.context_window import ContextWindow
+from ui.menus.context_menu import ContextMenu
 from ui.game_renderer import GameRenderer
-from ui.inventory_menu import InventoryMenu
-from ui.quest_menu import QuestMenu
+from ui.menus.inventory_menu import InventoryMenu
+from ui.menus.quest_menu import QuestMenu
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -28,7 +28,7 @@ class Game:
         self.camera = Camera()
 
         # Context window
-        self.context_window = ContextWindow(self.screen)
+        self.context_window = ContextMenu(self.screen)
         self.inventory_menu = InventoryMenu(self.screen)
         self.quest_menu = QuestMenu(self.screen)
 

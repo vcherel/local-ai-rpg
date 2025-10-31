@@ -14,12 +14,12 @@ if TYPE_CHECKING:
     from game.entities.items import Item
     from core.save import SaveSystem
     from game.entities.player import Player
-    from ui.context_window import ContextWindow
+    from ui.menus.context_menu import ContextMenu
 
 
 class World:
     """Handle all world elements (NPCs, Monsters, Items...)"""
-    def __init__(self, save_system: SaveSystem, context_window: ContextWindow):        
+    def __init__(self, save_system: SaveSystem, context_window: ContextMenu):        
         # Terrain details
         self.floor_details = [
             (*random_coordinates(), random.choice(["stone", "flower"]))
