@@ -168,17 +168,11 @@ def generate_response_stream_queued(prompt, system_prompt, log):
     yield from get_llm_queue().generate_response_stream(prompt, system_prompt)
 
 def generate_response_internal(prompt, system_prompt):
-    if system_prompt:
-        formatted_prompt = (
-            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
-            f"<|im_start|>user\n{prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
-    else:
-        formatted_prompt = (
-            f"<|im_start|>user\n{prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
+    formatted_prompt = (
+        f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+        f"<|im_start|>user\n{prompt}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
     
     llm.reset()
     response = llm(
@@ -200,17 +194,11 @@ def generate_response_internal(prompt, system_prompt):
 
 CHAR_FILTER = str.maketrans('', '', '"«»')
 def generate_response_stream_internal(prompt, system_prompt):
-    if system_prompt:
-        formatted_prompt = (
-            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
-            f"<|im_start|>user\n{prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
-    else:
-        formatted_prompt = (
-            f"<|im_start|>user\n{prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
+    formatted_prompt = (
+        f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+        f"<|im_start|>user\n{prompt}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
     
     llm.reset()
     stream = llm(
