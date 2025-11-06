@@ -54,7 +54,7 @@ class World:
 @dataclass(frozen=True)
 class Colors:
     BLACK: tuple = (0, 0, 0)
-    GREEN: tuple = (34, 139, 34)
+    GREEN: tuple = (41, 179, 41)
     RED: tuple = (201, 30, 22)
     WHITE: tuple = (255, 255, 255)
     YELLOW: tuple = (255, 255, 0)

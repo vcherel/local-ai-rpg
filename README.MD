@@ -1,18 +1,75 @@
-## Prompt
+# Local AI RPG
 
-I am creating an open-world 2D RPG video game for my own use with Pygame. In this game, we spawn in a world without any objective, and every goal we will have in the game will be determined by AI. We encounter random characters, and we can talk with all of them with full liberty.
-The LLM I use is a quantied LFM2 model with 2.6B parameters.
+A 2D open-world RPG where **all AI runs locally on your machine**. No internet required. Talk freely with NPCs, get AI-generated quests, and explore a world where goals are created dynamically.
 
-## Commands
-Launch main.py :    CTRL + MAJ + B
+![Gameplay](assets/gameplay.png)
 
-Settings :          CTRL + ,
+## Features
 
-Fold all :          CTRL + K  ;  CTRL + 0
-Unfold all :        CTRL + K  ; CTRL + J
-Fold functions :   CTRL + K  ; CTRL + 2
+- AI-generated conversations with any NPC
+- Dynamic quest system (fetch quests + rewards)
+- Open world exploration
+- Enemies and combat
+- Runs on GTX 1650 and up
 
-See all shorcuts :  CTRL + K  ; CTRL + S
+## Quick Start
 
-### Install llama_cpp
-CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=75" pip install llama-cpp-python --force-reinstall --no-cache-dir
+### 1. Install Dependencies
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake python3.12-dev libomp-dev libopenblas-dev
+
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip setuptools wheel
+```
+
+### 2. Install llama-cpp-python
+
+**With NVIDIA GPU** (recommended):
+```bash
+CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=75" \
+pip install llama-cpp-python --force-reinstall --no-cache-dir
+```
+
+**CPU only** (slower):
+```bash
+pip install llama-cpp-python
+```
+
+**Note**: Change `75` to your GPU architecture ([find yours here](https://developer.nvidia.com/cuda-gpus)). Need CUDA drivers? [Install guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
+
+### 3. Install Pygame
+```bash
+pip install pygame
+```
+
+### 4. Download AI Model
+```bash
+mkdir -p models
+wget https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF/resolve/main/LFM2-2.6B-Q4_0.gguf -P models/
+```
+
+Or download manually from [HuggingFace](https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF) and put in `models/` folder.
+
+### 5. Run
+```bash
+source venv/bin/activate
+python3 main.py
+```
+
+## AI Model
+
+I used **LFM2 2.6B** (quantized to 4-bit, ~1.5GB) because it runs fast on a GTX 1650, enabling smooth real-time AI interactions. It delivers good conversation quality, generating coherent and context-aware dialogue.
+
+There are still huge limitations due to its size, but if desired, the model can be upgraded to a larger version for more advanced conversations and better understanding at the cost of higher VRAM and slower performance.
+
+
+## Current Status
+
+The game is still in development, and I plan to add these features soon:
+- ⏳ Combat system coming soon
+- ⏳ More types of quests, including dynamic and multi-step objectives
+- ⏳ Loot system with random drops and lootboxes
+- ⏳ Possibility to buy items directly from NPCs
+- ⏳ Random events appearing dynamically in the world
