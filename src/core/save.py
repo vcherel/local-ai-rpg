@@ -11,7 +11,7 @@ class SaveSystem:
         - coins: Player coins (int)
         - name: Next NPC name (str)
     """
-    def __init__(self, filename="./assets/save.json"):
+    def __init__(self, filename="./saves/save.json"):
         self.filename = filename
         self.data = self._load_all()
 
