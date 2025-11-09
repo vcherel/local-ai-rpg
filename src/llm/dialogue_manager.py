@@ -136,10 +136,6 @@ class DialogueManager:
             return
         self.ui.handle_key_scroll(direction, self.conversation, self.current_npc.name)
     
-    def _check_for_end_signal(self, text: str) -> bool:
-        """Check if the NPC wants to end the conversation"""
-        return '[FIN]' in text
-    
     def update(self):
         """Update dialogue state and process streaming responses"""
         if self.active and self.generator is not None:
@@ -158,23 +154,6 @@ class DialogueManager:
                     cleaned_content = last_msg["content"].split(":", 1)[-1].strip()
                     if len(cleaned_content) <= 25:
                         self.conversation.update_last_assistant_message(cleaned_content)
-                
-                if "[FIN]" in last_msg["content"]:
-                    cleaned_content = last_msg["content"].replace("[FIN]", "").strip()
-                    self.conversation.update_last_assistant_message(cleaned_content)
-
-                if last_msg and self._check_for_end_signal(last_msg["content"]):
-                    # Clean the message and add end marker
-                    cleaned_content = last_msg["content"].replace('[FIN]', '').strip()
-                    self.conversation.update_last_assistant_message(cleaned_content)
-                    
-                    # Add the "[Conversation Ended]" message
-                    self.conversation.add_system_message("[Conversation Ended]")
-                    self.conversation_ended = True
-                    self.ui.auto_scroll(self.conversation, self.current_npc.name)
-                    
-                    # Execute pending actions when conversation ends naturally
-                    self._execute_pending_actions()
     
     def close(self):
         """Close dialogue"""
