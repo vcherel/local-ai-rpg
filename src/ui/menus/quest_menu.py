@@ -4,22 +4,16 @@ import pygame
 from typing import TYPE_CHECKING
 
 import core.constants as c
+from ui.menus.base_menu import BaseMenu
 
 if TYPE_CHECKING:
     from llm.quest_system import QuestSystem
 
 
-# TODO: gather code from menus
-class QuestMenu:
+class QuestMenu(BaseMenu):
     """Quest Menu display"""
     def __init__(self, screen):
-        self.screen: pygame.Surface = screen
-        self.active = False
-
-        # Menu dimensions
-        self.width = 700
-        self.height = 550
-        self.padding = 20
+        super().__init__(screen, width=700, height=550)
         
         # Quest card settings
         self.card_width = self.width - 2 * self.padding
@@ -83,18 +77,13 @@ class QuestMenu:
             return
         
         # Calculate centered position
-        menu_x = (c.Screen.WIDTH - self.width) // 2
-        menu_y = (c.Screen.HEIGHT - self.height) // 2
+        menu_x, menu_y = self.get_centered_position()
         
         # Draw semi-transparent background overlay
-        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
-        overlay.fill(c.Colors.TRANSPARENT)
-        self.screen.blit(overlay, (0, 0))
+        self.draw_overlay()
         
         # Draw menu background
-        menu_surface = pygame.Surface((self.width, self.height))
-        menu_surface.fill(c.Colors.MENU_BACKGROUND)
-        pygame.draw.rect(menu_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
+        menu_surface = self.create_menu_surface()
         
         # Draw title
         title = c.Fonts.title.render("Quêtes Actives", True, c.Colors.WHITE)
@@ -160,14 +149,14 @@ class QuestMenu:
                 wrapped_lines = self._wrap_text(quest.description, max_width)
                 
                 for line in wrapped_lines[:2]:  # Show max 2 lines
-                    desc_surface = c.Fonts.medium.render(line, True, c.Colors.WHITE)
+                    desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
                     menu_surface.blit(desc_surface, (text_x, desc_y))
                     desc_y += 22
                 
                 # Item requirement
                 item_y = card_y + self.card_height - 25
                 item_text = f"Objet: {quest.item_name}"
-                item_surface = c.Fonts.medium.render(item_text, True, c.Colors.WHITE)
+                item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)
                 menu_surface.blit(item_surface, (text_x, item_y))
             
             # Draw scroll indicator if needed

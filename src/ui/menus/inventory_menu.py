@@ -4,23 +4,18 @@ import pygame
 from typing import TYPE_CHECKING
 
 import core.constants as c
+from ui.menus.base_menu import BaseMenu
 
 if TYPE_CHECKING:
     from game.entities.items import Item
     from game.entities.player import Player
 
 
-class InventoryMenu:
+class InventoryMenu(BaseMenu):
     """Inventoy Menu display"""
 
     def __init__(self, screen):
-        self.screen: pygame.Surface = screen
-        self.active = False
-
-        # Menu dimensions
-        self.width = 600
-        self.height = 500
-        self.padding = 20
+        super().__init__(screen, width=600, height=500)
 
         # Grid settings
         self.grid_cols = 6
@@ -87,18 +82,13 @@ class InventoryMenu:
             return
         
         # Calculate centered position
-        menu_x = (c.Screen.WIDTH - self.width) // 2
-        menu_y = (c.Screen.HEIGHT - self.height) // 2
+        menu_x, menu_y = self.get_centered_position()
         
         # Draw semi-transparent background overlay
-        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
-        overlay.fill(c.Colors.TRANSPARENT)
-        self.screen.blit(overlay, (0, 0))
+        self.draw_overlay()
         
         # Draw menu background
-        menu_surface = pygame.Surface((self.width, self.height))
-        menu_surface.fill((50, 50, 50))
-        pygame.draw.rect(menu_surface, c.Colors.WHITE, (0, 0, self.width, self.height), 3)
+        menu_surface = self.create_menu_surface()
         
         # Draw title
         title = c.Fonts.title.render("Inventaire", True, c.Colors.WHITE)
