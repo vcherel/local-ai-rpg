@@ -46,10 +46,13 @@ class World:
             "Chaque monde doit contenir un détail original qui peut servir de point de départ pour des quêtes."
         )
         prompt = (
-            "En une seule phrase très courte, décris un monde RPG avec un ou élément intéressant pour des quêtes."
+            "En une seule phrase très courte, décris un monde RPG en commençant par 'Le jeu se déroule...' "
+            "La phrase doit contenir un détail original qui peut servir de point de départ pour des aventures."
         )
         self.context = generate_response_queued(prompt, system_prompt, "Context generation")
+        print(f"~~~ Generated this context: {self.context}")
         self.save_system.update("context", self.context)
+        
         self.context_window.toggle(self.context)
 
     def talk_npc(self, player: Player):
