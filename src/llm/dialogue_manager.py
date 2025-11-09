@@ -39,7 +39,10 @@ class DialogueManager:
     
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
         """Build the system prompt for the entire conversation"""
-        system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG avec ce contexte : {context}. "
+        system_prompt = (
+            f"Tu es {npc.name}, un PNJ dans un RPG avec ce contexte : {context}. "
+            f"Le joueur vient te parler."
+            )
         
         if npc.has_active_quest:
             quest = npc.quest
@@ -58,16 +61,13 @@ class DialogueManager:
                     system_prompt += "Le joueur ne l'a pas encore trouvé. "
         else:
             system_prompt += (
-                "Tu peux avoir des besoins, des problèmes, ou des requêtes. "
-                "Si le joueur te le demande, ou si cela émerge naturellement de la conversation, "
-                "tu peux lui demander de récupérer un objet spécifique pour t'aider. "
-                "Tu peux aussi n'avoir aucune quête à donner. "
+                "Tu peux avoir des besoins ou des problèmes. Le joueur peux t'aider en allant récuper un objet spécifique. "
+                "Tu ne peux pas participer toi même à ces quêtes (invente une excuse si besoin, le joueur ne dois pas le savoir) ! " 
+                "Tu peux aussi simplement vouloir discuter. "
             )
         
         system_prompt += (
-            "Réponds naturellement en une ou deux phrases courtes et continue la conversation. "
-            "Ne termine jamais un message par '[FIN]' à moins que le joueur dise explicitement au revoir. "
-            "Si le joueur dit au revoir, ajoute '[FIN]' à la fin de ton message."
+            "Réponds naturellement aux messages en restant bien dans le contexte de la conversation en une phrase courte."
         )
 
         return system_prompt
@@ -97,7 +97,7 @@ class DialogueManager:
         self.pending_quest_analysis = False
         
         # Start conversation with initial greeting
-        initial_prompt = "Le joueur s'approche de toi. Salue-le."
+        initial_prompt = "Joueur: Salut !"
         self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
 
     def handle_event(self, event, npc_name_generator: NPCNameGenerator):
