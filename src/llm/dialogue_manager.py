@@ -97,7 +97,7 @@ class DialogueManager:
         self.pending_quest_analysis = False
         
         # Start conversation with initial greeting
-        initial_prompt = "Joueur: Salut !"
+        initial_prompt = "Joueur: Salut !\nPNJ:"
         self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
 
     def handle_event(self, event, npc_name_generator: NPCNameGenerator):
@@ -210,7 +210,7 @@ class DialogueManager:
         conversation_text = self.conversation.format_for_prompt()
         conversation_text += f"Joueur: {message}"
         
-        self.generator = generate_response_stream_queued(conversation_text, self.system_prompt, "Continuing conversation")
+        self.generator = generate_response_stream_queued(conversation_text + '\nPNJ:', self.system_prompt, "Continuing conversation")
     
     def _execute_quest_analysis(self):
         """Analyze conversation for quest in background thread"""
