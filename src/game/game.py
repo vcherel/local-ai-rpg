@@ -127,10 +127,13 @@ class Game:
                 self.player.move(self.camera.get_pos(), dt)
                 self.update_camera()
                 self.world.update(self.player, dt)
+
+            # We want the least amount of computations possible when dialogue manager is opened
+            if not self.dialogue_manager.active:
+                self.game_renderer.draw_world(self.camera, self.world, self.player)
+                self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
             
             # Draw and update menus
-            self.game_renderer.draw_world(self.camera, self.world, self.player)
-            self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
             self.dialogue_manager.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)
@@ -147,6 +150,11 @@ class Game:
                 return  # Exit game loop and return to main menu
 
             pygame.display.flip()
-            self.clock.tick(60)
+
+            # Increase fps when we are typing
+            if self.dialogue_manager.active:
+                self.clock.tick(120)
+            else:
+                self.clock.tick(60)
 
         self.save_data()
