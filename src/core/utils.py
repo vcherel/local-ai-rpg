@@ -27,10 +27,6 @@ class ConversationHistory:
     def add_assistant_message(self, content: str):
         """Add an assistant message to history"""
         self.messages.append({"role": "assistant", "content": content})
-
-    def add_system_message(self, content: str):
-        """Add a system message to history"""
-        self.messages.append({"role": "system", "content": content})
     
     def update_last_assistant_message(self, content: str):
         """Update the last assistant message (for streaming)"""
