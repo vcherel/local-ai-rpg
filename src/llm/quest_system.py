@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import List, TYPE_CHECKING
 
-from core.utils import parse_response, random_coordinates
+from core.utils import parse_response_quest_analysis, random_coordinates
 from game.entities.items import Item
 from game.quest import Quest
 from llm.llm_request_queue import generate_response_queued
@@ -40,7 +40,7 @@ class QuestSystem:
         )
         
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
-        return parse_response(response)
+        return parse_response_quest_analysis(response)
     
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict):
         """Create and register a quest item based on analysis"""

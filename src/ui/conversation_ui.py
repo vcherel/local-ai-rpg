@@ -35,7 +35,7 @@ class ConversationUI:
             self.user_input += event.unicode
         return None
     
-    def handle_scroll(self, direction: int, history: ConversationHistory, npc_name: str):
+    def handle_key_scroll(self, direction: int, history: ConversationHistory, npc_name: str):
         """Handle arrow key scrolling (1 for up, -1 for down)"""
         scroll_amount = -self.line_height * direction
         total_height = self._calculate_total_height(history.messages, npc_name)
