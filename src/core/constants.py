@@ -5,9 +5,8 @@ from dataclasses import dataclass
 class Screen:
     WIDTH: int = 1800
     HEIGHT: int = 900
-    DELTA_Y: int = 0  # Distance between center and player
     ORIGIN_X: int = WIDTH // 2
-    ORIGIN_Y: int = HEIGHT // 2 + DELTA_Y
+    ORIGIN_Y: int = HEIGHT // 2
 
 
 @dataclass(frozen=True)
