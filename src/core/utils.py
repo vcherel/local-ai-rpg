@@ -61,7 +61,8 @@ class ConversationHistory:
                 conversation_text += f"PNJ: {msg['content']}\n"
         return conversation_text
 
-def parse_response(response):
+def parse_response_quest_analysis(response):
+    """Parse the JSON from quest analysis"""
     try:
         response = response.strip()
         match = re.search(r"\{.*\}", response, re.DOTALL)

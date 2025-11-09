@@ -134,7 +134,7 @@ class DialogueManager:
         """Handle scroll input"""
         if not self.active:
             return
-        self.ui.handle_scroll(direction, self.conversation, self.current_npc.name)
+        self.ui.handle_key_scroll(direction, self.conversation, self.current_npc.name)
     
     def _check_for_end_signal(self, text: str) -> bool:
         """Check if the NPC wants to end the conversation"""

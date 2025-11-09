@@ -43,7 +43,7 @@ class Game:
         # Dialogue manager
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player)
         self.npc_name_generator = NPCNameGenerator(self.save_system)
-        self.window_active = False  # To know if one of the window is active
+        self.active_menu = False  # To know if one of the window is active
 
     def update_camera(self):
         """Center camera on player with proper offset"""
@@ -67,7 +67,7 @@ class Game:
             if self.quest_menu.handle_event(event, self.dialogue_manager.quest_system):
                 return True
             
-            if not self.window_active:
+            if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         # Open inventory
@@ -115,14 +115,14 @@ class Game:
         last_save_time = pygame.time.get_ticks()
         
         while running:
-            self.window_active = self.context_window.active or self.inventory_menu.active or self.dialogue_manager.active
+            self.active_menu = self.context_window.active or self.inventory_menu.active or self.dialogue_manager.active
 
             running = self.handle_input()
             if not running:
                 break
             
             # Move the world
-            if not self.window_active:
+            if not self.active_menu:
                 dt = self.clock.get_time()
                 self.player.move(self.camera.get_pos(), dt)
                 self.update_camera()
