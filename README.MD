@@ -32,12 +32,12 @@ CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE
 pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
+**Note**: Change `75` to your GPU architecture ([find yours here](https://developer.nvidia.com/cuda-gpus)). Need CUDA drivers? [Install guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
+
 **CPU only** (slower):
 ```bash
 pip install llama-cpp-python
 ```
-
-**Note**: Change `75` to your GPU architecture ([find yours here](https://developer.nvidia.com/cuda-gpus)). Need CUDA drivers? [Install guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
 
 ### 3. Install Pygame
 ```bash
