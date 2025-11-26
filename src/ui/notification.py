@@ -5,7 +5,7 @@ from game.quest import Quest
 
 class QuestNotification:
     def __init__(self, screen):
-        self.screen = screen
+        self.screen: pygame.Surface = screen
         self.active = False
         self.quest = None
         self.start_time = 0
@@ -76,6 +76,29 @@ class QuestNotification:
             self.active = False
             return
         
+        # Calculate required width based on text content
+        title_text = f"Nouvelle quête de {self.quest.npc_name}"
+        title_width = c.Fonts.title.size(title_text)[0]
+        
+        npc_text = f"Objet: {self.quest.item_name}"
+        npc_width = c.Fonts.button.size(npc_text)[0]
+        
+        # Calculate width for description (max 2 lines)
+        max_desc_width = 0
+        max_width = 1000  # Maximum width to prevent overly wide notifications
+        desc_lines = self._wrap_text(self.quest.description, max_width - 2 * self.padding, c.Fonts.text)
+        for line in desc_lines[:2]:
+            line_width = c.Fonts.text.size(line)[0]
+            max_desc_width = max(max_desc_width, line_width)
+        
+        # Determine the required width
+        required_width = max(title_width, npc_width, max_desc_width) + 2 * self.padding
+        required_width = min(required_width, max_width)  # Don't exceed max width
+        
+        # Update width if changed
+        if required_width != self.width:
+            self.width = required_width
+        
         # Get animated position
         x = self._get_current_x()
         y = 20
@@ -86,12 +109,10 @@ class QuestNotification:
         pygame.draw.rect(surface, c.Colors.BORDER, (0, 0, self.width, self.height), 3)
         
         # Title
-        title = c.Fonts.title.render(f"Nouvelle quête de {self.quest.npc_name}", True, c.Colors.YELLOW)
+        title = c.Fonts.title.render(title_text, True, c.Colors.YELLOW)
         surface.blit(title, (self.padding, self.padding))
         
         # Description (wrapped)
-        max_width = self.width - 2 * self.padding
-        desc_lines = self._wrap_text(self.quest.description, max_width, c.Fonts.text)
         desc_y = self.padding + 65
         for line in desc_lines[:2]:  # Max 2 lines
             desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
@@ -99,7 +120,6 @@ class QuestNotification:
             desc_y += 20
 
         # NPC and item
-        npc_text = f"Objet: {self.quest.item_name}"
         npc_surface = c.Fonts.button.render(npc_text, True, c.Colors.WHITE)
         surface.blit(npc_surface, (self.padding, self.padding + 35))
         
