@@ -115,7 +115,7 @@ class Game:
         last_save_time = pygame.time.get_ticks()
         
         while running:
-            self.active_menu = self.context_window.active or self.inventory_menu.active or self.dialogue_manager.active
+            self.active_menu = self.context_window.active or self.dialogue_manager.active or  self.quest_menu.active or self.inventory_menu.active
 
             running = self.handle_input()
             if not running:
@@ -154,7 +154,7 @@ class Game:
 
             # Increase fps when we are typing
             if self.dialogue_manager.active:
-                self.clock.tick(120)
+                self.clock.tick(180)
             else:
                 self.clock.tick(60)
 
