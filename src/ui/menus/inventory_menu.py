@@ -24,9 +24,6 @@ class InventoryMenu(BaseMenu):
         self.cell_padding = 10
         self.hovered_slot = None
         
-    def toggle(self):
-        self.active = not self.active
-        
     def close(self):
         self.active = False
         self.hovered_slot = None

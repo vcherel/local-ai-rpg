@@ -9,6 +9,7 @@ class BaseMenu:
     def __init__(self, screen: pygame.Surface, width: int, height: int):
         self.screen = screen
         self.active = False
+        self.just_active = False
         self.width = width
         self.height = height
         self.padding = 20
@@ -16,6 +17,7 @@ class BaseMenu:
     def toggle(self):
         """Toggle menu visibility"""
         self.active = not self.active
+        self.just_active = True
     
     def close(self):
         """Close the menu"""
@@ -29,9 +31,12 @@ class BaseMenu:
     
     def draw_overlay(self):
         """Draw semi-transparent dark overlay behind menu"""
-        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
-        overlay.fill(c.Colors.TRANSPARENT)
-        self.screen.blit(overlay, (0, 0))
+        if self.just_active:
+            print("DRAW OVERLAY")
+            overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
+            overlay.fill(c.Colors.TRANSPARENT)
+            self.screen.blit(overlay, (0, 0))
+            self.just_active = False
     
     def create_menu_surface(self) -> pygame.Surface:
         """Create menu background surface with border"""
