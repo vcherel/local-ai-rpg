@@ -150,3 +150,7 @@ class GameRenderer:
         for npc in npcs:
             if (npc.has_active_quest and npc.quest.item in player.inventory):
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
+
+    def draw_fps(self, fps):
+        fps_text = c.Fonts.small.render(f"FPS: {int(fps)}", True, c.Colors.MENU_BACKGROUND)
+        self.screen.blit(fps_text, (self.screen.get_width() - 75, self.screen.get_height() - 30))
