@@ -4,22 +4,24 @@ import core.constants as c
 from game.quest import Quest
 
 class QuestNotification:
-    def __init__(self, screen):
+    def __init__(self, screen: pygame.Surface):
         self.screen: pygame.Surface = screen
         self.active = False
         self.quest = None
-        self.start_time = 0
-        self.duration = 5000  # 5 seconds
-        
+
         # Dimensions
         self.width = 1000
         self.height = 150
         self.padding = 15
-        
-        # Animation
-        self.slide_duration = 300  # ms
+
+        # Position
         self.target_x = 20
         self.start_x = -self.width
+
+        # Animation
+        self.start_time = 0
+        self.duration = 5000  # 5 seconds
+        self.slide_duration = 300  # ms
         
     def show(self, quest: Quest):
         """Trigger notification for new quest"""
@@ -43,7 +45,7 @@ class QuestNotification:
             # Static
             return self.target_x
     
-    def _wrap_text(self, text, max_width, font):
+    def _wrap_text(self, text: str, max_width, font: pygame.font.Font):
         """Wrap text to fit width"""
         words = text.split(' ')
         lines = []
@@ -85,7 +87,7 @@ class QuestNotification:
         
         # Calculate width for description (max 2 lines)
         max_desc_width = 0
-        max_width = 1000  # Maximum width to prevent overly wide notifications
+        max_width = 2000  # Maximum width to prevent overly wide notifications
         desc_lines = self._wrap_text(self.quest.description, max_width - 2 * self.padding, c.Fonts.text)
         for line in desc_lines[:2]:
             line_width = c.Fonts.text.size(line)[0]
@@ -101,7 +103,7 @@ class QuestNotification:
         
         # Get animated position
         x = self._get_current_x()
-        y = 20
+        y = 120
         
         # Create notification surface
         surface = pygame.Surface((self.width, self.height))
