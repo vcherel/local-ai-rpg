@@ -144,7 +144,7 @@ class QuestMenu(BaseMenu):
                 menu_surface.blit(npc_text, (text_x, text_y))
                 
                 # Quest description (wrapped if too long)
-                desc_y = text_y + 30
+                desc_y = text_y + 40
                 max_width = self.card_width - 30
                 wrapped_lines = self._wrap_text(quest.description, max_width)
                 
@@ -154,7 +154,7 @@ class QuestMenu(BaseMenu):
                     desc_y += 22
                 
                 # Item requirement
-                item_y = card_y + self.card_height - 25
+                item_y = card_y + self.card_height - 30
                 item_text = f"Objet: {quest.item_name}"
                 item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)
                 menu_surface.blit(item_surface, (text_x, item_y))
