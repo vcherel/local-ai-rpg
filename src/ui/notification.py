@@ -20,7 +20,7 @@ class QuestNotification:
 
         # Animation
         self.start_time = 0
-        self.duration = 5000  # 5 seconds
+        self.duration = 8000  # 8 seconds
         self.slide_duration = 300  # ms
         
     def show(self, quest: Quest):
@@ -89,6 +89,8 @@ class QuestNotification:
         max_desc_width = 0
         max_width = 2000  # Maximum width to prevent overly wide notifications
         desc_lines = self._wrap_text(self.quest.description, max_width - 2 * self.padding, c.Fonts.text)
+        desc_line_height = 20 # Constant for description line height
+        
         for line in desc_lines[:2]:
             line_width = c.Fonts.text.size(line)[0]
             max_desc_width = max(max_desc_width, line_width)
@@ -115,15 +117,16 @@ class QuestNotification:
         surface.blit(title, (self.padding, self.padding))
         
         # Description (wrapped)
-        desc_y = self.padding + 65
+        desc_y = self.padding + c.Fonts.title.size(title_text)[1] + 10
         for line in desc_lines[:2]:  # Max 2 lines
             desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
             surface.blit(desc_surface, (self.padding, desc_y))
-            desc_y += 20
-
+            desc_y += desc_line_height
+            
         # NPC and item
+        npc_y = desc_y + 20
         npc_surface = c.Fonts.button.render(npc_text, True, c.Colors.WHITE)
-        surface.blit(npc_surface, (self.padding, self.padding + 35))
+        surface.blit(npc_surface, (self.padding, npc_y))
         
         # Blit to screen
         self.screen.blit(surface, (int(x), y))
