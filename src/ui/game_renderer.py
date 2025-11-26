@@ -153,4 +153,4 @@ class GameRenderer:
 
     def draw_fps(self, fps):
         fps_text = c.Fonts.small.render(f"FPS: {int(fps)}", True, c.Colors.MENU_BACKGROUND)
-        self.screen.blit(fps_text, (self.screen.get_width() - 75, self.screen.get_height() - 30))
+        self.screen.blit(fps_text, (self.screen.get_width() - 60, self.screen.get_height() - 20))
