@@ -140,6 +140,11 @@ class Game:
             self.quest_menu.draw(self.dialogue_manager.quest_system)
             self.context_window.draw()
 
+            # Show FPS
+            if not self.active_menu:
+                fps = self.clock.get_fps()
+                self.game_renderer.draw_fps(fps) 
+
             current_time = pygame.time.get_ticks()
             if current_time - last_save_time >= 300_000:
                 self.save_data()
