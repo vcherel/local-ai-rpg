@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 import threading
 import pygame
-from typing import TYPE_CHECKING
 
-from core.utils import ConversationHistory
-from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem
+from core.utils import ConversationHistory
 from ui.conversation_ui import ConversationUI
+from ui.notification import QuestNotification
+from llm.llm_request_queue import generate_response_stream_queued
 
 if TYPE_CHECKING:
+    from llm.name_generator import NPCNameGenerator
     from game.entities.npcs import NPC
     from game.world import World
-    from llm.name_generator import NPCNameGenerator
 
 
 class DialogueManager:
@@ -31,6 +32,7 @@ class DialogueManager:
         # Pending actions
         self.pending_quest_analysis = False
         self.pending_quest_completion = None  # Store NPC reference for completion
+        self.notification = QuestNotification(screen) # Notification for some actions
         
         # Components
         self.conversation = ConversationHistory()
@@ -194,10 +196,10 @@ class DialogueManager:
     
     def draw(self):
         """Draw the dialogue UI"""
-        self.update()
-
         if not self.active:
             return
+
+        self.update()
         self.ui.draw(self.current_npc.name, self.conversation)
     
     def _send_chat_message(self, message: str):
@@ -220,6 +222,10 @@ class DialogueManager:
             print(f"~~~ Generated these quest infos : {quest_info}")
             if quest_info['has_quest']:
                 self.quest_system.create_quest_from_analysis(self.current_npc, quest_info)
+                # Show notification
+                quest = self.current_npc.quest
+                if quest:
+                    self.notification.show(quest)
     
     def _execute_quest_completion(self, npc: NPC):
         """Complete quest: extract reward and clean up"""
