@@ -129,7 +129,7 @@ class Game:
                 self.world.update(self.player, dt)
 
             # We want the least amount of computations possible when dialogue manager is opened
-            if not self.dialogue_manager.active:
+            if not self.active_menu:
                 self.game_renderer.draw_world(self.camera, self.world, self.player)
                 self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
             

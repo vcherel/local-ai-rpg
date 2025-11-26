@@ -23,9 +23,6 @@ class QuestMenu(BaseMenu):
         self.scroll_offset = 0
         self.hovered_quest_index = None
         
-    def toggle(self):
-        self.active = not self.active
-        
     def close(self):
         self.active = False
         self.hovered_quest_index = None

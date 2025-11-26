@@ -16,8 +16,9 @@ class ContextMenu(BaseMenu):
     
     def toggle(self, context):
         """Set the context and show the window"""
+        super().toggle()
+
         self.context_text = context
-        self.active = True
         
         # Calculate dimensions based on text
         self._calculate_dimensions()
