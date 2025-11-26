@@ -135,6 +135,7 @@ class Game:
             
             # Draw and update menus
             self.dialogue_manager.draw()
+            self.dialogue_manager.notification.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)
             self.context_window.draw()
