@@ -12,7 +12,7 @@ class QuestNotification:
         self.duration = 5000  # 5 seconds
         
         # Dimensions
-        self.width = 400
+        self.width = 1000
         self.height = 150
         self.padding = 15
         
@@ -86,13 +86,8 @@ class QuestNotification:
         pygame.draw.rect(surface, c.Colors.BORDER, (0, 0, self.width, self.height), 3)
         
         # Title
-        title = c.Fonts.title.render("Nouvelle quête !", True, c.Colors.YELLOW)
+        title = c.Fonts.title.render(f"Nouvelle quête de {self.quest.npc_name}", True, c.Colors.YELLOW)
         surface.blit(title, (self.padding, self.padding))
-        
-        # NPC and item
-        npc_text = f"{self.quest.npc_name} te demande de récupérer {self.quest.item_name}"
-        npc_surface = c.Fonts.heading.render(npc_text, True, c.Colors.WHITE)
-        surface.blit(npc_surface, (self.padding, self.padding + 35))
         
         # Description (wrapped)
         max_width = self.width - 2 * self.padding
@@ -102,6 +97,11 @@ class QuestNotification:
             desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
             surface.blit(desc_surface, (self.padding, desc_y))
             desc_y += 20
+
+        # NPC and item
+        npc_text = f"Objet: {self.quest.item_name}"
+        npc_surface = c.Fonts.button.render(npc_text, True, c.Colors.WHITE)
+        surface.blit(npc_surface, (self.padding, self.padding + 35))
         
         # Blit to screen
         self.screen.blit(surface, (int(x), y))
