@@ -1,5 +1,7 @@
-import pygame
 from dataclasses import dataclass
+
+import pygame
+
 
 @dataclass(frozen=True)
 class Screen:
@@ -23,6 +25,7 @@ class Player:
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
+
 @dataclass(frozen=True)
 class Monster:
     SIZE: int = 25
@@ -31,6 +34,7 @@ class Monster:
     ATTACK_RANGE: int = 10
     DAMAGE: int = 1
     ATTACK_COOLDOWN: int = 1000
+
 
 @dataclass(frozen=True)
 class Entities:
@@ -64,7 +68,7 @@ class Colors:
     MENU_BACKGROUND: tuple = (50, 50, 50)
     BUTTON: tuple = (70, 70, 70)
     BORDER: tuple = (100, 100, 100)
-    BUTTON_HOVERED: tuple = (90, 90, 90) 
+    BUTTON_HOVERED: tuple = (90, 90, 90)
     BORDER_HOVERED: tuple = (255, 215, 0)
     TRANSPARENT: tuple = (0, 0, 0, 150)
 

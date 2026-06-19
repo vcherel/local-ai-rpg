@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import math
 import time
+from typing import TYPE_CHECKING, Optional
+
 import pygame
-from typing import Optional, TYPE_CHECKING
 
 import core.constants as c
 from core.utils import random_color
@@ -17,21 +18,21 @@ if TYPE_CHECKING:
 
 class NPC(Entity):
     """The NPCs we can talk with"""
+
     def __init__(self, x, y):
-        super().__init__(x, y, random_color(), c.Entities.NPC_SIZE,
-                         c.Entities.NPC_HP, c.Entities.NPC_HP)
+        super().__init__(x, y, random_color(), c.Entities.NPC_SIZE, c.Entities.NPC_HP, c.Entities.NPC_HP)
         self.name = None
         self.quest: Optional[Quest] = None
-    
+
     @property
     def has_active_quest(self):
         """Check if NPC has an active (non-completed) quest"""
         return self.quest is not None and not self.quest.is_completed
-    
+
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
             self.name = npc_name_generator.get_name()
-    
+
     def get_display_name(self) -> str:
         if self.name:
             return self.name
@@ -48,7 +49,7 @@ class NPC(Entity):
             self.orientation,
             bar_width=60,
             bar_height=8,
-            health_bar_offset=10
+            health_bar_offset=10,
         )
 
         # Quest indicator

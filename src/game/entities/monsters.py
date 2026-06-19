@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 class Monster(Entity):
     """The monsters we can fight"""
+
     def __init__(self, x, y):
         super().__init__(x, y, c.Colors.RED, c.Monster.SIZE, c.Monster.HP, c.Monster.HP)
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
@@ -27,7 +28,7 @@ class Monster(Entity):
 
             if dist < c.Monster.ATTACK_RANGE + c.Player.SIZE // 2:
                 return True
-        
+
         return False
 
     def move(self, player: Player, dt):
@@ -49,10 +50,10 @@ class Monster(Entity):
             hit = self.start_attack_anim(dist)
             if hit:
                 player.receive_damage(c.Monster.DAMAGE)
-            
+
         # Look at player
         self.orientation += math.pi / 2
-    
+
         # Attacking state
         self.update_attack_anim(dt)
 
@@ -69,5 +70,5 @@ class Monster(Entity):
             self.attack_hand,
             bar_width=60,
             bar_height=8,
-            health_bar_offset=10
+            health_bar_offset=10,
         )
