@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
-import pygame
 from typing import TYPE_CHECKING
+
+import pygame
 
 import core.constants as c
 from game.entities.entities import Entity
@@ -13,8 +14,11 @@ if TYPE_CHECKING:
 
 class Player(Entity):
     """The unique player of the game"""
+
     def __init__(self, save_system, coins):
-        super().__init__(c.World.WORLD_SIZE//2, c.World.WORLD_SIZE//2, c.Colors.PLAYER, c.Player.SIZE, c.Player.HP, c.Player.HP)
+        super().__init__(
+            c.World.WORLD_SIZE // 2, c.World.WORLD_SIZE // 2, c.Colors.PLAYER, c.Player.SIZE, c.Player.HP, c.Player.HP
+        )
 
         self.save_system: SaveSystem = save_system
         self.inventory = []
@@ -90,7 +94,7 @@ class Player(Entity):
             self.attack_hand,
             bar_width=800,
             bar_height=30,
-            health_bar_offset=360
+            health_bar_offset=360,
         )
 
         # Optional overlays
@@ -102,12 +106,14 @@ class Player(Entity):
             draw_circle(screen, c.World.DETECTION_RANGE, (0, 0, 255, 80))
 
 
-def draw_circle(screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_X, origin_y=c.Screen.ORIGIN_Y, orientation=None):
+def draw_circle(
+    screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_X, origin_y=c.Screen.ORIGIN_Y, orientation=None
+):
     if orientation is not None:
         # Calculate reach position
         origin_x = origin_x + math.sin(orientation) * radius
         origin_y = origin_y - math.cos(orientation) * radius
-                
+
     # Create translucent surface
     reach_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
     pygame.draw.circle(
@@ -115,8 +121,8 @@ def draw_circle(screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_
         color,
         (radius, radius),
         radius,
-        2  # thickness
+        2,  # thickness
     )
-                
+
     # Blit to main screen
     screen.blit(reach_surface, (origin_x - radius, origin_y - radius))

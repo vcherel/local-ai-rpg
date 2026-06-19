@@ -14,37 +14,38 @@ A 2D open-world RPG where **all AI runs locally on your machine**. No internet r
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Install system dependencies
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake python3.12-dev libomp-dev libopenblas-dev
-
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip setuptools wheel
 ```
 
-### 2. Install llama-cpp-python
+### 2. Install uv (if not already installed)
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 3. Install llama-cpp-python
 
 **With NVIDIA GPU** (recommended):
 ```bash
 CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=75" \
-pip install llama-cpp-python --force-reinstall --no-cache-dir
+uv pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
 **Note**: Change `75` to your GPU architecture ([find yours here](https://developer.nvidia.com/cuda-gpus)). Need CUDA drivers? [Install guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
 
 **CPU only** (slower):
 ```bash
-pip install llama-cpp-python
+uv pip install llama-cpp-python
 ```
 
-### 3. Install Pygame
+### 4. Install dependencies
 ```bash
-pip install pygame
+uv sync
 ```
 
-### 4. Download AI Model
+### 5. Download AI Model
 ```bash
 mkdir -p models
 wget https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF/resolve/main/LFM2-2.6B-Q4_0.gguf -P models/
@@ -52,10 +53,9 @@ wget https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF/resolve/main/LFM2-2.6B-Q4_0.
 
 Or download manually from [HuggingFace](https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF) and put in `models/` folder.
 
-### 5. Run
+### 6. Run
 ```bash
-source venv/bin/activate
-python3 main.py
+uv run python src/main.py
 ```
 
 ## AI Model

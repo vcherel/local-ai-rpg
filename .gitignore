@@ -1,6 +1,8 @@
 venv
+.venv
 __pycache__
 .vscode
 models
 private
 saves
+stats*

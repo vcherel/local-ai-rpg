@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from game.entities.items import Item
@@ -9,7 +9,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class Quest:
-    """Represents a quest given by an NPC"""
     npc_name: str
     description: str
     item_name: str
