@@ -7,8 +7,6 @@ import core.constants as c
 
 
 class Entity:
-    """Base class for all positioned entities in the world"""
-
     def __init__(self, x, y, color, size, hp, max_hp):
         self.x = x
         self.y = y
@@ -48,9 +46,6 @@ class Entity:
         pygame.draw.rect(screen, color, (x, y, width * ratio, height))
         pygame.draw.rect(screen, c.Colors.BORDER, (x, y, width, height), border_width)
 
-    def draw_character(self, screen, x, y, size, color, angle=0.0, attack_progress=0.0, attack_hand=None):
-        draw_human(screen, x, y, size, color, angle, attack_progress, attack_hand)
-
     def draw(
         self,
         screen,
@@ -65,11 +60,8 @@ class Entity:
         bar_height=8,
         health_bar_offset=10,
     ):
-        """Generic entity drawing (body + health bar)."""
-        # Character
-        self.draw_character(screen, x, y, size, color, angle, attack_progress, attack_hand)
+        draw_human(screen, x, y, size, color, angle, attack_progress, attack_hand)
 
-        # Health bar
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset
         border_width = 2
@@ -89,7 +81,6 @@ def draw_human(
     attack_progress: float = 0.0,
     attack_hand: str = None,
 ):
-    """Draw a character with body and arms, including attack animation."""
     border_thickness = 2
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
@@ -106,7 +97,6 @@ def draw_human(
     x_offset = extra_space + padding
     y_offset = padding
 
-    # Draw body with border
     pygame.draw.circle(
         char_surf,
         c.Colors.BLACK,
@@ -117,7 +107,6 @@ def draw_human(
         char_surf, color, (x_offset + size // 2 + border_thickness, y_offset + size // 2 + border_thickness), size // 2
     )
 
-    # Draw arms
     arm_y = y_offset + (size + border_thickness * 2) // 3.5
     distance_arm = 10
 
@@ -125,7 +114,6 @@ def draw_human(
         pygame.draw.circle(char_surf, c.Colors.BLACK, (cx, cy), arm_radius)
         pygame.draw.circle(char_surf, color, (cx, cy), arm_radius - border_thickness)
 
-    # Left arm
     left_arm_x = padding + arm_radius + distance_arm
     left_arm_y = arm_y
     if attack_hand == "left":
@@ -133,7 +121,6 @@ def draw_human(
         left_arm_y -= int(attack_progress * 15)
     draw_arm(left_arm_x, left_arm_y)
 
-    # Right arm
     right_arm_x = base_width + padding - arm_radius - distance_arm
     right_arm_y = arm_y
     if attack_hand == "right":
@@ -141,10 +128,8 @@ def draw_human(
         right_arm_y -= int(attack_progress * 15)
     draw_arm(right_arm_x, right_arm_y)
 
-    # Rotate if needed
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
 
-    # Blit to main surface
     rect = char_surf.get_rect(center=(x, y))
     surface.blit(char_surf, rect)

@@ -134,7 +134,7 @@ class DialogueManager:
 
                 last_msg = self.conversation.get_last_message()
 
-                # Clean up message formatting
+                # The model sometimes prefixes its reply with a speaker label; drop it
                 if ":" in last_msg["content"]:
                     cleaned_content = last_msg["content"].split(":", 1)[-1].strip()
                     if len(cleaned_content) <= 25:
@@ -205,5 +205,4 @@ class DialogueManager:
             reward = self.quest_system.extract_and_give_reward(last_msg["content"])
             npc.quest.reward_coins = reward
 
-        # Now complete the quest (removes items, marks as completed)
         self.quest_system.complete_quest(npc)

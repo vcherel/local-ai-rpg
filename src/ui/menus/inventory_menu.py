@@ -95,7 +95,6 @@ class InventoryMenu(BaseMenu):
         mouse_pos = pygame.mouse.get_pos()
         self.hovered_slot = self.get_slot_at_mouse(mouse_pos[0], mouse_pos[1], menu_x, menu_y)
 
-        # Group items by name and count them, keeping the item reference
         item_dict = {}
         for item in player.inventory:
             if item.name not in item_dict:
@@ -105,7 +104,7 @@ class InventoryMenu(BaseMenu):
         items_list = list(item_dict.values())
 
         grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
-        grid_start_x = (self.width - grid_width) // 2  # Center the grid horizontally
+        grid_start_x = (self.width - grid_width) // 2
         grid_start_y = self.padding + 100
 
         for row in range(self.grid_rows):

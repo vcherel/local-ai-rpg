@@ -20,10 +20,7 @@ class QuestSystem:
         self.active_quests: List[Quest] = []
 
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
-        """
-        Analyze conversation to detect if a quest was given.
-        Returns dict with: {has_quest: bool, quest_description: str, item_name: str}
-        """
+        """Returns {has_quest: bool, quest_description: str, item_name: str}"""
         system_prompt = (
             "Tu es un analyseur de conversation pour un jeu RPG. "
             "Analyse la conversation et détermine si le PNJ a donné une quête au joueur. "
@@ -62,14 +59,13 @@ class QuestSystem:
         self.active_quests.append(quest)
 
     def extract_and_give_reward(self, last_message: str) -> int:
-        # First try direct number extraction
         match = re.search(r"\b(\d+)\b", last_message)
         if match:
             reward = int(match.group(1))
             self.player.add_coins(reward)
             return reward
 
-        # Fall back to LLM extraction
+        # No plain number in the text, ask the model to extract it
         system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
         prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
         reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
