@@ -34,7 +34,9 @@ class Player(Entity):
 
         actual_speed = c.Player.RUN_SPEED if keys[pygame.K_LSHIFT] else c.Player.SPEED
 
-        if keys[pygame.K_z] or keys[pygame.K_s]:
+        forward = keys[pygame.K_z] or keys[pygame.K_w]
+
+        if forward or keys[pygame.K_s]:
             mouse_x, mouse_y = pygame.mouse.get_pos()
 
             world_mouse_x = mouse_x - c.Screen.ORIGIN_X + camera_pos[0]
@@ -48,7 +50,7 @@ class Player(Entity):
                 dx /= dist
                 dy /= dist
 
-            speed = actual_speed if keys[pygame.K_z] else -actual_speed / 1.5
+            speed = actual_speed if forward else -actual_speed / 1.5
             self.x += dx * speed
             self.y += dy * speed
 

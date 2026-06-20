@@ -12,6 +12,7 @@ from llm.llm_request_queue import get_llm_task_count
 from llm.name_generator import NPCNameGenerator
 from ui.game_renderer import GameRenderer
 from ui.menus.context_menu import ContextMenu
+from ui.menus.game_over import run_game_over
 from ui.menus.inventory_menu import InventoryMenu
 from ui.menus.quest_menu import QuestMenu
 
@@ -140,6 +141,7 @@ class Game:
 
             if self.player.hp <= 0:
                 self.save_data()
+                run_game_over(self.screen, self.clock)
                 return
 
             pygame.display.flip()
