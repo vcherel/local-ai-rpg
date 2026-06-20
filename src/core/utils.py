@@ -34,9 +34,6 @@ class ConversationHistory:
         else:
             self.add_assistant_message(content)
 
-    def get_recent_messages(self, limit: int = 10):
-        return self.messages[-limit:]
-
     def get_last_message(self):
         return self.messages[-1] if self.messages else None
 

@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 
 class NPC(Entity):
-    """The NPCs we can talk with"""
-
     def __init__(self, x, y):
         super().__init__(x, y, random_color(), c.Entities.NPC_SIZE, c.Entities.NPC_HP, c.Entities.NPC_HP)
         self.name = None
@@ -26,17 +24,11 @@ class NPC(Entity):
 
     @property
     def has_active_quest(self):
-        """Check if NPC has an active (non-completed) quest"""
         return self.quest is not None and not self.quest.is_completed
 
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
             self.name = npc_name_generator.get_name()
-
-    def get_display_name(self) -> str:
-        if self.name:
-            return self.name
-        return ""
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
@@ -52,7 +44,6 @@ class NPC(Entity):
             health_bar_offset=10,
         )
 
-        # Quest indicator
         if self.has_active_quest:
             font = pygame.font.Font(None, 45)
             bob_offset = math.sin(time.time() * 4) * 4
@@ -60,8 +51,7 @@ class NPC(Entity):
             text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
 
-        # Name label
-        display_name = self.get_display_name()
+        display_name = self.name or ""
         if display_name:
             name_surface = c.Fonts.small.render(display_name, True, c.Colors.WHITE)
             name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30))

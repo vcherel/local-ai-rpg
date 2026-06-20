@@ -52,7 +52,6 @@ class World:
 
     def talk_npc(self, player: Player):
         if self.context is None:
-            # Context not ready yet, skip
             return
 
         pos = player.get_pos(c.Player.INTERACTION_DISTANCE)
@@ -75,7 +74,6 @@ class World:
                 if npc.receive_damage(c.Player.ATTACK_DAMAGE):
                     self.npcs.remove(npc)
                     return
-        return
 
     def pickup_item(self, player: Player):
         for item in self.items:

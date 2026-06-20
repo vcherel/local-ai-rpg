@@ -38,7 +38,7 @@ class Game:
 
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player)
         self.npc_name_generator = NPCNameGenerator(self.save_system)
-        self.active_menu = False  # To know if one of the window is active
+        self.active_menu = False
 
     def update_camera(self):
         self.camera.set_pos(self.player.get_pos())
@@ -74,13 +74,10 @@ class Game:
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
-                        # First we pick item
                         item: Item = self.world.pickup_item(self.player)
                         if item is not None:
                             item.picked_up = True
                             self.player.inventory.append(item)
-
-                        # Then we talk if we did not pick item
                         else:
                             npc = self.world.talk_npc(self.player)
                             if npc is not None:
@@ -143,7 +140,7 @@ class Game:
 
             if self.player.hp <= 0:
                 self.save_data()
-                return  # Exit game loop and return to main menu
+                return
 
             pygame.display.flip()
 

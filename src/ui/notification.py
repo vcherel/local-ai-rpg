@@ -30,15 +30,12 @@ class QuestNotification:
         elapsed = pygame.time.get_ticks() - self.start_time
 
         if elapsed < self.slide_duration:
-            # Slide in
             progress = elapsed / self.slide_duration
             return self.start_x + (self.target_x - self.start_x) * progress
         elif elapsed > self.duration - self.slide_duration:
-            # Slide out
             progress = (elapsed - (self.duration - self.slide_duration)) / self.slide_duration
             return self.target_x + (self.start_x - self.target_x) * progress
         else:
-            # Static
             return self.target_x
 
     def _wrap_text(self, text: str, max_width, font: pygame.font.Font):
@@ -103,7 +100,7 @@ class QuestNotification:
         surface.blit(title, (self.padding, self.padding))
 
         desc_y = self.padding + c.Fonts.title.size(title_text)[1] + 10
-        for line in desc_lines[:2]:  # Max 2 lines
+        for line in desc_lines[:2]:
             desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
             surface.blit(desc_surface, (self.padding, desc_y))
             desc_y += desc_line_height

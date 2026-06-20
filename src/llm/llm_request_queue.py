@@ -29,14 +29,6 @@ class LLMRequestQueue:
         with self.lock:
             return self.active_requests + self.queued_requests
 
-    def get_queue_status(self):
-        with self.lock:
-            return {
-                "active": self.active_requests,
-                "queued": self.queued_requests,
-                "total": self.active_requests + self.queued_requests,
-            }
-
     def _process_queue(self):
         while self.running:
             try:
@@ -101,7 +93,6 @@ class LLMRequestQueue:
             yield data
 
 
-# Global instance
 llm_queue = None
 llm = None
 _init_lock = threading.Lock()
