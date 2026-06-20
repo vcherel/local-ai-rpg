@@ -48,10 +48,10 @@ uv sync
 ### 5. Download AI Model
 ```bash
 mkdir -p models
-wget https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF/resolve/main/LFM2-2.6B-Q4_0.gguf -P models/
+wget https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf -P models/
 ```
 
-Or download manually from [HuggingFace](https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF) and put in `models/` folder.
+Or download manually from [HuggingFace](https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF) and put in `models/` folder.
 
 ### 6. Run
 ```bash
@@ -60,7 +60,7 @@ uv run python src/main.py
 
 ## AI Model
 
-I used **LFM2 2.6B** (quantized to 4-bit, ~1.5GB) because it runs fast on a GTX 1650, enabling smooth real-time AI interactions. It delivers good conversation quality, generating coherent and context-aware dialogue.
+I used **Qwen2.5-3B-Instruct** (quantized to 4-bit, ~1.9GB) because it fits fully in the GTX 1650's 4GB VRAM while delivering strong instruction-following and coherent, context-aware dialogue. It uses the same ChatML prompt format as the previous model, so it is a drop-in swap.
 
 There are still huge limitations due to its size, but if desired, the model can be upgraded to a larger version for more advanced conversations and better understanding at the cost of higher VRAM and slower performance.
 
