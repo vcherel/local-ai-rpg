@@ -26,7 +26,6 @@ class BaseMenu:
 
     def draw_overlay(self):
         if self.just_active:
-            print("DRAW OVERLAY")
             overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
             overlay.fill(c.Colors.TRANSPARENT)
             self.screen.blit(overlay, (0, 0))
