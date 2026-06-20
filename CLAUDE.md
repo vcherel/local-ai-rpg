@@ -8,7 +8,7 @@ A 2D open-world RPG where all AI runs locally. NPCs generate dialogue via an LLM
 uv run python src/main.py
 ```
 
-Requires CUDA drivers and the model at `models/LFM2-2.6B-Q4_0.gguf`. See README for setup.
+Requires CUDA drivers and the model at `models/Qwen2.5-3B-Instruct-Q4_K_M.gguf`. See README for setup.
 
 ## Key files
 
