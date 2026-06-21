@@ -58,11 +58,11 @@ class GameRenderer:
 
     def draw_ui(self, nb_items, nb_coins, active_task_count):
         mouse_pos = pygame.mouse.get_pos()
-        self._draw_button(self.inv_button_rect, "Inventaire", mouse_pos)
-        self._draw_button(self.quest_button_rect, "Quêtes", mouse_pos)
+        self._draw_button(self.inv_button_rect, "Inventory", mouse_pos)
+        self._draw_button(self.quest_button_rect, "Quests", mouse_pos)
 
-        coins_text = f"Pièces: {nb_coins}"
-        objects_text = f"Objets: {nb_items}"
+        coins_text = f"Coins: {nb_coins}"
+        objects_text = f"Items: {nb_items}"
         coins_surface = c.Fonts.text.render(coins_text, True, c.Colors.WHITE)
         objects_surface = c.Fonts.text.render(objects_text, True, c.Colors.WHITE)
         self.screen.blit(coins_surface, (12, 55))

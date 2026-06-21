@@ -68,10 +68,10 @@ class QuestNotification:
             self.active = False
             return
 
-        title_text = f"Nouvelle quête de {self.quest.npc_name}"
+        title_text = f"New quest from {self.quest.npc_name}"
         title_width = c.Fonts.title.size(title_text)[0]
 
-        npc_text = f"Objet: {self.quest.item_name}"
+        npc_text = f"Item: {self.quest.item_name}"
         npc_width = c.Fonts.button.size(npc_text)[0]
 
         max_desc_width = 0

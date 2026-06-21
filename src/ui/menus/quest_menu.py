@@ -76,19 +76,19 @@ class QuestMenu(BaseMenu):
 
         menu_surface = self.create_menu_surface()
 
-        title = c.Fonts.title.render("Quêtes Actives", True, c.Colors.WHITE)
+        title = c.Fonts.title.render("Active Quests", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         menu_surface.blit(title, (title_x, self.padding))
 
         quest_count = len(quest_system.active_quests)
-        count_text = c.Fonts.text.render(f"Quêtes: {quest_count}", True, c.Colors.YELLOW)
+        count_text = c.Fonts.text.render(f"Quests: {quest_count}", True, c.Colors.YELLOW)
         menu_surface.blit(count_text, (self.padding, self.padding + 50))
 
         mouse_pos = pygame.mouse.get_pos()
         self.hovered_quest_index = self.get_quest_at_mouse(mouse_pos[0], mouse_pos[1], menu_x, menu_y, quest_count)
 
         if quest_count == 0:
-            no_quests_text = c.Fonts.heading.render("Aucune quête active", True, c.Colors.WHITE)
+            no_quests_text = c.Fonts.heading.render("No active quests", True, c.Colors.WHITE)
             text_x = (self.width - no_quests_text.get_width()) // 2
             text_y = (self.height - no_quests_text.get_height()) // 2
             menu_surface.blit(no_quests_text, (text_x, text_y))
@@ -131,7 +131,7 @@ class QuestMenu(BaseMenu):
                     desc_y += 22
 
                 item_y = card_y + self.card_height - 30
-                item_text = f"Objet: {quest.item_name}"
+                item_text = f"Item: {quest.item_name}"
                 item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)
                 menu_surface.blit(item_surface, (text_x, item_y))
 

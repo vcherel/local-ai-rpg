@@ -44,9 +44,9 @@ class ConversationHistory:
         conversation_text = ""
         for msg in self.messages:
             if msg["role"] == "user":
-                conversation_text += f"Joueur: {msg['content']}\n"
+                conversation_text += f"Player: {msg['content']}\n"
             else:
-                conversation_text += f"PNJ: {msg['content']}\n"
+                conversation_text += f"NPC: {msg['content']}\n"
         return conversation_text
 
 

@@ -42,7 +42,7 @@ def run_game_over(screen, clock):
         pygame.draw.rect(screen, color, menu_button)
         pygame.draw.rect(screen, border_color, menu_button, 3)
 
-        label = c.Fonts.title.render("Menu principal", True, c.Colors.WHITE)
+        label = c.Fonts.title.render("Main Menu", True, c.Colors.WHITE)
         screen.blit(label, label.get_rect(center=menu_button.center))
 
         pygame.display.flip()

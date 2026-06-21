@@ -22,17 +22,17 @@ class QuestSystem:
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
         """Returns {has_quest: bool, quest_description: str, item_name: str}"""
         system_prompt = (
-            "Tu es un analyseur de conversation pour un jeu RPG. "
-            "Analyse la conversation et détermine si le PNJ a donné une quête au joueur. "
-            "Une quête implique que le PNJ demande au joueur de rapporter un objet spécifique. "
-            "Réponds UNIQUEMENT avec un JSON valide, sans texte supplémentaire."
+            "You are a conversation analyzer for an RPG game. "
+            "Analyze the conversation and determine whether the NPC gave the player a quest. "
+            "A quest means the NPC asks the player to bring back a specific item. "
+            "Reply ONLY with valid JSON, with no extra text."
         )
 
         prompt = (
             f"Conversation:\n{conversation_history}\n\n"
-            f"Analyste cette conversation. Réponds avec ce format JSON exact:\n"
-            f'{{"has_quest": true/false, "quest_description": "description brève", "item_name": "nom de l\'objet"}}\n'
-            f"Si pas de quête, utilise: {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
+            f"Analyze this conversation. Reply with this exact JSON format:\n"
+            f'{{"has_quest": true/false, "quest_description": "short description", "item_name": "item name"}}\n'
+            f"If there is no quest, use: {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
         )
 
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
@@ -43,7 +43,7 @@ class QuestSystem:
             return
 
         item_name: str = quest_info["item_name"].strip()
-        for article in ["le ", "la ", "l'", "un ", "une ", "des "]:
+        for article in ["the ", "a ", "an ", "some "]:
             if item_name.lower().startswith(article):
                 item_name = item_name[len(article) :]
                 break
@@ -66,8 +66,8 @@ class QuestSystem:
             return reward
 
         # No plain number in the text, ask the model to extract it
-        system_prompt = "Tu es un assistant d'extraction. Réponds seulement avec un nombre."
-        prompt = f"Combien de pièces dans ce texte : '{last_message}' ?"
+        system_prompt = "You are an extraction assistant. Reply only with a number."
+        prompt = f"How many coins are in this text: '{last_message}'?"
         reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
         print(f"~~~ Extracted reward : {reward_str} ~~~")
 

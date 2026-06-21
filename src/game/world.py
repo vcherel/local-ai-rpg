@@ -37,12 +37,12 @@ class World:
 
     def _generate_context(self):
         system_prompt = (
-            "Tu crées des mondes pour un RPG. "
-            "Chaque monde doit contenir un détail original qui peut servir de point de départ pour des quêtes."
+            "You create worlds for an RPG. "
+            "Each world must contain one original detail that can serve as a starting point for quests."
         )
         prompt = (
-            "En une seule phrase très courte, décris un monde RPG en commençant par 'Le jeu se déroule...' "
-            "La phrase doit contenir un détail original qui peut servir de point de départ pour des aventures."
+            "In a single very short sentence, describe an RPG world starting with 'The game takes place...' "
+            "The sentence must contain one original detail that can serve as a starting point for adventures."
         )
         self.context = generate_response_queued(prompt, system_prompt, "Context generation")
         print(f"~~~ Generated this context: {self.context}")
