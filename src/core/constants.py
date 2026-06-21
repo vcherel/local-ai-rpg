@@ -56,6 +56,11 @@ class World:
     NB_MONSTERS: int = 100
     NB_DETAILS: int = 5000
 
+    # Slain monsters are replenished over time so the world never empties out.
+    RESPAWN_INTERVAL_MS: int = 3000
+    # New monsters spawn at least this far from the player so they never pop into view.
+    SPAWN_MIN_DISTANCE: int = 900
+
 
 @dataclass(frozen=True)
 class Colors:
