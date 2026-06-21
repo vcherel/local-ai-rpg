@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List
 
 import core.constants as c
 from core.audio import play_sound
+from core.particles import get_particles
 from core.utils import random_coordinates
 from game.entities.items import Item
 from game.entities.monsters import Monster
@@ -94,9 +95,11 @@ class World:
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Monster.SIZE // 2:
                 if monster.receive_damage(c.Player.ATTACK_DAMAGE):
                     play_sound("monster_death")
+                    get_particles().spawn_burst(monster.x, monster.y, c.Colors.RED, count=14, speed=5, life=500, size=5)
                     self.monsters.remove(monster)
                     return
                 play_sound("hit")
+                get_particles().spawn_burst(monster.x, monster.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
 
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
@@ -104,9 +107,11 @@ class World:
                     # Drop any quest this NPC was offering so it can't become uncompletable
                     quest_system.remove_quest(npc)
                     play_sound("monster_death")
+                    get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5)
                     self.npcs.remove(npc)
                     return
                 play_sound("hit")
+                get_particles().spawn_burst(npc.x, npc.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
 
     def pickup_item(self, player: Player):
         for item in self.items:
@@ -121,6 +126,8 @@ class World:
                 return
 
     def update(self, player: Player, dt):
+        get_particles().update(dt)
+
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).
         update_radius = c.World.DETECTION_RANGE + c.Player.SIZE

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
+from core.particles import get_particles
 from ui.loading_indicator import LoadingIndicator
 
 if TYPE_CHECKING:
@@ -50,6 +51,8 @@ class GameRenderer:
         for item in (i for i in world.items if not i.picked_up):
             if self._on_screen(camera, item.x, item.y):
                 item.draw(self.screen, camera)
+
+        get_particles().draw(self.screen, camera)
 
         player.draw(self.screen)
 

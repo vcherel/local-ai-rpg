@@ -18,11 +18,23 @@ class Entity:
         self.attack_in_progress = False
         self.attack_progress = 0.0
         self.attack_hand = "left"
+        self.last_damage_ms = 0
 
     def receive_damage(self, damage):
         """Returns True if the entity died"""
         self.hp -= damage
+        self.last_damage_ms = pygame.time.get_ticks()
         return self.hp <= 0
+
+    def flash_color(self, color):
+        """Blend toward white briefly after taking a hit, for visual feedback."""
+        if not self.last_damage_ms:
+            return color
+        elapsed = pygame.time.get_ticks() - self.last_damage_ms
+        if elapsed >= c.Entities.FLASH_MS:
+            return color
+        t = (1 - elapsed / c.Entities.FLASH_MS) * 0.75
+        return tuple(int(comp + (255 - comp) * t) for comp in color)
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -64,7 +76,7 @@ class Entity:
         bar_height=8,
         health_bar_offset=10,
     ):
-        draw_human(screen, x, y, size, color, angle, attack_progress, attack_hand)
+        draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand)
 
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset

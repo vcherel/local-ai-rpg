@@ -7,6 +7,7 @@ import pygame
 
 import core.constants as c
 from core.audio import play_sound
+from core.particles import get_particles
 from game.entities.entities import Entity
 
 if TYPE_CHECKING:
@@ -82,7 +83,9 @@ class Player(Entity):
 
     def receive_damage(self, damage):
         self.hp -= damage
+        self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
+        get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4)
 
     def draw(self, screen):
         super().draw(

@@ -45,6 +45,8 @@ class Entities:
     ITEM_SIZE: int = 25
     NPC_HP: int = 30
     SWING_SPEED: float = 0.007
+    # How long an entity flashes white after being hit (ms).
+    FLASH_MS: int = 150
 
 
 @dataclass(frozen=True)
