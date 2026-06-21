@@ -59,13 +59,19 @@ class QuestSystem:
         self.active_quests.append(quest)
 
     def extract_and_give_reward(self, last_message: str) -> int:
-        match = re.search(r"\b(\d+)\b", last_message)
-        if match:
-            reward = int(match.group(1))
+        # Prefer a number explicitly tied to a coin/reward word, so we don't pick up
+        # an unrelated count like "I lost 3 sheep, here are 50 coins".
+        coin_match = re.search(
+            r"(\d+)\s*(?:coins?|gold|pieces?)|(?:reward|coins?|gold)\D{0,15}?(\d+)",
+            last_message,
+            re.IGNORECASE,
+        )
+        if coin_match:
+            reward = int(coin_match.group(1) or coin_match.group(2))
             self.player.add_coins(reward)
             return reward
 
-        # No plain number in the text, ask the model to extract it
+        # No coin-tagged number in the text, ask the model to extract it
         system_prompt = "You are an extraction assistant. Reply only with a number."
         prompt = f"How many coins are in this text: '{last_message}'?"
         reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
