@@ -6,6 +6,7 @@ import pygame
 
 from core.audio import play_sound
 from core.camera import Camera
+from core.particles import get_particles
 from game.entities.player import Player
 from game.world import World
 from llm.dialogue_manager import DialogueManager
@@ -97,6 +98,7 @@ class Game:
                             item.picked_up = True
                             self.player.inventory.append(item)
                             play_sound("pickup")
+                            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
                         else:
                             npc = self.world.talk_npc(self.player)
                             if npc is not None:
