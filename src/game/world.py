@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from core.save import SaveSystem
     from game.entities.items import Item
     from game.entities.player import Player
+    from llm.quest_system import QuestSystem
     from ui.menus.context_menu import ContextMenu
 
 
@@ -59,7 +60,7 @@ class World:
             if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.Entities.NPC_SIZE // 2:
                 return npc
 
-    def handle_attack(self, player: Player):
+    def handle_attack(self, player: Player, quest_system: QuestSystem):
         player.start_attack_anim()
         pos = player.get_pos(c.Player.ATTACK_REACH)
 
@@ -72,6 +73,8 @@ class World:
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
                 if npc.receive_damage(c.Player.ATTACK_DAMAGE):
+                    # Drop any quest this NPC was offering so it can't become uncompletable
+                    quest_system.remove_quest(npc)
                     self.npcs.remove(npc)
                     return
 

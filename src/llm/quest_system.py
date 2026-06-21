@@ -85,6 +85,21 @@ class QuestSystem:
                 return reward
         return 0
 
+    def remove_quest(self, npc: NPC):
+        """Drop an NPC's quest entirely (e.g. when the quest giver dies)."""
+        quest = npc.quest
+        if not quest:
+            return
+
+        if quest.item in self.player.inventory:
+            self.player.inventory.remove(quest.item)
+        if quest.item in self.items:
+            self.items.remove(quest.item)
+        if quest in self.active_quests:
+            self.active_quests.remove(quest)
+
+        npc.quest = None
+
     def complete_quest(self, npc: NPC):
         if not npc.quest or not npc.quest.item:
             return
