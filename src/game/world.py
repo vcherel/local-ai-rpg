@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 import threading
 from typing import TYPE_CHECKING, List
@@ -27,6 +28,7 @@ class World:
         self.npcs: List[NPC] = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
         self.monsters: List[Monster] = [Monster(*random_coordinates()) for _ in range(c.World.NB_MONSTERS)]
         self.items: List[Item] = []
+        self.respawn_timer = 0.0
 
         self.save_system = save_system
         self.context_window = context_window
@@ -83,6 +85,19 @@ class World:
             if not item.picked_up and item.distance_to_point(player.get_pos()) < c.Player.INTERACTION_DISTANCE:
                 return item
 
+    def _spawn_monster_away_from(self, player: Player):
+        for _ in range(10):
+            x, y = random_coordinates()
+            if math.hypot(x - player.x, y - player.y) >= c.World.SPAWN_MIN_DISTANCE:
+                self.monsters.append(Monster(x, y))
+                return
+
     def update(self, player: Player, dt):
         for monster in self.monsters:
             monster.move(player, dt)
+
+        if len(self.monsters) < c.World.NB_MONSTERS:
+            self.respawn_timer += dt
+            if self.respawn_timer >= c.World.RESPAWN_INTERVAL_MS:
+                self.respawn_timer = 0.0
+                self._spawn_monster_away_from(player)
