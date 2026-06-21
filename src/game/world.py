@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING, List
 
 import core.constants as c
 from core.utils import random_coordinates
+from game.entities.items import Item
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
-    from game.entities.items import Item
     from game.entities.player import Player
     from llm.quest_system import QuestSystem
     from ui.menus.context_menu import ContextMenu
@@ -25,18 +25,40 @@ class World:
             (*random_coordinates(), random.choice(["stone", "flower"])) for _ in range(c.World.NB_DETAILS)
         ]
 
-        self.npcs: List[NPC] = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
-        self.monsters: List[Monster] = [Monster(*random_coordinates()) for _ in range(c.World.NB_MONSTERS)]
         self.items: List[Item] = []
+        self.npcs: List[NPC] = []
+        self.monsters: List[Monster] = []
         self.respawn_timer = 0.0
 
         self.save_system = save_system
         self.context_window = context_window
         self.context = self.save_system.load("context", None)
+
+        saved_npcs = self.save_system.load("npcs", None)
+        if saved_npcs is not None:
+            self._restore(saved_npcs)
+        else:
+            self.npcs = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
+            self.monsters = [Monster(*random_coordinates()) for _ in range(c.World.NB_MONSTERS)]
+
         if self.context is None:
             threading.Thread(target=self._generate_context, daemon=True).start()
         else:
             self.context_window.toggle(self.context)
+
+    def _restore(self, saved_npcs: list):
+        """Rebuild items, NPCs and monsters from a saved game, relinking quest items by id."""
+        self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
+        items_by_id = {item.id: item for item in self.items}
+        self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
+        self.monsters = [Monster.from_dict(d) for d in self.save_system.load("monsters", [])]
+
+    def serialize(self) -> dict:
+        return {
+            "items": [item.to_dict() for item in self.items],
+            "npcs": [npc.to_dict() for npc in self.npcs],
+            "monsters": [monster.to_dict() for monster in self.monsters],
+        }
 
     def _generate_context(self):
         system_prompt = (

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+import uuid
 from typing import TYPE_CHECKING
 
 import pygame
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 
 class Item:
     def __init__(self, x, y, name):
+        self.id = uuid.uuid4().hex
         self.x = x
         self.y = y
         self.angle = random.uniform(0, 2 * math.pi)
@@ -25,6 +27,28 @@ class Item:
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "x": self.x,
+            "y": self.y,
+            "angle": self.angle,
+            "name": self.name,
+            "color": list(self.color),
+            "shape": self.shape,
+            "picked_up": self.picked_up,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Item:
+        item = cls(data["x"], data["y"], data["name"])
+        item.id = data["id"]
+        item.angle = data["angle"]
+        item.color = tuple(data["color"])
+        item.shape = data["shape"]
+        item.picked_up = data["picked_up"]
+        return item
 
     def draw(self, surface: pygame.Surface, camera: Camera = None, x=None, y=None):
         draw_x = x if x is not None else self.x

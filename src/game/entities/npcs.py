@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import math
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 import pygame
 
 import core.constants as c
 from core.utils import random_color
 from game.entities.entities import Entity
+from game.quest import Quest
 
 if TYPE_CHECKING:
     from core.camera import Camera
+    from game.entities.items import Item
     from llm.name_generator import NPCNameGenerator
-    from llm.quest_system import Quest
 
 
 class NPC(Entity):
@@ -25,6 +26,28 @@ class NPC(Entity):
     @property
     def has_active_quest(self):
         return self.quest is not None and not self.quest.is_completed
+
+    def to_dict(self) -> dict:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "name": self.name,
+            "hp": self.hp,
+            "color": list(self.color),
+            "orientation": self.orientation,
+            "quest": self.quest.to_dict() if self.quest else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, items_by_id: Dict[str, Item]) -> NPC:
+        npc = cls(data["x"], data["y"])
+        npc.name = data["name"]
+        npc.hp = data["hp"]
+        npc.color = tuple(data["color"])
+        npc.orientation = data["orientation"]
+        if data["quest"]:
+            npc.quest = Quest.from_dict(data["quest"], items_by_id)
+        return npc
 
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
