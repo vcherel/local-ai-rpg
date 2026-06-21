@@ -8,8 +8,9 @@ A 2D open-world RPG where **all AI runs locally on your machine**. No internet r
 
 - AI-generated conversations with any NPC
 - Dynamic quest system (fetch quests + rewards)
-- Open world exploration
-- Enemies and combat
+- Open world exploration with respawning enemies and melee combat
+- Sound effects and visual hit feedback
+- Save and continue your game
 - Runs on GTX 1650 and up
 
 ## Quick Start
@@ -67,8 +68,8 @@ There are still huge limitations due to its size, but if desired, the model can 
 
 ## Current Status
 
-The game is still in development, and I plan to add these features soon:
-- ⏳ Combat system coming soon
+The game is still in development. Combat, quests, sound, and saving are already in,
+and I plan to add these features next:
 - ⏳ More types of quests, including dynamic and multi-step objectives
 - ⏳ Loot system with random drops and lootboxes
 - ⏳ Possibility to buy items directly from NPCs
