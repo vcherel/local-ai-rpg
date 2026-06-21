@@ -37,8 +37,10 @@ class Monster(Entity):
         self.orientation = math.atan2(dy, dx)
 
         if c.Monster.ATTACK_RANGE < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
-            self.x += math.cos(self.orientation) * c.Monster.SPEED
-            self.y += math.sin(self.orientation) * c.Monster.SPEED
+            move_factor = dt * c.TARGET_FPS / 1000.0
+            self.x += math.cos(self.orientation) * c.Monster.SPEED * move_factor
+            self.y += math.sin(self.orientation) * c.Monster.SPEED * move_factor
+            self.clamp_to_world()
 
         if dist < c.Monster.ATTACK_RANGE * 10:
             hit = self.start_attack_anim(dist)

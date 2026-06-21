@@ -2,6 +2,11 @@ from dataclasses import dataclass
 
 import pygame
 
+# Movement and animation speeds were tuned for 60 FPS. Scaling per-frame motion by
+# dt * TARGET_FPS / 1000 keeps that feel identical at 60 FPS while staying consistent
+# at any other frame rate.
+TARGET_FPS: int = 60
+
 
 @dataclass(frozen=True)
 class Screen:
