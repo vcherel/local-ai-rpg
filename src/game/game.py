@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+from core.audio import play_sound
 from core.camera import Camera
 from game.entities.player import Player
 from game.world import World
@@ -95,6 +96,7 @@ class Game:
                         if item is not None:
                             item.picked_up = True
                             self.player.inventory.append(item)
+                            play_sound("pickup")
                         else:
                             npc = self.world.talk_npc(self.player)
                             if npc is not None:

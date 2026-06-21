@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+from core.audio import play_sound
 from core.utils import ConversationHistory
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem
@@ -199,6 +200,7 @@ class DialogueManager:
                 quest = self.current_npc.quest
                 if quest:
                     self.notification.show(quest)
+                    play_sound("quest_new")
 
     def _execute_quest_completion(self, npc: NPC):
         last_msg = self.conversation.get_last_message()
@@ -207,3 +209,4 @@ class DialogueManager:
             npc.quest.reward_coins = reward
 
         self.quest_system.complete_quest(npc)
+        play_sound("quest_complete")
