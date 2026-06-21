@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+import core.constants as c
 from core.audio import play_sound
 from core.camera import Camera
 from core.particles import get_particles
@@ -167,6 +168,8 @@ class Game:
                 print("Game auto-saved.")
 
             if self.player.hp <= 0:
+                # Persist a recoverable state so "Continue" doesn't reload straight into game over
+                self.player.hp = c.Player.HP
                 self.save_data()
                 run_game_over(self.screen, self.clock)
                 return
