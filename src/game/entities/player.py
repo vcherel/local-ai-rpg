@@ -51,8 +51,10 @@ class Player(Entity):
                 dy /= dist
 
             speed = actual_speed if forward else -actual_speed / 1.5
-            self.x += dx * speed
-            self.y += dy * speed
+            move_factor = dt * c.TARGET_FPS / 1000.0
+            self.x += dx * speed * move_factor
+            self.y += dy * speed * move_factor
+            self.clamp_to_world()
 
         mouse_x, mouse_y = pygame.mouse.get_pos()
         dx = mouse_x - c.Screen.ORIGIN_X
