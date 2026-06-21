@@ -46,29 +46,20 @@ class GameRenderer:
 
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
 
+    def _draw_button(self, rect: pygame.Rect, label: str, mouse_pos):
+        hover = rect.collidepoint(mouse_pos)
+        button_color = c.Colors.BUTTON_HOVERED if hover else c.Colors.BUTTON
+        border_color = c.Colors.BORDER_HOVERED if hover else c.Colors.BORDER
+        pygame.draw.rect(self.screen, button_color, rect)
+        pygame.draw.rect(self.screen, border_color, rect, 2)
+
+        text = c.Fonts.button.render(label, True, c.Colors.WHITE)
+        self.screen.blit(text, text.get_rect(center=rect.center))
+
     def draw_ui(self, nb_items, nb_coins, active_task_count):
         mouse_pos = pygame.mouse.get_pos()
-        is_hovering = self.inv_button_rect.collidepoint(mouse_pos)
-
-        button_color = c.Colors.BUTTON_HOVERED if is_hovering else c.Colors.BUTTON
-        border_color = c.Colors.BORDER_HOVERED if is_hovering else c.Colors.BORDER
-        pygame.draw.rect(self.screen, button_color, self.inv_button_rect)
-        pygame.draw.rect(self.screen, border_color, self.inv_button_rect, 2)
-
-        button_text = c.Fonts.button.render("Inventaire", True, c.Colors.WHITE)
-        text_x = self.inv_button_rect.x + (self.inv_button_rect.width - button_text.get_width()) // 2
-        text_y = self.inv_button_rect.y + (self.inv_button_rect.height - button_text.get_height()) // 2
-        self.screen.blit(button_text, (text_x, text_y))
-
-        is_hovering_quest = self.quest_button_rect.collidepoint(mouse_pos)
-        button_color = c.Colors.BUTTON_HOVERED if is_hovering_quest else c.Colors.BUTTON
-        border_color = c.Colors.BORDER_HOVERED if is_hovering_quest else c.Colors.BORDER
-        pygame.draw.rect(self.screen, button_color, self.quest_button_rect)
-        pygame.draw.rect(self.screen, border_color, self.quest_button_rect, 2)
-        button_text = c.Fonts.button.render("Quêtes", True, c.Colors.WHITE)
-        text_x = self.quest_button_rect.x + (self.quest_button_rect.width - button_text.get_width()) // 2
-        text_y = self.quest_button_rect.y + (self.quest_button_rect.height - button_text.get_height()) // 2
-        self.screen.blit(button_text, (text_x, text_y))
+        self._draw_button(self.inv_button_rect, "Inventaire", mouse_pos)
+        self._draw_button(self.quest_button_rect, "Quêtes", mouse_pos)
 
         coins_text = f"Pièces: {nb_coins}"
         objects_text = f"Objets: {nb_items}"

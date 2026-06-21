@@ -81,10 +81,7 @@ def run_main_menu(screen, clock, save_system):
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
-                    result = main_menu.handle_click(event.pos)
-                    if result == "new_game":
-                        return True  # Start new game
-                    elif result == "continue":
+                    if main_menu.handle_click(event.pos):
                         return True
 
         main_menu.draw()

@@ -16,7 +16,6 @@ class NPCNameGenerator:
         self.name_queue = queue.Queue(maxsize=1)  # Only keep 1 name ready
         self.lock = threading.Lock()
         self.save_system: SaveSystem = save_system
-        self.get_context = lambda: self.save_system.load("context", None)
         self.is_generating = False
 
         self.start_generation()
@@ -39,7 +38,7 @@ class NPCNameGenerator:
     def _generate_name_background(self):
         context = None
         while context is None:
-            context = self.get_context()
+            context = self.save_system.load("context", None)
             if context is None:
                 time.sleep(0.1)  # avoid busy waiting
 

@@ -7,10 +7,17 @@ from llama_cpp import Llama
 
 import core.constants as c
 
+CHAR_FILTER = str.maketrans("", "", '"«»')
+
+
+def _format_prompt(prompt: str, system_prompt: str) -> str:
+    return (
+        f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+    )
+
 
 class LLMRequestQueue:
-    def __init__(self, llm):
-        self.llm = llm
+    def __init__(self):
         self.request_queue = Queue()
         self.worker_thread = None
         self.running = False
@@ -103,7 +110,7 @@ def get_llm_queue():
     if llm_queue is None:
         with _init_lock:
             # Double-check pattern
-            if llm_queue is None:
+            if llm_queue is None:  # double-checked after acquiring the lock
                 llm = Llama(
                     model_path="./models/Qwen2.5-3B-Instruct-Q4_K_M.gguf",
                     n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
@@ -114,7 +121,7 @@ def get_llm_queue():
                     n_threads=8,
                     seed=int(time.time() * 1000) % (2**31),
                 )
-                llm_queue = LLMRequestQueue(llm)
+                llm_queue = LLMRequestQueue()
                 llm_queue.start()
     return llm_queue
 
@@ -134,13 +141,9 @@ def generate_response_stream_queued(prompt, system_prompt, log):
 
 
 def generate_response_internal(prompt, system_prompt):
-    formatted_prompt = (
-        f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-    )
-
     llm.reset()
     response = llm(
-        prompt=formatted_prompt,
+        prompt=_format_prompt(prompt, system_prompt),
         max_tokens=c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
@@ -148,8 +151,7 @@ def generate_response_internal(prompt, system_prompt):
     )
 
     generated_text = response.get("choices", [{}])[0].get("text", "").strip()
-    generated_text = generated_text.translate(str.maketrans("", "", '"«»'))
-    generated_text = generated_text.strip("\n")
+    generated_text = generated_text.translate(CHAR_FILTER).strip("\n")
 
     if "\n" in generated_text:
         generated_text = generated_text.split("\n", 1)[0].strip()
@@ -157,17 +159,10 @@ def generate_response_internal(prompt, system_prompt):
     return generated_text
 
 
-CHAR_FILTER = str.maketrans("", "", '"«»')
-
-
 def generate_response_stream_internal(prompt, system_prompt):
-    formatted_prompt = (
-        f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-    )
-
     llm.reset()
     stream = llm(
-        prompt=formatted_prompt,
+        prompt=_format_prompt(prompt, system_prompt),
         max_tokens=c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,

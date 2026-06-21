@@ -20,7 +20,7 @@ def random_coordinates():
 
 class ConversationHistory:
     def __init__(self):
-        self.messages = []  # List of {"role": "user"/"assistant", "content": str}
+        self.messages = []
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
