@@ -73,8 +73,6 @@ def parse_response_quest_analysis(response):
         result_dict = {}
 
         for field in fields:
-            if field not in result:
-                print(f"Warning: '{field}' not found, using default value.")
             if field == "has_quest":
                 result_dict[field] = bool(result.get(field, False))
             else:
@@ -88,5 +86,4 @@ def parse_response_quest_analysis(response):
     except Exception as e:
         print(f"Failed to parse quest analysis: {e}, response: {response}\n")
 
-    print("Warning: Using fallback.")
     return {"has_quest": False, "quest_description": "", "item_name": ""}
