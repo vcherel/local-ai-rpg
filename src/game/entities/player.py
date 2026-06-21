@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.audio import play_sound
 from game.entities.entities import Entity
 
 if TYPE_CHECKING:
@@ -81,6 +82,7 @@ class Player(Entity):
 
     def receive_damage(self, damage):
         self.hp -= damage
+        play_sound("player_hurt")
 
     def draw(self, screen):
         super().draw(

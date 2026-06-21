@@ -6,6 +6,7 @@ import threading
 from typing import TYPE_CHECKING, List
 
 import core.constants as c
+from core.audio import play_sound
 from core.utils import random_coordinates
 from game.entities.items import Item
 from game.entities.monsters import Monster
@@ -86,21 +87,26 @@ class World:
 
     def handle_attack(self, player: Player, quest_system: QuestSystem):
         player.start_attack_anim()
+        play_sound("attack")
         pos = player.get_pos(c.Player.ATTACK_REACH)
 
         for monster in self.monsters:
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Monster.SIZE // 2:
                 if monster.receive_damage(c.Player.ATTACK_DAMAGE):
+                    play_sound("monster_death")
                     self.monsters.remove(monster)
                     return
+                play_sound("hit")
 
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
                 if npc.receive_damage(c.Player.ATTACK_DAMAGE):
                     # Drop any quest this NPC was offering so it can't become uncompletable
                     quest_system.remove_quest(npc)
+                    play_sound("monster_death")
                     self.npcs.remove(npc)
                     return
+                play_sound("hit")
 
     def pickup_item(self, player: Player):
         for item in self.items:
