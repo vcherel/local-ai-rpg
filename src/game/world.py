@@ -93,8 +93,12 @@ class World:
                 return
 
     def update(self, player: Player, dt):
+        # Monsters far beyond their detection range can't react to the player, so skip
+        # their per-frame work entirely (cheap bounding-box test, no sqrt).
+        update_radius = c.World.DETECTION_RANGE + c.Player.SIZE
         for monster in self.monsters:
-            monster.move(player, dt)
+            if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
+                monster.move(player, dt)
 
         if len(self.monsters) < c.World.NB_MONSTERS:
             self.respawn_timer += dt

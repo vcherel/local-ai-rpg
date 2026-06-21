@@ -23,10 +23,16 @@ class GameRenderer:
         self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
         self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
 
+    @staticmethod
+    def _on_screen(camera: Camera, x, y, margin=60):
+        return abs(x - camera.x) <= c.Screen.ORIGIN_X + margin and abs(y - camera.y) <= c.Screen.ORIGIN_Y + margin
+
     def draw_world(self, camera: Camera, world: World, player: Player):
         self.screen.fill(c.Colors.GREEN)
 
         for x, y, kind in world.floor_details:
+            if not self._on_screen(camera, x, y, margin=5):
+                continue
             screen_x, screen_y = camera.world_to_screen(x, y)
             if kind == "stone":
                 pygame.draw.circle(self.screen, (100, 100, 100), (screen_x, screen_y), 3)
@@ -34,13 +40,16 @@ class GameRenderer:
                 pygame.draw.circle(self.screen, (255, 0, 0), (screen_x, screen_y), 2)
 
         for npc in world.npcs:
-            npc.draw(self.screen, camera)
+            if self._on_screen(camera, npc.x, npc.y):
+                npc.draw(self.screen, camera)
 
         for monster in world.monsters:
-            monster.draw(self.screen, camera)
+            if self._on_screen(camera, monster.x, monster.y):
+                monster.draw(self.screen, camera)
 
         for item in (i for i in world.items if not i.picked_up):
-            item.draw(self.screen, camera)
+            if self._on_screen(camera, item.x, item.y):
+                item.draw(self.screen, camera)
 
         player.draw(self.screen)
 
