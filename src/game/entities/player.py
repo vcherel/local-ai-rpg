@@ -22,6 +22,15 @@ class Player(Entity):
         self.inventory = []
         self.coins = coins
 
+        saved = save_system.load("player", None)
+        if saved:
+            self.x = saved["x"]
+            self.y = saved["y"]
+            self.hp = saved["hp"]
+
+    def to_dict(self) -> dict:
+        return {"x": self.x, "y": self.y, "hp": self.hp}
+
     def get_pos(self, distance=None):
         if distance is not None:
             attack_x = self.x + math.sin(self.orientation) * distance

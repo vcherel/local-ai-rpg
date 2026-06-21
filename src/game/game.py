@@ -41,6 +41,22 @@ class Game:
         self.npc_name_generator = NPCNameGenerator(self.save_system)
         self.active_menu = False
 
+        self._restore_player_state()
+
+    def _restore_player_state(self):
+        """Relink the saved inventory and active quests to the world's reloaded items."""
+        items_by_id = {item.id: item for item in self.world.items}
+
+        for item_id in self.save_system.load("inventory", []):
+            item = items_by_id.get(item_id)
+            if item is not None:
+                self.player.inventory.append(item)
+
+        quest_system = self.dialogue_manager.quest_system
+        for npc in self.world.npcs:
+            if npc.has_active_quest:
+                quest_system.active_quests.append(npc.quest)
+
     def update_camera(self):
         self.camera.set_pos(self.player.get_pos())
 
@@ -94,6 +110,14 @@ class Game:
 
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
+        self.save_system.update("player", self.player.to_dict())
+        self.save_system.update("inventory", [item.id for item in self.player.inventory])
+
+        world_state = self.world.serialize()
+        self.save_system.update("items", world_state["items"])
+        self.save_system.update("npcs", world_state["npcs"])
+        self.save_system.update("monsters", world_state["monsters"])
+
         self.save_system.save_all()
 
     def run(self):

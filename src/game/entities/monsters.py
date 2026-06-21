@@ -17,6 +17,15 @@ class Monster(Entity):
         super().__init__(x, y, c.Colors.RED, c.Monster.SIZE, c.Monster.HP, c.Monster.HP)
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
 
+    def to_dict(self) -> dict:
+        return {"x": self.x, "y": self.y, "hp": self.hp}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Monster:
+        monster = cls(data["x"], data["y"])
+        monster.hp = data["hp"]
+        return monster
+
     def start_attack_anim(self, dist):
         """Return True in case of hit to the player"""
         if not self.attack_in_progress:
