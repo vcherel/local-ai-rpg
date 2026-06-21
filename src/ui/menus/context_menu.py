@@ -63,7 +63,7 @@ class ContextMenu(BaseMenu):
 
         menu_surface = self.create_menu_surface()
 
-        title = c.Fonts.heading.render("Contexte du monde", True, c.Colors.WHITE)
+        title = c.Fonts.heading.render("World Context", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         menu_surface.blit(title, (title_x, 20))
 

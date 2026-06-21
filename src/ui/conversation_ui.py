@@ -51,7 +51,7 @@ class ConversationUI:
     def _calculate_total_height(self, messages: list, npc_name: str) -> int:
         total_height = 0
         for msg in messages:
-            prefix = "Vous : " if msg["role"] == "user" else f"{npc_name} : "
+            prefix = "You: " if msg["role"] == "user" else f"{npc_name}: "
             lines = self._wrap_text(prefix + msg["content"])
             total_height += len(lines) * self.line_height
         return total_height
@@ -99,10 +99,10 @@ class ConversationUI:
 
         for msg in messages:
             if msg["role"] == "user":
-                prefix = "Vous : "
+                prefix = "You: "
                 color = c.Colors.CYAN
             else:
-                prefix = f"{npc_name} : "
+                prefix = f"{npc_name}: "
                 color = c.Colors.WHITE
 
             lines = self._wrap_text(prefix + msg["content"])
@@ -114,7 +114,7 @@ class ConversationUI:
         screen.set_clip(None)
 
         if total_height > self.max_visible_height and self.scroll_offset < total_height - self.max_visible_height:
-            scroll_text = "↑ Défiler pour voir plus"
+            scroll_text = "↑ Scroll to see more"
             scroll_surface = c.Fonts.text.render(scroll_text, True, c.Colors.YELLOW)
             screen.blit(scroll_surface, (c.Screen.WIDTH - 250, message_area_y - 35))
 

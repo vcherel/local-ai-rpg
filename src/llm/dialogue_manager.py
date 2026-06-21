@@ -36,33 +36,34 @@ class DialogueManager:
         self.quest_system = QuestSystem(items, player)
 
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
-        system_prompt = f"Tu es {npc.name}, un PNJ dans un RPG avec ce contexte : {context}. Le joueur vient te parler."
+        system_prompt = (
+            f"You are {npc.name}, an NPC in an RPG with this context: {context}. The player comes to talk to you."
+        )
 
         if npc.has_active_quest:
             quest = npc.quest
             if quest_complete:
                 system_prompt += (
-                    f"Le joueur vient de te rapporter {quest.item_name} que tu avais demandé ({quest.description}). "
-                    f"Remercie-le et mentionne sa récompense en pièces. "
+                    f"The player has just brought you {quest.item_name} that you asked for ({quest.description}). "
+                    f"Thank them and mention their reward in coins. "
                 )
             elif quest.item:
-                system_prompt += f"Tu as demandé au joueur de récupérer {quest.item_name}. "
+                system_prompt += f"You asked the player to fetch {quest.item_name}. "
                 if quest.item in self.quest_system.player.inventory:
-                    system_prompt += "Le joueur l'a maintenant dans son inventaire. "
+                    system_prompt += "The player now has it in their inventory. "
                 else:
-                    system_prompt += "Le joueur ne l'a pas encore trouvé. "
+                    system_prompt += "The player has not found it yet. "
         else:
             system_prompt += (
-                "Tu peux avoir des besoins ou des problèmes. "
-                "Le joueur peux t'aider en allant récuper un objet spécifique. "
-                "Tu ne peux pas participer toi même à ces quêtes "
-                "(invente une excuse si besoin, le joueur ne dois pas le savoir) ! "
-                "Tu peux aussi simplement vouloir discuter. "
+                "You may have needs or problems. "
+                "The player can help you by going to fetch a specific item. "
+                "You cannot take part in these quests yourself "
+                "(make up an excuse if needed, the player must not know) ! "
+                "You may also simply want to chat. "
             )
 
         system_prompt += (
-            "Réponds naturellement aux messages en restant bien "
-            "dans le contexte de la conversation en une phrase courte."
+            "Reply naturally to messages, staying within the context of the conversation, in one short sentence."
         )
 
         return system_prompt
@@ -86,7 +87,7 @@ class DialogueManager:
         self.ui.reset()
         self.pending_quest_analysis = False
 
-        initial_prompt = "Joueur: Salut !\nPNJ:"
+        initial_prompt = "Player: Hi!\nNPC:"
         self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
 
     def handle_event(self, event, npc_name_generator: NPCNameGenerator):
@@ -182,10 +183,10 @@ class DialogueManager:
         self.conversation.add_user_message(message)
 
         conversation_text = self.conversation.format_for_prompt()
-        conversation_text += f"Joueur: {message}"
+        conversation_text += f"Player: {message}"
 
         self.generator = generate_response_stream_queued(
-            conversation_text + "\nPNJ:", self.system_prompt, "Continuing conversation"
+            conversation_text + "\nNPC:", self.system_prompt, "Continuing conversation"
         )
 
     def _execute_quest_analysis(self):

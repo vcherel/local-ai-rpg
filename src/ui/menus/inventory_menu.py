@@ -85,11 +85,11 @@ class InventoryMenu(BaseMenu):
 
         menu_surface = self.create_menu_surface()
 
-        title = c.Fonts.title.render("Inventaire", True, c.Colors.WHITE)
+        title = c.Fonts.title.render("Inventory", True, c.Colors.WHITE)
         title_x = (self.width - title.get_width()) // 2
         menu_surface.blit(title, (title_x, self.padding))
 
-        coins_text = c.Fonts.text.render(f"Pièces: {player.coins}", True, c.Colors.YELLOW)
+        coins_text = c.Fonts.text.render(f"Coins: {player.coins}", True, c.Colors.YELLOW)
         menu_surface.blit(coins_text, (self.padding, self.padding + 50))
 
         mouse_pos = pygame.mouse.get_pos()

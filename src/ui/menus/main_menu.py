@@ -59,15 +59,15 @@ class MainMenu:
 
         self.screen.fill(c.Colors.MENU_BACKGROUND)
 
-        title_text = c.Fonts.big_title.render("RPG IA", True, c.Colors.WHITE)
+        title_text = c.Fonts.big_title.render("AI RPG", True, c.Colors.WHITE)
         title_x = (self.screen.get_width() - title_text.get_width()) // 2
         title_y = 150
         self.screen.blit(title_text, (title_x, title_y))
 
         mouse_pos = pygame.mouse.get_pos()
 
-        self.draw_button(self.new_game_button, "Nouvelle Partie", mouse_pos)
-        self.draw_button(self.continue_button, "Continuer", mouse_pos)
+        self.draw_button(self.new_game_button, "New Game", mouse_pos)
+        self.draw_button(self.continue_button, "Continue", mouse_pos)
 
 
 def run_main_menu(screen, clock, save_system):
