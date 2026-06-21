@@ -165,7 +165,6 @@ class Game:
             if current_time - last_save_time >= 300_000:
                 self.save_data()
                 last_save_time = current_time
-                print("Game auto-saved.")
 
             if self.player.hp <= 0:
                 # Persist a recoverable state so "Continue" doesn't reload straight into game over

@@ -75,7 +75,6 @@ class QuestSystem:
         system_prompt = "You are an extraction assistant. Reply only with a number."
         prompt = f"How many coins are in this text: '{last_message}'?"
         reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
-        print(f"~~~ Extracted reward : {reward_str} ~~~")
 
         reward_str = re.sub(r"[^\d]", "", reward_str)
         if reward_str:

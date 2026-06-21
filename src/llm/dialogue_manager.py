@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import threading
 from typing import TYPE_CHECKING
 
 import pygame
 
+from core import dialogue_log
 from core.audio import play_sound
 from core.utils import ConversationHistory
 from llm.llm_request_queue import generate_response_stream_queued
@@ -144,10 +146,12 @@ class DialogueManager:
 
     def close(self):
         if self.active and self.generator is None:
+            log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
+
             if not self.current_npc.has_active_quest:
                 self.pending_quest_analysis = True
 
-            self._execute_pending_actions()
+            self._execute_pending_actions(log_path)
 
             self.active = False
             self.waiting_for_llm = False
@@ -157,17 +161,27 @@ class DialogueManager:
             self.conversation_ended = False
             self.pending_quest_completion = None
 
-    def _execute_pending_actions(self):
+    def _execute_pending_actions(self, log_path):
+        # Snapshot the conversation now: close() clears it right after this returns,
+        # so the background threads must not read it directly.
+        npc = self.current_npc
+        conversation_text = self.conversation.format_for_prompt()
+        last_msg = self.conversation.get_last_message()
+
         # Quest completion first (uses conversation context for rewards)
         if self.pending_quest_completion:
             threading.Thread(
-                target=self._execute_quest_completion, args=(self.pending_quest_completion,), daemon=True
+                target=self._execute_quest_completion,
+                args=(self.pending_quest_completion, last_msg, log_path),
+                daemon=True,
             ).start()
             self.pending_quest_completion = None
 
         # Quest analysis second (only for new quests)
         if self.pending_quest_analysis:
-            threading.Thread(target=self._execute_quest_analysis, daemon=True).start()
+            threading.Thread(
+                target=self._execute_quest_analysis, args=(npc, conversation_text, log_path), daemon=True
+            ).start()
             self.pending_quest_analysis = False
 
     def draw(self):
@@ -190,23 +204,22 @@ class DialogueManager:
             conversation_text + "\nNPC:", self.system_prompt, "Continuing conversation"
         )
 
-    def _execute_quest_analysis(self):
-        conversation_text = self.conversation.format_for_prompt()
+    def _execute_quest_analysis(self, npc: NPC, conversation_text: str, log_path):
         if conversation_text:
             quest_info = self.quest_system.analyze_conversation_for_quest(conversation_text)
-            print(f"~~~ Generated these quest infos : {quest_info}")
+            dialogue_log.append_section(log_path, "Quest analysis", json.dumps(quest_info, ensure_ascii=False))
             if quest_info["has_quest"]:
-                self.quest_system.create_quest_from_analysis(self.current_npc, quest_info)
-                quest = self.current_npc.quest
+                self.quest_system.create_quest_from_analysis(npc, quest_info)
+                quest = npc.quest
                 if quest:
                     self.notification.show(quest)
                     play_sound("quest_new")
 
-    def _execute_quest_completion(self, npc: NPC):
-        last_msg = self.conversation.get_last_message()
+    def _execute_quest_completion(self, npc: NPC, last_msg, log_path):
         if last_msg and npc.quest:
             reward = self.quest_system.extract_and_give_reward(last_msg["content"])
             npc.quest.reward_coins = reward
+            dialogue_log.append_section(log_path, "Quest completion", f"Reward: {reward} coins")
 
         self.quest_system.complete_quest(npc)
         play_sound("quest_complete")

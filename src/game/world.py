@@ -72,7 +72,6 @@ class World:
             "The sentence must contain one original detail that can serve as a starting point for adventures."
         )
         self.context = generate_response_queued(prompt, system_prompt, "Context generation")
-        print(f"~~~ Generated this context: {self.context}")
         self.save_system.update("context", self.context)
 
         self.context_window.toggle(self.context)
