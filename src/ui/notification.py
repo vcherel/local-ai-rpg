@@ -83,11 +83,7 @@ class QuestNotification:
             line_width = c.Fonts.text.size(line)[0]
             max_desc_width = max(max_desc_width, line_width)
 
-        required_width = max(title_width, npc_width, max_desc_width) + 2 * self.padding
-        required_width = min(required_width, max_width)
-
-        if required_width != self.width:
-            self.width = required_width
+        self.width = min(max(title_width, npc_width, max_desc_width) + 2 * self.padding, max_width)
 
         x = self._get_current_x()
         y = 120

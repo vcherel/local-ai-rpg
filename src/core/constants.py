@@ -19,7 +19,6 @@ class Player:
 
     SPEED: int = 5
     RUN_SPEED: int = 7
-    TURN_SPEED: float = 0.03
 
     INTERACTION_DISTANCE: int = 30
     ATTACK_REACH: int = 17
@@ -33,7 +32,6 @@ class Monster:
     SPEED: int = 4
     ATTACK_RANGE: int = 10
     DAMAGE: int = 1
-    ATTACK_COOLDOWN: int = 1000
 
 
 @dataclass(frozen=True)
@@ -64,7 +62,6 @@ class Colors:
     CYAN: tuple = (0, 255, 255)
 
     PLAYER: tuple = (255, 200, 160)
-    ECHAP_TEXT: tuple = (200, 200, 200)
     MENU_BACKGROUND: tuple = (50, 50, 50)
     BUTTON: tuple = (70, 70, 70)
     BORDER: tuple = (100, 100, 100)

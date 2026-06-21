@@ -71,7 +71,7 @@ class Player(Entity):
     def receive_damage(self, damage):
         self.hp -= damage
 
-    def draw(self, screen, show_reach=False, show_interaction=False, show_detection=False):
+    def draw(self, screen):
         super().draw(
             screen,
             c.Screen.ORIGIN_X,
@@ -85,23 +85,3 @@ class Player(Entity):
             bar_height=30,
             health_bar_offset=360,
         )
-
-        if show_reach:
-            draw_circle(screen, c.Player.ATTACK_REACH, (255, 0, 0, 80), self.orientation)
-        if show_interaction:
-            draw_circle(screen, c.Player.INTERACTION_DISTANCE, (0, 255, 0, 80), self.orientation)
-        if show_detection:
-            draw_circle(screen, c.World.DETECTION_RANGE, (0, 0, 255, 80))
-
-
-def draw_circle(
-    screen: pygame.Surface, radius, color, origin_x=c.Screen.ORIGIN_X, origin_y=c.Screen.ORIGIN_Y, orientation=None
-):
-    if orientation is not None:
-        origin_x = origin_x + math.sin(orientation) * radius
-        origin_y = origin_y - math.cos(orientation) * radius
-
-    reach_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-    pygame.draw.circle(reach_surface, color, (radius, radius), radius, 2)
-
-    screen.blit(reach_surface, (origin_x - radius, origin_y - radius))

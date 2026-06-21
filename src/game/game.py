@@ -112,14 +112,13 @@ class Game:
             if not running:
                 break
 
+            # Skip world simulation and rendering while a menu is open to save computation
             if not self.active_menu:
                 dt = self.clock.get_time()
                 self.player.move(self.camera.get_pos(), dt)
                 self.update_camera()
                 self.world.update(self.player, dt)
 
-            # We want the least amount of computations possible when dialogue manager is opened
-            if not self.active_menu:
                 self.game_renderer.draw_world(self.camera, self.world, self.player)
                 self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
 

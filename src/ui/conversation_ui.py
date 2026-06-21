@@ -101,12 +101,9 @@ class ConversationUI:
             if msg["role"] == "user":
                 prefix = "Vous : "
                 color = c.Colors.CYAN
-            elif msg["role"] == "assistant":
+            else:
                 prefix = f"{npc_name} : "
                 color = c.Colors.WHITE
-            else:
-                prefix = ""
-                color = c.Colors.BLACK
 
             lines = self._wrap_text(prefix + msg["content"])
             for line in lines:
