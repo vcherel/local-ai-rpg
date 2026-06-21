@@ -71,7 +71,7 @@ class Game:
                             self.quest_menu.toggle()
 
                         else:
-                            self.world.handle_attack(self.player)
+                            self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
