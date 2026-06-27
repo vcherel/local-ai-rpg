@@ -69,16 +69,16 @@ class Game:
                 return False
 
             if self.context_window.handle_event(event):
-                return True
+                continue
 
             if self.inventory_menu.handle_event(event):
-                return True
+                continue
 
             if self.dialogue_manager.handle_event(event, self.npc_name_generator):
-                return True
+                continue
 
             if self.quest_menu.handle_event(event, self.dialogue_manager.quest_system):
-                return True
+                continue
 
             if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -110,6 +110,9 @@ class Game:
 
                     elif event.key == pygame.K_q:
                         self.quest_menu.toggle()
+
+        # The frame the dialogue opened is over; later keystrokes are real input.
+        self.dialogue_manager.opened_this_frame = False
 
         return True
 

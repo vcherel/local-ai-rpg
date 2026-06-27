@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 class DialogueManager:
     def __init__(self, screen, items, player):
         self.active = False
+        self.opened_this_frame = False
         self.current_npc = None
         self.waiting_for_llm = False
         self.system_prompt = ""
@@ -83,6 +84,7 @@ class DialogueManager:
 
         self.current_npc = npc
         self.active = True
+        self.opened_this_frame = True
         self.waiting_for_llm = True
         self.conversation_ended = False
 
@@ -98,6 +100,11 @@ class DialogueManager:
             return False
 
         elif event.type == pygame.KEYDOWN:
+            # Swallow keys queued in the same frame the dialogue opened (e.g. a movement
+            # key still held while pressing E), so they don't leak into the input box.
+            if self.opened_this_frame:
+                return True
+
             if event.key == pygame.K_UP:
                 self.handle_scroll(1)
             elif event.key == pygame.K_DOWN:

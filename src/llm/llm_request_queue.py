@@ -139,7 +139,8 @@ def generate_response_stream_queued(prompt, system_prompt, log):
 
 
 def generate_response_internal(prompt, system_prompt):
-    llm.reset()
+    # No llm.reset(): keeping the KV cache lets llama_cpp skip re-evaluating the
+    # shared prefix (system prompt + prior turns) on each call.
     response = llm(
         prompt=_format_prompt(prompt, system_prompt),
         max_tokens=c.Hyperparameters.MAX_TOKENS,
@@ -158,7 +159,7 @@ def generate_response_internal(prompt, system_prompt):
 
 
 def generate_response_stream_internal(prompt, system_prompt):
-    llm.reset()
+    # See generate_response_internal: skip reset() to reuse the cached prefix.
     stream = llm(
         prompt=_format_prompt(prompt, system_prompt),
         max_tokens=c.Hyperparameters.MAX_TOKENS,
