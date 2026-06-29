@@ -63,6 +63,8 @@ class World:
     RESPAWN_INTERVAL_MS: int = 3000
     # New monsters spawn at least this far from the player so they never pop into view.
     SPAWN_MIN_DISTANCE: int = 900
+    # Monsters placed at world creation start at least this far from the player spawn point.
+    INITIAL_SPAWN_MIN_DISTANCE: int = 1200
 
 
 @dataclass(frozen=True)

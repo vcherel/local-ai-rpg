@@ -12,7 +12,7 @@ from core.utils import random_coordinates
 from game.entities.items import Item
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
-from llm.llm_request_queue import generate_response_queued
+from llm.llm_request_queue import generate_response_stream_queued
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -45,16 +45,26 @@ class World:
                         threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
         else:
             self.npcs = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
-            self.monsters = [Monster(*random_coordinates()) for _ in range(c.World.NB_MONSTERS)]
+            self.monsters = [Monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)]
             for npc in self.npcs:
                 if random.random() < c.World.MERCHANT_PROBABILITY:
                     npc.is_merchant = True
                     npc.color = c.Colors.MERCHANT
 
         if self.context is None:
+            self.context_window.start_streaming()
             threading.Thread(target=self._generate_context, daemon=True).start()
         else:
-            self.context_window.toggle(self.context)
+            self.context_window.show(self.context)
+
+    def _random_coords_away_from_spawn(self) -> tuple[int, int]:
+        center = c.World.WORLD_SIZE // 2
+        min_dist = c.World.INITIAL_SPAWN_MIN_DISTANCE
+        for _ in range(20):
+            x, y = random.randint(0, c.World.WORLD_SIZE), random.randint(0, c.World.WORLD_SIZE)
+            if math.hypot(x - center, y - center) >= min_dist:
+                return x, y
+        return x, y
 
     def _restore(self, saved_npcs: list):
         """Rebuild items, NPCs and monsters from a saved game, relinking quest items by id."""
@@ -79,10 +89,13 @@ class World:
             "In a single very short sentence, describe an RPG world starting with 'The game takes place...' "
             "The sentence must contain one original detail that can serve as a starting point for adventures."
         )
-        self.context = generate_response_queued(prompt, system_prompt, "Context generation")
-        self.save_system.update("context", self.context)
+        for chunk in generate_response_stream_queued(prompt, system_prompt, "Context generation"):
+            if chunk:
+                self.context_window.push_chunk(chunk)
+                self.context = chunk
+        self.context_window.finish_streaming()
 
-        self.context_window.toggle(self.context)
+        self.save_system.update("context", self.context)
 
         for npc in self.npcs:
             if npc.is_merchant:
