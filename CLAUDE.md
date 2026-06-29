@@ -5,14 +5,14 @@ A 2D open-world RPG where all AI runs locally. NPCs generate dialogue via an LLM
 ## How to run
 
 ```bash
-uv run python src/main.py
+uv run game
 ```
 
 Requires CUDA drivers and the model at `models/Qwen2.5-3B-Instruct-Q4_K_M.gguf`. See README for setup.
 
 ## Key files
 
-- `src/main.py`: entry point. Initialises Pygame, LLM queue, save system, then loops from main menu to game
+- `src/rpg_ai/__main__.py`: entry point. Initialises Pygame, LLM queue, save system, then loops from main menu to game
 - `src/game/game.py`: main game loop, input handling, state orchestration
 - `src/game/world.py`: world entities (NPCs, monsters, items), context generation
 - `src/llm/llm_request_queue.py`: serialises all LLM calls onto a worker thread; use `generate_response_queued` / `generate_response_stream_queued`
