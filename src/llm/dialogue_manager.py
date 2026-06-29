@@ -49,10 +49,17 @@ class DialogueManager:
             if quest_complete:
                 system_prompt += (
                     f"The player has just brought you {quest.item_name} that you asked for ({quest.description}). "
-                    f"Thank them and mention their reward in coins. "
+                    f"Thank them and give them their reward"
                 )
+                if quest.reward_item_name:
+                    system_prompt += f" (your {quest.reward_item_name} and any coins you promised)"
+                else:
+                    system_prompt += " in coins"
+                system_prompt += ". "
             elif quest.item:
                 system_prompt += f"You asked the player to fetch {quest.item_name}. "
+                if quest.reward_item_name:
+                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
                 if quest.item in self.quest_system.player.inventory:
                     system_prompt += "The player now has it in their inventory. "
                 else:
@@ -61,6 +68,7 @@ class DialogueManager:
             system_prompt += (
                 "You may have needs or problems. "
                 "The player can help you by going to fetch a specific item. "
+                "You may offer coins, a specific item you own, or both as a reward. "
                 "You cannot take part in these quests yourself "
                 "(make up an excuse if needed, the player must not know) ! "
                 "You may also simply want to chat. "
