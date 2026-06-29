@@ -90,9 +90,10 @@ class World:
         play_sound("attack")
         pos = player.get_pos(c.Player.ATTACK_REACH)
 
+        attack_damage = c.Player.ATTACK_DAMAGE + player.best_weapon_bonus()
         for monster in self.monsters:
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Monster.SIZE // 2:
-                if monster.receive_damage(c.Player.ATTACK_DAMAGE):
+                if monster.receive_damage(attack_damage):
                     play_sound("monster_death")
                     get_particles().spawn_burst(monster.x, monster.y, c.Colors.RED, count=14, speed=5, life=500, size=5)
                     self.monsters.remove(monster)
@@ -102,7 +103,7 @@ class World:
 
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
-                if npc.receive_damage(c.Player.ATTACK_DAMAGE):
+                if npc.receive_damage(attack_damage):
                     # Drop any quest this NPC was offering so it can't become uncompletable
                     quest_system.remove_quest(npc)
                     play_sound("monster_death")

@@ -157,7 +157,12 @@ class InventoryMenu(BaseMenu):
             item_data = items_list[self.hovered_slot]
             item: Item = item_data["item"]
 
-            tooltip_text = item.name
+            if item.item_type == "weapon" and item.bonus > 0:
+                tooltip_text = f"{item.name}  (+{item.bonus} attack)"
+            elif item.item_type == "armor" and item.bonus > 0:
+                tooltip_text = f"{item.name}  (+{item.bonus} defense)"
+            else:
+                tooltip_text = item.name
             tooltip_surface = c.Fonts.text.render(tooltip_text, True, c.Colors.WHITE)
             tooltip_width = tooltip_surface.get_width() + 20
             tooltip_height = tooltip_surface.get_height() + 10
