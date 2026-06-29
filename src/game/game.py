@@ -166,6 +166,8 @@ class Game:
                 self.game_renderer.draw_world(self.camera, self.world, self.player)
                 self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
 
+            self.context_window.update()
+
             self.dialogue_manager.draw()
             self.dialogue_manager.notification.draw()
             self.inventory_menu.draw(self.player)
