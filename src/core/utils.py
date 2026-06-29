@@ -50,6 +50,39 @@ class ConversationHistory:
         return conversation_text
 
 
+def parse_shop_inventory(response: str) -> list:
+    try:
+        response = response.strip()
+        # Strip markdown code fences
+        response = re.sub(r"```(?:json)?\s*|\s*```", "", response).strip()
+        match = re.search(r"\[.*\]", response, re.DOTALL)
+        if not match:
+            return []
+        json_str = match.group(0)
+        # Fix common small-model JSON deviations
+        json_str = re.sub(r":\s*True\b", ": true", json_str)
+        json_str = re.sub(r":\s*False\b", ": false", json_str)
+        items = json.loads(json_str)
+        result = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            item_type = str(item.get("item_type", "misc"))
+            bonus = int(item.get("bonus") or 0) if item_type in ("weapon", "armor") else 0
+            result.append(
+                {
+                    "name": str(item["name"]),
+                    "item_type": item_type,
+                    "bonus": bonus,
+                    "price": max(1, int(item.get("price", 10))),
+                }
+            )
+        return result
+    except Exception as e:
+        print(f"Failed to parse shop inventory: {e}, response: {response}")
+        return []
+
+
 def parse_response_quest_analysis(response):
     try:
         response = response.strip()

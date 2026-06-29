@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+import core.constants as c
 from core import dialogue_log
 from core.audio import play_sound
 from core.utils import ConversationHistory
@@ -34,12 +35,32 @@ class DialogueManager:
         self.pending_quest_analysis = False
         self.pending_quest_completion = None
         self.notification = QuestNotification(screen)
+        self.shop_requested = False
+        self.shop_button_rect: pygame.Rect | None = None
 
         self.conversation = ConversationHistory()
         self.ui = ConversationUI(screen)
         self.quest_system = QuestSystem(items, player)
 
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
+        if npc.is_merchant:
+            system_prompt = (
+                f"You are {npc.name}, a merchant in an RPG with this context: {context}. "
+                "The player comes to talk to you. "
+            )
+            if npc.shop_ready and npc.shop_items:
+                wares = ", ".join(
+                    f"{item.name} ({item.item_type}, +{item.bonus} bonus) for {npc.shop_prices[item.id]} coins"
+                    for item in npc.shop_items
+                )
+                system_prompt += f"You sell: {wares}. "
+            else:
+                system_prompt += "You are a trader who buys and sells adventuring gear. "
+            system_prompt += (
+                "Reply naturally to messages in one short sentence. You can mention your wares but keep it brief."
+            )
+            return system_prompt
+
         system_prompt = (
             f"You are {npc.name}, an NPC in an RPG with this context: {context}. The player comes to talk to you."
         )
@@ -107,6 +128,19 @@ class DialogueManager:
         if not self.active:
             return False
 
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if (
+                self.current_npc
+                and self.current_npc.is_merchant
+                and self.shop_button_rect
+                and self.generator is None
+                and self.shop_button_rect.collidepoint(event.pos)
+            ):
+                self.shop_requested = True
+                self.close()
+                npc_name_generator.start_generation()
+            return True
+
         elif event.type == pygame.KEYDOWN:
             # Swallow keys queued in the same frame the dialogue opened (e.g. a movement
             # key still held while pressing E), so they don't leak into the input box.
@@ -163,7 +197,7 @@ class DialogueManager:
         if self.active and self.generator is None:
             log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
 
-            if not self.current_npc.has_active_quest:
+            if not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
                 self.pending_quest_analysis = True
 
             self._execute_pending_actions(log_path)
@@ -205,6 +239,23 @@ class DialogueManager:
 
         self.update()
         self.ui.draw(self.current_npc.name, self.conversation)
+
+        if self.current_npc.is_merchant and self.generator is None:
+            box_height = 300
+            box_y = c.Screen.HEIGHT - box_height - 25
+            btn_w, btn_h = 130, 30
+            btn_x = c.Screen.WIDTH - 40 - btn_w
+            btn_y = box_y + 10
+            self.shop_button_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+
+            mouse = pygame.mouse.get_pos()
+            color = c.Colors.BUTTON_HOVERED if self.shop_button_rect.collidepoint(mouse) else c.Colors.BUTTON
+            pygame.draw.rect(self.ui.screen, color, self.shop_button_rect, border_radius=4)
+            pygame.draw.rect(self.ui.screen, (100, 255, 100), self.shop_button_rect, 2, border_radius=4)
+            label = c.Fonts.button.render("Shop", True, (100, 255, 100))
+            self.ui.screen.blit(label, label.get_rect(center=self.shop_button_rect.center))
+        else:
+            self.shop_button_rect = None
 
     def _send_chat_message(self, message: str):
         if self.conversation_ended:

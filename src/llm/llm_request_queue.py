@@ -59,11 +59,11 @@ class LLMRequestQueue:
             except queue.Empty:
                 continue
 
-    def generate_response(self, prompt: str, system_prompt: str) -> str:
+    def generate_response(self, prompt: str, system_prompt: str, max_tokens: int = None, raw: bool = False) -> str:
         result_queue = Queue()
 
         def request_func():
-            return generate_response_internal(prompt, system_prompt)
+            return generate_response_internal(prompt, system_prompt, max_tokens=max_tokens, raw=raw)
 
         with self.lock:
             self.queued_requests += 1
@@ -130,26 +130,30 @@ def get_llm_task_count():
     return get_llm_queue().get_active_task_count()
 
 
-def generate_response_queued(prompt, system_prompt, log):
-    return get_llm_queue().generate_response(prompt, system_prompt)
+def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
+    return get_llm_queue().generate_response(prompt, system_prompt, max_tokens=max_tokens, raw=raw)
 
 
 def generate_response_stream_queued(prompt, system_prompt, log):
     yield from get_llm_queue().generate_response_stream(prompt, system_prompt)
 
 
-def generate_response_internal(prompt, system_prompt):
+def generate_response_internal(prompt, system_prompt, max_tokens=None, raw=False):
     # No llm.reset(): keeping the KV cache lets llama_cpp skip re-evaluating the
     # shared prefix (system prompt + prior turns) on each call.
     response = llm(
         prompt=_format_prompt(prompt, system_prompt),
-        max_tokens=c.Hyperparameters.MAX_TOKENS,
+        max_tokens=max_tokens or c.Hyperparameters.MAX_TOKENS,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
         stop=["<|im_end|>", "<|im_start|>"],
     )
 
     generated_text = response.get("choices", [{}])[0].get("text", "").strip()
+
+    if raw:
+        return generated_text
+
     generated_text = generated_text.translate(CHAR_FILTER).strip("\n")
 
     if "\n" in generated_text:

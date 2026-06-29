@@ -39,9 +39,17 @@ class World:
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
             self._restore(saved_npcs)
+            if self.context:
+                for npc in self.npcs:
+                    if npc.is_merchant and not npc.shop_ready:
+                        threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
         else:
             self.npcs = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
             self.monsters = [Monster(*random_coordinates()) for _ in range(c.World.NB_MONSTERS)]
+            for npc in self.npcs:
+                if random.random() < c.World.MERCHANT_PROBABILITY:
+                    npc.is_merchant = True
+                    npc.color = c.Colors.MERCHANT
 
         if self.context is None:
             threading.Thread(target=self._generate_context, daemon=True).start()
@@ -76,6 +84,18 @@ class World:
 
         self.context_window.toggle(self.context)
 
+        for npc in self.npcs:
+            if npc.is_merchant:
+                threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
+
+    def _generate_merchant_shop(self, merchant: NPC):
+        from llm.merchant_system import generate_shop_inventory
+
+        shop_data = generate_shop_inventory(self.context)
+        if not shop_data:
+            shop_data = generate_shop_inventory(self.context)
+        merchant.set_shop(shop_data)
+
     def talk_npc(self, player: Player):
         if self.context is None:
             return
@@ -83,6 +103,8 @@ class World:
         pos = player.get_pos(c.Player.INTERACTION_DISTANCE)
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.Entities.NPC_SIZE // 2:
+                if npc.is_merchant and not npc.shop_ready:
+                    return None
                 return npc
 
     def handle_attack(self, player: Player, quest_system: QuestSystem):
