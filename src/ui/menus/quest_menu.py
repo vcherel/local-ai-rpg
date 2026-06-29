@@ -16,7 +16,7 @@ class QuestMenu(BaseMenu):
         super().__init__(screen, width=700, height=550)
 
         self.card_width = self.width - 2 * self.padding
-        self.card_height = 120
+        self.card_height = 140
         self.card_spacing = 15
         self.max_visible_quests = 3
         self.scroll_offset = 0
@@ -130,10 +130,19 @@ class QuestMenu(BaseMenu):
                     menu_surface.blit(desc_surface, (text_x, desc_y))
                     desc_y += 22
 
-                item_y = card_y + self.card_height - 30
-                item_text = f"Item: {quest.item_name}"
+                bottom_y = card_y + self.card_height - 50
+                item_text = f"Fetch: {quest.item_name}"
                 item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)
-                menu_surface.blit(item_surface, (text_x, item_y))
+                menu_surface.blit(item_surface, (text_x, bottom_y))
+
+                if quest.reward_item_name:
+                    reward_text = f"Reward: {quest.reward_item_name}"
+                    reward_color = c.Colors.YELLOW
+                else:
+                    reward_text = "Reward: coins"
+                    reward_color = c.Colors.WHITE
+                reward_surface = c.Fonts.button.render(reward_text, True, reward_color)
+                menu_surface.blit(reward_surface, (text_x, bottom_y + 22))
 
             if quest_count > self.max_visible_quests:
                 self._draw_scroll_indicator(menu_surface, quest_count)

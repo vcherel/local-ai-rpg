@@ -15,6 +15,7 @@ class Quest:
     item: Optional[Item] = None
     is_completed: bool = False
     reward_coins: int = 0
+    reward_item_name: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -24,6 +25,7 @@ class Quest:
             "item_id": self.item.id if self.item else None,
             "is_completed": self.is_completed,
             "reward_coins": self.reward_coins,
+            "reward_item_name": self.reward_item_name,
         }
 
     @classmethod
@@ -35,4 +37,5 @@ class Quest:
             item=items_by_id.get(data["item_id"]),
             is_completed=data["is_completed"],
             reward_coins=data["reward_coins"],
+            reward_item_name=data["reward_item_name"],
         )

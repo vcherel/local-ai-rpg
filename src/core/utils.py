@@ -69,7 +69,7 @@ def parse_response_quest_analysis(response):
 
         result = json.loads(json_str)
 
-        fields = ["has_quest", "quest_description", "item_name"]
+        fields = ["has_quest", "quest_description", "item_name", "reward_item"]
         result_dict = {}
 
         for field in fields:
@@ -79,11 +79,11 @@ def parse_response_quest_analysis(response):
                 result_dict[field] = result.get(field, "")
 
         if result_dict["has_quest"] and not (result_dict["quest_description"] or result_dict["item_name"]):
-            return {"has_quest": False, "quest_description": "", "item_name": ""}
+            return {"has_quest": False, "quest_description": "", "item_name": "", "reward_item": ""}
 
         return result_dict
 
     except Exception as e:
         print(f"Failed to parse quest analysis: {e}, response: {response}\n")
 
-    return {"has_quest": False, "quest_description": "", "item_name": ""}
+    return {"has_quest": False, "quest_description": "", "item_name": "", "reward_item": ""}

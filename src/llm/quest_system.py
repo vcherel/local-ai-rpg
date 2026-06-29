@@ -28,11 +28,17 @@ class QuestSystem:
             "Reply ONLY with valid JSON, with no extra text."
         )
 
+        json_format = (
+            '{"has_quest": true/false, "quest_description": "short description",'
+            ' "item_name": "item the player must fetch",'
+            ' "reward_item": "item the NPC will give as reward, empty string if only coins"}'
+        )
+        no_quest = "{'has_quest': false, 'quest_description': '', 'item_name': '', 'reward_item': ''}"
         prompt = (
             f"Conversation:\n{conversation_history}\n\n"
             f"Analyze this conversation. Reply with this exact JSON format:\n"
-            f'{{"has_quest": true/false, "quest_description": "short description", "item_name": "item name"}}\n'
-            f"If there is no quest, use: {{'has_quest': false, 'quest_description': '', 'item_name': ''}}"
+            f"{json_format}\n"
+            f"If there is no quest, use: {no_quest}"
         )
 
         response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
@@ -48,11 +54,21 @@ class QuestSystem:
                 item_name = item_name[len(article) :]
                 break
 
+        reward_item_name: str = quest_info.get("reward_item", "").strip()
+        for article in ["the ", "a ", "an ", "some "]:
+            if reward_item_name.lower().startswith(article):
+                reward_item_name = reward_item_name[len(article) :]
+                break
+
         quest_item = Item(*random_coordinates(), item_name)
         self.items.append(quest_item)
 
         quest = Quest(
-            npc_name=npc.name, description=quest_info["quest_description"], item_name=item_name, item=quest_item
+            npc_name=npc.name,
+            description=quest_info["quest_description"],
+            item_name=item_name,
+            item=quest_item,
+            reward_item_name=reward_item_name,
         )
 
         npc.quest = quest
@@ -111,6 +127,12 @@ class QuestSystem:
         # Remove item from world (in case it wasn't picked up yet)
         if quest.item in self.items:
             self.items.remove(quest.item)
+
+        if quest.reward_item_name:
+            reward_item = Item(self.player.x, self.player.y, quest.reward_item_name)
+            reward_item.picked_up = True
+            self.items.append(reward_item)
+            self.player.inventory.append(reward_item)
 
         quest.is_completed = True
 
