@@ -56,6 +56,7 @@ class World:
 
     NB_NPCS: int = 20
     NB_MONSTERS: int = 100
+    MERCHANT_PROBABILITY: float = 0.15
     NB_DETAILS: int = 5000
 
     # Slain monsters are replenished over time so the world never empties out.
@@ -74,6 +75,7 @@ class Colors:
     CYAN: tuple = (0, 255, 255)
 
     PLAYER: tuple = (255, 200, 160)
+    MERCHANT: tuple = (220, 170, 50)
     MENU_BACKGROUND: tuple = (50, 50, 50)
     BUTTON: tuple = (70, 70, 70)
     BORDER: tuple = (100, 100, 100)

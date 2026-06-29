@@ -18,6 +18,7 @@ from ui.menus.context_menu import ContextMenu
 from ui.menus.game_over import run_game_over
 from ui.menus.inventory_menu import InventoryMenu
 from ui.menus.quest_menu import QuestMenu
+from ui.menus.shop_menu import ShopMenu
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -33,6 +34,7 @@ class Game:
         self.context_window = ContextMenu(self.screen)
         self.inventory_menu = InventoryMenu(self.screen)
         self.quest_menu = QuestMenu(self.screen)
+        self.shop_menu = ShopMenu(self.screen)
 
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window)
@@ -72,6 +74,9 @@ class Game:
                 continue
 
             if self.inventory_menu.handle_event(event):
+                continue
+
+            if self.shop_menu.handle_event(event):
                 continue
 
             if self.dialogue_manager.handle_event(event, self.npc_name_generator):
@@ -114,6 +119,12 @@ class Game:
         # The frame the dialogue opened is over; later keystrokes are real input.
         self.dialogue_manager.opened_this_frame = False
 
+        if self.dialogue_manager.shop_requested and not self.dialogue_manager.active:
+            npc = self.dialogue_manager.current_npc
+            if npc is not None and npc.is_merchant:
+                self.shop_menu.open(npc, self.player, self.world.items)
+            self.dialogue_manager.shop_requested = False
+
         return True
 
     def save_data(self):
@@ -138,6 +149,7 @@ class Game:
                 or self.dialogue_manager.active
                 or self.quest_menu.active
                 or self.inventory_menu.active
+                or self.shop_menu.active
             )
 
             running = self.handle_input()
@@ -158,6 +170,7 @@ class Game:
             self.dialogue_manager.notification.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)
+            self.shop_menu.draw()
             self.context_window.draw()
 
             if not self.active_menu:

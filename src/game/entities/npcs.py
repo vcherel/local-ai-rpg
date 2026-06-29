@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import pygame
 
@@ -22,6 +22,10 @@ class NPC(Entity):
         super().__init__(x, y, random_color(), c.Entities.NPC_SIZE, c.Entities.NPC_HP, c.Entities.NPC_HP)
         self.name = None
         self.quest: Optional[Quest] = None
+        self.is_merchant = False
+        self.shop_items: List[Item] = []
+        self.shop_prices: Dict[str, int] = {}
+        self.shop_ready = False
 
     @property
     def has_active_quest(self):
@@ -36,10 +40,15 @@ class NPC(Entity):
             "color": list(self.color),
             "orientation": self.orientation,
             "quest": self.quest.to_dict() if self.quest else None,
+            "is_merchant": self.is_merchant,
+            "shop_ready": self.shop_ready,
+            "shop_items": [{**item.to_dict(), "shop_price": self.shop_prices[item.id]} for item in self.shop_items],
         }
 
     @classmethod
     def from_dict(cls, data: dict, items_by_id: Dict[str, Item]) -> NPC:
+        from game.entities.items import Item
+
         npc = cls(data["x"], data["y"])
         npc.name = data["name"]
         npc.hp = data["hp"]
@@ -47,7 +56,27 @@ class NPC(Entity):
         npc.orientation = data["orientation"]
         if data["quest"]:
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
+        npc.is_merchant = data["is_merchant"]
+        npc.shop_ready = data["shop_ready"]
+        for entry in data["shop_items"]:
+            price = entry["shop_price"]
+            item_data = {k: v for k, v in entry.items() if k != "shop_price"}
+            item = Item.from_dict(item_data)
+            npc.shop_items.append(item)
+            npc.shop_prices[item.id] = price
         return npc
+
+    def set_shop(self, shop_data: list):
+        from game.entities.items import Item, item_type_from_name
+
+        self.shop_items.clear()
+        self.shop_prices.clear()
+        for entry in shop_data:
+            item_type = entry.get("item_type") or item_type_from_name(entry["name"])
+            item = Item(0, 0, entry["name"], item_type, entry["bonus"])
+            self.shop_items.append(item)
+            self.shop_prices[item.id] = entry["price"]
+        self.shop_ready = True
 
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
@@ -67,10 +96,16 @@ class NPC(Entity):
             health_bar_offset=10,
         )
 
+        bob_offset = math.sin(time.time() * 4) * 4
         if self.has_active_quest:
             font = pygame.font.Font(None, 45)
-            bob_offset = math.sin(time.time() * 4) * 4
             text = font.render("!", True, c.Colors.YELLOW)
+            text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
+            screen.blit(text, text_rect)
+        elif self.is_merchant:
+            font = pygame.font.Font(None, 40)
+            color = (100, 255, 100) if self.shop_ready else (120, 120, 80)
+            text = font.render("$", True, color)
             text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
 
