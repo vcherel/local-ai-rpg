@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import random
 import re
 from typing import TYPE_CHECKING, List
 
 from core.utils import parse_response_quest_analysis, random_coordinates
-from game.entities.items import Item
+from game.entities.items import Item, item_type_from_name
 from game.quest import Quest
 from llm.llm_request_queue import generate_response_queued
 
@@ -129,7 +130,9 @@ class QuestSystem:
             self.items.remove(quest.item)
 
         if quest.reward_item_name:
-            reward_item = Item(self.player.x, self.player.y, quest.reward_item_name)
+            rtype = item_type_from_name(quest.reward_item_name)
+            rbonus = random.randint(8, 12) if rtype == "weapon" else random.randint(3, 4) if rtype == "armor" else 0
+            reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus)
             reward_item.picked_up = True
             self.items.append(reward_item)
             self.player.inventory.append(reward_item)

@@ -13,16 +13,65 @@ from core.utils import random_color
 if TYPE_CHECKING:
     from core.camera import Camera
 
+WEAPON_KEYWORDS = {
+    "sword",
+    "axe",
+    "blade",
+    "dagger",
+    "bow",
+    "spear",
+    "knife",
+    "club",
+    "mace",
+    "staff",
+    "lance",
+    "hammer",
+}
+ARMOR_KEYWORDS = {
+    "shield",
+    "armor",
+    "vest",
+    "helmet",
+    "mail",
+    "plate",
+    "cloak",
+    "buckler",
+    "breastplate",
+    "gauntlets",
+    "greaves",
+}
+
+WEAPON_COLOR = (220, 140, 40)
+ARMOR_COLOR = (100, 180, 220)
+
+
+def item_type_from_name(name: str) -> str:
+    lower = name.lower()
+    if any(kw in lower for kw in WEAPON_KEYWORDS):
+        return "weapon"
+    if any(kw in lower for kw in ARMOR_KEYWORDS):
+        return "armor"
+    return "misc"
+
 
 class Item:
-    def __init__(self, x, y, name):
+    def __init__(self, x, y, name, item_type: str = "misc", bonus: int = 0):
         self.id = uuid.uuid4().hex
         self.x = x
         self.y = y
         self.angle = random.uniform(0, 2 * math.pi)
         self.name = name
-        self.color = random_color()
-        self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
+        self.item_type = item_type
+        self.bonus = bonus
+        if item_type == "weapon":
+            self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
+            self.shape = "sword"
+        elif item_type == "armor":
+            self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ARMOR_COLOR)
+            self.shape = "shield"
+        else:
+            self.color = random_color()
+            self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
 
     def distance_to_point(self, point):
@@ -35,6 +84,8 @@ class Item:
             "y": self.y,
             "angle": self.angle,
             "name": self.name,
+            "item_type": self.item_type,
+            "bonus": self.bonus,
             "color": list(self.color),
             "shape": self.shape,
             "picked_up": self.picked_up,
@@ -42,7 +93,7 @@ class Item:
 
     @classmethod
     def from_dict(cls, data: dict) -> Item:
-        item = cls(data["x"], data["y"], data["name"])
+        item = cls(data["x"], data["y"], data["name"], data["item_type"], data["bonus"])
         item.id = data["id"]
         item.angle = data["angle"]
         item.color = tuple(data["color"])
@@ -65,7 +116,6 @@ class Item:
         size = c.Entities.ITEM_SIZE // 2
         border_width = 2
 
-        # Pad the surface so the shape isn't clipped when rotated
         padding = size + border_width + 4
         surface_size = c.Entities.ITEM_SIZE + padding * 2
         item_surface = pygame.Surface((surface_size, surface_size), pygame.SRCALPHA)
@@ -80,9 +130,31 @@ class Item:
 
 
 def draw_shape_with_border(surface, shape, center, size, color, border_width):
+    cx, cy = center
     if shape == "circle":
         pygame.draw.circle(surface, c.Colors.BLACK, center, size + border_width)
         pygame.draw.circle(surface, color, center, size)
+    elif shape == "sword":
+        points = [
+            (cx, cy - size),
+            (cx + size * 0.4, cy - size * 0.15),
+            (cx + size * 0.15, cy + size * 0.35),
+            (cx, cy + size * 0.55),
+            (cx - size * 0.15, cy + size * 0.35),
+            (cx - size * 0.4, cy - size * 0.15),
+        ]
+        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
+        pygame.draw.polygon(surface, color, points)
+    elif shape == "shield":
+        points = [
+            (cx - size * 0.65, cy - size * 0.45),
+            (cx + size * 0.65, cy - size * 0.45),
+            (cx + size * 0.65, cy + size * 0.15),
+            (cx, cy + size * 0.7),
+            (cx - size * 0.65, cy + size * 0.15),
+        ]
+        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
+        pygame.draw.polygon(surface, color, points)
     else:
         if shape == "triangle":
             points = get_polygon_points(center, size, 3)

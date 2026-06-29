@@ -77,12 +77,19 @@ class Player(Entity):
         if self.hp < c.Player.HP:
             self.hp = min(self.hp + c.Player.REGEN_RATE * dt, c.Player.HP)
 
+    def best_weapon_bonus(self) -> int:
+        return max((item.bonus for item in self.inventory if item.item_type == "weapon"), default=0)
+
+    def best_armor_bonus(self) -> int:
+        return max((item.bonus for item in self.inventory if item.item_type == "armor"), default=0)
+
     def add_coins(self, amount):
         self.coins += amount
         self.save_system.update("coins", self.coins)
 
     def receive_damage(self, damage):
-        self.hp -= damage
+        actual = max(damage - self.best_armor_bonus(), 1)
+        self.hp -= actual
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
         get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4)

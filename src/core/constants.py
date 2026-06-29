@@ -36,7 +36,7 @@ class Monster:
     HP: int = 15
     SPEED: int = 4
     ATTACK_RANGE: int = 10
-    DAMAGE: int = 1
+    DAMAGE: int = 5
 
 
 @dataclass(frozen=True)
