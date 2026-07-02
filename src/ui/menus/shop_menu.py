@@ -61,6 +61,12 @@ class ShopMenu(BaseMenu):
         y = LIST_TOP + index * ROW_HEIGHT
         return pygame.Rect(panel_x, y, self._panel_width(), ROW_HEIGHT - 6)
 
+    def _buy_price(self, item: Item) -> int:
+        return max(1, round(self.merchant.shop_prices[item.id] * self.player.stats.buy_multiplier()))
+
+    def _sell_price(self, item: Item) -> int:
+        return max(1, round(_sell_price(item) * self.player.stats.sell_multiplier()))
+
     def _slot_at(self, panel_x: int, count: int, rel_x: int, rel_y: int) -> Optional[int]:
         for i in range(count):
             r = self._row_rect(panel_x, i)
@@ -98,7 +104,7 @@ class ShopMenu(BaseMenu):
 
     def _buy(self, index: int):
         item = self.merchant.shop_items[index]
-        price = self.merchant.shop_prices[item.id]
+        price = self._buy_price(item)
         if self.player.coins < price:
             return
         self.merchant.shop_items.pop(index)
@@ -110,7 +116,7 @@ class ShopMenu(BaseMenu):
 
     def _sell(self, index: int):
         item = self.player.inventory[index]
-        price = _sell_price(item)
+        price = self._sell_price(item)
         self.player.inventory.pop(index)
         if item in self.world_items:
             self.world_items.remove(item)
@@ -148,12 +154,12 @@ class ShopMenu(BaseMenu):
             surface.blit(msg, (bx + 10, LIST_TOP + 10))
         else:
             for i, item in enumerate(self.merchant.shop_items):
-                price = self.merchant.shop_prices[item.id]
+                price = self._buy_price(item)
                 self._draw_row(surface, bx, pw, i, item, price, self.hovered_buy == i, (100, 255, 100))
 
         sell_items = list(self.player.inventory)
         for i, item in enumerate(sell_items):
-            price = _sell_price(item)
+            price = self._sell_price(item)
             can_afford = True
             self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80), can_afford)
 

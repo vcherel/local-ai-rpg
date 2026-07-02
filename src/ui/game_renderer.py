@@ -22,6 +22,7 @@ class GameRenderer:
         self.screen: pygame.Surface = screen
         self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
         self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
+        self.stats_button_rect = pygame.Rect(270, 10, 120, 35)
         self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
 
     @staticmethod
@@ -72,6 +73,7 @@ class GameRenderer:
         mouse_pos = pygame.mouse.get_pos()
         self._draw_button(self.inv_button_rect, "Inventory", mouse_pos)
         self._draw_button(self.quest_button_rect, "Quests", mouse_pos)
+        self._draw_button(self.stats_button_rect, "Character", mouse_pos)
 
         coins_text = f"Coins: {nb_coins}"
         objects_text = f"Items: {nb_items}"

@@ -68,6 +68,37 @@ class World:
 
 
 @dataclass(frozen=True)
+class Stats:
+    # Character progression is use-based: every stat starts at level 1 and gains XP
+    # from a matching action. Effects are pure functions of the level, so growing a
+    # stat never touches the save format.
+    NAMES: tuple = ("strength", "resistance", "speed", "vitality", "bartering")
+
+    # XP needed for level 1 -> 2, scaled by XP_GROWTH for each further level.
+    BASE_XP: float = 35.0
+    XP_GROWTH: float = 1.45
+
+    # Effect increment per level above 1.
+    STRENGTH_PER_LEVEL: int = 2  # flat attack damage
+    RESISTANCE_PER_LEVEL: int = 1  # flat damage reduction
+    SPEED_PER_LEVEL: float = 0.04  # +4% move speed
+    VITALITY_HP_PER_LEVEL: int = 15  # extra max HP
+    VITALITY_REGEN_PER_LEVEL: float = 0.0005
+    BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
+
+    # Prices can move at most this far from their base value.
+    BUY_FLOOR: float = 0.5
+    SELL_CEILING: float = 2.0
+
+    # XP granted per action.
+    XP_PER_HIT: float = 4.0
+    XP_PER_DAMAGE_TAKEN: float = 2.0
+    XP_PER_KILL: float = 8.0
+    XP_PER_RUN_FRAME: float = 0.015
+    XP_PER_TALK: float = 6.0
+
+
+@dataclass(frozen=True)
 class Colors:
     BLACK: tuple = (0, 0, 0)
     GREEN: tuple = (41, 179, 41)
