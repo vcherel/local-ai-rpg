@@ -19,6 +19,7 @@ from ui.menus.game_over import run_game_over
 from ui.menus.inventory_menu import InventoryMenu
 from ui.menus.quest_menu import QuestMenu
 from ui.menus.shop_menu import ShopMenu
+from ui.menus.stats_menu import StatsMenu
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -35,6 +36,7 @@ class Game:
         self.inventory_menu = InventoryMenu(self.screen)
         self.quest_menu = QuestMenu(self.screen)
         self.shop_menu = ShopMenu(self.screen)
+        self.stats_menu = StatsMenu(self.screen)
 
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window)
@@ -85,6 +87,9 @@ class Game:
             if self.quest_menu.handle_event(event, self.dialogue_manager.quest_system):
                 continue
 
+            if self.stats_menu.handle_event(event):
+                continue
+
             if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
@@ -93,6 +98,9 @@ class Game:
 
                         elif self.game_renderer.quest_button_rect.collidepoint(event.pos):
                             self.quest_menu.toggle()
+
+                        elif self.game_renderer.stats_button_rect.collidepoint(event.pos):
+                            self.stats_menu.toggle()
 
                         else:
                             self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
@@ -108,6 +116,7 @@ class Game:
                         else:
                             npc = self.world.talk_npc(self.player)
                             if npc is not None:
+                                self.player.stats.train("bartering", c.Stats.XP_PER_TALK)
                                 self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
 
                     elif event.key == pygame.K_i:
@@ -115,6 +124,9 @@ class Game:
 
                     elif event.key == pygame.K_q:
                         self.quest_menu.toggle()
+
+                    elif event.key == pygame.K_c:
+                        self.stats_menu.toggle()
 
         # The frame the dialogue opened is over; later keystrokes are real input.
         self.dialogue_manager.opened_this_frame = False
@@ -130,6 +142,7 @@ class Game:
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
         self.save_system.update("player", self.player.to_dict())
+        self.player.save_stats()
         self.save_system.update("inventory", [item.id for item in self.player.inventory])
 
         world_state = self.world.serialize()
@@ -150,6 +163,7 @@ class Game:
                 or self.quest_menu.active
                 or self.inventory_menu.active
                 or self.shop_menu.active
+                or self.stats_menu.active
             )
 
             running = self.handle_input()
@@ -173,6 +187,7 @@ class Game:
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)
             self.shop_menu.draw()
+            self.stats_menu.draw(self.player)
             self.context_window.draw()
 
             if not self.active_menu:
@@ -186,7 +201,7 @@ class Game:
 
             if self.player.hp <= 0:
                 # Persist a recoverable state so "Continue" doesn't reload straight into game over
-                self.player.hp = c.Player.HP
+                self.player.hp = self.player.max_hp
                 self.save_data()
                 run_game_over(self.screen, self.clock)
                 return

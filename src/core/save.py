@@ -11,6 +11,7 @@ class SaveSystem:
         - coins: Player coins (int)
         - name: Next NPC name (str)
         - player: Player position and hp (dict)
+        - stats: Character stat levels and xp (dict)
         - inventory: Item ids the player carries (list[str])
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
