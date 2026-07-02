@@ -9,6 +9,7 @@ from core.audio import play_sound
 from core.camera import Camera
 from core.particles import get_particles
 from game.entities.player import Player
+from game.loot import open_lootbox
 from game.world import World
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import get_llm_task_count
@@ -20,6 +21,7 @@ from ui.menus.inventory_menu import InventoryMenu
 from ui.menus.quest_menu import QuestMenu
 from ui.menus.shop_menu import ShopMenu
 from ui.menus.stats_menu import StatsMenu
+from ui.notification import ToastNotification
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -37,6 +39,7 @@ class Game:
         self.quest_menu = QuestMenu(self.screen)
         self.shop_menu = ShopMenu(self.screen)
         self.stats_menu = StatsMenu(self.screen)
+        self.loot_notification = ToastNotification(self.screen)
 
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window)
@@ -110,8 +113,11 @@ class Game:
                         item: Item = self.world.pickup_item(self.player)
                         if item is not None:
                             item.picked_up = True
-                            self.player.inventory.append(item)
-                            play_sound("pickup")
+                            if item.item_type == "lootbox":
+                                self._open_lootbox(item)
+                            else:
+                                self.player.inventory.append(item)
+                                play_sound("pickup")
                             get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
                         else:
                             npc = self.world.talk_npc(self.player)
@@ -138,6 +144,21 @@ class Game:
             self.dialogue_manager.shop_requested = False
 
         return True
+
+    def _open_lootbox(self, lootbox: Item):
+        self.world.items.remove(lootbox)
+
+        coins, loot_item = open_lootbox(self.player.x, self.player.y)
+        self.player.add_coins(coins)
+
+        message = f"Lootbox: +{coins} coins"
+        if loot_item is not None:
+            self.world.items.append(loot_item)
+            self.player.inventory.append(loot_item)
+            message += f" and a {loot_item.name}!"
+
+        self.loot_notification.show(message)
+        play_sound("lootbox_open")
 
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
@@ -184,6 +205,7 @@ class Game:
 
             self.dialogue_manager.draw()
             self.dialogue_manager.notification.draw()
+            self.loot_notification.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)
             self.shop_menu.draw()

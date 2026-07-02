@@ -133,6 +133,8 @@ class World:
                     player.stats.train("vitality", c.Stats.XP_PER_KILL)
                     play_sound("monster_death")
                     get_particles().spawn_burst(monster.x, monster.y, c.Colors.RED, count=14, speed=5, life=500, size=5)
+                    if random.random() < c.LootBox.DROP_CHANCE:
+                        self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
                     self.monsters.remove(monster)
                     return
                 play_sound("hit")

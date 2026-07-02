@@ -43,6 +43,7 @@ ARMOR_KEYWORDS = {
 
 WEAPON_COLOR = (220, 140, 40)
 ARMOR_COLOR = (100, 180, 220)
+LOOTBOX_COLOR = (150, 100, 50)
 
 
 def item_type_from_name(name: str) -> str:
@@ -69,6 +70,9 @@ class Item:
         elif item_type == "armor":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ARMOR_COLOR)
             self.shape = "shield"
+        elif item_type == "lootbox":
+            self.color = LOOTBOX_COLOR
+            self.shape = "chest"
         else:
             self.color = random_color()
             self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
@@ -155,6 +159,15 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width):
         ]
         pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
         pygame.draw.polygon(surface, color, points)
+    elif shape == "chest":
+        half_w, half_h = size * 0.75, size * 0.55
+        rect = pygame.Rect(0, 0, half_w * 2, half_h * 2)
+        rect.center = center
+        pygame.draw.rect(surface, c.Colors.BLACK, rect.inflate(border_width * 2, border_width * 2))
+        pygame.draw.rect(surface, color, rect)
+        lid_y = rect.top + rect.height * 0.4
+        pygame.draw.line(surface, c.Colors.BLACK, (rect.left, lid_y), (rect.right, lid_y), border_width)
+        pygame.draw.circle(surface, c.Colors.BLACK, (cx, int(lid_y)), max(2, size // 8))
     else:
         if shape == "triangle":
             points = get_polygon_points(center, size, 3)
