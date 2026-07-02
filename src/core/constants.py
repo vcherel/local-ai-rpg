@@ -68,6 +68,18 @@ class World:
 
 
 @dataclass(frozen=True)
+class LootBox:
+    # Chance a slain monster drops a lootbox.
+    DROP_CHANCE: float = 0.2
+    COIN_MIN: int = 5
+    COIN_MAX: int = 25
+    # Chance the box also contains a weapon or armor piece, on top of coins.
+    ITEM_CHANCE: float = 0.35
+    WEAPON_BONUS_RANGE: tuple = (1, 5)
+    ARMOR_BONUS_RANGE: tuple = (1, 3)
+
+
+@dataclass(frozen=True)
 class Stats:
     # Character progression is use-based: every stat starts at level 1 and gains XP
     # from a matching action. Effects are pure functions of the level, so growing a

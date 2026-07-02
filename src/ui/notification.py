@@ -106,3 +106,59 @@ class QuestNotification:
         surface.blit(npc_surface, (self.padding, npc_y))
 
         self.screen.blit(surface, (int(x), y))
+
+
+class ToastNotification:
+    """Short, single-line sliding banner for one-off events like opening a lootbox."""
+
+    def __init__(self, screen: pygame.Surface):
+        self.screen: pygame.Surface = screen
+        self.active = False
+        self.text = ""
+
+        self.height = 60
+        self.padding = 15
+
+        self.target_x = 20
+        self.start_time = 0
+        self.duration = 4000  # 4 seconds
+        self.slide_duration = 300  # ms
+
+    def show(self, text: str):
+        self.text = text
+        self.active = True
+        self.start_time = pygame.time.get_ticks()
+
+    def _get_current_x(self, width):
+        elapsed = pygame.time.get_ticks() - self.start_time
+        start_x = -width
+
+        if elapsed < self.slide_duration:
+            progress = elapsed / self.slide_duration
+            return start_x + (self.target_x - start_x) * progress
+        elif elapsed > self.duration - self.slide_duration:
+            progress = (elapsed - (self.duration - self.slide_duration)) / self.slide_duration
+            return self.target_x + (start_x - self.target_x) * progress
+        else:
+            return self.target_x
+
+    def draw(self):
+        if not self.active:
+            return
+
+        if pygame.time.get_ticks() - self.start_time > self.duration:
+            self.active = False
+            return
+
+        text_surface = c.Fonts.button.render(self.text, True, c.Colors.YELLOW)
+        width = text_surface.get_width() + 2 * self.padding
+
+        x = self._get_current_x(width)
+        y = 280
+
+        surface = pygame.Surface((width, self.height))
+        surface.fill(c.Colors.BUTTON)
+        pygame.draw.rect(surface, c.Colors.BORDER, (0, 0, width, self.height), 3)
+        surface.blit(text_surface, (self.padding, (self.height - text_surface.get_height()) // 2))
+
+        self.screen.blit(surface, (int(x), y))
