@@ -4,5 +4,5 @@ __pycache__
 .vscode
 models
 saves
-stats*
+/stats*
 logs
