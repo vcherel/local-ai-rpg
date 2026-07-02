@@ -204,8 +204,9 @@ class Game:
             self.context_window.update()
 
             self.dialogue_manager.draw()
-            self.dialogue_manager.notification.draw()
-            self.loot_notification.draw()
+            if not self.active_menu:
+                self.dialogue_manager.notification.draw()
+                self.loot_notification.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)
             self.shop_menu.draw()
