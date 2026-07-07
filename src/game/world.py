@@ -175,6 +175,9 @@ class World:
             if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
                 monster.move(player, dt)
 
+        for npc in self.npcs:
+            npc.update(player, dt)
+
         if len(self.monsters) < c.World.NB_MONSTERS:
             self.respawn_timer += dt
             if self.respawn_timer >= c.World.RESPAWN_INTERVAL_MS:

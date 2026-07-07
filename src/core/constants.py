@@ -44,6 +44,14 @@ class Entities:
     NPC_SIZE: int = 30
     ITEM_SIZE: int = 25
     NPC_HP: int = 30
+    # NPCs wander around their spawn point: walk to a random spot within
+    # NPC_WANDER_RADIUS, then idle for a random duration before moving again.
+    NPC_WANDER_SPEED: float = 1.5
+    NPC_WANDER_RADIUS: int = 250
+    NPC_IDLE_MIN_MS: int = 2000
+    NPC_IDLE_MAX_MS: int = 7000
+    # NPCs stop wandering and face the player when he gets this close.
+    NPC_WANDER_PAUSE_DISTANCE: int = 120
     SWING_SPEED: float = 0.007
     # How long an entity flashes white after being hit (ms).
     FLASH_MS: int = 150
