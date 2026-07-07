@@ -55,8 +55,34 @@ def item_type_from_name(name: str) -> str:
     return "misc"
 
 
+def rarity_tier(rarity: str) -> c.RarityTier:
+    for tier in c.Rarity.TIERS:
+        if tier.name == rarity:
+            return tier
+    raise ValueError(f"Unknown rarity: {rarity}")
+
+
+def roll_rarity(weights: tuple = None) -> str:
+    if weights is None:
+        weights = tuple(tier.weight for tier in c.Rarity.TIERS)
+    return random.choices(c.Rarity.TIERS, weights)[0].name
+
+
+def rarity_color(rarity: str) -> tuple:
+    return rarity_tier(rarity).color
+
+
+def roll_bonus(item_type: str, rarity: str) -> int:
+    tier = rarity_tier(rarity)
+    if item_type == "weapon":
+        return random.randint(*tier.weapon_bonus)
+    if item_type == "armor":
+        return random.randint(*tier.armor_bonus)
+    return 0
+
+
 class Item:
-    def __init__(self, x, y, name, item_type: str = "misc", bonus: int = 0):
+    def __init__(self, x, y, name, item_type: str = "misc", bonus: int = 0, rarity: str = None):
         self.id = uuid.uuid4().hex
         self.x = x
         self.y = y
@@ -64,6 +90,7 @@ class Item:
         self.name = name
         self.item_type = item_type
         self.bonus = bonus
+        self.rarity = rarity or roll_rarity()
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
             self.shape = "sword"
@@ -90,6 +117,7 @@ class Item:
             "name": self.name,
             "item_type": self.item_type,
             "bonus": self.bonus,
+            "rarity": self.rarity,
             "color": list(self.color),
             "shape": self.shape,
             "picked_up": self.picked_up,
@@ -97,7 +125,7 @@ class Item:
 
     @classmethod
     def from_dict(cls, data: dict) -> Item:
-        item = cls(data["x"], data["y"], data["name"], data["item_type"], data["bonus"])
+        item = cls(data["x"], data["y"], data["name"], data["item_type"], data["bonus"], data["rarity"])
         item.id = data["id"]
         item.angle = data["angle"]
         item.color = tuple(data["color"])
@@ -125,7 +153,13 @@ class Item:
         item_surface = pygame.Surface((surface_size, surface_size), pygame.SRCALPHA)
         item_center = (surface_size // 2, surface_size // 2)
 
-        draw_shape_with_border(item_surface, self.shape, item_center, size, self.color, border_width)
+        tier = rarity_tier(self.rarity)
+        tier_index = c.Rarity.TIERS.index(tier)
+        if tier_index >= 2:
+            pygame.draw.circle(item_surface, (*tier.color, 70), item_center, size + 5)
+        border_color = c.Colors.BLACK if self.rarity == "common" else tier.color
+
+        draw_shape_with_border(item_surface, self.shape, item_center, size, self.color, border_width, border_color)
 
         rotated_surface = pygame.transform.rotate(item_surface, math.degrees(-visual_angle))
         rect = rotated_surface.get_rect(center=center)
@@ -133,10 +167,12 @@ class Item:
         surface.blit(rotated_surface, rect.topleft)
 
 
-def draw_shape_with_border(surface, shape, center, size, color, border_width):
+def draw_shape_with_border(surface, shape, center, size, color, border_width, border_color=None):
+    if border_color is None:
+        border_color = c.Colors.BLACK
     cx, cy = center
     if shape == "circle":
-        pygame.draw.circle(surface, c.Colors.BLACK, center, size + border_width)
+        pygame.draw.circle(surface, border_color, center, size + border_width)
         pygame.draw.circle(surface, color, center, size)
     elif shape == "sword":
         points = [
@@ -147,8 +183,8 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width):
             (cx - size * 0.15, cy + size * 0.35),
             (cx - size * 0.4, cy - size * 0.15),
         ]
-        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
         pygame.draw.polygon(surface, color, points)
+        pygame.draw.polygon(surface, border_color, points, border_width)
     elif shape == "shield":
         points = [
             (cx - size * 0.65, cy - size * 0.45),
@@ -157,13 +193,13 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width):
             (cx, cy + size * 0.7),
             (cx - size * 0.65, cy + size * 0.15),
         ]
-        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
         pygame.draw.polygon(surface, color, points)
+        pygame.draw.polygon(surface, border_color, points, border_width)
     elif shape == "chest":
         half_w, half_h = size * 0.75, size * 0.55
         rect = pygame.Rect(0, 0, half_w * 2, half_h * 2)
         rect.center = center
-        pygame.draw.rect(surface, c.Colors.BLACK, rect.inflate(border_width * 2, border_width * 2))
+        pygame.draw.rect(surface, border_color, rect.inflate(border_width * 2, border_width * 2))
         pygame.draw.rect(surface, color, rect)
         lid_y = rect.top + rect.height * 0.4
         pygame.draw.line(surface, c.Colors.BLACK, (rect.left, lid_y), (rect.right, lid_y), border_width)
@@ -178,8 +214,8 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width):
         else:
             raise ValueError(f"Unknown shape: {shape}")
 
-        pygame.draw.polygon(surface, c.Colors.BLACK, points, border_width)
         pygame.draw.polygon(surface, color, points)
+        pygame.draw.polygon(surface, border_color, points, border_width)
 
 
 def get_polygon_points(center, size, num_points, inner_radius_factor=None):

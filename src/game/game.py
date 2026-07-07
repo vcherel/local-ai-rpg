@@ -8,6 +8,7 @@ import core.constants as c
 from core.audio import play_sound
 from core.camera import Camera
 from core.particles import get_particles
+from game.entities.items import rarity_color
 from game.entities.player import Player
 from game.loot import open_lootbox
 from game.world import World
@@ -148,16 +149,16 @@ class Game:
     def _open_lootbox(self, lootbox: Item):
         self.world.items.remove(lootbox)
 
-        coins, loot_item = open_lootbox(self.player.x, self.player.y)
+        coins, loot_item = open_lootbox(self.player.x, self.player.y, lootbox.rarity)
         self.player.add_coins(coins)
 
         message = f"Lootbox: +{coins} coins"
         if loot_item is not None:
             self.world.items.append(loot_item)
             self.player.inventory.append(loot_item)
-            message += f" and a {loot_item.name}!"
+            message += f" and a {loot_item.rarity} {loot_item.name}!"
 
-        self.loot_notification.show(message)
+        self.loot_notification.show(message, rarity_color(lootbox.rarity))
         play_sound("lootbox_open")
 
     def save_data(self):

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from game.entities.items import rarity_color
 from ui.menus.base_menu import BaseMenu
 
 if TYPE_CHECKING:
@@ -97,9 +98,10 @@ class InventoryMenu(BaseMenu):
 
         item_dict = {}
         for item in player.inventory:
-            if item.name not in item_dict:
-                item_dict[item.name] = {"count": 0, "item": item}
-            item_dict[item.name]["count"] += 1
+            key = (item.name, item.rarity, item.bonus)
+            if key not in item_dict:
+                item_dict[key] = {"count": 0, "item": item}
+            item_dict[key]["count"] += 1
 
         items_list = list(item_dict.values())
 
@@ -163,7 +165,7 @@ class InventoryMenu(BaseMenu):
                 tooltip_text = f"{item.name}  (+{item.bonus} defense)"
             else:
                 tooltip_text = item.name
-            tooltip_surface = c.Fonts.text.render(tooltip_text, True, c.Colors.WHITE)
+            tooltip_surface = c.Fonts.text.render(tooltip_text, True, rarity_color(item.rarity))
             tooltip_width = tooltip_surface.get_width() + 20
             tooltip_height = tooltip_surface.get_height() + 10
 

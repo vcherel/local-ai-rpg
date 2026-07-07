@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import random
 import re
 from typing import TYPE_CHECKING, List
 
+import core.constants as c
 from core.utils import parse_response_quest_analysis, random_coordinates
-from game.entities.items import Item, item_type_from_name
+from game.entities.items import Item, item_type_from_name, roll_bonus, roll_rarity
 from game.quest import Quest
 from llm.llm_request_queue import generate_response_queued
 
@@ -131,8 +131,9 @@ class QuestSystem:
 
         if quest.reward_item_name:
             rtype = item_type_from_name(quest.reward_item_name)
-            rbonus = random.randint(8, 12) if rtype == "weapon" else random.randint(3, 4) if rtype == "armor" else 0
-            reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus)
+            rarity = roll_rarity(c.Rarity.QUEST_REWARD_WEIGHTS)
+            rbonus = roll_bonus(rtype, rarity)
+            reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity)
             reward_item.picked_up = True
             self.items.append(reward_item)
             self.player.inventory.append(reward_item)

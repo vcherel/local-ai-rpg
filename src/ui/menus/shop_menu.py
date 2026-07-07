@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 import pygame
 
 import core.constants as c
+from game.entities.items import rarity_color, rarity_tier
 from ui.menus.base_menu import BaseMenu
 
 if TYPE_CHECKING:
@@ -20,8 +21,10 @@ LIST_TOP = 90
 
 def _sell_price(item: Item) -> int:
     if item.item_type in ("weapon", "armor"):
-        return max(5, item.bonus * 10)
-    return 5
+        base = max(5, item.bonus * 10)
+    else:
+        base = 5
+    return round(base * rarity_tier(item.rarity).price_mult)
 
 
 class ShopMenu(BaseMenu):
@@ -190,7 +193,7 @@ class ShopMenu(BaseMenu):
         icon_y = r.centery
         item.draw(surface, x=icon_x, y=icon_y)
 
-        name_color = c.Colors.WHITE if enabled else c.Colors.BORDER
+        name_color = rarity_color(item.rarity) if enabled else c.Colors.BORDER
         name_surf = c.Fonts.text.render(item.name, True, name_color)
         surface.blit(name_surf, (r.x + 56, r.y + 8))
 
