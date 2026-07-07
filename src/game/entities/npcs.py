@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -14,6 +15,7 @@ from game.quest import Quest
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.items import Item
+    from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
 
 
@@ -26,6 +28,9 @@ class NPC(Entity):
         self.shop_items: List[Item] = []
         self.shop_prices: Dict[str, int] = {}
         self.shop_ready = False
+        self.home = (x, y)
+        self.wander_target = None
+        self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
 
     @property
     def has_active_quest(self):
@@ -82,6 +87,34 @@ class NPC(Entity):
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
             self.name = npc_name_generator.get_name()
+
+    def update(self, player: Player, dt):
+        if self.distance_to_point(player.get_pos()) < c.Entities.NPC_WANDER_PAUSE_DISTANCE:
+            # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
+            self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
+            return
+
+        if self.wander_target is None:
+            self.idle_timer -= dt
+            if self.idle_timer <= 0:
+                angle = random.uniform(0, 2 * math.pi)
+                radius = random.uniform(0, c.Entities.NPC_WANDER_RADIUS)
+                self.wander_target = (self.home[0] + math.cos(angle) * radius, self.home[1] + math.sin(angle) * radius)
+            return
+
+        dx = self.wander_target[0] - self.x
+        dy = self.wander_target[1] - self.y
+        step = c.Entities.NPC_WANDER_SPEED * dt * c.TARGET_FPS / 1000.0
+        if math.hypot(dx, dy) <= step:
+            self.x, self.y = self.wander_target
+            self.wander_target = None
+            self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
+        else:
+            angle = math.atan2(dy, dx)
+            self.x += math.cos(angle) * step
+            self.y += math.sin(angle) * step
+            self.orientation = angle + math.pi / 2
+        self.clamp_to_world()
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
