@@ -20,6 +20,17 @@ if TYPE_CHECKING:
     from game.world import World
     from llm.name_generator import NPCNameGenerator
 
+END_MARKER = "[END]"
+
+
+def _trim_partial_marker(text: str) -> str:
+    # Hide an end marker that is still streaming in, e.g. a trailing "[EN"
+    upper = text.upper()
+    for length in range(len(END_MARKER) - 1, 0, -1):
+        if upper.endswith(END_MARKER[:length]):
+            return text[:-length]
+    return text
+
 
 class DialogueManager:
     def __init__(self, screen, items, player):
@@ -58,7 +69,9 @@ class DialogueManager:
             else:
                 system_prompt += "You are a trader who buys and sells adventuring gear. "
             system_prompt += (
-                "Reply naturally to messages in one short sentence. You can mention your wares but keep it brief."
+                "Reply naturally to messages in one short sentence. You can mention your wares but keep it brief. "
+                "Usually just reply normally. Only if the player says goodbye, or you have clearly finished "
+                f"your business with them, add {END_MARKER} after your reply."
             )
             return system_prompt
 
@@ -97,7 +110,9 @@ class DialogueManager:
             )
 
         system_prompt += (
-            "Reply naturally to messages, staying within the context of the conversation, in one short sentence."
+            "Reply naturally to messages, staying within the context of the conversation, in one short sentence. "
+            "Usually just reply normally. Only if the player says goodbye, or you have clearly finished "
+            f"your business with them, add {END_MARKER} after your reply."
         )
 
         return system_prompt
@@ -180,6 +195,12 @@ class DialogueManager:
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
+                marker_pos = partial.upper().find(END_MARKER)
+                if marker_pos != -1:
+                    self.conversation_ended = True
+                    partial = partial[:marker_pos].rstrip()
+                else:
+                    partial = _trim_partial_marker(partial)
                 self.conversation.update_last_assistant_message(partial)
                 self.ui.auto_scroll(self.conversation, self.current_npc.name)
                 self.waiting_for_llm = False
@@ -239,7 +260,7 @@ class DialogueManager:
             return
 
         self.update()
-        self.ui.draw(self.current_npc.name, self.conversation)
+        self.ui.draw(self.current_npc.name, self.conversation, self.conversation_ended)
 
         if self.current_npc.is_merchant and self.generator is None:
             box_height = 300
