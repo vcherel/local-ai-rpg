@@ -68,12 +68,14 @@ def parse_shop_inventory(response: str) -> list:
             if not isinstance(item, dict) or not item.get("name"):
                 continue
             item_type = str(item.get("item_type", "misc"))
-            bonus = int(item.get("bonus") or 0) if item_type in ("weapon", "armor") else 0
+            rarity = str(item.get("rarity", "")).strip().lower()
+            if rarity not in (tier.name for tier in c.Rarity.TIERS):
+                rarity = ""
             result.append(
                 {
                     "name": str(item["name"]),
                     "item_type": item_type,
-                    "bonus": bonus,
+                    "rarity": rarity,
                     "price": max(1, int(item.get("price", 10))),
                 }
             )

@@ -115,6 +115,7 @@ class ToastNotification:
         self.screen: pygame.Surface = screen
         self.active = False
         self.text = ""
+        self.color = c.Colors.YELLOW
 
         self.height = 60
         self.padding = 15
@@ -124,8 +125,9 @@ class ToastNotification:
         self.duration = 4000  # 4 seconds
         self.slide_duration = 300  # ms
 
-    def show(self, text: str):
+    def show(self, text: str, color: tuple = None):
         self.text = text
+        self.color = color or c.Colors.YELLOW
         self.active = True
         self.start_time = pygame.time.get_ticks()
 
@@ -150,7 +152,7 @@ class ToastNotification:
             self.active = False
             return
 
-        text_surface = c.Fonts.button.render(self.text, True, c.Colors.YELLOW)
+        text_surface = c.Fonts.button.render(self.text, True, self.color)
         width = text_surface.get_width() + 2 * self.padding
 
         x = self._get_current_x(width)

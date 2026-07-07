@@ -67,15 +67,16 @@ class NPC(Entity):
         return npc
 
     def set_shop(self, shop_data: list):
-        from game.entities.items import Item, item_type_from_name
+        from game.entities.items import Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 
         self.shop_items.clear()
         self.shop_prices.clear()
         for entry in shop_data:
             item_type = entry.get("item_type") or item_type_from_name(entry["name"])
-            item = Item(0, 0, entry["name"], item_type, entry["bonus"])
+            rarity = entry.get("rarity") or roll_rarity()
+            item = Item(0, 0, entry["name"], item_type, roll_bonus(item_type, rarity), rarity)
             self.shop_items.append(item)
-            self.shop_prices[item.id] = entry["price"]
+            self.shop_prices[item.id] = round(entry["price"] * rarity_tier(rarity).price_mult)
         self.shop_ready = True
 
     def assign_name(self, npc_name_generator: NPCNameGenerator):

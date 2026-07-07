@@ -50,7 +50,8 @@ class DialogueManager:
             )
             if npc.shop_ready and npc.shop_items:
                 wares = ", ".join(
-                    f"{item.name} ({item.item_type}, +{item.bonus} bonus) for {npc.shop_prices[item.id]} coins"
+                    f"{item.name} ({item.rarity} {item.item_type}, +{item.bonus} bonus)"
+                    f" for {npc.shop_prices[item.id]} coins"
                     for item in npc.shop_items
                 )
                 system_prompt += f"You sell: {wares}. "
