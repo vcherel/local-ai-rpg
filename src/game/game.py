@@ -200,7 +200,12 @@ class Game:
                 self.world.update(self.player, dt)
 
                 self.game_renderer.draw_world(self.camera, self.world, self.player)
-                self.game_renderer.draw_ui(len(self.player.inventory), self.player.coins, get_llm_task_count())
+                self.game_renderer.draw_ui(
+                    len(self.player.inventory),
+                    self.player.coins,
+                    len(self.dialogue_manager.quest_system.active_quests),
+                    get_llm_task_count(),
+                )
 
             self.context_window.update()
 
