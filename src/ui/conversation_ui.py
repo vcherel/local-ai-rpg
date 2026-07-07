@@ -75,7 +75,7 @@ class ConversationUI:
 
         return lines
 
-    def draw(self, npc_name: str, history: ConversationHistory):
+    def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False):
         box_height = 300
         box_y = c.Screen.HEIGHT - box_height - 25
 
@@ -87,7 +87,10 @@ class ConversationUI:
 
         self._draw_messages(self.screen, box_y, npc_name, history.messages)
 
-        self._draw_input_box(self.screen, box_y, box_height)
+        if ended:
+            self._draw_ended_notice(self.screen, box_y, box_height)
+        else:
+            self._draw_input_box(self.screen, box_y, box_height)
 
     def _draw_messages(self, screen: pygame.Surface, box_y: int, npc_name: str, messages: list):
         message_area_y = box_y + 55
@@ -126,3 +129,8 @@ class ConversationUI:
         input_text = self.user_input + "|"
         input_surface = c.Fonts.medium.render(input_text, True, c.Colors.WHITE)
         screen.blit(input_surface, (30, input_y + 1))  # + is to fix y position of input text
+
+    def _draw_ended_notice(self, screen: pygame.Surface, box_y: int, box_height: int):
+        notice_y = box_y + box_height - 60
+        notice = c.Fonts.medium.render("The conversation is over. Press Escape to leave.", True, c.Colors.BORDER)
+        screen.blit(notice, (30, notice_y + 1))
