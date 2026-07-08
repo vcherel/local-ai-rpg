@@ -20,6 +20,7 @@ from ui.menus.context_menu import ContextMenu
 from ui.menus.game_over import run_game_over
 from ui.menus.help_menu import HelpMenu
 from ui.menus.inventory_menu import InventoryMenu
+from ui.menus.pause_menu import PauseMenu
 from ui.menus.quest_menu import QuestMenu
 from ui.menus.shop_menu import ShopMenu
 from ui.menus.stats_menu import StatsMenu
@@ -42,6 +43,7 @@ class Game:
         self.shop_menu = ShopMenu(self.screen)
         self.stats_menu = StatsMenu(self.screen)
         self.help_menu = HelpMenu(self.screen)
+        self.pause_menu = PauseMenu(self.screen)
         self.loot_notification = ToastNotification(self.screen)
 
         self.save_system = save_system
@@ -104,6 +106,9 @@ class Game:
             if self.help_menu.handle_event(event):
                 continue
 
+            if self.pause_menu.handle_event(event):
+                continue
+
             if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
@@ -121,6 +126,9 @@ class Game:
 
                         elif self.game_renderer.help_button_rect.collidepoint(event.pos):
                             self.help_menu.toggle()
+
+                        elif self.game_renderer.pause_button_rect.collidepoint(event.pos):
+                            self.pause_menu.toggle()
 
                         elif self.interior is None:
                             self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
@@ -146,6 +154,9 @@ class Game:
 
                     elif event.key == pygame.K_h:
                         self.help_menu.toggle()
+
+                    elif event.key in (pygame.K_p, pygame.K_ESCAPE):
+                        self.pause_menu.toggle()
 
         # The frame the dialogue opened is over; later keystrokes are real input.
         self.dialogue_manager.opened_this_frame = False
@@ -281,6 +292,7 @@ class Game:
                 or self.shop_menu.active
                 or self.stats_menu.active
                 or self.help_menu.active
+                or self.pause_menu.active
             )
 
             running = self.handle_input()
@@ -321,6 +333,7 @@ class Game:
             self.shop_menu.draw()
             self.stats_menu.draw(self.player)
             self.help_menu.draw()
+            self.pause_menu.draw()
             self.context_window.draw()
 
             if not self.active_menu:

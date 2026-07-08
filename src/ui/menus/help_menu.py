@@ -14,7 +14,8 @@ CONTROLS = [
     ("C", "Character"),
     ("L", "Lore"),
     ("H", "Help"),
-    ("Esc", "Close menu"),
+    ("P", "Pause"),
+    ("Esc", "Close menu / pause"),
 ]
 
 
