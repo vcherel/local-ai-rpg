@@ -31,12 +31,30 @@ class Player:
 
 
 @dataclass(frozen=True)
-class Monster:
-    SIZE: int = 25
-    HP: int = 15
-    SPEED: int = 4
-    ATTACK_RANGE: int = 10
-    DAMAGE: int = 5
+class MonsterKind:
+    name: str
+    color: tuple
+    size: int
+    hp: int
+    speed: int
+    attack_range: int
+    damage: int
+    # Only spawns at least this far from the world center, so tougher kinds show up farther out.
+    min_distance: int
+    # Relative pick weight among kinds unlocked at a given distance; higher means more common.
+    weight: int
+
+
+# Ordered weakest to strongest. Kept close to the old single Monster stats near the village,
+# scaling up with distance from the world center so wandering further gets more dangerous.
+MONSTER_KINDS: tuple[MonsterKind, ...] = (
+    MonsterKind("Slime", (90, 190, 90), 22, 10, 3, 8, 3, min_distance=0, weight=10),
+    MonsterKind("Wolf", (140, 140, 140), 26, 20, 5, 10, 6, min_distance=1200, weight=6),
+    MonsterKind("Bandit", (150, 40, 40), 28, 35, 4, 12, 9, min_distance=2500, weight=4),
+    MonsterKind("Troll", (60, 90, 55), 34, 60, 3, 14, 14, min_distance=4000, weight=2),
+)
+
+MONSTER_MAX_SIZE: int = max(kind.size for kind in MONSTER_KINDS)
 
 
 @dataclass(frozen=True)

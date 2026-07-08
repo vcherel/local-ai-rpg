@@ -10,7 +10,7 @@ from core.audio import play_sound
 from core.particles import get_particles
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.items import Item
-from game.entities.monsters import Monster
+from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
@@ -49,7 +49,9 @@ class World:
             self.buildings = generate_buildings()
             set_active_buildings(self.buildings)
             self._populate_npcs()
-            self.monsters = [Monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)]
+            self.monsters = [
+                self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
+            ]
         set_active_buildings(self.buildings)
 
         if self.context is None:
@@ -79,9 +81,15 @@ class World:
         min_dist = c.World.INITIAL_SPAWN_MIN_DISTANCE
         for _ in range(20):
             x, y = random.randint(0, c.World.WORLD_SIZE), random.randint(0, c.World.WORLD_SIZE)
-            if math.hypot(x - center, y - center) >= min_dist and not self.blocked(x, y, c.Monster.SIZE / 2):
+            if math.hypot(x - center, y - center) >= min_dist and not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
                 return x, y
         return x, y
+
+    def _new_monster(self, x, y) -> Monster:
+        """Tougher kinds unlock farther from the world center, so wandering out gets more dangerous."""
+        center = c.World.WORLD_SIZE // 2
+        distance_from_center = math.hypot(x - center, y - center)
+        return Monster(x, y, pick_monster_kind(distance_from_center))
 
     def _restore(self, saved_npcs: list):
         """Rebuild items, NPCs, monsters and buildings from a saved game, relinking quest items by id."""
@@ -200,12 +208,14 @@ class World:
 
         attack_damage = c.Player.ATTACK_DAMAGE + player.best_weapon_bonus() + player.stats.attack_bonus()
         for monster in self.monsters:
-            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Monster.SIZE // 2:
+            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + monster.kind.size // 2:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
                 if monster.receive_damage(attack_damage):
                     player.stats.train("vitality", c.Stats.XP_PER_KILL)
                     play_sound("monster_death")
-                    get_particles().spawn_burst(monster.x, monster.y, c.Colors.RED, count=14, speed=5, life=500, size=5)
+                    get_particles().spawn_burst(
+                        monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5
+                    )
                     if random.random() < c.LootBox.DROP_CHANCE:
                         self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
                     self.monsters.remove(monster)
@@ -237,8 +247,8 @@ class World:
             dist = random.uniform(c.World.SPAWN_MIN_DISTANCE, c.World.SPAWN_MAX_DISTANCE)
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
-            if not self.blocked(x, y, c.Monster.SIZE / 2):
-                self.monsters.append(Monster(x, y))
+            if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
+                self.monsters.append(self._new_monster(x, y))
                 return
 
     def update(self, player: Player, dt):
