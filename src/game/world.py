@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, List
 import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
-from core.utils import random_coordinates
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.items import Item
 from game.entities.monsters import Monster
@@ -24,9 +23,10 @@ if TYPE_CHECKING:
 
 class World:
     def __init__(self, save_system: SaveSystem, context_window: ContextMenu):
-        self.floor_details = [
-            (*random_coordinates(), random.choice(["stone", "flower"])) for _ in range(c.World.NB_DETAILS)
-        ]
+        # Regenerated on the fly as the player explores; see _sync_chunks.
+        self.floor_details = []
+        self._loaded_chunks = set()
+        self._current_chunk = None
 
         self.items: List[Item] = []
         self.npcs: List[NPC] = []
@@ -101,6 +101,42 @@ class World:
 
     def blocked(self, x, y, radius, door_open=False) -> bool:
         return any(building.blocks(x, y, radius, door_open) for building in self.buildings)
+
+    def _chunk_of(self, x, y) -> tuple[int, int]:
+        size = c.World.CHUNK_SIZE
+        return int(x // size), int(y // size)
+
+    def _load_chunk(self, chunk: tuple[int, int]):
+        """Deterministically generate a chunk's floor details, so revisiting it looks the same."""
+        cx, cy = chunk
+        size = c.World.CHUNK_SIZE
+        rng = random.Random(f"{cx},{cy}")
+        for _ in range(c.World.DETAILS_PER_CHUNK):
+            x = cx * size + rng.uniform(0, size)
+            y = cy * size + rng.uniform(0, size)
+            self.floor_details.append((x, y, rng.choice(["stone", "flower"])))
+        self._loaded_chunks.add(chunk)
+
+    def _unload_chunk(self, chunk: tuple[int, int]):
+        self.floor_details = [d for d in self.floor_details if self._chunk_of(d[0], d[1]) != chunk]
+        self._loaded_chunks.discard(chunk)
+
+    def _sync_chunks(self, player: Player):
+        chunk = self._chunk_of(player.x, player.y)
+        if chunk == self._current_chunk:
+            return
+        self._current_chunk = chunk
+        cx, cy = chunk
+        load_r = c.World.CHUNK_LOAD_RADIUS
+        keep_r = c.World.CHUNK_KEEP_RADIUS
+        for dx in range(-load_r, load_r + 1):
+            for dy in range(-load_r, load_r + 1):
+                candidate = (cx + dx, cy + dy)
+                if candidate not in self._loaded_chunks:
+                    self._load_chunk(candidate)
+        for loaded in list(self._loaded_chunks):
+            if max(abs(loaded[0] - cx), abs(loaded[1] - cy)) > keep_r:
+                self._unload_chunk(loaded)
 
     def _generate_context(self):
         system_prompt = (
@@ -197,15 +233,17 @@ class World:
 
     def _spawn_monster_away_from(self, player: Player):
         for _ in range(10):
-            x, y = random_coordinates()
-            if math.hypot(x - player.x, y - player.y) >= c.World.SPAWN_MIN_DISTANCE and not self.blocked(
-                x, y, c.Monster.SIZE / 2
-            ):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(c.World.SPAWN_MIN_DISTANCE, c.World.SPAWN_MAX_DISTANCE)
+            x = player.x + math.cos(angle) * dist
+            y = player.y + math.sin(angle) * dist
+            if not self.blocked(x, y, c.Monster.SIZE / 2):
                 self.monsters.append(Monster(x, y))
                 return
 
     def update(self, player: Player, dt):
         get_particles().update(dt)
+        self._sync_chunks(player)
 
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).
@@ -213,6 +251,9 @@ class World:
         for monster in self.monsters:
             if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
                 monster.move(player, dt, self.blocked)
+
+        # Monsters left far behind despawn, freeing their slot to respawn near the player.
+        self.monsters = [m for m in self.monsters if m.distance_to_point(player.get_pos()) <= c.World.DESPAWN_DISTANCE]
 
         for npc in self.npcs:
             npc.update(player, dt, self.blocked)

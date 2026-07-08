@@ -64,14 +64,25 @@ class World:
 
     NB_NPCS: int = 20
     NB_MONSTERS: int = 100
-    NB_DETAILS: int = 5000
 
     # Slain monsters are replenished over time so the world never empties out.
     RESPAWN_INTERVAL_MS: int = 3000
-    # New monsters spawn at least this far from the player so they never pop into view.
+    # New monsters spawn at least this far from the player so they never pop into view...
     SPAWN_MIN_DISTANCE: int = 900
+    # ...and at most this far, so they still show up as the player explores.
+    SPAWN_MAX_DISTANCE: int = 1500
+    # Monsters left this far behind despawn, freeing their slot to respawn near the player.
+    DESPAWN_DISTANCE: int = 3000
     # Monsters placed at world creation start at least this far from the player spawn point.
     INITIAL_SPAWN_MIN_DISTANCE: int = 1200
+
+    # Floor details stream in per chunk as the player explores, so the world has no edge.
+    CHUNK_SIZE: int = 1000
+    DETAILS_PER_CHUNK: int = 200
+    # Chunks within this many chunks of the player are generated...
+    CHUNK_LOAD_RADIUS: int = 2
+    # ...and stay loaded until this much farther away, to avoid load/unload thrashing at the edge.
+    CHUNK_KEEP_RADIUS: int = 3
 
 
 @dataclass(frozen=True)

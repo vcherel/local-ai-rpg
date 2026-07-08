@@ -83,7 +83,6 @@ class Player(Entity):
             if blocked is not None and blocked(self.x, self.y + step_y, radius, True):
                 step_y = 0
             self.y += step_y
-            self.clamp_to_world()
 
             # Running is what trains speed; plain walking does not.
             if running:

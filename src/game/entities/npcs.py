@@ -128,7 +128,6 @@ class NPC(Entity):
                 self.wander_target = None
                 self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
             self.orientation = angle + math.pi / 2
-        self.clamp_to_world()
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
