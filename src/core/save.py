@@ -16,6 +16,7 @@ class SaveSystem:
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
         - monsters: Monster positions and hp (list[dict])
+        - buildings: Building placement, kind, size, name and looted state (list[dict])
     """
 
     def __init__(self, filename="./saves/save.json"):

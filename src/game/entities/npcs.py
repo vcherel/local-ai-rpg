@@ -47,6 +47,7 @@ class NPC(Entity):
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
             "shop_ready": self.shop_ready,
+            "home": list(self.home),
             "shop_items": [{**item.to_dict(), "shop_price": self.shop_prices[item.id]} for item in self.shop_items],
         }
 
@@ -63,6 +64,7 @@ class NPC(Entity):
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
         npc.shop_ready = data["shop_ready"]
+        npc.home = tuple(data["home"])
         for entry in data["shop_items"]:
             price = entry["shop_price"]
             item_data = {k: v for k, v in entry.items() if k != "shop_price"}
@@ -88,7 +90,7 @@ class NPC(Entity):
         if self.name is None:
             self.name = npc_name_generator.get_name()
 
-    def update(self, player: Player, dt):
+    def update(self, player: Player, dt, blocked=None):
         if self.distance_to_point(player.get_pos()) < c.Entities.NPC_WANDER_PAUSE_DISTANCE:
             # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
@@ -111,8 +113,20 @@ class NPC(Entity):
             self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
         else:
             angle = math.atan2(dy, dx)
-            self.x += math.cos(angle) * step
-            self.y += math.sin(angle) * step
+            step_x = math.cos(angle) * step
+            step_y = math.sin(angle) * step
+            radius = c.Entities.NPC_SIZE / 2
+            # Move one axis at a time so a wall on one axis lets the NPC slide along it.
+            if blocked is not None and blocked(self.x + step_x, self.y, radius):
+                step_x = 0
+            self.x += step_x
+            if blocked is not None and blocked(self.x, self.y + step_y, radius):
+                step_y = 0
+            self.y += step_y
+            # A blocked NPC would otherwise loiter against a wall forever; drop the target so it repicks.
+            if step_x == 0 and step_y == 0:
+                self.wander_target = None
+                self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
             self.orientation = angle + math.pi / 2
         self.clamp_to_world()
 

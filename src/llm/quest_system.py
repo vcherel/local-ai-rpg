@@ -4,7 +4,8 @@ import re
 from typing import TYPE_CHECKING, List
 
 import core.constants as c
-from core.utils import parse_response_quest_analysis, random_coordinates
+from core.utils import parse_response_quest_analysis
+from game.entities.buildings import random_open_coordinates
 from game.entities.items import Item, item_type_from_name, roll_bonus, roll_rarity
 from game.quest import Quest
 from llm.llm_request_queue import generate_response_queued
@@ -61,7 +62,7 @@ class QuestSystem:
                 reward_item_name = reward_item_name[len(article) :]
                 break
 
-        quest_item = Item(*random_coordinates(), item_name)
+        quest_item = Item(*random_open_coordinates(), item_name)
         self.items.append(quest_item)
 
         quest = Quest(

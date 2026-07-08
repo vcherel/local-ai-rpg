@@ -64,7 +64,6 @@ class World:
 
     NB_NPCS: int = 20
     NB_MONSTERS: int = 100
-    MERCHANT_PROBABILITY: float = 0.15
     NB_DETAILS: int = 5000
 
     # Slain monsters are replenished over time so the world never empties out.
@@ -73,6 +72,47 @@ class World:
     SPAWN_MIN_DISTANCE: int = 900
     # Monsters placed at world creation start at least this far from the player spawn point.
     INITIAL_SPAWN_MIN_DISTANCE: int = 1200
+
+
+@dataclass(frozen=True)
+class Buildings:
+    NB_HOUSES: int = 8
+    NB_SHOPS: int = 3
+    NB_INNS: int = 2
+
+    # (width range, height range) per kind. The landmark ruin has no door and no interior.
+    SIZES = {
+        "house": ((170, 230), (140, 200)),
+        "shop": ((190, 230), (150, 180)),
+        "inn": ((260, 310), (200, 240)),
+        "landmark": ((280, 330), (240, 290)),
+    }
+    ROOF_COLORS = {
+        "house": (152, 76, 56),
+        "shop": (88, 110, 152),
+        "inn": (122, 88, 140),
+    }
+
+    # Buildings keep their distance from each other, the spawn point and the world edge.
+    MIN_GAP: int = 350
+    SPAWN_CLEARANCE: int = 700
+    EDGE_MARGIN: int = 250
+
+    DOOR_WIDTH: int = 70
+    # The entry trigger straddles the front wall, extending this far on each side of it.
+    DOOR_DEPTH: int = 35
+
+    # Interior room dimensions; each interior is its own small coordinate space.
+    ROOM_W: int = 1100
+    ROOM_H: int = 700
+    ROOM_WALL: int = 25
+
+    INN_SLEEP_COST: int = 15
+    INTERACT_DISTANCE: int = 120
+
+    WALL_COLOR: tuple = (72, 56, 44)
+    FLOOR_COLOR: tuple = (152, 112, 72)
+    STONE_COLOR: tuple = (138, 136, 128)
 
 
 @dataclass(frozen=True)

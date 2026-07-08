@@ -38,7 +38,7 @@ class Monster(Entity):
 
         return False
 
-    def move(self, player: Player, dt):
+    def move(self, player: Player, dt, blocked=None):
         dx = player.x + self.target_offset[0] - self.x
         dy = player.y + self.target_offset[1] - self.y
         dist = math.hypot(dx, dy)
@@ -47,8 +47,16 @@ class Monster(Entity):
 
         if c.Monster.ATTACK_RANGE < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
             move_factor = dt * c.TARGET_FPS / 1000.0
-            self.x += math.cos(self.orientation) * c.Monster.SPEED * move_factor
-            self.y += math.sin(self.orientation) * c.Monster.SPEED * move_factor
+            step_x = math.cos(self.orientation) * c.Monster.SPEED * move_factor
+            step_y = math.sin(self.orientation) * c.Monster.SPEED * move_factor
+            radius = c.Monster.SIZE / 2
+            # Move one axis at a time so a wall on one axis lets the monster slide along it.
+            if blocked is not None and blocked(self.x + step_x, self.y, radius):
+                step_x = 0
+            self.x += step_x
+            if blocked is not None and blocked(self.x, self.y + step_y, radius):
+                step_y = 0
+            self.y += step_y
             self.clamp_to_world()
 
         if dist < c.Monster.ATTACK_RANGE * 10:

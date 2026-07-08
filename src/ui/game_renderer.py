@@ -41,6 +41,10 @@ class GameRenderer:
             else:
                 pygame.draw.circle(self.screen, (255, 0, 0), (screen_x, screen_y), 2)
 
+        for building in world.buildings:
+            if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
+                building.draw(self.screen, camera)
+
         for npc in world.npcs:
             if self._on_screen(camera, npc.x, npc.y):
                 npc.draw(self.screen, camera)
@@ -58,6 +62,11 @@ class GameRenderer:
         player.draw(self.screen)
 
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
+
+    def draw_interior(self, camera: Camera, building, player: Player):
+        building.draw_interior(self.screen, camera, player)
+        get_particles().draw(self.screen, camera)
+        player.draw(self.screen)
 
     def _draw_button(self, rect: pygame.Rect, label: str, mouse_pos):
         hover = rect.collidepoint(mouse_pos)
