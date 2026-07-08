@@ -40,6 +40,7 @@ class ContextMenu(BaseMenu):
             self._generating = False
             self._ready = True
             self.active = True
+            self.just_active = True
             self._calculate_dimensions()
 
     def update(self):
@@ -81,7 +82,7 @@ class ContextMenu(BaseMenu):
         if not self.active:
             return False
 
-        if event.type == pygame.KEYDOWN and self._ready:
+        if self._ready and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
             self.close()
             return True
 
@@ -107,7 +108,7 @@ class ContextMenu(BaseMenu):
 
         if self._ready:
             hint_color = c.Colors.WHITE
-            hint = c.Fonts.text.render("Press any key to begin", True, hint_color)
+            hint = c.Fonts.text.render("Press any key to close", True, hint_color)
         else:
             hint_color = (150, 150, 150)
             hint = c.Fonts.text.render("Generating...", True, hint_color)
