@@ -111,6 +111,9 @@ class Game:
                         elif self.game_renderer.stats_button_rect.collidepoint(event.pos):
                             self.stats_menu.toggle()
 
+                        elif self.game_renderer.lore_button_rect.collidepoint(event.pos):
+                            self._show_lore()
+
                         elif self.interior is None:
                             self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
@@ -130,6 +133,9 @@ class Game:
                     elif event.key == pygame.K_c:
                         self.stats_menu.toggle()
 
+                    elif event.key == pygame.K_l:
+                        self._show_lore()
+
         # The frame the dialogue opened is over; later keystrokes are real input.
         self.dialogue_manager.opened_this_frame = False
 
@@ -140,6 +146,10 @@ class Game:
             self.dialogue_manager.shop_requested = False
 
         return True
+
+    def _show_lore(self):
+        if self.world.context:
+            self.context_window.show(self.world.context)
 
     def _open_lootbox(self, lootbox: Item):
         self.world.items.remove(lootbox)
