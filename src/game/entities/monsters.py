@@ -57,7 +57,6 @@ class Monster(Entity):
             if blocked is not None and blocked(self.x, self.y + step_y, radius):
                 step_y = 0
             self.y += step_y
-            self.clamp_to_world()
 
         if dist < c.Monster.ATTACK_RANGE * 10:
             hit = self.start_attack_anim(dist)

@@ -39,10 +39,6 @@ class Entity:
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
 
-    def clamp_to_world(self):
-        self.x = max(0, min(self.x, c.World.WORLD_SIZE))
-        self.y = max(0, min(self.y, c.World.WORLD_SIZE))
-
     def start_attack_anim(self):
         if not self.attack_in_progress:
             self.attack_in_progress = True
