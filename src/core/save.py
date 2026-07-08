@@ -15,7 +15,7 @@ class SaveSystem:
         - inventory: Item ids the player carries (list[str])
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
-        - monsters: Monster positions and hp (list[dict])
+        - monsters: Monster positions, hp and kind (list[dict])
         - buildings: Building placement, kind, size, name and looted state (list[dict])
     """
 

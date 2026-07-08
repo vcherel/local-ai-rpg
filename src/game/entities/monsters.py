@@ -12,17 +12,25 @@ if TYPE_CHECKING:
     from game.entities.player import Player
 
 
+def pick_monster_kind(distance_from_center: float) -> c.MonsterKind:
+    """Pick a kind unlocked at this distance from the world center; weaker kinds stay more common."""
+    eligible = [kind for kind in c.MONSTER_KINDS if distance_from_center >= kind.min_distance]
+    return random.choices(eligible, weights=[kind.weight for kind in eligible])[0]
+
+
 class Monster(Entity):
-    def __init__(self, x, y):
-        super().__init__(x, y, c.Colors.RED, c.Monster.SIZE, c.Monster.HP, c.Monster.HP)
+    def __init__(self, x, y, kind: c.MonsterKind = c.MONSTER_KINDS[0]):
+        super().__init__(x, y, kind.color, kind.size, kind.hp, kind.hp)
+        self.kind = kind
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
 
     def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "hp": self.hp}
+        return {"x": self.x, "y": self.y, "hp": self.hp, "kind": self.kind.name}
 
     @classmethod
     def from_dict(cls, data: dict) -> Monster:
-        monster = cls(data["x"], data["y"])
+        kind = next((k for k in c.MONSTER_KINDS if k.name == data["kind"]), c.MONSTER_KINDS[0])
+        monster = cls(data["x"], data["y"], kind)
         monster.hp = data["hp"]
         return monster
 
@@ -33,7 +41,7 @@ class Monster(Entity):
             self.attack_progress = 0.0
             self.attack_hand = random.choice(["left", "right"])
 
-            if dist < c.Monster.ATTACK_RANGE + c.Player.SIZE // 2:
+            if dist < self.kind.attack_range + c.Player.SIZE // 2:
                 return True
 
         return False
@@ -45,11 +53,11 @@ class Monster(Entity):
 
         self.orientation = math.atan2(dy, dx)
 
-        if c.Monster.ATTACK_RANGE < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
+        if self.kind.attack_range < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
             move_factor = dt * c.TARGET_FPS / 1000.0
-            step_x = math.cos(self.orientation) * c.Monster.SPEED * move_factor
-            step_y = math.sin(self.orientation) * c.Monster.SPEED * move_factor
-            radius = c.Monster.SIZE / 2
+            step_x = math.cos(self.orientation) * self.kind.speed * move_factor
+            step_y = math.sin(self.orientation) * self.kind.speed * move_factor
+            radius = self.kind.size / 2
             # Move one axis at a time so a wall on one axis lets the monster slide along it.
             if blocked is not None and blocked(self.x + step_x, self.y, radius):
                 step_x = 0
@@ -58,10 +66,10 @@ class Monster(Entity):
                 step_y = 0
             self.y += step_y
 
-        if dist < c.Monster.ATTACK_RANGE * 10:
+        if dist < self.kind.attack_range * 10:
             hit = self.start_attack_anim(dist)
             if hit:
-                player.receive_damage(c.Monster.DAMAGE)
+                player.receive_damage(self.kind.damage)
 
         # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
         self.orientation += math.pi / 2
@@ -74,8 +82,8 @@ class Monster(Entity):
             screen,
             screen_x,
             screen_y,
-            c.Monster.SIZE,
-            c.Colors.RED,
+            self.kind.size,
+            self.kind.color,
             self.orientation,
             self.attack_progress,
             self.attack_hand,
