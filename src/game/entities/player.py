@@ -48,7 +48,7 @@ class Player(Entity):
             return (attack_x, attack_y)
         return (self.x, self.y)
 
-    def move(self, camera_pos, dt):
+    def move(self, camera_pos, dt, blocked=None):
         keys = pygame.key.get_pressed()
 
         running = bool(keys[pygame.K_LSHIFT])
@@ -73,8 +73,16 @@ class Player(Entity):
 
             speed = actual_speed if forward else -actual_speed / 1.5
             move_factor = dt * c.TARGET_FPS / 1000.0
-            self.x += dx * speed * move_factor
-            self.y += dy * speed * move_factor
+            step_x = dx * speed * move_factor
+            step_y = dy * speed * move_factor
+            # Move one axis at a time so a wall on one axis lets the player slide along it.
+            radius = c.Player.SIZE / 2
+            if blocked is not None and blocked(self.x + step_x, self.y, radius, True):
+                step_x = 0
+            self.x += step_x
+            if blocked is not None and blocked(self.x, self.y + step_y, radius, True):
+                step_y = 0
+            self.y += step_y
             self.clamp_to_world()
 
             # Running is what trains speed; plain walking does not.

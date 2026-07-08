@@ -52,6 +52,11 @@ class Game:
         self.npc_name_generator = NPCNameGenerator(self.save_system)
         self.active_menu = False
 
+        # When inside a building the player moves in that building's interior
+        # coordinate space; the world simulation pauses until they step back out.
+        self.interior = None
+        self._interior_return_pos = None
+
         self._restore_player_state()
 
     def _restore_player_state(self):
@@ -106,25 +111,15 @@ class Game:
                         elif self.game_renderer.stats_button_rect.collidepoint(event.pos):
                             self.stats_menu.toggle()
 
-                        else:
+                        elif self.interior is None:
                             self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
-                        item: Item = self.world.pickup_item(self.player)
-                        if item is not None:
-                            item.picked_up = True
-                            if item.item_type == "lootbox":
-                                self._open_lootbox(item)
-                            else:
-                                self.player.inventory.append(item)
-                                play_sound("pickup")
-                            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+                        if self.interior is not None:
+                            self._interior_interact()
                         else:
-                            npc = self.world.talk_npc(self.player)
-                            if npc is not None:
-                                self.player.stats.train("bartering", c.Stats.XP_PER_TALK)
-                                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
+                            self._interact_with_world()
 
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()
@@ -161,9 +156,86 @@ class Game:
         self.loot_notification.show(message, rarity_color(lootbox.rarity))
         play_sound("lootbox_open")
 
+    def _interact_with_world(self):
+        item: Item = self.world.pickup_item(self.player)
+        if item is not None:
+            item.picked_up = True
+            if item.item_type == "lootbox":
+                self._open_lootbox(item)
+            else:
+                self.player.inventory.append(item)
+                play_sound("pickup")
+            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+        else:
+            npc = self.world.talk_npc(self.player)
+            if npc is not None:
+                self.player.stats.train("bartering", c.Stats.XP_PER_TALK)
+                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
+
+    def _enter_building(self, building):
+        self._interior_return_pos = building.door_front()
+        self.interior = building
+        self.player.x, self.player.y = building.interior_entry_pos()
+
+    def _check_building_entry(self):
+        for building in self.world.buildings:
+            zone = building.door_zone()
+            if zone is not None and zone.collidepoint(self.player.x, self.player.y):
+                self._enter_building(building)
+                return
+
+    def _check_interior_exit(self):
+        if self.interior.interior_exit_zone().collidepoint(self.player.x, self.player.y):
+            self.player.x, self.player.y = self._interior_return_pos
+            self.interior = None
+
+    def _interior_interact(self):
+        hit = self.interior.interactable_at(self.player.x, self.player.y)
+        if hit is None:
+            return
+        kind, _rect = hit
+        if kind == "chest":
+            self._open_interior_chest()
+        elif kind == "bed":
+            self._sleep_in_bed()
+
+    def _open_interior_chest(self):
+        from game.entities.items import roll_rarity
+
+        self.interior.looted = True
+        rarity = roll_rarity()
+        coins, loot_item = open_lootbox(self.player.x, self.player.y, rarity)
+        self.player.add_coins(coins)
+
+        message = f"Chest: +{coins} coins"
+        if loot_item is not None:
+            self.world.items.append(loot_item)
+            self.player.inventory.append(loot_item)
+            message += f" and a {loot_item.rarity} {loot_item.name}!"
+
+        self.loot_notification.show(message, rarity_color(rarity))
+        play_sound("lootbox_open")
+
+    def _sleep_in_bed(self):
+        if self.player.hp >= self.player.max_hp:
+            self.loot_notification.show("You are already fully rested", c.Colors.WHITE)
+            return
+        if self.player.coins < c.Buildings.INN_SLEEP_COST:
+            self.loot_notification.show("Not enough coins to rest here", c.Colors.RED)
+            return
+        self.player.add_coins(-c.Buildings.INN_SLEEP_COST)
+        self.player.hp = self.player.max_hp
+        self.loot_notification.show("You rest and recover fully", c.Colors.GREEN)
+        play_sound("quest_complete")
+
     def save_data(self):
         self.save_system.update("name", self.npc_name_generator.get_name())
-        self.save_system.update("player", self.player.to_dict())
+        # The player's live position is in interior space while inside a building;
+        # persist the spot they will step back out to instead.
+        player_state = self.player.to_dict()
+        if self.interior is not None:
+            player_state["x"], player_state["y"] = self._interior_return_pos
+        self.save_system.update("player", player_state)
         self.player.save_stats()
         self.save_system.update("inventory", [item.id for item in self.player.inventory])
 
@@ -171,6 +243,7 @@ class Game:
         self.save_system.update("items", world_state["items"])
         self.save_system.update("npcs", world_state["npcs"])
         self.save_system.update("monsters", world_state["monsters"])
+        self.save_system.update("buildings", world_state["buildings"])
 
         self.save_system.save_all()
 
@@ -195,11 +268,19 @@ class Game:
             # Skip world simulation and rendering while a menu is open to save computation
             if not self.active_menu:
                 dt = self.clock.get_time()
-                self.player.move(self.camera.get_pos(), dt)
+                if self.interior is not None:
+                    self.player.move(self.camera.get_pos(), dt, self.interior.interior_blocked)
+                    self._check_interior_exit()
+                else:
+                    self.player.move(self.camera.get_pos(), dt, self.world.blocked)
+                    self.world.update(self.player, dt)
+                    self._check_building_entry()
                 self.update_camera()
-                self.world.update(self.player, dt)
 
-                self.game_renderer.draw_world(self.camera, self.world, self.player)
+                if self.interior is not None:
+                    self.game_renderer.draw_interior(self.camera, self.interior, self.player)
+                else:
+                    self.game_renderer.draw_world(self.camera, self.world, self.player)
                 self.game_renderer.draw_ui(
                     len(self.player.inventory),
                     self.player.coins,

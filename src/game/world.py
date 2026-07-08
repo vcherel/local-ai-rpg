@@ -9,10 +9,11 @@ import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
 from core.utils import random_coordinates
+from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.items import Item
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
-from llm.llm_request_queue import generate_response_stream_queued
+from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -30,6 +31,7 @@ class World:
         self.items: List[Item] = []
         self.npcs: List[NPC] = []
         self.monsters: List[Monster] = []
+        self.buildings: List[Building] = []
         self.respawn_timer = 0.0
 
         self.save_system = save_system
@@ -44,30 +46,46 @@ class World:
                     if npc.is_merchant and not npc.shop_ready:
                         threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
         else:
-            self.npcs = [NPC(*random_coordinates()) for _ in range(c.World.NB_NPCS)]
+            self.buildings = generate_buildings()
+            set_active_buildings(self.buildings)
+            self._populate_npcs()
             self.monsters = [Monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)]
-            for npc in self.npcs:
-                if random.random() < c.World.MERCHANT_PROBABILITY:
-                    npc.is_merchant = True
-                    npc.color = c.Colors.MERCHANT
+        set_active_buildings(self.buildings)
 
         if self.context is None:
             self.context_window.start_streaming()
             threading.Thread(target=self._generate_context, daemon=True).start()
         else:
             self.context_window.show(self.context)
+            self._start_landmark_naming()
+
+    def _populate_npcs(self):
+        """Every NPC lives at a building: one merchant per shop, villagers spread over houses and inns."""
+        homes = [b for b in self.buildings if b.kind in ("house", "inn")]
+        for shop in (b for b in self.buildings if b.kind == "shop"):
+            npc = NPC(*shop.door_front())
+            npc.is_merchant = True
+            npc.color = c.Colors.MERCHANT
+            self.npcs.append(npc)
+        while len(self.npcs) < c.World.NB_NPCS:
+            home = random.choice(homes)
+            door_x, door_y = home.door_front()
+            npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
+            npc.home = (door_x, door_y)
+            self.npcs.append(npc)
 
     def _random_coords_away_from_spawn(self) -> tuple[int, int]:
         center = c.World.WORLD_SIZE // 2
         min_dist = c.World.INITIAL_SPAWN_MIN_DISTANCE
         for _ in range(20):
             x, y = random.randint(0, c.World.WORLD_SIZE), random.randint(0, c.World.WORLD_SIZE)
-            if math.hypot(x - center, y - center) >= min_dist:
+            if math.hypot(x - center, y - center) >= min_dist and not self.blocked(x, y, c.Monster.SIZE / 2):
                 return x, y
         return x, y
 
     def _restore(self, saved_npcs: list):
-        """Rebuild items, NPCs and monsters from a saved game, relinking quest items by id."""
+        """Rebuild items, NPCs, monsters and buildings from a saved game, relinking quest items by id."""
+        self.buildings = [Building.from_dict(d) for d in self.save_system.load("buildings", [])]
         self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
         items_by_id = {item.id: item for item in self.items}
         self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
@@ -78,7 +96,11 @@ class World:
             "items": [item.to_dict() for item in self.items],
             "npcs": [npc.to_dict() for npc in self.npcs],
             "monsters": [monster.to_dict() for monster in self.monsters],
+            "buildings": [building.to_dict() for building in self.buildings],
         }
+
+    def blocked(self, x, y, radius, door_open=False) -> bool:
+        return any(building.blocks(x, y, radius, door_open) for building in self.buildings)
 
     def _generate_context(self):
         system_prompt = (
@@ -100,6 +122,21 @@ class World:
         for npc in self.npcs:
             if npc.is_merchant:
                 threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
+        self._start_landmark_naming()
+
+    def _start_landmark_naming(self):
+        landmark = next((b for b in self.buildings if b.kind == "landmark"), None)
+        if landmark is None or landmark.name:
+            return
+        threading.Thread(target=self._generate_landmark_name, args=(landmark,), daemon=True).start()
+
+    def _generate_landmark_name(self, landmark: Building):
+        system_prompt = "You name landmarks for an RPG world. Reply with the name only, no quotes, no punctuation."
+        prompt = f"{self.context}\nGive a short name, 2 to 4 words, for the ancient ruined landmark of this world."
+        name = generate_response_queued(prompt, system_prompt, "Landmark naming") or ""
+        name = name.strip().strip('"').strip(".")
+        if name:
+            landmark.name = " ".join(name.split()[:5])
 
     def _generate_merchant_shop(self, merchant: NPC):
         from llm.merchant_system import generate_shop_inventory
@@ -161,7 +198,9 @@ class World:
     def _spawn_monster_away_from(self, player: Player):
         for _ in range(10):
             x, y = random_coordinates()
-            if math.hypot(x - player.x, y - player.y) >= c.World.SPAWN_MIN_DISTANCE:
+            if math.hypot(x - player.x, y - player.y) >= c.World.SPAWN_MIN_DISTANCE and not self.blocked(
+                x, y, c.Monster.SIZE / 2
+            ):
                 self.monsters.append(Monster(x, y))
                 return
 
@@ -173,10 +212,10 @@ class World:
         update_radius = c.World.DETECTION_RANGE + c.Player.SIZE
         for monster in self.monsters:
             if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
-                monster.move(player, dt)
+                monster.move(player, dt, self.blocked)
 
         for npc in self.npcs:
-            npc.update(player, dt)
+            npc.update(player, dt, self.blocked)
 
         if len(self.monsters) < c.World.NB_MONSTERS:
             self.respawn_timer += dt
