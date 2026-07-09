@@ -3,7 +3,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from llm.llm_request_queue import generate_response_queued
 
@@ -17,6 +17,7 @@ class NPCNameGenerator:
         self.lock = threading.Lock()
         self.save_system: SaveSystem = save_system
         self.is_generating = False
+        self.used_names: List[str] = []
 
         self.start_generation()
 
@@ -27,7 +28,9 @@ class NPCNameGenerator:
 
             loaded_name: str = self.save_system.load("name", None)
             if loaded_name:
-                self.name_queue.put(loaded_name.strip())
+                loaded_name = loaded_name.strip()
+                self.name_queue.put(loaded_name)
+                self.used_names.append(loaded_name)
                 self.save_system.update("name", None)
                 return
 
@@ -42,17 +45,25 @@ class NPCNameGenerator:
             if context is None:
                 time.sleep(0.1)  # avoid busy waiting
 
+        with self.lock:
+            used_names = list(self.used_names)
+
+        already_generated = (
+            f" Names already generated, do not reuse any of them: {', '.join(used_names)}." if used_names else ""
+        )
         system_prompt = (
             f"You are an NPC generator for an RPG. Context: {context}. "
             "Reply only with ONE first name and/or ONE profession, "
             "on a single line, with no repetition and no explanation."
+            f"{already_generated}"
         )
         prompt = "Generate a first name and/or a profession for an RPG NPC."
 
-        name = generate_response_queued(prompt, system_prompt, "Name generation")
-        self.name_queue.put(name.strip())
+        name = generate_response_queued(prompt, system_prompt, "Name generation").strip()
+        self.name_queue.put(name)
 
         with self.lock:
+            self.used_names.append(name)
             self.is_generating = False
 
     def get_name(self) -> str:
