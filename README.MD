@@ -52,10 +52,10 @@ uv sync
 ### 5. Download AI Model
 ```bash
 mkdir -p models
-wget https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf -P models/
+wget https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q2_K.gguf -P models/
 ```
 
-Or download manually from [HuggingFace](https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF) and put in `models/` folder.
+Or download manually from [HuggingFace](https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF) and put in `models/` folder.
 
 ### 6. Run
 ```bash
@@ -64,6 +64,6 @@ uv run game
 
 ## AI Model
 
-I used **Qwen2.5-3B-Instruct** (quantized to 4-bit, ~1.9GB) because it fits fully in the GTX 1650's 4GB VRAM while delivering strong instruction-following and coherent, context-aware dialogue. It uses the same ChatML prompt format as the previous model, so it is a drop-in swap.
+I used **Qwen2.5-7B-Instruct** (quantized to Q2_K, ~2.9GB) for noticeably better dialogue than the smaller 3B model, while still fitting fully in the GTX 1650's 4GB VRAM for full-speed GPU inference. A larger model at a higher quant (e.g. Q4_K_M) gave better quality per token but didn't fit in 4GB VRAM; running it with some layers offloaded to CPU worked but was too slow in practice, so this Q2_K quant is the sweet spot of fitting entirely on the GPU while still packing more parameters than the original 3B model. It uses the same ChatML prompt format as before, so it's a drop-in swap.
 
-There are still huge limitations due to its size, but if desired, the model can be upgraded to a larger version for more advanced conversations and better understanding at the cost of higher VRAM and slower performance.
+If desired, the model can be upgraded further (bigger model or higher quant) at the cost of VRAM and speed, most likely requiring partial CPU offload again.
