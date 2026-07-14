@@ -8,7 +8,7 @@ def generate_shop_inventory(context: str) -> list:
         f"World: {context}\n"
         "Generate 5 items for a merchant's shop. Reply with only this JSON array:\n"
         '[{"name": "Iron Sword", "item_type": "weapon", "rarity": "uncommon", "price": 25}]\n'
-        'Rules: item_type must be "weapon", "armor", or "misc". '
+        'Rules: item_type must be "weapon", "armor", "accessory", or "misc". '
         'rarity must be "common", "uncommon", "rare", "epic", or "legendary" (mostly common or uncommon). '
         "price: 5 to 80. "
         "Replace the example with 5 real items fitting the world."

@@ -211,7 +211,7 @@ class World:
         play_sound("attack")
         pos = player.get_pos(c.Player.ATTACK_REACH)
 
-        attack_damage = c.Player.ATTACK_DAMAGE + player.best_weapon_bonus() + player.stats.attack_bonus()
+        attack_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
         for monster in self.monsters:
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + monster.kind.size // 2:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)

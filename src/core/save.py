@@ -13,6 +13,7 @@ class SaveSystem:
         - player: Player position and hp (dict)
         - stats: Character stat levels and xp (dict)
         - inventory: Item ids the player carries (list[str])
+        - equipped: Currently equipped item ids, keyed by slot (dict[str, str | None])
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
         - monsters: Monster positions, hp and kind (list[dict])

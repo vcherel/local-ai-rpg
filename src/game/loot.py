@@ -7,10 +7,11 @@ from game.entities.items import Item, rarity_tier, roll_bonus
 
 WEAPON_LOOT_NAMES = ["Rusty Dagger", "Notched Axe", "Old Bow", "Wooden Club", "Bent Spear"]
 ARMOR_LOOT_NAMES = ["Worn Shield", "Leather Vest", "Battered Helmet", "Chainmail Scraps", "Tattered Cloak"]
+ACCESSORY_LOOT_NAMES = ["Tarnished Ring", "Cracked Amulet", "Old Talisman", "Faded Pendant", "Bent Brooch"]
 
 
 def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
-    """Roll a lootbox's contents: coins plus a chance at a weapon or armor item.
+    """Roll a lootbox's contents: coins plus a chance at a weapon, armor or accessory item.
 
     The box's rarity scales the coins and is inherited by the contained item.
     """
@@ -19,12 +20,10 @@ def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
 
     item = None
     if random.random() < c.LootBox.ITEM_CHANCE:
-        if random.random() < 0.5:
-            name = random.choice(WEAPON_LOOT_NAMES)
-            item_type = "weapon"
-        else:
-            name = random.choice(ARMOR_LOOT_NAMES)
-            item_type = "armor"
+        item_type = random.choice(["weapon", "armor", "accessory"])
+        name = random.choice(
+            {"weapon": WEAPON_LOOT_NAMES, "armor": ARMOR_LOOT_NAMES, "accessory": ACCESSORY_LOOT_NAMES}[item_type]
+        )
         item = Item(x, y, name, item_type, roll_bonus(item_type, rarity), rarity)
         item.picked_up = True
 

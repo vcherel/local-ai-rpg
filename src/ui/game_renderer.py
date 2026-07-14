@@ -85,7 +85,7 @@ class GameRenderer:
         text = c.Fonts.button.render(label, True, c.Colors.WHITE)
         self.screen.blit(text, text.get_rect(center=rect.center))
 
-    def draw_ui(self, nb_items, nb_coins, nb_quests, active_task_count):
+    def draw_ui(self, nb_items, nb_coins, nb_quests, active_task_count, player: Player):
         mouse_pos = pygame.mouse.get_pos()
         self._draw_button(self.inv_button_rect, "Inventory", mouse_pos)
         self._draw_button(self.quest_button_rect, "Quests", mouse_pos)
@@ -103,6 +103,17 @@ class GameRenderer:
         self.screen.blit(coins_surface, (12, 55))
         self.screen.blit(objects_surface, (12, 90))
         self.screen.blit(quests_surface, (12, 125))
+
+        weapon = player.equipped_item("weapon")
+        armor = player.equipped_item("armor")
+        accessory = player.equipped_item("accessory")
+        equipped_text = (
+            f"Weapon: {weapon.name if weapon else '-'}  "
+            f"Armor: {armor.name if armor else '-'}  "
+            f"Accessory: {accessory.name if accessory else '-'}"
+        )
+        equipped_surface = c.Fonts.small.render(equipped_text, True, c.Colors.BORDER)
+        self.screen.blit(equipped_surface, (12, 160))
 
         self.loading_indicator.update()
         if active_task_count > 0:
