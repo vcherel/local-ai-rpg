@@ -252,6 +252,26 @@ class Stats:
 
 
 @dataclass(frozen=True)
+class Affinity:
+    # Per-NPC relationship level. Starts neutral; an LLM judges how each closed
+    # conversation should move it, independent of the global player Stats.
+    START: float = 50.0
+    MIN: float = 0.0
+    MAX: float = 100.0
+
+    # Bounds how much a single conversation's LLM judgment can move affinity.
+    MAX_DELTA_PER_CONVERSATION: int = 10
+
+    # Quest reward weight shifted from "rare" to "legendary" per point of affinity
+    # above START, capped like persuasion's shift.
+    WEIGHT_SHIFT_PER_POINT: float = 0.9
+    MAX_WEIGHT_SHIFT: float = 45.0
+
+    # Shop buy/sell price swing between MIN and MAX affinity, on top of bartering.
+    MAX_PRICE_SWING: float = 0.15
+
+
+@dataclass(frozen=True)
 class Colors:
     BLACK: tuple = (0, 0, 0)
     GREEN: tuple = (41, 179, 41)

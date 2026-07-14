@@ -134,6 +134,19 @@ def parse_response_quest_analysis(response):
     return _empty_quest_analysis()
 
 
+def parse_response_affinity_analysis(response: str) -> int:
+    try:
+        match = re.search(r"-?\d+", response.strip())
+        if not match:
+            return 0
+        delta = int(match.group(0))
+        limit = c.Affinity.MAX_DELTA_PER_CONVERSATION
+        return max(-limit, min(limit, delta))
+    except Exception as e:
+        print(f"Failed to parse affinity analysis: {e}, response: {response}")
+        return 0
+
+
 def _empty_quest_analysis() -> dict:
     return {
         "has_quest": False,

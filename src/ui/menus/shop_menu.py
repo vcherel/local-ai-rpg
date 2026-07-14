@@ -27,6 +27,12 @@ def _sell_price(item: Item) -> int:
     return round(base * rarity_tier(item.rarity).price_mult)
 
 
+def _affinity_swing(npc: NPC) -> float:
+    """-MAX_PRICE_SWING..MAX_PRICE_SWING as the NPC's affinity ranges MIN..MAX."""
+    span = c.Affinity.MAX - c.Affinity.START
+    return (npc.affinity - c.Affinity.START) / span * c.Affinity.MAX_PRICE_SWING
+
+
 class ShopMenu(BaseMenu):
     def __init__(self, screen):
         super().__init__(screen, width=920, height=580)
@@ -65,10 +71,12 @@ class ShopMenu(BaseMenu):
         return pygame.Rect(panel_x, y, self._panel_width(), ROW_HEIGHT - 6)
 
     def _buy_price(self, item: Item) -> int:
-        return max(1, round(self.merchant.shop_prices[item.id] * self.player.buy_multiplier()))
+        swing = _affinity_swing(self.merchant)
+        return max(1, round(self.merchant.shop_prices[item.id] * self.player.buy_multiplier() * (1.0 - swing)))
 
     def _sell_price(self, item: Item) -> int:
-        return max(1, round(_sell_price(item) * self.player.sell_multiplier()))
+        swing = _affinity_swing(self.merchant)
+        return max(1, round(_sell_price(item) * self.player.sell_multiplier() * (1.0 + swing)))
 
     def _slot_at(self, panel_x: int, count: int, rel_x: int, rel_y: int) -> Optional[int]:
         for i in range(count):

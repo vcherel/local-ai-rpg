@@ -34,10 +34,34 @@ class NPC(Entity):
         self.home = (x, y)
         self.wander_target = None
         self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
+        self.affinity = c.Affinity.START
 
     @property
     def has_active_quest(self):
         return self.quest is not None and not self.quest.is_completed
+
+    def affinity_descriptor(self) -> str:
+        """A prompt hint reflecting how the NPC feels about the player, or "" when neutral."""
+        if self.affinity < 20:
+            return "You dislike the player and are cold, curt, or suspicious of them. "
+        if self.affinity < 40:
+            return "You are wary of the player and not particularly warm towards them. "
+        if self.affinity < 60:
+            return ""
+        if self.affinity < 80:
+            return "You like the player and are warm and friendly towards them. "
+        return "You consider the player a close friend and are especially warm, generous, and open with them. "
+
+    def affinity_tier_color(self) -> tuple:
+        if self.affinity < 20:
+            return (200, 60, 60)
+        if self.affinity < 40:
+            return (200, 140, 60)
+        if self.affinity < 60:
+            return (180, 180, 180)
+        if self.affinity < 80:
+            return (120, 200, 120)
+        return (255, 200, 60)
 
     def to_dict(self) -> dict:
         return {
@@ -50,6 +74,7 @@ class NPC(Entity):
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
             "is_thief": self.is_thief,
+            "affinity": self.affinity,
             "shop_ready": self.shop_ready,
             "home": list(self.home),
             "shop_items": [{**item.to_dict(), "shop_price": self.shop_prices[item.id]} for item in self.shop_items],
@@ -68,6 +93,7 @@ class NPC(Entity):
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
         npc.is_thief = data.get("is_thief", False)
+        npc.affinity = data.get("affinity", c.Affinity.START)
         npc.shop_ready = data["shop_ready"]
         npc.home = tuple(data["home"])
         for entry in data["shop_items"]:
@@ -175,3 +201,8 @@ class NPC(Entity):
             pygame.draw.rect(bg_surface, c.Colors.TRANSPARENT, bg_surface.get_rect(), border_radius=6)
             screen.blit(bg_surface, bg_rect)
             screen.blit(name_surface, name_rect)
+
+            # Only shown once the player's actions have actually moved the relationship,
+            # so untouched NPCs don't clutter the world with a neutral marker.
+            if self.affinity != c.Affinity.START:
+                pygame.draw.circle(screen, self.affinity_tier_color(), (bg_rect.left - 8, bg_rect.centery), 5)
