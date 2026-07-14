@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, List
 
-import core.constants as c
 from core.utils import parse_response_quest_analysis
 from game.entities.buildings import random_open_coordinates
 from game.entities.items import Item, item_type_from_name, roll_bonus, roll_rarity
@@ -132,7 +131,7 @@ class QuestSystem:
 
         if quest.reward_item_name:
             rtype = item_type_from_name(quest.reward_item_name)
-            rarity = roll_rarity(c.Rarity.QUEST_REWARD_WEIGHTS)
+            rarity = roll_rarity(self.player.stats.quest_reward_weights())
             rbonus = roll_bonus(rtype, rarity)
             reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity)
             reward_item.picked_up = True

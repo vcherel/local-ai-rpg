@@ -15,8 +15,9 @@ class Stats:
         self.level = {name: 1 for name in c.Stats.NAMES}
         self.xp = {name: 0.0 for name in c.Stats.NAMES}
         if saved:
-            self.level = {name: saved["level"][name] for name in c.Stats.NAMES}
-            self.xp = {name: saved["xp"][name] for name in c.Stats.NAMES}
+            # A save from before a stat was added won't have its key; default it to level 1.
+            self.level = {name: saved["level"].get(name, 1) for name in c.Stats.NAMES}
+            self.xp = {name: saved["xp"].get(name, 0.0) for name in c.Stats.NAMES}
 
     def to_dict(self) -> dict:
         return {"level": self.level, "xp": self.xp}
@@ -54,3 +55,26 @@ class Stats:
 
     def sell_multiplier(self) -> float:
         return min(c.Stats.SELL_CEILING, 1.0 + (self.level["bartering"] - 1) * c.Stats.BARTER_PER_LEVEL)
+
+    def persuasion_descriptor(self) -> str:
+        """A prompt hint reflecting how persuasive the player has become, or "" at low levels."""
+        level = self.level["persuasion"]
+        if level <= 2:
+            return ""
+        if level <= 5:
+            return "The player has a reputation for being fairly persuasive and likeable. "
+        if level <= 9:
+            return "The player is known to be quite persuasive; you feel inclined to be generous and helpful. "
+        return (
+            "The player is renowned as remarkably persuasive and charming; "
+            "you are eager to help them and reward them well. "
+        )
+
+    def quest_reward_weights(self) -> tuple:
+        """QUEST_REWARD_WEIGHTS skewed toward legendary as persuasion rises."""
+        shift = min(
+            c.Stats.PERSUASION_MAX_WEIGHT_SHIFT,
+            (self.level["persuasion"] - 1) * c.Stats.PERSUASION_WEIGHT_SHIFT_PER_LEVEL,
+        )
+        common, uncommon, rare, epic, legendary = c.Rarity.QUEST_REWARD_WEIGHTS
+        return (common, uncommon, rare - shift, epic, legendary + shift)

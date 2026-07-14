@@ -16,7 +16,7 @@ ROW_HEIGHT = 78
 
 class StatsMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=620, height=530)
+        super().__init__(screen, width=620, height=608)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -52,6 +52,12 @@ class StatsMenu(BaseMenu):
                 "bartering",
                 f"buy {round((1 - stats.buy_multiplier()) * 100)}% cheaper, "
                 f"sell {round((stats.sell_multiplier() - 1) * 100)}% higher",
+            ),
+            (
+                "Persuasion",
+                "persuasion",
+                f"+{round(stats.quest_reward_weights()[4] - c.Rarity.QUEST_REWARD_WEIGHTS[4])}pt "
+                "legendary quest reward odds, NPCs more receptive",
             ),
         ]
 

@@ -116,6 +116,7 @@ class ShopMenu(BaseMenu):
         self.world_items.append(item)
         self.player.inventory.append(item)
         self.player.add_coins(-price)
+        self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
 
     def _sell(self, index: int):
         item = self.player.inventory[index]
@@ -125,6 +126,7 @@ class ShopMenu(BaseMenu):
         if item in self.world_items:
             self.world_items.remove(item)
         self.player.add_coins(price)
+        self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
 
     def draw(self):
         if not self.active:
