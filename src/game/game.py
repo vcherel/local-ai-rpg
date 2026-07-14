@@ -47,7 +47,7 @@ class Game:
         self.loot_notification = ToastNotification(self.screen)
 
         self.save_system = save_system
-        self.world = World(self.save_system, self.context_window)
+        self.world = World(self.save_system, self.context_window, self.loot_notification.show)
         self.game_renderer = GameRenderer(self.screen)
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
@@ -307,7 +307,7 @@ class Game:
                     self._check_interior_exit()
                 else:
                     self.player.move(self.camera.get_pos(), dt, self.world.blocked)
-                    self.world.update(self.player, dt)
+                    self.world.update(self.player, dt, self.dialogue_manager.quest_system, self.npc_name_generator)
                     self._check_building_entry()
                 self.update_camera()
 

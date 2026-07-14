@@ -104,6 +104,36 @@ class World:
 
 
 @dataclass(frozen=True)
+class Events:
+    # A random world event is rolled on this cadence; each roll picks one enabled kind.
+    INTERVAL_RANGE_MS: tuple = (60_000, 120_000)
+
+    # Relative pick weights among the event kinds currently enabled.
+    WEIGHT_MERCHANT: int = 3
+    WEIGHT_TREASURE: int = 4
+    WEIGHT_BLOOD_NIGHT: int = 2
+    WEIGHT_RUMOR: int = 5
+    WEIGHT_PROPHETIC_RUMOR: int = 2
+    WEIGHT_CRISIS: int = 3
+
+    # Chance a treasure or blood night is preceded by a short lore warning instead of striking instantly.
+    PRESAGE_CHANCE: float = 0.5
+    PRESAGE_DELAY_RANGE_S: tuple = (8, 15)
+    PROPHECY_DELAY_RANGE_S: tuple = (20, 40)
+
+    MERCHANT_MIN_DIST: int = 400
+    MERCHANT_MAX_DIST: int = 700
+    MERCHANT_DURATION_MS: int = 180_000
+
+    TREASURE_MIN_DIST: int = 300
+    TREASURE_MAX_DIST: int = 600
+
+    BLOOD_NIGHT_DURATION_MS: int = 120_000
+    BLOOD_NIGHT_RESPAWN_MULT: float = 3.0
+    BLOOD_NIGHT_DROP_MULT: float = 2.0
+
+
+@dataclass(frozen=True)
 class Buildings:
     NB_HOUSES: int = 8
     NB_SHOPS: int = 3
