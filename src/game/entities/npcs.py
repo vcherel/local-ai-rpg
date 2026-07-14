@@ -25,6 +25,9 @@ class NPC(Entity):
         self.name = None
         self.quest: Optional[Quest] = None
         self.is_merchant = False
+        # True for an NPC spawned to hold a recover_stolen quest's item; shows a marker
+        # so the player can spot them without already knowing where to look.
+        self.is_thief = False
         self.shop_items: List[Item] = []
         self.shop_prices: Dict[str, int] = {}
         self.shop_ready = False
@@ -46,6 +49,7 @@ class NPC(Entity):
             "orientation": self.orientation,
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
+            "is_thief": self.is_thief,
             "shop_ready": self.shop_ready,
             "home": list(self.home),
             "shop_items": [{**item.to_dict(), "shop_price": self.shop_prices[item.id]} for item in self.shop_items],
@@ -63,6 +67,7 @@ class NPC(Entity):
         if data["quest"]:
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
+        npc.is_thief = data.get("is_thief", False)
         npc.shop_ready = data["shop_ready"]
         npc.home = tuple(data["home"])
         for entry in data["shop_items"]:
@@ -147,6 +152,11 @@ class NPC(Entity):
         if self.has_active_quest:
             font = pygame.font.Font(None, 45)
             text = font.render("!", True, c.Colors.YELLOW)
+            text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
+            screen.blit(text, text_rect)
+        elif self.is_thief:
+            font = pygame.font.Font(None, 45)
+            text = font.render("?", True, (190, 70, 220))
             text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
         elif self.is_merchant:

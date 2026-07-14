@@ -33,7 +33,7 @@ def _trim_partial_marker(text: str) -> str:
 
 
 class DialogueManager:
-    def __init__(self, screen, items, player):
+    def __init__(self, screen, items, player, npcs):
         self.active = False
         self.opened_this_frame = False
         self.current_npc = None
@@ -51,7 +51,8 @@ class DialogueManager:
 
         self.conversation = ConversationHistory()
         self.ui = ConversationUI(screen)
-        self.quest_system = QuestSystem(items, player)
+        self.quest_system = QuestSystem(items, player, npcs)
+        self._npc_name_generator: NPCNameGenerator | None = None
 
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
         persuasion_hint = self.quest_system.player.stats.persuasion_descriptor()
@@ -84,27 +85,39 @@ class DialogueManager:
         if npc.has_active_quest:
             quest = npc.quest
             if quest_complete:
-                system_prompt += (
-                    f"The player has just brought you {quest.item_name} that you asked for ({quest.description}). "
-                    f"Thank them and give them their reward"
-                )
+                if quest.quest_type == "kill_mob":
+                    system_prompt += (
+                        f"The player has just killed the {quest.kill_count} {quest.target_monster_kind}(s) "
+                        f"you asked for ({quest.description}). Thank them and give them their reward"
+                    )
+                else:
+                    system_prompt += (
+                        f"The player has just brought you {quest.item_name} that you asked for "
+                        f"({quest.description}). Thank them and give them their reward"
+                    )
                 if quest.reward_item_name:
                     system_prompt += f" (your {quest.reward_item_name} and any coins you promised)"
                 else:
                     system_prompt += " in coins"
                 system_prompt += ". "
-            elif quest.item:
+            elif quest.quest_type == "kill_mob":
+                system_prompt += f"You asked the player to kill {quest.kill_count} {quest.target_monster_kind}(s). "
+                if quest.reward_item_name:
+                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
+                system_prompt += f"They have killed {quest.kills_done}/{quest.kill_count} so far. "
+            elif quest.item_name:
                 system_prompt += f"You asked the player to fetch {quest.item_name}. "
                 if quest.reward_item_name:
                     system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                if quest.item in self.quest_system.player.inventory:
+                if quest.item and quest.item in self.quest_system.player.inventory:
                     system_prompt += "The player now has it in their inventory. "
                 else:
                     system_prompt += "The player has not found it yet. "
         else:
             system_prompt += (
                 "You may have needs or problems. "
-                "The player can help you by going to fetch a specific item. "
+                "The player can help you by fetching a specific item, dealing with dangerous creatures, "
+                "or recovering something that was stolen from you. "
                 "You may offer coins, a specific item you own, or both as a reward. "
                 "You cannot take part in these quests yourself "
                 "(make up an excuse if needed, the player must not know) ! "
@@ -121,10 +134,16 @@ class DialogueManager:
 
     def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, world: World):
         npc.assign_name(npc_name_generator)
+        self._npc_name_generator = npc_name_generator
 
         quest_complete = False
-        if npc.has_active_quest and npc.quest.item in self.quest_system.player.inventory:
-            quest_complete = True
+        if npc.has_active_quest:
+            quest = npc.quest
+            if quest.quest_type == "kill_mob":
+                quest_complete = quest.kills_done >= quest.kill_count
+            else:
+                quest_complete = quest.item in self.quest_system.player.inventory
+        if quest_complete:
             self.pending_quest_completion = npc
 
         self.system_prompt = self._build_system_prompt(npc, world.context, quest_complete)
@@ -299,7 +318,7 @@ class DialogueManager:
             quest_info = self.quest_system.analyze_conversation_for_quest(conversation_text)
             dialogue_log.append_section(log_path, "Quest analysis", json.dumps(quest_info, ensure_ascii=False))
             if quest_info["has_quest"]:
-                self.quest_system.create_quest_from_analysis(npc, quest_info)
+                self.quest_system.create_quest_from_analysis(npc, quest_info, self._npc_name_generator)
                 quest = npc.quest
                 if quest:
                     self.notification.show(quest)

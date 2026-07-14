@@ -198,6 +198,6 @@ class EventSystem:
         )
         response = generate_response_queued(prompt, system_prompt, "Village crisis", raw=True)
         quest_info = parse_response_quest_analysis(response)
-        quest_system.create_quest_from_analysis(npc, quest_info)
+        quest_system.create_quest_from_analysis(npc, quest_info, npc_name_generator)
         if npc.quest:
             self.notify(f"{npc.name} has an urgent problem, seek them out", c.Colors.YELLOW)

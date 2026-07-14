@@ -23,7 +23,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/game.py`: `Game` class, main loop, input handling, state orchestration
 - `src/game/world.py`: `World` class, world entities (NPCs, monsters, items), AI context generation
 - `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis)
-- `src/game/quest.py`: `Quest` dataclass, to_dict/from_dict (de)serialisation
+- `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen types), to_dict/from_dict (de)serialisation
 - `src/game/loot.py`: `open_lootbox`, rolls coins/item from a lootbox rarity
 
 ### game/entities

@@ -131,7 +131,14 @@ class QuestMenu(BaseMenu):
                     desc_y += 22
 
                 bottom_y = card_y + self.card_height - 50
-                item_text = f"Fetch: {quest.item_name}"
+                if quest.quest_type == "kill_mob":
+                    item_text = f"Kill: {quest.target_monster_kind} ({quest.kills_done}/{quest.kill_count})"
+                elif quest.quest_type == "loot_mob":
+                    item_text = f"Loot: {quest.item_name} from a {quest.target_monster_kind}"
+                elif quest.quest_type == "recover_stolen":
+                    item_text = f"Recover: {quest.item_name} from {quest.thief_npc_name}"
+                else:
+                    item_text = f"Fetch: {quest.item_name}"
                 item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)
                 menu_surface.blit(item_surface, (text_x, bottom_y))
 

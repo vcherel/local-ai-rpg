@@ -52,7 +52,7 @@ class Game:
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
 
-        self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player)
+        self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
         self.npc_name_generator = NPCNameGenerator(self.save_system)
         self.active_menu = False
 

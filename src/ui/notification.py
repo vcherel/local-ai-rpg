@@ -71,7 +71,10 @@ class QuestNotification:
         title_text = f"New quest from {self.quest.npc_name}"
         title_width = c.Fonts.title.size(title_text)[0]
 
-        npc_text = f"Item: {self.quest.item_name}"
+        if self.quest.quest_type == "kill_mob":
+            npc_text = f"Kill: {self.quest.kill_count} {self.quest.target_monster_kind}(s)"
+        else:
+            npc_text = f"Item: {self.quest.item_name}"
         npc_width = c.Fonts.button.size(npc_text)[0]
 
         max_desc_width = 0
