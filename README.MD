@@ -6,8 +6,11 @@ A 2D open-world RPG where **all AI runs locally on your machine**. No internet r
 
 ## Features
 
-- AI-generated conversations with any NPC
-- Dynamic quest system (fetch quests + rewards)
+- AI-generated conversations with any NPC, with an affinity system that tracks how each NPC feels about you and shifts dialogue tone, quest rewards, and shop prices
+- Dynamic quest system: fetch, kill, loot drop, and recover stolen item quests, all generated from conversation
+- Loot system with rarity tiers, random drops, and lootboxes
+- Shops: buy and sell items directly from NPCs, with bartering and persuasion stats affecting prices
+- Random world events: wandering merchants, treasure, rumors, blood nights, village crises
 - Open world exploration with enemies and melee combat
 - Sound effects and visual hit feedback
 - Save and continue your game
@@ -56,7 +59,7 @@ Or download manually from [HuggingFace](https://huggingface.co/bartowski/Qwen2.5
 
 ### 6. Run
 ```bash
-uv run python src/main.py
+uv run game
 ```
 
 ## AI Model
@@ -64,12 +67,3 @@ uv run python src/main.py
 I used **Qwen2.5-3B-Instruct** (quantized to 4-bit, ~1.9GB) because it fits fully in the GTX 1650's 4GB VRAM while delivering strong instruction-following and coherent, context-aware dialogue. It uses the same ChatML prompt format as the previous model, so it is a drop-in swap.
 
 There are still huge limitations due to its size, but if desired, the model can be upgraded to a larger version for more advanced conversations and better understanding at the cost of higher VRAM and slower performance.
-
-
-## Current Status
-
-The game is still in development. I plan to add these features next:
-- ⏳ More types of quests, including dynamic and multi-step objectives
-- ⏳ Loot system with random drops and lootboxes
-- ⏳ Possibility to buy items directly from NPCs
-- ⏳ Random events appearing dynamically in the world
