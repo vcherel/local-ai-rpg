@@ -12,17 +12,19 @@ from game.entities.buildings import Building, generate_buildings, set_active_bui
 from game.entities.items import Item
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
+from game.events import EventSystem
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
     from game.entities.player import Player
+    from llm.name_generator import NPCNameGenerator
     from llm.quest_system import QuestSystem
     from ui.menus.context_menu import ContextMenu
 
 
 class World:
-    def __init__(self, save_system: SaveSystem, context_window: ContextMenu):
+    def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify):
         # Regenerated on the fly as the player explores; see _sync_chunks.
         self.floor_details = []
         self._loaded_chunks = set()
@@ -37,6 +39,7 @@ class World:
         self.save_system = save_system
         self.context_window = context_window
         self.context = self.save_system.load("context", None)
+        self.events = EventSystem(self, notify)
 
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
@@ -44,7 +47,7 @@ class World:
             if self.context:
                 for npc in self.npcs:
                     if npc.is_merchant and not npc.shop_ready:
-                        threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
+                        threading.Thread(target=self.generate_merchant_shop, args=(npc,), daemon=True).start()
         else:
             self.buildings = generate_buildings()
             set_active_buildings(self.buildings)
@@ -100,9 +103,11 @@ class World:
         self.monsters = [Monster.from_dict(d) for d in self.save_system.load("monsters", [])]
 
     def serialize(self) -> dict:
+        # A wandering merchant is a transient event; drop it rather than saving it as permanent.
+        npcs = [npc for npc in self.npcs if npc is not self.events.wandering_merchant]
         return {
             "items": [item.to_dict() for item in self.items],
-            "npcs": [npc.to_dict() for npc in self.npcs],
+            "npcs": [npc.to_dict() for npc in npcs],
             "monsters": [monster.to_dict() for monster in self.monsters],
             "buildings": [building.to_dict() for building in self.buildings],
         }
@@ -165,7 +170,7 @@ class World:
 
         for npc in self.npcs:
             if npc.is_merchant:
-                threading.Thread(target=self._generate_merchant_shop, args=(npc,), daemon=True).start()
+                threading.Thread(target=self.generate_merchant_shop, args=(npc,), daemon=True).start()
         self._start_landmark_naming()
 
     def _start_landmark_naming(self):
@@ -182,7 +187,7 @@ class World:
         if name:
             landmark.name = " ".join(name.split()[:5])
 
-    def _generate_merchant_shop(self, merchant: NPC):
+    def generate_merchant_shop(self, merchant: NPC):
         from llm.merchant_system import generate_shop_inventory
 
         shop_data = generate_shop_inventory(self.context)
@@ -216,7 +221,10 @@ class World:
                     get_particles().spawn_burst(
                         monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5
                     )
-                    if random.random() < c.LootBox.DROP_CHANCE:
+                    drop_chance = c.LootBox.DROP_CHANCE
+                    if self.events.blood_night_active:
+                        drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
+                    if random.random() < drop_chance:
                         self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
                     self.monsters.remove(monster)
                     return
@@ -251,9 +259,10 @@ class World:
                 self.monsters.append(self._new_monster(x, y))
                 return
 
-    def update(self, player: Player, dt):
+    def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         get_particles().update(dt)
         self._sync_chunks(player)
+        self.events.update(dt, player, quest_system, npc_name_generator)
 
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).
@@ -270,6 +279,9 @@ class World:
 
         if len(self.monsters) < c.World.NB_MONSTERS:
             self.respawn_timer += dt
-            if self.respawn_timer >= c.World.RESPAWN_INTERVAL_MS:
+            respawn_interval = c.World.RESPAWN_INTERVAL_MS
+            if self.events.blood_night_active:
+                respawn_interval /= c.Events.BLOOD_NIGHT_RESPAWN_MULT
+            if self.respawn_timer >= respawn_interval:
                 self.respawn_timer = 0.0
                 self._spawn_monster_away_from(player)
