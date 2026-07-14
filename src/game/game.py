@@ -201,7 +201,8 @@ class Game:
         else:
             npc = self.world.talk_npc(self.player)
             if npc is not None:
-                self.player.stats.train("bartering", c.Stats.XP_PER_TALK)
+                self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
+                self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
                 self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
 
     def _enter_building(self, building):

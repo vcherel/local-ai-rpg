@@ -54,11 +54,13 @@ class DialogueManager:
         self.quest_system = QuestSystem(items, player)
 
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
+        persuasion_hint = self.quest_system.player.stats.persuasion_descriptor()
+
         if npc.is_merchant:
             system_prompt = (
                 f"You are {npc.name}, a merchant in an RPG with this context: {context}. "
                 "The player comes to talk to you. "
-            )
+            ) + persuasion_hint
             if npc.shop_ready and npc.shop_items:
                 wares = ", ".join(
                     f"{item.name} ({item.rarity} {item.item_type}, +{item.bonus} bonus)"
@@ -76,8 +78,8 @@ class DialogueManager:
             return system_prompt
 
         system_prompt = (
-            f"You are {npc.name}, an NPC in an RPG with this context: {context}. The player comes to talk to you."
-        )
+            f"You are {npc.name}, an NPC in an RPG with this context: {context}. The player comes to talk to you. "
+        ) + persuasion_hint
 
         if npc.has_active_quest:
             quest = npc.quest

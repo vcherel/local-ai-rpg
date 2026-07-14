@@ -213,7 +213,7 @@ class Stats:
     # Character progression is use-based: every stat starts at level 1 and gains XP
     # from a matching action. Effects are pure functions of the level, so growing a
     # stat never touches the save format.
-    NAMES: tuple = ("strength", "resistance", "speed", "vitality", "bartering")
+    NAMES: tuple = ("strength", "resistance", "speed", "vitality", "bartering", "persuasion")
 
     # XP needed for level 1 -> 2, scaled by XP_GROWTH for each further level.
     BASE_XP: float = 35.0
@@ -226,6 +226,11 @@ class Stats:
     VITALITY_HP_PER_LEVEL: int = 15  # extra max HP
     VITALITY_REGEN_PER_LEVEL: float = 0.0005
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
+
+    # Quest reward weight shifted from "rare" to "legendary" per level above 1, capped
+    # so "rare" never drops below a quarter of its base weight.
+    PERSUASION_WEIGHT_SHIFT_PER_LEVEL: float = 2.0
+    PERSUASION_MAX_WEIGHT_SHIFT: float = 45.0
 
     # Effect per point of an equipped accessory's bonus, on top of trained stats.
     ACCESSORY_SPEED_PER_BONUS: float = 0.01  # +1% move speed per bonus point
@@ -241,7 +246,9 @@ class Stats:
     XP_PER_DAMAGE_TAKEN: float = 2.0
     XP_PER_KILL: float = 8.0
     XP_PER_RUN_FRAME: float = 0.015
-    XP_PER_TALK: float = 6.0
+    XP_PER_TALK: float = 6.0  # persuasion
+    XP_PER_TALK_BARTERING: float = 1.5  # small bartering trickle from talking
+    XP_PER_TRADE: float = 8.0  # bartering, per shop buy/sell
 
 
 @dataclass(frozen=True)
