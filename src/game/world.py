@@ -9,10 +9,11 @@ import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
-from game.entities.items import Item
+from game.entities.items import Item, roll_rarity
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.events import EventSystem
+from game.loot import open_lootbox
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:
@@ -206,13 +207,17 @@ class World:
                     return None
                 return npc
 
-    def handle_attack(self, player: Player, quest_system: QuestSystem):
+    def handle_attack(self, player: Player, quest_system: QuestSystem, monsters: List[Monster] = None):
+        """`monsters` overrides the target list for an indoor fight; loot then goes straight to
+        the player instead of dropping a world item, since interior coordinates aren't outdoor ones."""
         player.start_attack_anim()
         play_sound("attack")
         pos = player.get_pos(c.Player.ATTACK_REACH)
+        indoor = monsters is not None
+        monster_list = monsters if indoor else self.monsters
 
         attack_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
-        for monster in self.monsters:
+        for monster in monster_list:
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + monster.kind.size // 2:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
                 if monster.receive_damage(attack_damage):
@@ -225,11 +230,20 @@ class World:
                     if self.events.blood_night_active:
                         drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
                     if random.random() < drop_chance:
-                        self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
-                    self.monsters.remove(monster)
+                        if indoor:
+                            coins, loot_item = open_lootbox(monster.x, monster.y, roll_rarity())
+                            player.add_coins(coins)
+                            if loot_item is not None:
+                                player.inventory.append(loot_item)
+                        else:
+                            self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
+                    monster_list.remove(monster)
                     return
                 play_sound("hit")
                 get_particles().spawn_burst(monster.x, monster.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+
+        if indoor:
+            return
 
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:

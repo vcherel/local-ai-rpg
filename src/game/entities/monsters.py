@@ -46,18 +46,36 @@ class Monster(Entity):
 
         return False
 
+    # Deflection angles tried when the straight line to the player is blocked, alternating
+    # sides so the monster steers around whichever edge of the obstacle is nearer.
+    _STEER_OFFSETS_DEG = (0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150)
+
+    def _steer(self, target_angle, blocked, radius, speed):
+        if blocked is None:
+            return target_angle
+        for offset_deg in self._STEER_OFFSETS_DEG:
+            angle = target_angle + math.radians(offset_deg)
+            nx = self.x + math.cos(angle) * speed
+            ny = self.y + math.sin(angle) * speed
+            if not blocked(nx, ny, radius):
+                return angle
+        return target_angle
+
     def move(self, player: Player, dt, blocked=None):
         dx = player.x + self.target_offset[0] - self.x
         dy = player.y + self.target_offset[1] - self.y
         dist = math.hypot(dx, dy)
 
-        self.orientation = math.atan2(dy, dx)
+        target_angle = math.atan2(dy, dx)
+        self.orientation = target_angle
 
         if self.kind.attack_range < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
             move_factor = dt * c.TARGET_FPS / 1000.0
-            step_x = math.cos(self.orientation) * self.kind.speed * move_factor
-            step_y = math.sin(self.orientation) * self.kind.speed * move_factor
+            speed = self.kind.speed * move_factor
             radius = self.kind.size / 2
+            angle = self._steer(target_angle, blocked, radius, speed)
+            step_x = math.cos(angle) * speed
+            step_y = math.sin(angle) * speed
             # Move one axis at a time so a wall on one axis lets the monster slide along it.
             if blocked is not None and blocked(self.x + step_x, self.y, radius):
                 step_x = 0

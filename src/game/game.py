@@ -60,6 +60,9 @@ class Game:
         # coordinate space; the world simulation pauses until they step back out.
         self.interior = None
         self._interior_return_pos = None
+        # Monsters that were actively chasing the player through the door; they keep
+        # following inside instead of being left behind in the outdoor world.
+        self.indoor_monsters = []
 
         self._restore_player_state()
 
@@ -132,6 +135,11 @@ class Game:
 
                         elif self.interior is None:
                             self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
+
+                        else:
+                            self.world.handle_attack(
+                                self.player, self.dialogue_manager.quest_system, monsters=self.indoor_monsters
+                            )
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
@@ -207,6 +215,17 @@ class Game:
 
     def _enter_building(self, building):
         self._interior_return_pos = building.door_front()
+
+        # Monsters that were actively chasing the player right up to the door follow inside.
+        chase_range = c.World.DETECTION_RANGE + c.Player.SIZE // 2
+        pursuers = [m for m in self.world.monsters if m.distance_to_point((self.player.x, self.player.y)) < chase_range]
+        entry_x, entry_y = building.interior_entry_pos()
+        for monster in pursuers:
+            self.world.monsters.remove(monster)
+            monster.x = entry_x + monster.target_offset[0]
+            monster.y = entry_y + monster.target_offset[1]
+        self.indoor_monsters = pursuers
+
         self.interior = building
         self.player.x, self.player.y = building.interior_entry_pos()
 
@@ -219,6 +238,13 @@ class Game:
 
     def _check_interior_exit(self):
         if self.interior.interior_exit_zone().collidepoint(self.player.x, self.player.y):
+            door_x, door_y = self._interior_return_pos
+            for monster in self.indoor_monsters:
+                monster.x = door_x + monster.target_offset[0]
+                monster.y = door_y + monster.target_offset[1]
+                self.world.monsters.append(monster)
+            self.indoor_monsters = []
+
             self.player.x, self.player.y = self._interior_return_pos
             self.interior = None
 
@@ -273,9 +299,18 @@ class Game:
         self.save_system.update("inventory", [item.id for item in self.player.inventory])
 
         world_state = self.world.serialize()
+        monsters = world_state["monsters"]
+        if self.interior is not None:
+            # Indoor pursuers live in the building's interior coordinate space, not the
+            # outdoor world; save them at the door they'd step back out to instead.
+            door_x, door_y = self._interior_return_pos
+            for monster in self.indoor_monsters:
+                monster_state = monster.to_dict()
+                monster_state["x"], monster_state["y"] = door_x, door_y
+                monsters.append(monster_state)
         self.save_system.update("items", world_state["items"])
         self.save_system.update("npcs", world_state["npcs"])
-        self.save_system.update("monsters", world_state["monsters"])
+        self.save_system.update("monsters", monsters)
         self.save_system.update("buildings", world_state["buildings"])
 
         self.save_system.save_all()
@@ -305,6 +340,8 @@ class Game:
                 dt = self.clock.get_time()
                 if self.interior is not None:
                     self.player.move(self.camera.get_pos(), dt, self.interior.interior_blocked)
+                    for monster in self.indoor_monsters:
+                        monster.move(self.player, dt, self.interior.interior_blocked)
                     self._check_interior_exit()
                 else:
                     self.player.move(self.camera.get_pos(), dt, self.world.blocked)
@@ -313,7 +350,7 @@ class Game:
                 self.update_camera()
 
                 if self.interior is not None:
-                    self.game_renderer.draw_interior(self.camera, self.interior, self.player)
+                    self.game_renderer.draw_interior(self.camera, self.interior, self.player, self.indoor_monsters)
                 else:
                     self.game_renderer.draw_world(self.camera, self.world, self.player)
                 self.game_renderer.draw_ui(
