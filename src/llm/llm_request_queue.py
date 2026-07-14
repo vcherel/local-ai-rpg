@@ -112,7 +112,7 @@ def get_llm_queue():
             # Double-check pattern
             if llm_queue is None:  # double-checked after acquiring the lock
                 llm = Llama(
-                    model_path="./models/Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+                    model_path="./models/Qwen2.5-7B-Instruct-Q2_K.gguf",
                     n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
                     verbose=False,
                     n_ctx=c.Hyperparameters.CONTEXT_SIZE,
