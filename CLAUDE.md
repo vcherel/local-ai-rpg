@@ -28,3 +28,4 @@ Requires CUDA drivers and the model at `models/Qwen2.5-3B-Instruct-Q4_K_M.gguf`.
 - The LLM runs on a background thread via `LLMRequestQueue`. Never call `llama_cpp` directly from the main thread.
 - `src/` is the package root; all imports are relative to it (e.g. `from core.constants import ...`).
 - No tests exist; skip the pre-push hook accordingly.
+- Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it and report back. It pops a real window on his live desktop. State what changed and stop; he'll test it himself if he wants to.
