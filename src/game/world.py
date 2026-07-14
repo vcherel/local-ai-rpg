@@ -226,6 +226,12 @@ class World:
                     get_particles().spawn_burst(
                         monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5
                     )
+                    quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
+                    if quest_item is not None:
+                        if indoor:
+                            player.inventory.append(quest_item)
+                        else:
+                            self.items.append(quest_item)
                     drop_chance = c.LootBox.DROP_CHANCE
                     if self.events.blood_night_active:
                         drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
@@ -249,6 +255,9 @@ class World:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
                 if npc.receive_damage(attack_damage):
+                    stolen_item = quest_system.on_npc_killed(npc)
+                    if stolen_item is not None:
+                        self.items.append(stolen_item)
                     # Drop any quest this NPC was offering so it can't become uncompletable
                     quest_system.remove_quest(npc)
                     play_sound("monster_death")

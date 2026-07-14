@@ -90,7 +90,7 @@ def parse_response_quest_analysis(response):
         response = response.strip()
         match = re.search(r"\{.*\}", response, re.DOTALL)
         if not match:
-            return {"has_quest": False, "quest_description": "", "item_name": ""}
+            return _empty_quest_analysis()
         json_str = match.group(0)
 
         json_str = re.sub(r"([{,]\s*)(\w+)(?=\s*:)", r'\1"\2"', json_str)
@@ -104,7 +104,15 @@ def parse_response_quest_analysis(response):
 
         result = json.loads(json_str)
 
-        fields = ["has_quest", "quest_description", "item_name", "reward_item"]
+        fields = [
+            "has_quest",
+            "quest_description",
+            "item_name",
+            "reward_item",
+            "quest_type",
+            "monster_hint",
+            "kill_count",
+        ]
         result_dict = {}
 
         for field in fields:
@@ -113,12 +121,26 @@ def parse_response_quest_analysis(response):
             else:
                 result_dict[field] = result.get(field, "")
 
-        if result_dict["has_quest"] and not (result_dict["quest_description"] or result_dict["item_name"]):
-            return {"has_quest": False, "quest_description": "", "item_name": "", "reward_item": ""}
+        if result_dict["has_quest"] and not (
+            result_dict["quest_description"] or result_dict["item_name"] or result_dict["monster_hint"]
+        ):
+            return _empty_quest_analysis()
 
         return result_dict
 
     except Exception as e:
         print(f"Failed to parse quest analysis: {e}, response: {response}\n")
 
-    return {"has_quest": False, "quest_description": "", "item_name": "", "reward_item": ""}
+    return _empty_quest_analysis()
+
+
+def _empty_quest_analysis() -> dict:
+    return {
+        "has_quest": False,
+        "quest_description": "",
+        "item_name": "",
+        "reward_item": "",
+        "quest_type": "",
+        "monster_hint": "",
+        "kill_count": "",
+    }
