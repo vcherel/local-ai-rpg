@@ -228,6 +228,15 @@ class QuestSystem:
 
         npc.quest = None
 
+    def _reward_weights(self, npc: NPC) -> tuple:
+        """Persuasion-shifted quest reward weights, further skewed by this NPC's affinity."""
+        common, uncommon, rare, epic, legendary = self.player.stats.quest_reward_weights()
+        shift = min(
+            c.Affinity.MAX_WEIGHT_SHIFT,
+            max(0.0, npc.affinity - c.Affinity.START) * c.Affinity.WEIGHT_SHIFT_PER_POINT,
+        )
+        return (common, uncommon, max(0.0, rare - shift), epic, legendary + shift)
+
     def complete_quest(self, npc: NPC):
         quest = npc.quest
         if not quest:
@@ -248,7 +257,7 @@ class QuestSystem:
 
         if quest.reward_item_name:
             rtype = item_type_from_name(quest.reward_item_name)
-            rarity = roll_rarity(self.player.stats.quest_reward_weights())
+            rarity = roll_rarity(self._reward_weights(npc))
             rbonus = roll_bonus(rtype, rarity)
             reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity)
             reward_item.picked_up = True

@@ -29,7 +29,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 ### game/entities
 - `src/game/entities/entities.py`: `Entity` base class (hp, damage, attack animation), `draw_human` sprite renderer
 - `src/game/entities/player.py`: `Player(Entity)`, movement, inventory, equipment slots
-- `src/game/entities/npcs.py`: `NPC(Entity)`
+- `src/game/entities/npcs.py`: `NPC(Entity)`, tracks per-NPC `affinity` (LLM-judged relationship level, feeds dialogue tone/quest rewards/shop prices)
 - `src/game/entities/monsters.py`: `Monster(Entity)`, `pick_monster_kind` (spawn selection by distance from center)
 - `src/game/entities/buildings.py`: `Building`, `generate_buildings`, `set_active_buildings`, town layout and building placement
 - `src/game/entities/items.py`: `Item`, rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
@@ -37,7 +37,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 
 ### llm
 - `src/llm/llm_request_queue.py`: `LLMRequestQueue`, serialises all LLM calls onto a worker thread; use `generate_response_queued` / `generate_response_stream_queued`
-- `src/llm/dialogue_manager.py`: `DialogueManager`, manages NPC dialogue window (streaming, quest detection on close)
+- `src/llm/dialogue_manager.py`: `DialogueManager`, manages NPC dialogue window (streaming, quest detection and affinity analysis on close)
 - `src/llm/quest_system.py`: `QuestSystem`, analyses conversation for quests, creates items, handles completion/rewards
 - `src/llm/merchant_system.py`: `generate_shop_inventory`, asks the LLM for a shop's item list
 - `src/llm/name_generator.py`: `NPCNameGenerator`, background-thread generation of NPC names ahead of time
@@ -46,7 +46,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/core/constants.py`: all game constants (screen size, player stats, LLM hyperparameters, colours, fonts)
 - `src/core/save.py`: `SaveSystem`, JSON save system (keys: `context`, `coins`, `name`)
 - `src/core/camera.py`: `Camera`, world to screen coordinate translation only
-- `src/core/utils.py`: `ConversationHistory`, random color/coordinate helpers, `parse_shop_inventory` / `parse_response_quest_analysis` (LLM JSON response parsing)
+- `src/core/utils.py`: `ConversationHistory`, random color/coordinate helpers, `parse_shop_inventory` / `parse_response_quest_analysis` / `parse_response_affinity_analysis` (LLM response parsing)
 - `src/core/dialogue_log.py`: `write_conversation`, persists finished NPC conversations to Markdown files under `logs/dialogues/`
 - `src/core/particles.py`: `Particle`, `ParticleSystem`, world-space particle bursts for combat/pickup feedback
 - `src/core/audio.py`: `SoundManager`, procedural sound effects synthesised in memory (no audio asset files)
@@ -63,7 +63,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/ui/menus/pause_menu.py`: `PauseMenu`
 - `src/ui/menus/context_menu.py`: `ContextMenu(BaseMenu)`, streaming popup for ambient/context LLM text
 - `src/ui/menus/inventory_menu.py`: `InventoryMenu(BaseMenu)`, item list, equip/unequip
-- `src/ui/menus/shop_menu.py`: `ShopMenu(BaseMenu)`, `_sell_price`, buy/sell UI and pricing
+- `src/ui/menus/shop_menu.py`: `ShopMenu(BaseMenu)`, `_sell_price`, buy/sell UI and pricing (bartering stat and NPC affinity both swing prices)
 - `src/ui/menus/quest_menu.py`: `QuestMenu(BaseMenu)`, active/completed quest list
 - `src/ui/menus/stats_menu.py`: `StatsMenu(BaseMenu)`, character stats/progression display
 - `src/ui/menus/help_menu.py`: `HelpMenu(BaseMenu)`, controls/help screen
