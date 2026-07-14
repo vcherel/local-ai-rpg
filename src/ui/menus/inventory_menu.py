@@ -27,6 +27,15 @@ class InventoryMenu(BaseMenu):
         self.active = False
         self.hovered_slot = None
 
+    def _grouped_items(self, player: Player) -> list[dict]:
+        item_dict = {}
+        for item in player.inventory:
+            key = (item.name, item.rarity, item.bonus)
+            if key not in item_dict:
+                item_dict[key] = {"count": 0, "item": item}
+            item_dict[key]["count"] += 1
+        return list(item_dict.values())
+
     def get_slot_at_mouse(self, mouse_x, mouse_y, menu_x, menu_y):
         """Returns the slot index at the given mouse position, or None"""
         relative_mouse_x = mouse_x - menu_x
@@ -59,13 +68,17 @@ class InventoryMenu(BaseMenu):
 
         return None
 
-    def handle_event(self, event):
+    def handle_event(self, event, player: Player):
         if not self.active:
             return False
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
-                self.close()
+                menu_x, menu_y = self.get_centered_position()
+                slot = self.get_slot_at_mouse(event.pos[0], event.pos[1], menu_x, menu_y)
+                items_list = self._grouped_items(player)
+                if slot is not None and slot < len(items_list):
+                    player.toggle_equip(items_list[slot]["item"])
 
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_i:
@@ -96,14 +109,8 @@ class InventoryMenu(BaseMenu):
         mouse_pos = pygame.mouse.get_pos()
         self.hovered_slot = self.get_slot_at_mouse(mouse_pos[0], mouse_pos[1], menu_x, menu_y)
 
-        item_dict = {}
-        for item in player.inventory:
-            key = (item.name, item.rarity, item.bonus)
-            if key not in item_dict:
-                item_dict[key] = {"count": 0, "item": item}
-            item_dict[key]["count"] += 1
-
-        items_list = list(item_dict.values())
+        items_list = self._grouped_items(player)
+        equipped_ids = set(player.equipped_ids().values())
 
         grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
         grid_start_x = (self.width - grid_width) // 2
@@ -115,15 +122,21 @@ class InventoryMenu(BaseMenu):
                 cell_x = grid_start_x + col * (self.cell_size + self.cell_padding)
                 cell_y = grid_start_y + row * (self.cell_size + self.cell_padding)
 
+                equipped = slot_index < len(items_list) and items_list[slot_index]["item"].id in equipped_ids
+
                 if slot_index == self.hovered_slot and slot_index < len(items_list):
                     cell_color = c.Colors.BUTTON_HOVERED
                     border_color = c.Colors.BORDER_HOVERED
                 else:
                     cell_color = c.Colors.BUTTON
                     border_color = c.Colors.BORDER
+                if equipped:
+                    border_color = c.Colors.GREEN
 
                 pygame.draw.rect(menu_surface, cell_color, (cell_x, cell_y, self.cell_size, self.cell_size))
-                pygame.draw.rect(menu_surface, border_color, (cell_x, cell_y, self.cell_size, self.cell_size), 2)
+                pygame.draw.rect(
+                    menu_surface, border_color, (cell_x, cell_y, self.cell_size, self.cell_size), 3 if equipped else 2
+                )
 
                 if slot_index < len(items_list):
                     item_data = items_list[slot_index]
@@ -163,8 +176,14 @@ class InventoryMenu(BaseMenu):
                 tooltip_text = f"{item.name}  (+{item.bonus} attack)"
             elif item.item_type == "armor" and item.bonus > 0:
                 tooltip_text = f"{item.name}  (+{item.bonus} defense)"
+            elif item.item_type == "accessory" and item.bonus > 0:
+                tooltip_text = f"{item.name}  (+{item.bonus} {item.accessory_flavor})"
             else:
                 tooltip_text = item.name
+            if item.id in equipped_ids:
+                tooltip_text += "  [equipped, click to unequip]"
+            elif item.item_type in ("weapon", "armor", "accessory"):
+                tooltip_text += "  [click to equip]"
             tooltip_surface = c.Fonts.text.render(tooltip_text, True, rarity_color(item.rarity))
             tooltip_width = tooltip_surface.get_width() + 20
             tooltip_height = tooltip_surface.get_height() + 10
@@ -183,5 +202,8 @@ class InventoryMenu(BaseMenu):
             pygame.draw.rect(menu_surface, c.Colors.YELLOW, (tooltip_x, tooltip_y, tooltip_width, tooltip_height), 2)
 
             menu_surface.blit(tooltip_surface, (tooltip_x + 10, tooltip_y + 5))
+
+        hint = c.Fonts.small.render("Click gear to equip/unequip. ESC or I to close", True, c.Colors.BORDER)
+        menu_surface.blit(hint, ((self.width - hint.get_width()) // 2, self.height - self.padding - hint.get_height()))
 
         self.screen.blit(menu_surface, (menu_x, menu_y))

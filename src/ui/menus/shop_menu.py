@@ -20,7 +20,7 @@ LIST_TOP = 90
 
 
 def _sell_price(item: Item) -> int:
-    if item.item_type in ("weapon", "armor"):
+    if item.item_type in ("weapon", "armor", "accessory"):
         base = max(5, item.bonus * 10)
     else:
         base = 5
@@ -65,10 +65,10 @@ class ShopMenu(BaseMenu):
         return pygame.Rect(panel_x, y, self._panel_width(), ROW_HEIGHT - 6)
 
     def _buy_price(self, item: Item) -> int:
-        return max(1, round(self.merchant.shop_prices[item.id] * self.player.stats.buy_multiplier()))
+        return max(1, round(self.merchant.shop_prices[item.id] * self.player.buy_multiplier()))
 
     def _sell_price(self, item: Item) -> int:
-        return max(1, round(_sell_price(item) * self.player.stats.sell_multiplier()))
+        return max(1, round(_sell_price(item) * self.player.sell_multiplier()))
 
     def _slot_at(self, panel_x: int, count: int, rel_x: int, rel_y: int) -> Optional[int]:
         for i in range(count):
@@ -120,6 +120,7 @@ class ShopMenu(BaseMenu):
     def _sell(self, index: int):
         item = self.player.inventory[index]
         price = self._sell_price(item)
+        self.player.unequip_if_equipped(item)
         self.player.inventory.pop(index)
         if item in self.world_items:
             self.world_items.remove(item)
@@ -197,8 +198,8 @@ class ShopMenu(BaseMenu):
         name_surf = c.Fonts.text.render(item.name, True, name_color)
         surface.blit(name_surf, (r.x + 56, r.y + 8))
 
-        if item.bonus > 0 and item.item_type in ("weapon", "armor"):
-            label = "atk" if item.item_type == "weapon" else "def"
+        if item.bonus > 0 and item.item_type in ("weapon", "armor", "accessory"):
+            label = {"weapon": "atk", "armor": "def"}.get(item.item_type, item.accessory_flavor)
             stat_surf = c.Fonts.small.render(f"+{item.bonus} {label}", True, c.Colors.BORDER)
             surface.blit(stat_surf, (r.x + 56, r.y + 30))
 

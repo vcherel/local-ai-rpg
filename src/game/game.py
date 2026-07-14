@@ -88,7 +88,7 @@ class Game:
             if self.context_window.handle_event(event):
                 continue
 
-            if self.inventory_menu.handle_event(event):
+            if self.inventory_menu.handle_event(event, self.player):
                 continue
 
             if self.shop_menu.handle_event(event):
@@ -320,6 +320,7 @@ class Game:
                     self.player.coins,
                     len(self.dialogue_manager.quest_system.active_quests),
                     get_llm_task_count(),
+                    self.player,
                 )
 
             self.context_window.update()

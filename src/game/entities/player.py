@@ -15,6 +15,13 @@ if TYPE_CHECKING:
     from core.save import SaveSystem
 
 
+EQUIP_SLOT_ATTRS = {
+    "weapon": "equipped_weapon_id",
+    "armor": "equipped_armor_id",
+    "accessory": "equipped_accessory_id",
+}
+
+
 class Player(Entity):
     def __init__(self, save_system, coins):
         super().__init__(
@@ -28,6 +35,11 @@ class Player(Entity):
         self.stats = Stats(save_system.load("stats", None))
         self.max_hp = self.stats.max_hp()
         self.hp = self.max_hp
+
+        equipped = save_system.load("equipped", {})
+        self.equipped_weapon_id = equipped.get("weapon")
+        self.equipped_armor_id = equipped.get("armor")
+        self.equipped_accessory_id = equipped.get("accessory")
 
         saved = save_system.load("player", None)
         if saved:
@@ -53,7 +65,7 @@ class Player(Entity):
 
         running = bool(keys[pygame.K_LSHIFT])
         base_speed = c.Player.RUN_SPEED if running else c.Player.SPEED
-        actual_speed = base_speed * self.stats.speed_multiplier()
+        actual_speed = base_speed * self.speed_multiplier()
 
         forward = keys[pygame.K_z] or keys[pygame.K_w]
 
@@ -97,13 +109,63 @@ class Player(Entity):
 
         self.max_hp = self.stats.max_hp()
         if self.hp < self.max_hp:
-            self.hp = min(self.hp + self.stats.regen_rate() * dt, self.max_hp)
+            self.hp = min(self.hp + self.regen_rate() * dt, self.max_hp)
 
-    def best_weapon_bonus(self) -> int:
-        return max((item.bonus for item in self.inventory if item.item_type == "weapon"), default=0)
+    def equipped_ids(self) -> dict:
+        return {
+            "weapon": self.equipped_weapon_id,
+            "armor": self.equipped_armor_id,
+            "accessory": self.equipped_accessory_id,
+        }
 
-    def best_armor_bonus(self) -> int:
-        return max((item.bonus for item in self.inventory if item.item_type == "armor"), default=0)
+    def equipped_item(self, item_type: str):
+        item_id = getattr(self, EQUIP_SLOT_ATTRS[item_type])
+        if item_id is None:
+            return None
+        return next((item for item in self.inventory if item.id == item_id), None)
+
+    def toggle_equip(self, item):
+        """Equip the item into its slot, or unequip it if it's already there."""
+        attr = EQUIP_SLOT_ATTRS.get(item.item_type)
+        if attr is None:
+            return
+        setattr(self, attr, None if getattr(self, attr) == item.id else item.id)
+        self.save_system.update("equipped", self.equipped_ids())
+
+    def unequip_if_equipped(self, item):
+        """Clears an item's slot before it leaves the inventory (sold, dropped, etc)."""
+        attr = EQUIP_SLOT_ATTRS.get(item.item_type)
+        if attr and getattr(self, attr) == item.id:
+            setattr(self, attr, None)
+            self.save_system.update("equipped", self.equipped_ids())
+
+    def weapon_bonus(self) -> int:
+        item = self.equipped_item("weapon")
+        return item.bonus if item else 0
+
+    def armor_bonus(self) -> int:
+        item = self.equipped_item("armor")
+        return item.bonus if item else 0
+
+    def accessory_bonus(self, flavor: str) -> int:
+        item = self.equipped_item("accessory")
+        if item and item.accessory_flavor == flavor:
+            return item.bonus
+        return 0
+
+    def speed_multiplier(self) -> float:
+        return self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
+
+    def regen_rate(self) -> float:
+        return self.stats.regen_rate() + self.accessory_bonus("regen") * c.Stats.ACCESSORY_REGEN_PER_BONUS
+
+    def buy_multiplier(self) -> float:
+        luck = self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS
+        return max(c.Stats.BUY_FLOOR, self.stats.buy_multiplier() - luck)
+
+    def sell_multiplier(self) -> float:
+        luck = self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS
+        return min(c.Stats.SELL_CEILING, self.stats.sell_multiplier() + luck)
 
     def add_coins(self, amount):
         self.coins += amount
@@ -115,7 +177,7 @@ class Player(Entity):
         self.stats.train("vitality", c.Stats.XP_PER_DAMAGE_TAKEN * 0.5)
         self.max_hp = self.stats.max_hp()
 
-        reduction = self.best_armor_bonus() + self.stats.damage_reduction()
+        reduction = self.armor_bonus() + self.stats.damage_reduction()
         actual = max(damage - reduction, 1)
         self.hp -= actual
         self.last_damage_ms = pygame.time.get_ticks()

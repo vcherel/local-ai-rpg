@@ -191,17 +191,18 @@ class RarityTier:
     weight: float
     weapon_bonus: tuple
     armor_bonus: tuple
+    accessory_bonus: tuple
     price_mult: float
 
 
 @dataclass(frozen=True)
 class Rarity:
     TIERS: tuple = (
-        RarityTier("common", (200, 200, 200), 50, (1, 2), (1, 1), 1.0),
-        RarityTier("uncommon", (96, 200, 96), 27, (3, 4), (2, 2), 1.5),
-        RarityTier("rare", (90, 150, 255), 14, (5, 7), (3, 3), 2.5),
-        RarityTier("epic", (190, 105, 240), 7, (8, 10), (4, 5), 4.0),
-        RarityTier("legendary", (255, 150, 40), 2, (11, 14), (6, 7), 6.0),
+        RarityTier("common", (200, 200, 200), 50, (1, 2), (1, 1), (1, 2), 1.0),
+        RarityTier("uncommon", (96, 200, 96), 27, (3, 4), (2, 2), (3, 4), 1.5),
+        RarityTier("rare", (90, 150, 255), 14, (5, 7), (3, 3), (5, 7), 2.5),
+        RarityTier("epic", (190, 105, 240), 7, (8, 10), (4, 5), (8, 10), 4.0),
+        RarityTier("legendary", (255, 150, 40), 2, (11, 14), (6, 7), (11, 14), 6.0),
     )
     # Quest rewards skip the low tiers so completing a quest always feels worth it.
     QUEST_REWARD_WEIGHTS: tuple = (0, 0, 60, 30, 10)
@@ -225,6 +226,11 @@ class Stats:
     VITALITY_HP_PER_LEVEL: int = 15  # extra max HP
     VITALITY_REGEN_PER_LEVEL: float = 0.0005
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
+
+    # Effect per point of an equipped accessory's bonus, on top of trained stats.
+    ACCESSORY_SPEED_PER_BONUS: float = 0.01  # +1% move speed per bonus point
+    ACCESSORY_REGEN_PER_BONUS: float = 0.0005  # extra HP regen per bonus point
+    ACCESSORY_LUCK_PER_BONUS: float = 0.01  # +1% better prices per bonus point
 
     # Prices can move at most this far from their base value.
     BUY_FLOOR: float = 0.5

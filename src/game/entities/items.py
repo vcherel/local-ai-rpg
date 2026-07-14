@@ -40,10 +40,24 @@ ARMOR_KEYWORDS = {
     "gauntlets",
     "greaves",
 }
+ACCESSORY_KEYWORDS = {
+    "ring",
+    "amulet",
+    "necklace",
+    "charm",
+    "trinket",
+    "pendant",
+    "talisman",
+    "bracelet",
+    "brooch",
+}
 
 WEAPON_COLOR = (220, 140, 40)
 ARMOR_COLOR = (100, 180, 220)
+ACCESSORY_COLOR = (230, 200, 60)
 LOOTBOX_COLOR = (150, 100, 50)
+
+ACCESSORY_FLAVORS = ("speed", "regen", "luck")
 
 
 def item_type_from_name(name: str) -> str:
@@ -52,6 +66,8 @@ def item_type_from_name(name: str) -> str:
         return "weapon"
     if any(kw in lower for kw in ARMOR_KEYWORDS):
         return "armor"
+    if any(kw in lower for kw in ACCESSORY_KEYWORDS):
+        return "accessory"
     return "misc"
 
 
@@ -78,11 +94,22 @@ def roll_bonus(item_type: str, rarity: str) -> int:
         return random.randint(*tier.weapon_bonus)
     if item_type == "armor":
         return random.randint(*tier.armor_bonus)
+    if item_type == "accessory":
+        return random.randint(*tier.accessory_bonus)
     return 0
 
 
 class Item:
-    def __init__(self, x, y, name, item_type: str = "misc", bonus: int = 0, rarity: str = None):
+    def __init__(
+        self,
+        x,
+        y,
+        name,
+        item_type: str = "misc",
+        bonus: int = 0,
+        rarity: str = None,
+        accessory_flavor: str = None,
+    ):
         self.id = uuid.uuid4().hex
         self.x = x
         self.y = y
@@ -91,12 +118,18 @@ class Item:
         self.item_type = item_type
         self.bonus = bonus
         self.rarity = rarity or roll_rarity()
+        self.accessory_flavor = accessory_flavor
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
             self.shape = "sword"
         elif item_type == "armor":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ARMOR_COLOR)
             self.shape = "shield"
+        elif item_type == "accessory":
+            if self.accessory_flavor is None:
+                self.accessory_flavor = random.choice(ACCESSORY_FLAVORS)
+            self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ACCESSORY_COLOR)
+            self.shape = "gem"
         elif item_type == "lootbox":
             self.color = LOOTBOX_COLOR
             self.shape = "chest"
@@ -118,6 +151,7 @@ class Item:
             "item_type": self.item_type,
             "bonus": self.bonus,
             "rarity": self.rarity,
+            "accessory_flavor": self.accessory_flavor,
             "color": list(self.color),
             "shape": self.shape,
             "picked_up": self.picked_up,
@@ -125,7 +159,15 @@ class Item:
 
     @classmethod
     def from_dict(cls, data: dict) -> Item:
-        item = cls(data["x"], data["y"], data["name"], data["item_type"], data["bonus"], data["rarity"])
+        item = cls(
+            data["x"],
+            data["y"],
+            data["name"],
+            data["item_type"],
+            data["bonus"],
+            data["rarity"],
+            data.get("accessory_flavor"),
+        )
         item.id = data["id"]
         item.angle = data["angle"]
         item.color = tuple(data["color"])
@@ -192,6 +234,15 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width, bo
             (cx + size * 0.65, cy + size * 0.15),
             (cx, cy + size * 0.7),
             (cx - size * 0.65, cy + size * 0.15),
+        ]
+        pygame.draw.polygon(surface, color, points)
+        pygame.draw.polygon(surface, border_color, points, border_width)
+    elif shape == "gem":
+        points = [
+            (cx, cy - size),
+            (cx + size * 0.65, cy),
+            (cx, cy + size),
+            (cx - size * 0.65, cy),
         ]
         pygame.draw.polygon(surface, color, points)
         pygame.draw.polygon(surface, border_color, points, border_width)
