@@ -12,6 +12,7 @@ from ui.loading_indicator import LoadingIndicator
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.items import Item
+    from game.entities.monsters import Monster
     from game.entities.npcs import NPC
     from game.entities.player import Player
     from game.world import World
@@ -70,8 +71,10 @@ class GameRenderer:
 
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
 
-    def draw_interior(self, camera: Camera, building, player: Player):
+    def draw_interior(self, camera: Camera, building, player: Player, monsters: List[Monster]):
         building.draw_interior(self.screen, camera, player)
+        for monster in monsters:
+            monster.draw(self.screen, camera)
         get_particles().draw(self.screen, camera)
         player.draw(self.screen)
 
