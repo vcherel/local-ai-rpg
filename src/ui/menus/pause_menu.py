@@ -1,12 +1,11 @@
 import pygame
 
-import core.constants as c
 from ui.menus.base_menu import BaseMenu
 
 
 class PauseMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=320, height=150)
+        super().__init__(screen, width=360, height=170)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -24,14 +23,8 @@ class PauseMenu(BaseMenu):
         if not self.active:
             return
 
-        menu_x, menu_y = self.get_centered_position()
         self.draw_overlay()
-        surface = self.create_menu_surface()
+        surface = self.create_menu_surface("Paused")
 
-        title = c.Fonts.title.render("Paused", True, c.Colors.WHITE)
-        surface.blit(title, ((self.width - title.get_width()) // 2, self.padding))
-
-        hint = c.Fonts.small.render("P, Esc or click to resume", True, c.Colors.BORDER)
-        surface.blit(hint, ((self.width - hint.get_width()) // 2, self.height - self.padding - hint.get_height()))
-
-        self.screen.blit(surface, (menu_x, menu_y))
+        self.draw_hint(surface, "P, Esc or click to resume")
+        self.blit_panel(surface)

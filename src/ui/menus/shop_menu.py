@@ -6,7 +6,8 @@ import pygame
 
 import core.constants as c
 from game.entities.items import rarity_color, rarity_tier
-from ui.menus.base_menu import BaseMenu
+from ui import widgets
+from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
 if TYPE_CHECKING:
     from game.entities.items import Item
@@ -16,7 +17,8 @@ if TYPE_CHECKING:
 
 PANEL_GAP = 20
 ROW_HEIGHT = 60
-LIST_TOP = 90
+# Room below the column labels for the first row.
+LABEL_GAP = 30
 
 
 def _sell_price(item: Item) -> int:
@@ -35,7 +37,8 @@ def _affinity_swing(npc: NPC) -> float:
 
 class ShopMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=920, height=580)
+        super().__init__(screen, width=940, height=600)
+        self.header_height = HEADER_HEIGHT
         self.merchant: Optional[NPC] = None
         self.player: Optional[Player] = None
         self.world_items: Optional[List[Item]] = None
@@ -66,8 +69,11 @@ class ShopMenu(BaseMenu):
     def _sell_panel_x(self) -> int:
         return self.padding * 2 + self._panel_width() + PANEL_GAP
 
+    def _list_top(self) -> int:
+        return self.content_top + LABEL_GAP
+
     def _row_rect(self, panel_x: int, index: int) -> pygame.Rect:
-        y = LIST_TOP + index * ROW_HEIGHT
+        y = self._list_top() + index * ROW_HEIGHT
         return pygame.Rect(panel_x, y, self._panel_width(), ROW_HEIGHT - 6)
 
     def _buy_price(self, item: Item) -> int:
@@ -140,32 +146,32 @@ class ShopMenu(BaseMenu):
         if not self.active:
             return
 
-        menu_x, menu_y = self.get_centered_position()
         self.draw_overlay()
-        surface = self.create_menu_surface()
+        surface = self.create_menu_surface(f"{self.merchant.name or 'Merchant'}'s Shop")
 
-        title = c.Fonts.title.render(f"{self.merchant.name or 'Merchant'}'s Shop", True, c.Colors.WHITE)
-        surface.blit(title, (self.padding, self.padding))
-
-        coins_text = c.Fonts.text.render(f"Coins: {self.player.coins}", True, c.Colors.YELLOW)
-        surface.blit(coins_text, (self.width - self.padding - coins_text.get_width(), self.padding + 5))
+        coins_text = c.Fonts.text.render(f"{self.player.coins} coins", True, c.Colors.ACCENT)
+        surface.blit(
+            coins_text,
+            (self.width - self.padding - coins_text.get_width(), (HEADER_HEIGHT - coins_text.get_height()) // 2),
+        )
 
         pw = self._panel_width()
         bx = self._buy_panel_x()
         sx = self._sell_panel_x()
+        label_y = self._list_top() - 28
 
-        buy_label = c.Fonts.heading.render("Buy", True, (100, 255, 100))
-        surface.blit(buy_label, (bx, LIST_TOP - 28))
+        buy_label = c.Fonts.heading.render("Buy", True, (120, 220, 120))
+        surface.blit(buy_label, (bx, label_y))
 
-        sell_label = c.Fonts.heading.render("Sell", True, (255, 180, 80))
-        surface.blit(sell_label, (sx, LIST_TOP - 28))
+        sell_label = c.Fonts.heading.render("Sell", True, (235, 180, 90))
+        surface.blit(sell_label, (sx, label_y))
 
         if not self.merchant.shop_ready:
-            msg = c.Fonts.text.render("Preparing wares...", True, c.Colors.BORDER)
-            surface.blit(msg, (bx + 10, LIST_TOP + 10))
+            msg = c.Fonts.text.render("Preparing wares...", True, c.Colors.MUTED)
+            surface.blit(msg, (bx + 10, self._list_top() + 10))
         elif not self.merchant.shop_items:
-            msg = c.Fonts.text.render("Nothing for sale right now.", True, c.Colors.BORDER)
-            surface.blit(msg, (bx + 10, LIST_TOP + 10))
+            msg = c.Fonts.text.render("Nothing for sale right now.", True, c.Colors.MUTED)
+            surface.blit(msg, (bx + 10, self._list_top() + 10))
         else:
             for i, item in enumerate(self.merchant.shop_items):
                 price = self._buy_price(item)
@@ -177,10 +183,8 @@ class ShopMenu(BaseMenu):
             can_afford = True
             self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80), can_afford)
 
-        hint = c.Fonts.small.render("ESC or B to close", True, c.Colors.BORDER)
-        surface.blit(hint, (self.width // 2 - hint.get_width() // 2, self.height - self.padding - hint.get_height()))
-
-        self.screen.blit(surface, (menu_x, menu_y))
+        self.draw_hint(surface, "Click an item to buy or sell. ESC or B to close")
+        self.blit_panel(surface)
 
     def _draw_row(
         self,
@@ -195,23 +199,21 @@ class ShopMenu(BaseMenu):
         enabled: bool = True,
     ):
         r = self._row_rect(panel_x, index)
-        bg = c.Colors.BUTTON_HOVERED if hovered else c.Colors.BUTTON
-        border = c.Colors.BORDER_HOVERED if hovered else c.Colors.BORDER
-        pygame.draw.rect(surface, bg, r, border_radius=4)
-        pygame.draw.rect(surface, border, r, 1, border_radius=4)
+        rarity_border = rarity_color(item.rarity) if item.rarity != "common" else None
+        widgets.draw_slot(surface, r, hovered=hovered, border_color=rarity_border, radius=8)
 
-        icon_x = r.x + 28
+        icon_x = r.x + 30
         icon_y = r.centery
-        item.draw(surface, x=icon_x, y=icon_y)
+        widgets.draw_item_scaled(surface, item, icon_x, icon_y, 34)
 
-        name_color = rarity_color(item.rarity) if enabled else c.Colors.BORDER
+        name_color = rarity_color(item.rarity) if enabled else c.Colors.MUTED
         name_surf = c.Fonts.text.render(item.name, True, name_color)
-        surface.blit(name_surf, (r.x + 56, r.y + 8))
+        surface.blit(name_surf, (r.x + 58, r.y + 8))
 
         if item.bonus > 0 and item.item_type in ("weapon", "armor", "accessory"):
             label = {"weapon": "atk", "armor": "def"}.get(item.item_type, item.accessory_flavor)
-            stat_surf = c.Fonts.small.render(f"+{item.bonus} {label}", True, c.Colors.BORDER)
-            surface.blit(stat_surf, (r.x + 56, r.y + 30))
+            stat_surf = c.Fonts.small.render(f"+{item.bonus} {label}", True, c.Colors.MUTED)
+            surface.blit(stat_surf, (r.x + 58, r.y + 30))
 
         price_surf = c.Fonts.text.render(f"{price}g", True, price_color)
         surface.blit(price_surf, (r.right - price_surf.get_width() - 8, r.centery - price_surf.get_height() // 2))

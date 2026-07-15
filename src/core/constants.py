@@ -289,6 +289,22 @@ class Colors:
     BORDER_HOVERED: tuple = (255, 215, 0)
     TRANSPARENT: tuple = (0, 0, 0, 150)
 
+    # Polished dark menu theme. Panels are a subtle vertical gradient with a gold
+    # accent; slots and buttons share the same palette so every menu reads as one system.
+    PANEL_TOP: tuple = (60, 60, 70)
+    PANEL_BOTTOM: tuple = (40, 40, 48)
+    PANEL_BORDER: tuple = (96, 96, 112)
+    HEADER_BG: tuple = (32, 32, 40)
+    ACCENT: tuple = (235, 190, 75)
+    MUTED: tuple = (150, 150, 162)
+    SLOT_BG: tuple = (30, 30, 37)
+    SLOT_BG_HOVER: tuple = (52, 52, 63)
+    SLOT_BORDER: tuple = (82, 82, 96)
+    BUTTON_TOP: tuple = (80, 80, 92)
+    BUTTON_BOTTOM: tuple = (56, 56, 66)
+    OVERLAY_DIM: tuple = (0, 0, 0, 170)
+    SHADOW_ALPHA: int = 110
+
 
 @dataclass(frozen=True)
 class Hyperparameters:

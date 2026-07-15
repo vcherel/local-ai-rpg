@@ -5,6 +5,7 @@ import sys
 import pygame
 
 import core.constants as c
+from ui import widgets
 
 
 def run_game_over(screen, clock):
@@ -37,13 +38,8 @@ def run_game_over(screen, clock):
         screen.blit(title_text, (title_x, 200))
 
         hover = menu_button.collidepoint(mouse_pos)
-        color = c.Colors.BUTTON_HOVERED if hover else c.Colors.BUTTON
-        border_color = c.Colors.BORDER_HOVERED if hover else c.Colors.BORDER
-        pygame.draw.rect(screen, color, menu_button)
-        pygame.draw.rect(screen, border_color, menu_button, 3)
-
-        label = c.Fonts.title.render("Main Menu", True, c.Colors.WHITE)
-        screen.blit(label, label.get_rect(center=menu_button.center))
+        pressed = pygame.mouse.get_pressed()[0] and hover
+        widgets.draw_button(screen, menu_button, "Main Menu", c.Fonts.title, hovered=hover, pressed=pressed)
 
         pygame.display.flip()
         clock.tick(60)

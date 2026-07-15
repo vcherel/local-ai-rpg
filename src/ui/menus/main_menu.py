@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from ui import widgets
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -29,9 +30,6 @@ class MainMenu:
             center_x, center_y + self.button_height + self.button_spacing, self.button_width, self.button_height
         )
 
-        self.button_default_color = c.Colors.BUTTON
-        self.button_hover_color = c.Colors.BUTTON_HOVERED
-
     def handle_click(self, pos):
         if self.new_game_button.collidepoint(pos):
             self.save_system.clear()
@@ -41,17 +39,9 @@ class MainMenu:
             return "continue"
         return None
 
-    def draw_button(self, rect: pygame.Rect, text, mouse_pos):
+    def draw_button(self, rect: pygame.Rect, text, mouse_pos, pressed):
         hover = rect.collidepoint(mouse_pos)
-        color = self.button_hover_color if hover else self.button_default_color
-        border_color = c.Colors.BORDER_HOVERED if hover else c.Colors.BORDER
-
-        pygame.draw.rect(self.screen, color, rect)
-        pygame.draw.rect(self.screen, border_color, rect, 3)
-
-        text_surf = c.Fonts.title.render(text, True, c.Colors.WHITE)
-        text_rect = text_surf.get_rect(center=rect.center)
-        self.screen.blit(text_surf, text_rect)
+        widgets.draw_button(self.screen, rect, text, c.Fonts.title, hovered=hover, pressed=pressed and hover)
 
     def draw(self):
         if not self.active:
@@ -63,11 +53,20 @@ class MainMenu:
         title_x = (self.screen.get_width() - title_text.get_width()) // 2
         title_y = 150
         self.screen.blit(title_text, (title_x, title_y))
+        underline_y = title_y + title_text.get_height() + 6
+        pygame.draw.line(
+            self.screen,
+            c.Colors.ACCENT,
+            (title_x, underline_y),
+            (title_x + title_text.get_width(), underline_y),
+            3,
+        )
 
         mouse_pos = pygame.mouse.get_pos()
+        pressed = pygame.mouse.get_pressed()[0]
 
-        self.draw_button(self.new_game_button, "New Game", mouse_pos)
-        self.draw_button(self.continue_button, "Continue", mouse_pos)
+        self.draw_button(self.new_game_button, "New Game", mouse_pos, pressed)
+        self.draw_button(self.continue_button, "Continue", mouse_pos, pressed)
 
 
 def run_main_menu(screen, clock, save_system):

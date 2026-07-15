@@ -34,12 +34,8 @@ class StatsMenu(BaseMenu):
         if not self.active:
             return
 
-        menu_x, menu_y = self.get_centered_position()
         self.draw_overlay()
-        surface = self.create_menu_surface()
-
-        title = c.Fonts.title.render("Character", True, c.Colors.WHITE)
-        surface.blit(title, ((self.width - title.get_width()) // 2, self.padding))
+        surface = self.create_menu_surface("Character")
 
         stats = player.stats
         rows = [
@@ -62,27 +58,31 @@ class StatsMenu(BaseMenu):
         ]
 
         bar_w = self.width - self.padding * 2
-        y = self.padding + 60
+        y = self.content_top
         for label, key, effect in rows:
             name_surf = c.Fonts.heading.render(label, True, c.Colors.WHITE)
             surface.blit(name_surf, (self.padding, y))
 
-            level_surf = c.Fonts.heading.render(f"Lv {stats.level[key]}", True, c.Colors.YELLOW)
+            level_surf = c.Fonts.heading.render(f"Lv {stats.level[key]}", True, c.Colors.ACCENT)
             surface.blit(level_surf, (self.width - self.padding - level_surf.get_width(), y))
 
-            effect_surf = c.Fonts.small.render(effect, True, c.Colors.BORDER)
+            effect_surf = c.Fonts.small.render(effect, True, c.Colors.MUTED)
             surface.blit(effect_surf, (self.padding, y + 26))
 
             ratio = min(stats.xp[key] / stats.xp_to_next(key), 1.0)
             bar_y = y + 50
             bar_h = 10
-            pygame.draw.rect(surface, c.Colors.BUTTON, (self.padding, bar_y, bar_w, bar_h))
-            pygame.draw.rect(surface, c.Colors.GREEN, (self.padding, bar_y, int(bar_w * ratio), bar_h))
-            pygame.draw.rect(surface, c.Colors.BORDER, (self.padding, bar_y, bar_w, bar_h), 1)
+            pygame.draw.rect(surface, c.Colors.SLOT_BG, (self.padding, bar_y, bar_w, bar_h), border_radius=5)
+            if ratio > 0:
+                pygame.draw.rect(
+                    surface,
+                    c.Colors.GREEN,
+                    (self.padding, bar_y, max(bar_h, int(bar_w * ratio)), bar_h),
+                    border_radius=5,
+                )
+            pygame.draw.rect(surface, c.Colors.SLOT_BORDER, (self.padding, bar_y, bar_w, bar_h), 1, border_radius=5)
 
             y += ROW_HEIGHT
 
-        hint = c.Fonts.small.render("C or ESC to close", True, c.Colors.BORDER)
-        surface.blit(hint, ((self.width - hint.get_width()) // 2, self.height - self.padding - hint.get_height()))
-
-        self.screen.blit(surface, (menu_x, menu_y))
+        self.draw_hint(surface, "C or ESC to close")
+        self.blit_panel(surface)

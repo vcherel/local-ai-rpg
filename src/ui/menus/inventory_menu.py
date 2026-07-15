@@ -1,31 +1,49 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, Optional
 
 import pygame
 
 import core.constants as c
-from game.entities.items import rarity_color
-from ui.menus.base_menu import BaseMenu
+from game.entities.items import draw_shape_with_border, rarity_color
+from ui import widgets
+from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
 if TYPE_CHECKING:
     from game.entities.items import Item
     from game.entities.player import Player
 
 
+# The three equip slots shown in the paper-doll, with the ghost glyph drawn when empty.
+EQUIP_SLOTS = (
+    ("weapon", "Weapon", "sword"),
+    ("armor", "Armor", "shield"),
+    ("accessory", "Accessory", "gem"),
+)
+
+RARE_GLOW = {"rare", "epic", "legendary"}
+
+
 class InventoryMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=600, height=500)
+        super().__init__(screen, width=1000, height=640)
+        self.header_height = HEADER_HEIGHT
 
-        self.grid_cols = 6
-        self.grid_rows = 4
-        self.cell_size = 70
-        self.cell_padding = 10
-        self.hovered_slot = None
+        self.cell_size = 76
+        self.cell_padding = 12
+        self.paperdoll_width = 240
+        self.footer_height = 44
+
+        self.scroll_row = 0
+        self.hovered_slot: Optional[int] = None
+        self.hovered_equip: Optional[str] = None
 
     def close(self):
         self.active = False
         self.hovered_slot = None
+        self.hovered_equip = None
+        self.scroll_row = 0
 
     def _grouped_items(self, player: Player) -> list[dict]:
         item_dict = {}
@@ -36,174 +54,254 @@ class InventoryMenu(BaseMenu):
             item_dict[key]["count"] += 1
         return list(item_dict.values())
 
-    def get_slot_at_mouse(self, mouse_x, mouse_y, menu_x, menu_y):
-        """Returns the slot index at the given mouse position, or None"""
-        relative_mouse_x = mouse_x - menu_x
-        relative_mouse_y = mouse_y - menu_y
+    # --- geometry -------------------------------------------------------------
+    # width/height are fixed, so draw and hit-testing share the same layout.
 
-        grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
-        grid_start_x = (self.width - grid_width) // 2
-        grid_start_y = self.padding + 100
+    def _grid_geom(self) -> dict:
+        top = self.content_top
+        grid_x0 = self.padding + self.paperdoll_width + 24
+        area_w = self.width - grid_x0 - self.padding
+        area_h = self.height - top - self.footer_height
 
-        if relative_mouse_x < grid_start_x or relative_mouse_y < grid_start_y:
+        step = self.cell_size + self.cell_padding
+        cols = max(1, (area_w + self.cell_padding) // step)
+        rows = max(1, (area_h + self.cell_padding) // step)
+
+        grid_w = cols * self.cell_size + (cols - 1) * self.cell_padding
+        start_x = grid_x0 + (area_w - grid_w) // 2
+        return {"cols": cols, "rows": rows, "start_x": start_x, "start_y": top, "step": step}
+
+    def _paperdoll_rects(self) -> list[tuple[str, str, str, pygame.Rect]]:
+        """(item_type, label, glyph, slot_rect) for each equip slot."""
+        slot = 104
+        label_h = 24
+        gap = 26
+        block = label_h + slot
+        total = block * len(EQUIP_SLOTS) + gap * (len(EQUIP_SLOTS) - 1)
+
+        area_h = self.height - self.content_top - self.footer_height
+        start_y = self.content_top + max(0, (area_h - total) // 2)
+        slot_x = self.padding + (self.paperdoll_width - slot) // 2
+
+        rects = []
+        for i, (item_type, label, glyph) in enumerate(EQUIP_SLOTS):
+            y = start_y + i * (block + gap)
+            rect = pygame.Rect(slot_x, y + label_h, slot, slot)
+            rects.append((item_type, label, glyph, rect))
+        return rects
+
+    def _slot_at(self, rel_x: int, rel_y: int, item_count: int) -> Optional[int]:
+        g = self._grid_geom()
+        col = (rel_x - g["start_x"]) // g["step"]
+        row = (rel_y - g["start_y"]) // g["step"]
+        if col < 0 or row < 0 or col >= g["cols"] or row >= g["rows"]:
             return None
-
-        col = (relative_mouse_x - grid_start_x) // (self.cell_size + self.cell_padding)
-        row = (relative_mouse_y - grid_start_y) // (self.cell_size + self.cell_padding)
-
-        if col >= self.grid_cols or row >= self.grid_rows:
+        cell_x = g["start_x"] + col * g["step"]
+        cell_y = g["start_y"] + row * g["step"]
+        if not (cell_x <= rel_x < cell_x + self.cell_size and cell_y <= rel_y < cell_y + self.cell_size):
             return None
+        index = (row + self.scroll_row) * g["cols"] + col
+        return index if index < item_count else None
 
-        # Check if mouse is actually inside the cell (not in padding)
-        cell_x = grid_start_x + col * (self.cell_size + self.cell_padding)
-        cell_y = grid_start_y + row * (self.cell_size + self.cell_padding)
-
-        if (
-            relative_mouse_x >= cell_x
-            and relative_mouse_x < cell_x + self.cell_size
-            and relative_mouse_y >= cell_y
-            and relative_mouse_y < cell_y + self.cell_size
-        ):
-            return row * self.grid_cols + col
-
+    def _equip_at(self, rel_x: int, rel_y: int) -> Optional[str]:
+        for item_type, _label, _glyph, rect in self._paperdoll_rects():
+            if rect.collidepoint(rel_x, rel_y):
+                return item_type
         return None
+
+    def _max_scroll(self, item_count: int) -> int:
+        g = self._grid_geom()
+        total_rows = math.ceil(item_count / g["cols"]) if item_count else 0
+        return max(0, total_rows - g["rows"])
+
+    # --- events ---------------------------------------------------------------
 
     def handle_event(self, event, player: Player):
         if not self.active:
             return False
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # Left click
-                menu_x, menu_y = self.get_centered_position()
-                slot = self.get_slot_at_mouse(event.pos[0], event.pos[1], menu_x, menu_y)
-                items_list = self._grouped_items(player)
-                if slot is not None and slot < len(items_list):
-                    player.toggle_equip(items_list[slot]["item"])
+        items_list = self._grouped_items(player)
+        menu_x, menu_y = self.get_centered_position()
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            rel_x, rel_y = event.pos[0] - menu_x, event.pos[1] - menu_y
+            slot = self._slot_at(rel_x, rel_y, len(items_list))
+            if slot is not None:
+                player.toggle_equip(items_list[slot]["item"])
+                return True
+            equip_type = self._equip_at(rel_x, rel_y)
+            if equip_type is not None:
+                equipped = player.equipped_item(equip_type)
+                if equipped is not None:
+                    player.toggle_equip(equipped)
+                return True
+
+        elif event.type == pygame.MOUSEWHEEL:
+            self.scroll_row = max(0, min(self._max_scroll(len(items_list)), self.scroll_row - event.y))
 
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_i:
+            if event.key in (pygame.K_i, pygame.K_ESCAPE):
                 self.close()
-
-            elif event.key == pygame.K_ESCAPE:
-                self.close()
+            elif event.key == pygame.K_UP:
+                self.scroll_row = max(0, self.scroll_row - 1)
+            elif event.key == pygame.K_DOWN:
+                self.scroll_row = min(self._max_scroll(len(items_list)), self.scroll_row + 1)
 
         return True
+
+    # --- drawing --------------------------------------------------------------
 
     def draw(self, player: Player):
         if not self.active:
             return
 
         menu_x, menu_y = self.get_centered_position()
-
         self.draw_overlay()
+        surface = self.create_menu_surface("Inventory")
 
-        menu_surface = self.create_menu_surface()
-
-        title = c.Fonts.title.render("Inventory", True, c.Colors.WHITE)
-        title_x = (self.width - title.get_width()) // 2
-        menu_surface.blit(title, (title_x, self.padding))
-
-        coins_text = c.Fonts.text.render(f"Coins: {player.coins}", True, c.Colors.YELLOW)
-        menu_surface.blit(coins_text, (self.padding, self.padding + 50))
-
-        mouse_pos = pygame.mouse.get_pos()
-        self.hovered_slot = self.get_slot_at_mouse(mouse_pos[0], mouse_pos[1], menu_x, menu_y)
+        coins = c.Fonts.text.render(f"{player.coins} coins", True, c.Colors.ACCENT)
+        surface.blit(coins, (self.width - self.padding - coins.get_width(), (HEADER_HEIGHT - coins.get_height()) // 2))
 
         items_list = self._grouped_items(player)
+        self.scroll_row = min(self.scroll_row, self._max_scroll(len(items_list)))
         equipped_ids = set(player.equipped_ids().values())
 
-        grid_width = self.grid_cols * self.cell_size + (self.grid_cols - 1) * self.cell_padding
-        grid_start_x = (self.width - grid_width) // 2
-        grid_start_y = self.padding + 100
+        mouse_pos = pygame.mouse.get_pos()
+        rel_x, rel_y = mouse_pos[0] - menu_x, mouse_pos[1] - menu_y
+        self.hovered_slot = self._slot_at(rel_x, rel_y, len(items_list))
+        self.hovered_equip = self._equip_at(rel_x, rel_y)
 
-        for row in range(self.grid_rows):
-            for col in range(self.grid_cols):
-                slot_index = row * self.grid_cols + col
-                cell_x = grid_start_x + col * (self.cell_size + self.cell_padding)
-                cell_y = grid_start_y + row * (self.cell_size + self.cell_padding)
+        self._draw_paperdoll(surface, player)
+        self._draw_grid(surface, items_list, equipped_ids)
 
-                equipped = slot_index < len(items_list) and items_list[slot_index]["item"].id in equipped_ids
+        tooltip_item = None
+        if self.hovered_slot is not None:
+            tooltip_item = items_list[self.hovered_slot]["item"]
+        elif self.hovered_equip is not None:
+            tooltip_item = player.equipped_item(self.hovered_equip)
+        if tooltip_item is not None:
+            self._draw_tooltip(surface, tooltip_item, rel_x, rel_y, tooltip_item.id in equipped_ids)
 
-                if slot_index == self.hovered_slot and slot_index < len(items_list):
-                    cell_color = c.Colors.BUTTON_HOVERED
-                    border_color = c.Colors.BORDER_HOVERED
-                else:
-                    cell_color = c.Colors.BUTTON
-                    border_color = c.Colors.BORDER
-                if equipped:
-                    border_color = c.Colors.GREEN
+        self.draw_hint(surface, "Click an item to equip or unequip. Scroll for more. ESC or I to close")
+        self.blit_panel(surface)
 
-                pygame.draw.rect(menu_surface, cell_color, (cell_x, cell_y, self.cell_size, self.cell_size))
-                pygame.draw.rect(
-                    menu_surface, border_color, (cell_x, cell_y, self.cell_size, self.cell_size), 3 if equipped else 2
-                )
+    def _draw_paperdoll(self, surface, player: Player):
+        header = c.Fonts.heading.render("Equipped", True, c.Colors.MUTED)
+        first_rect = self._paperdoll_rects()[0][3]
+        surface.blit(header, (self.padding, first_rect.y - 24 - header.get_height() - 6))
 
-                if slot_index < len(items_list):
-                    item_data = items_list[slot_index]
-                    item = item_data["item"]
-                    count = item_data["count"]
+        for item_type, label, glyph, rect in self._paperdoll_rects():
+            item = player.equipped_item(item_type)
+            hovered = self.hovered_equip == item_type
 
-                    icon_center_x = cell_x + self.cell_size // 2
-                    icon_center_y = cell_y + self.cell_size // 2
-                    item.draw(menu_surface, x=icon_center_x, y=icon_center_y)
+            label_surf = c.Fonts.small.render(label, True, c.Colors.MUTED)
+            surface.blit(label_surf, (rect.centerx - label_surf.get_width() // 2, rect.y - 22))
 
-                    if count > 1:
-                        count_text = c.Fonts.text.render(f"x{count}", True, c.Colors.WHITE)
-                        count_bg = pygame.Surface(
-                            (count_text.get_width() + 4, count_text.get_height() + 2), pygame.SRCALPHA
-                        )
-                        count_bg.fill(c.Colors.TRANSPARENT)
-                        menu_surface.blit(
-                            count_bg,
-                            (
-                                cell_x + self.cell_size - count_text.get_width() - 6,
-                                cell_y + self.cell_size - count_text.get_height() - 4,
-                            ),
-                        )
-                        menu_surface.blit(
-                            count_text,
-                            (
-                                cell_x + self.cell_size - count_text.get_width() - 4,
-                                cell_y + self.cell_size - count_text.get_height() - 2,
-                            ),
-                        )
+            border = c.Colors.ACCENT if item else c.Colors.SLOT_BORDER
+            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border, radius=10)
 
-        if self.hovered_slot is not None and self.hovered_slot < len(items_list):
-            item_data = items_list[self.hovered_slot]
-            item: Item = item_data["item"]
-
-            if item.item_type == "weapon" and item.bonus > 0:
-                tooltip_text = f"{item.name}  (+{item.bonus} attack)"
-            elif item.item_type == "armor" and item.bonus > 0:
-                tooltip_text = f"{item.name}  (+{item.bonus} defense)"
-            elif item.item_type == "accessory" and item.bonus > 0:
-                tooltip_text = f"{item.name}  (+{item.bonus} {item.accessory_flavor})"
+            if item is not None:
+                widgets.draw_item_scaled(surface, item, rect.centerx, rect.centery - 6, 58)
+                name = c.Fonts.small.render(item.name, True, rarity_color(item.rarity))
+                name = self._fit(name, item.name, rect.width - 8, rarity_color(item.rarity))
+                surface.blit(name, (rect.centerx - name.get_width() // 2, rect.bottom - 20))
             else:
-                tooltip_text = item.name
-            if item.id in equipped_ids:
-                tooltip_text += "  [equipped, click to unequip]"
-            elif item.item_type in ("weapon", "armor", "accessory"):
-                tooltip_text += "  [click to equip]"
-            tooltip_surface = c.Fonts.text.render(tooltip_text, True, rarity_color(item.rarity))
-            tooltip_width = tooltip_surface.get_width() + 20
-            tooltip_height = tooltip_surface.get_height() + 10
+                draw_shape_with_border(surface, glyph, rect.center, 24, (66, 66, 76), 2, (90, 90, 104))
 
-            tooltip_x = mouse_pos[0] - menu_x + 15
-            tooltip_y = mouse_pos[1] - menu_y + 15
+    def _draw_grid(self, surface, items_list, equipped_ids):
+        g = self._grid_geom()
+        for row in range(g["rows"]):
+            for col in range(g["cols"]):
+                index = (row + self.scroll_row) * g["cols"] + col
+                cell_x = g["start_x"] + col * g["step"]
+                cell_y = g["start_y"] + row * g["step"]
+                rect = pygame.Rect(cell_x, cell_y, self.cell_size, self.cell_size)
 
-            if tooltip_x + tooltip_width > self.width - 10:
-                tooltip_x = mouse_pos[0] - menu_x - tooltip_width - 15
-            if tooltip_y + tooltip_height > self.height - 10:
-                tooltip_y = mouse_pos[1] - menu_y - tooltip_height - 15
+                if index >= len(items_list):
+                    widgets.draw_slot(surface, rect, hovered=False)
+                    continue
 
-            tooltip_bg = pygame.Surface((tooltip_width, tooltip_height), pygame.SRCALPHA)
-            tooltip_bg.fill(c.Colors.TRANSPARENT)
-            menu_surface.blit(tooltip_bg, (tooltip_x, tooltip_y))
-            pygame.draw.rect(menu_surface, c.Colors.YELLOW, (tooltip_x, tooltip_y, tooltip_width, tooltip_height), 2)
+                item = items_list[index]["item"]
+                count = items_list[index]["count"]
+                equipped = item.id in equipped_ids
+                glow = rarity_color(item.rarity) if item.rarity in RARE_GLOW else None
+                if equipped:
+                    border = c.Colors.ACCENT
+                elif item.rarity != "common":
+                    border = rarity_color(item.rarity)
+                else:
+                    border = None
 
-            menu_surface.blit(tooltip_surface, (tooltip_x + 10, tooltip_y + 5))
+                widgets.draw_slot(
+                    surface,
+                    rect,
+                    hovered=index == self.hovered_slot,
+                    border_color=border,
+                    glow_color=glow,
+                    border_w=3 if equipped else 2,
+                )
+                widgets.draw_item_scaled(surface, item, rect.centerx, rect.centery, 44)
 
-        hint = c.Fonts.small.render("Click gear to equip/unequip. ESC or I to close", True, c.Colors.BORDER)
-        menu_surface.blit(hint, ((self.width - hint.get_width()) // 2, self.height - self.padding - hint.get_height()))
+                if equipped:
+                    pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 12, rect.y + 12), 5)
+                if count > 1:
+                    self._draw_count(surface, rect, count)
 
-        self.screen.blit(menu_surface, (menu_x, menu_y))
+        if self._max_scroll(len(items_list)) > 0:
+            self._draw_scrollbar(surface, g, len(items_list))
+
+    def _draw_count(self, surface, rect, count):
+        text = c.Fonts.small.render(f"x{count}", True, c.Colors.BLACK)
+        pill = pygame.Rect(0, 0, text.get_width() + 10, text.get_height() + 2)
+        pill.bottomright = (rect.right - 4, rect.bottom - 4)
+        pygame.draw.rect(surface, c.Colors.ACCENT, pill, border_radius=6)
+        surface.blit(text, (pill.x + 5, pill.y + 1))
+
+    def _draw_scrollbar(self, surface, g, item_count):
+        track_x = g["start_x"] + g["cols"] * g["step"] - self.cell_padding + 4
+        track_y = g["start_y"]
+        track_h = g["rows"] * g["step"] - self.cell_padding
+        pygame.draw.rect(surface, c.Colors.SLOT_BG, (track_x, track_y, 6, track_h), border_radius=3)
+
+        total_rows = math.ceil(item_count / g["cols"])
+        thumb_h = max(24, int(track_h * g["rows"] / total_rows))
+        max_scroll = self._max_scroll(item_count)
+        thumb_y = track_y + int((track_h - thumb_h) * (self.scroll_row / max_scroll)) if max_scroll else track_y
+        pygame.draw.rect(surface, c.Colors.ACCENT, (track_x, thumb_y, 6, thumb_h), border_radius=3)
+
+    def _fit(self, surf, text, max_width, color):
+        """Truncate a rendered label with an ellipsis so it fits `max_width`."""
+        if surf.get_width() <= max_width:
+            return surf
+        while text and c.Fonts.small.render(text + "…", True, color).get_width() > max_width:
+            text = text[:-1]
+        return c.Fonts.small.render(text + "…", True, color)
+
+    def _draw_tooltip(self, surface, item: "Item", rel_x, rel_y, is_equipped):
+        if item.item_type == "weapon" and item.bonus > 0:
+            text = f"{item.name}  (+{item.bonus} attack)"
+        elif item.item_type == "armor" and item.bonus > 0:
+            text = f"{item.name}  (+{item.bonus} defense)"
+        elif item.item_type == "accessory" and item.bonus > 0:
+            text = f"{item.name}  (+{item.bonus} {item.accessory_flavor})"
+        else:
+            text = item.name
+        if is_equipped:
+            text += "  [equipped, click to unequip]"
+        elif item.item_type in ("weapon", "armor", "accessory"):
+            text += "  [click to equip]"
+
+        label = c.Fonts.text.render(text, True, rarity_color(item.rarity))
+        w = label.get_width() + 20
+        h = label.get_height() + 12
+
+        x = rel_x + 16
+        y = rel_y + 16
+        if x + w > self.width - 8:
+            x = rel_x - w - 16
+        if y + h > self.height - 8:
+            y = rel_y - h - 16
+
+        rect = pygame.Rect(x, y, w, h)
+        widgets.draw_panel(surface, rect, radius=8, top=(28, 28, 34), bottom=(20, 20, 26), border=c.Colors.ACCENT)
+        surface.blit(label, (x + 10, y + 6))
