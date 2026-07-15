@@ -18,6 +18,7 @@ SAMPLE_RATE = 44100
 # waveform. Segments play back to back, each with a short linear decay.
 _SOUND_SPECS = {
     "attack": ([(600, 0.04), (300, 0.06)], 0.25, "square"),
+    "shoot": ([(900, 0.03), (450, 0.05)], 0.25, "sine"),
     "hit": ([(160, 0.08), (110, 0.06)], 0.35, "square"),
     "monster_death": ([(400, 0.06), (250, 0.07), (150, 0.10)], 0.30, "square"),
     "player_hurt": ([(220, 0.10), (160, 0.10)], 0.40, "square"),

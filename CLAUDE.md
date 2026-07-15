@@ -32,7 +32,8 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/entities/npcs.py`: `NPC(Entity)`, tracks per-NPC `affinity` (LLM-judged relationship level, feeds dialogue tone/quest rewards/shop prices)
 - `src/game/entities/monsters.py`: `Monster(Entity)`, `pick_monster_kind` (spawn selection by distance from center)
 - `src/game/entities/buildings.py`: `Building`, `generate_buildings`, `set_active_buildings`, town layout and building placement
-- `src/game/entities/items.py`: `Item`, rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
+- `src/game/entities/items.py`: `Item` (weapon/armor/accessory/ammo/misc, `is_ranged` for bows), rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
+- `src/game/entities/projectile.py`: `Projectile`, a fired arrow travelling in a straight line until it hits or runs out of range
 - `src/game/entities/stats.py`: `Stats` class, use-based character progression (xp, training, derived bonuses like attack/damage reduction/speed)
 
 ### llm
