@@ -12,6 +12,7 @@ from core.audio import play_sound
 from core.utils import ConversationHistory, parse_response_affinity_analysis
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 from llm.quest_system import QuestSystem
+from ui import widgets
 from ui.conversation_ui import ConversationUI
 from ui.notification import QuestNotification
 
@@ -315,11 +316,16 @@ class DialogueManager:
             self.shop_button_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
 
             mouse = pygame.mouse.get_pos()
-            color = c.Colors.BUTTON_HOVERED if self.shop_button_rect.collidepoint(mouse) else c.Colors.BUTTON
-            pygame.draw.rect(self.ui.screen, color, self.shop_button_rect, border_radius=4)
-            pygame.draw.rect(self.ui.screen, (100, 255, 100), self.shop_button_rect, 2, border_radius=4)
-            label = c.Fonts.button.render("Shop", True, (100, 255, 100))
-            self.ui.screen.blit(label, label.get_rect(center=self.shop_button_rect.center))
+            hover = self.shop_button_rect.collidepoint(mouse)
+            widgets.draw_button(
+                self.ui.screen,
+                self.shop_button_rect,
+                "Shop",
+                c.Fonts.button,
+                hovered=hover,
+                text_color=(100, 255, 100),
+                accent=(100, 255, 100),
+            )
         else:
             self.shop_button_rect = None
 

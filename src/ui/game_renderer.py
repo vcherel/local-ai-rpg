@@ -7,6 +7,7 @@ import pygame
 
 import core.constants as c
 from core.particles import get_particles
+from ui import widgets
 from ui.loading_indicator import LoadingIndicator
 
 if TYPE_CHECKING:
@@ -80,13 +81,7 @@ class GameRenderer:
 
     def _draw_button(self, rect: pygame.Rect, label: str, mouse_pos):
         hover = rect.collidepoint(mouse_pos)
-        button_color = c.Colors.BUTTON_HOVERED if hover else c.Colors.BUTTON
-        border_color = c.Colors.BORDER_HOVERED if hover else c.Colors.BORDER
-        pygame.draw.rect(self.screen, button_color, rect)
-        pygame.draw.rect(self.screen, border_color, rect, 2)
-
-        text = c.Fonts.button.render(label, True, c.Colors.WHITE)
-        self.screen.blit(text, text.get_rect(center=rect.center))
+        widgets.draw_button(self.screen, rect, label, c.Fonts.button, hovered=hover)
 
     def draw_ui(self, nb_items, nb_coins, nb_quests, active_task_count, player: Player):
         mouse_pos = pygame.mouse.get_pos()

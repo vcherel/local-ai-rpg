@@ -108,7 +108,7 @@ class QuestMenu(BaseMenu):
                 card_y = content_start_y + i * (self.card_height + self.card_spacing)
 
                 card_rect = pygame.Rect(self.padding, card_y, self.card_width, self.card_height)
-                widgets.draw_slot(menu_surface, card_rect, hovered=visible_index == self.hovered_quest_index, radius=10)
+                widgets.draw_slot(menu_surface, card_rect, hovered=visible_index == self.hovered_quest_index)
 
                 text_x = self.padding + 15
                 text_y = card_y + 10
@@ -156,10 +156,10 @@ class QuestMenu(BaseMenu):
         indicator_y = self.content_top
         indicator_height = self.max_visible_quests * (self.card_height + self.card_spacing) - self.card_spacing
 
-        pygame.draw.rect(surface, c.Colors.SLOT_BG, (indicator_x, indicator_y, 6, indicator_height), border_radius=3)
+        pygame.draw.rect(surface, c.Colors.SLOT_BG, (indicator_x, indicator_y, 6, indicator_height))
 
         thumb_height = max(20, (self.max_visible_quests / quest_count) * indicator_height)
         thumb_y = indicator_y + (self.scroll_offset / (quest_count - self.max_visible_quests)) * (
             indicator_height - thumb_height
         )
-        pygame.draw.rect(surface, c.Colors.ACCENT, (indicator_x, thumb_y, 6, thumb_height), border_radius=3)
+        pygame.draw.rect(surface, c.Colors.ACCENT, (indicator_x, thumb_y, 6, thumb_height))

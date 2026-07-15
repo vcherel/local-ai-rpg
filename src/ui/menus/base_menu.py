@@ -33,14 +33,10 @@ class BaseMenu:
         return menu_x, menu_y
 
     def draw_overlay(self):
-        """Dim the world behind the menu every frame, then cast the panel's shadow."""
+        """Dim the world behind the menu every frame."""
         overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
         overlay.fill(c.Colors.OVERLAY_DIM)
         self.screen.blit(overlay, (0, 0))
-
-        if self.width > 0 and self.height > 0:
-            menu_x, menu_y = self.get_centered_position()
-            widgets.draw_shadow(self.screen, pygame.Rect(menu_x, menu_y, self.width, self.height))
         self.just_active = False
 
     def create_menu_surface(self, title: str = None) -> pygame.Surface:
@@ -55,12 +51,9 @@ class BaseMenu:
     def _draw_header(self, surface: pygame.Surface, title: str):
         self.header_height = HEADER_HEIGHT
 
-        # Darker band clipped to the panel's rounded top corners, with a gold underline.
+        # Darker band across the top of the panel, with a gold underline.
         band = pygame.Surface((self.width, HEADER_HEIGHT), pygame.SRCALPHA)
         band.fill((*c.Colors.HEADER_BG, 190))
-        mask = pygame.Surface((self.width, HEADER_HEIGHT), pygame.SRCALPHA)
-        pygame.draw.rect(mask, (255, 255, 255, 255), pygame.Rect(0, 0, self.width, HEADER_HEIGHT * 2), border_radius=14)
-        band.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         surface.blit(band, (0, 0))
 
         pygame.draw.line(
