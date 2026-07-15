@@ -87,28 +87,6 @@ class BaseMenu:
         menu_x, menu_y = self.get_centered_position()
         self.screen.blit(surface, (menu_x, menu_y))
 
-    @staticmethod
-    def wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
-        words = text.split(" ")
-        lines = []
-        current_line = []
-
-        for word in words:
-            test_line = " ".join(current_line + [word])
-            test_surface = font.render(test_line, True, c.Colors.WHITE)
-
-            if test_surface.get_width() <= max_width:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(" ".join(current_line))
-                current_line = [word]
-
-        if current_line:
-            lines.append(" ".join(current_line))
-
-        return lines
-
     def draw_wrapped_text(
         self, surface: pygame.Surface, text: str, x: int, y: int, max_width: int, font=None, line_spacing: int = 25
     ):
@@ -119,7 +97,7 @@ class BaseMenu:
         if font is None:
             font = c.Fonts.text
 
-        lines = self.wrap_text(text, font, max_width)
+        lines = widgets.wrap_text(text, font, max_width)
 
         for i, line in enumerate(lines):
             line_surface = font.render(line, True, c.Colors.WHITE)

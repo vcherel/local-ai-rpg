@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import pygame
 
 import core.constants as c
+from ui import widgets
 
 if TYPE_CHECKING:
     from core.utils import ConversationHistory
@@ -52,28 +53,9 @@ class ConversationUI:
         total_height = 0
         for msg in messages:
             prefix = "You: " if msg["role"] == "user" else f"{npc_name}: "
-            lines = self._wrap_text(prefix + msg["content"])
+            lines = widgets.wrap_text(prefix + msg["content"], c.Fonts.medium, c.Screen.WIDTH - 60)
             total_height += len(lines) * self.line_height
         return total_height
-
-    def _wrap_text(self, text: str) -> List[str]:
-        words = text.split()
-        lines = []
-        current_line = []
-
-        for word in words:
-            test_line = " ".join(current_line + [word])
-            if c.Fonts.medium.size(test_line)[0] < c.Screen.WIDTH - 60:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(" ".join(current_line))
-                current_line = [word]
-
-        if current_line:
-            lines.append(" ".join(current_line))
-
-        return lines
 
     def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False):
         box_height = 300
@@ -108,7 +90,7 @@ class ConversationUI:
                 prefix = f"{npc_name}: "
                 color = c.Colors.WHITE
 
-            lines = self._wrap_text(prefix + msg["content"])
+            lines = widgets.wrap_text(prefix + msg["content"], c.Fonts.medium, c.Screen.WIDTH - 60)
             for line in lines:
                 text_surface = c.Fonts.medium.render(line, True, color)
                 screen.blit(text_surface, (25, y_offset))

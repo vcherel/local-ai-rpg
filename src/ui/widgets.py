@@ -125,6 +125,24 @@ def draw_slot(
     pygame.draw.rect(surface, bc, rect, border_w, border_radius=radius)
 
 
+def wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
+    """Greedy word-wrap: break `text` into lines that each fit within `max_width` px of `font`."""
+    words = text.split()
+    lines = []
+    current_line = []
+    for word in words:
+        candidate = " ".join(current_line + [word])
+        if font.size(candidate)[0] <= max_width:
+            current_line.append(word)
+        else:
+            if current_line:
+                lines.append(" ".join(current_line))
+            current_line = [word]
+    if current_line:
+        lines.append(" ".join(current_line))
+    return lines
+
+
 def draw_item_scaled(surface: pygame.Surface, item: "Item", cx: int, cy: int, size: int):
     """Draw an item icon scaled to `size` px, centered at (cx, cy).
 

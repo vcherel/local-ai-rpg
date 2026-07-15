@@ -4,6 +4,7 @@ import threading
 import pygame
 
 import core.constants as c
+from ui import widgets
 from ui.menus.base_menu import BaseMenu
 
 
@@ -68,7 +69,7 @@ class ContextMenu(BaseMenu):
         if not self.context_text:
             return
 
-        lines = self.wrap_text(self.context_text, c.Fonts.text, c.Screen.WIDTH * 0.35)
+        lines = widgets.wrap_text(self.context_text, c.Fonts.text, c.Screen.WIDTH * 0.35)
 
         max_line_width = max(
             (c.Fonts.text.render(line, True, c.Colors.WHITE).get_width() for line in lines),

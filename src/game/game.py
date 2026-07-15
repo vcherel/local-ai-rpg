@@ -181,20 +181,22 @@ class Game:
         if self.world.context:
             self.context_window.show(self.world.context)
 
-    def _open_lootbox(self, lootbox: Item):
-        self.world.items.remove(lootbox)
-
-        coins, loot_item = open_lootbox(self.player.x, self.player.y, lootbox.rarity)
+    def _award_loot(self, rarity: str, label: str):
+        coins, loot_item = open_lootbox(self.player.x, self.player.y, rarity)
         self.player.add_coins(coins)
 
-        message = f"Lootbox: +{coins} coins"
+        message = f"{label}: +{coins} coins"
         if loot_item is not None:
             self.world.items.append(loot_item)
             self.player.inventory.append(loot_item)
             message += f" and a {loot_item.rarity} {loot_item.name}!"
 
-        self.loot_notification.show(message, rarity_color(lootbox.rarity))
+        self.loot_notification.show(message, rarity_color(rarity))
         play_sound("lootbox_open")
+
+    def _open_lootbox(self, lootbox: Item):
+        self.world.items.remove(lootbox)
+        self._award_loot(lootbox.rarity, "Lootbox")
 
     def _interact_with_world(self):
         item: Item = self.world.pickup_item(self.player)
@@ -262,18 +264,7 @@ class Game:
         from game.entities.items import roll_rarity
 
         self.interior.looted = True
-        rarity = roll_rarity()
-        coins, loot_item = open_lootbox(self.player.x, self.player.y, rarity)
-        self.player.add_coins(coins)
-
-        message = f"Chest: +{coins} coins"
-        if loot_item is not None:
-            self.world.items.append(loot_item)
-            self.player.inventory.append(loot_item)
-            message += f" and a {loot_item.rarity} {loot_item.name}!"
-
-        self.loot_notification.show(message, rarity_color(rarity))
-        play_sound("lootbox_open")
+        self._award_loot(roll_rarity(), "Chest")
 
     def _sleep_in_bed(self):
         if self.player.hp >= self.player.max_hp:

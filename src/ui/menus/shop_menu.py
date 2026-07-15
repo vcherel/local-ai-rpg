@@ -175,13 +175,13 @@ class ShopMenu(BaseMenu):
         else:
             for i, item in enumerate(self.merchant.shop_items):
                 price = self._buy_price(item)
-                self._draw_row(surface, bx, pw, i, item, price, self.hovered_buy == i, (100, 255, 100))
+                can_afford = self.player.coins >= price
+                self._draw_row(surface, bx, pw, i, item, price, self.hovered_buy == i, (100, 255, 100), can_afford)
 
         sell_items = list(self.player.inventory)
         for i, item in enumerate(sell_items):
             price = self._sell_price(item)
-            can_afford = True
-            self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80), can_afford)
+            self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80))
 
         self.draw_hint(surface, "Click an item to buy or sell. ESC or B to close")
         self.blit_panel(surface)
