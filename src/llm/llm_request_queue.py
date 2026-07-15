@@ -6,6 +6,7 @@ from queue import Queue
 from llama_cpp import Llama
 
 import core.constants as c
+from core import llm_log
 
 CHAR_FILTER = str.maketrans("", "", '"«»')
 
@@ -59,11 +60,13 @@ class LLMRequestQueue:
             except queue.Empty:
                 continue
 
-    def generate_response(self, prompt: str, system_prompt: str, max_tokens: int = None, raw: bool = False) -> str:
+    def generate_response(
+        self, prompt: str, system_prompt: str, category: str, max_tokens: int = None, raw: bool = False
+    ) -> str:
         result_queue = Queue()
 
         def request_func():
-            return generate_response_internal(prompt, system_prompt, max_tokens=max_tokens, raw=raw)
+            return generate_response_internal(prompt, system_prompt, category, max_tokens=max_tokens, raw=raw)
 
         with self.lock:
             self.queued_requests += 1
@@ -75,12 +78,12 @@ class LLMRequestQueue:
             raise Exception(f"LLM error: {result}")
         return result
 
-    def generate_response_stream(self, prompt: str, system_prompt: str):
+    def generate_response_stream(self, prompt: str, system_prompt: str, category: str):
         result_queue = Queue()
         stream_queue = Queue()
 
         def request_func():
-            for partial in generate_response_stream_internal(prompt, system_prompt):
+            for partial in generate_response_stream_internal(prompt, system_prompt, category):
                 stream_queue.put(("chunk", partial))
             stream_queue.put(("done", None))
             return None
@@ -131,39 +134,57 @@ def get_llm_task_count():
 
 
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
-    return get_llm_queue().generate_response(prompt, system_prompt, max_tokens=max_tokens, raw=raw)
+    return get_llm_queue().generate_response(prompt, system_prompt, log, max_tokens=max_tokens, raw=raw)
 
 
 def generate_response_stream_queued(prompt, system_prompt, log):
-    yield from get_llm_queue().generate_response_stream(prompt, system_prompt)
+    yield from get_llm_queue().generate_response_stream(prompt, system_prompt, log)
 
 
-def generate_response_internal(prompt, system_prompt, max_tokens=None, raw=False):
+def generate_response_internal(prompt, system_prompt, category, max_tokens=None, raw=False):
+    max_tokens = max_tokens or c.Hyperparameters.MAX_TOKENS
+    start = time.monotonic()
+
     # No llm.reset(): keeping the KV cache lets llama_cpp skip re-evaluating the
     # shared prefix (system prompt + prior turns) on each call.
     response = llm(
         prompt=_format_prompt(prompt, system_prompt),
-        max_tokens=max_tokens or c.Hyperparameters.MAX_TOKENS,
+        max_tokens=max_tokens,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
         stop=["<|im_end|>", "<|im_start|>"],
     )
+    duration = time.monotonic() - start
 
     generated_text = response.get("choices", [{}])[0].get("text", "").strip()
 
-    if raw:
-        return generated_text
+    if not raw:
+        generated_text = generated_text.translate(CHAR_FILTER).strip("\n")
+        if "\n" in generated_text:
+            generated_text = generated_text.split("\n", 1)[0].strip()
 
-    generated_text = generated_text.translate(CHAR_FILTER).strip("\n")
-
-    if "\n" in generated_text:
-        generated_text = generated_text.split("\n", 1)[0].strip()
+    usage = response.get("usage", {})
+    llm_log.log_call(
+        category=category,
+        system_prompt=system_prompt,
+        prompt=prompt,
+        response=generated_text,
+        duration=duration,
+        model_path=llm.model_path,
+        max_tokens=max_tokens,
+        temperature=c.Hyperparameters.TEMPERATURE,
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
+        streaming=False,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+    )
 
     return generated_text
 
 
-def generate_response_stream_internal(prompt, system_prompt):
+def generate_response_stream_internal(prompt, system_prompt, category):
     # See generate_response_internal: skip reset() to reuse the cached prefix.
+    start = time.monotonic()
     stream = llm(
         prompt=_format_prompt(prompt, system_prompt),
         max_tokens=c.Hyperparameters.MAX_TOKENS,
@@ -175,8 +196,10 @@ def generate_response_stream_internal(prompt, system_prompt):
 
     accumulated_text = ""
     started = False
+    usage = {}
     for output in stream:
         new_token = output.get("choices", [{}])[0].get("text", "")
+        usage = output.get("usage", usage)
 
         if new_token:
             started = True
@@ -185,3 +208,19 @@ def generate_response_stream_internal(prompt, system_prompt):
 
         accumulated_text += new_token
         yield accumulated_text.translate(CHAR_FILTER)
+
+    duration = time.monotonic() - start
+    llm_log.log_call(
+        category=category,
+        system_prompt=system_prompt,
+        prompt=prompt,
+        response=accumulated_text.translate(CHAR_FILTER),
+        duration=duration,
+        model_path=llm.model_path,
+        max_tokens=c.Hyperparameters.MAX_TOKENS,
+        temperature=c.Hyperparameters.TEMPERATURE,
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
+        streaming=True,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+    )
