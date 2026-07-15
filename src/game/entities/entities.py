@@ -71,16 +71,14 @@ class Entity:
         bar_width=60,
         bar_height=8,
         health_bar_offset=10,
+        bar_color=None,
+        bar_border_width=2,
     ):
         draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand)
 
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset
-        border_width = 2
-        if color == c.Colors.PLAYER:
-            color = c.Colors.GREEN
-            border_width = 4
-        self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, color, border_width)
+        self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, bar_color or color, bar_border_width)
 
 
 def draw_human(

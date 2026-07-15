@@ -197,4 +197,6 @@ class Player(Entity):
             bar_width=800,
             bar_height=30,
             health_bar_offset=360,
+            bar_color=c.Colors.GREEN,
+            bar_border_width=4,
         )
