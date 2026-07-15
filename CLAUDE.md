@@ -48,6 +48,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/core/camera.py`: `Camera`, world to screen coordinate translation only
 - `src/core/utils.py`: `ConversationHistory`, random color/coordinate helpers, `parse_shop_inventory` / `parse_response_quest_analysis` / `parse_response_affinity_analysis` (LLM response parsing)
 - `src/core/dialogue_log.py`: `write_conversation`, persists finished NPC conversations to Markdown files under `logs/dialogues/`
+- `src/core/llm_log.py`: `log_call`, appends every LLM generation (any category, streaming or not) as a JSON line to `logs/llm_calls.jsonl`, with prompts, response, duration, and token counts, for later quality/speed analysis
 - `src/core/particles.py`: `Particle`, `ParticleSystem`, world-space particle bursts for combat/pickup feedback
 - `src/core/audio.py`: `SoundManager`, procedural sound effects synthesised in memory (no audio asset files)
 
