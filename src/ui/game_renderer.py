@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from game.entities.monsters import Monster
     from game.entities.npcs import NPC
     from game.entities.player import Player
+    from game.entities.projectile import Projectile
     from game.world import World
 
 
@@ -66,16 +67,23 @@ class GameRenderer:
             if self._on_screen(camera, item.x, item.y):
                 item.draw(self.screen, camera)
 
+        for projectile in world.projectiles:
+            projectile.draw(self.screen, camera)
+
         get_particles().draw(self.screen, camera)
 
         player.draw(self.screen)
 
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
 
-    def draw_interior(self, camera: Camera, building, player: Player, monsters: List[Monster]):
+    def draw_interior(
+        self, camera: Camera, building, player: Player, monsters: List[Monster], projectiles: List[Projectile] = ()
+    ):
         building.draw_interior(self.screen, camera, player)
         for monster in monsters:
             monster.draw(self.screen, camera)
+        for projectile in projectiles:
+            projectile.draw(self.screen, camera)
         get_particles().draw(self.screen, camera)
         player.draw(self.screen)
 

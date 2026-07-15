@@ -31,6 +31,13 @@ class Player:
 
 
 @dataclass(frozen=True)
+class Projectile:
+    SPEED: int = 14
+    RANGE: int = 650
+    SIZE: int = 6
+
+
+@dataclass(frozen=True)
 class MonsterKind:
     name: str
     color: tuple

@@ -27,6 +27,9 @@ WEAPON_KEYWORDS = {
     "lance",
     "hammer",
 }
+# Weapons whose name matches this fire a projectile instead of swinging in melee.
+RANGED_WEAPON_KEYWORDS = {"bow"}
+AMMO_KEYWORDS = {"arrow", "bolt"}
 ARMOR_KEYWORDS = {
     "shield",
     "armor",
@@ -56,12 +59,15 @@ WEAPON_COLOR = (220, 140, 40)
 ARMOR_COLOR = (100, 180, 220)
 ACCESSORY_COLOR = (230, 200, 60)
 LOOTBOX_COLOR = (150, 100, 50)
+AMMO_COLOR = (180, 140, 90)
 
 ACCESSORY_FLAVORS = ("speed", "regen", "luck")
 
 
 def item_type_from_name(name: str) -> str:
     lower = name.lower()
+    if any(kw in lower for kw in AMMO_KEYWORDS):
+        return "ammo"
     if any(kw in lower for kw in WEAPON_KEYWORDS):
         return "weapon"
     if any(kw in lower for kw in ARMOR_KEYWORDS):
@@ -133,10 +139,19 @@ class Item:
         elif item_type == "lootbox":
             self.color = LOOTBOX_COLOR
             self.shape = "chest"
+        elif item_type == "ammo":
+            self.color = AMMO_COLOR
+            self.shape = "arrow"
         else:
             self.color = random_color()
             self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
+
+    @property
+    def is_ranged(self) -> bool:
+        """A weapon that fires a projectile instead of swinging in melee."""
+        lower = self.name.lower()
+        return self.item_type == "weapon" and any(kw in lower for kw in RANGED_WEAPON_KEYWORDS)
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -246,6 +261,20 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width, bo
         ]
         pygame.draw.polygon(surface, color, points)
         pygame.draw.polygon(surface, border_color, points, border_width)
+    elif shape == "arrow":
+        pygame.draw.line(surface, border_color, (cx, cy - size), (cx, cy + size * 0.6), border_width + 2)
+        pygame.draw.line(surface, color, (cx, cy - size), (cx, cy + size * 0.6), border_width)
+        head = [(cx, cy - size), (cx - size * 0.35, cy - size * 0.35), (cx + size * 0.35, cy - size * 0.35)]
+        pygame.draw.polygon(surface, color, head)
+        pygame.draw.polygon(surface, border_color, head, 1)
+        fletch = [
+            (cx, cy + size * 0.3),
+            (cx - size * 0.3, cy + size * 0.6),
+            (cx, cy + size * 0.45),
+            (cx + size * 0.3, cy + size * 0.6),
+        ]
+        pygame.draw.polygon(surface, color, fletch)
+        pygame.draw.polygon(surface, border_color, fletch, 1)
     elif shape == "chest":
         half_w, half_h = size * 0.75, size * 0.55
         rect = pygame.Rect(0, 0, half_w * 2, half_h * 2)

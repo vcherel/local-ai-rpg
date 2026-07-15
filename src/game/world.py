@@ -12,6 +12,7 @@ from game.entities.buildings import Building, generate_buildings, set_active_bui
 from game.entities.items import Item, roll_rarity
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
+from game.entities.projectile import Projectile
 from game.events import EventSystem
 from game.loot import open_lootbox
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
@@ -35,6 +36,8 @@ class World:
         self.npcs: List[NPC] = []
         self.monsters: List[Monster] = []
         self.buildings: List[Building] = []
+        # Arrows in flight; transient like particles, never saved.
+        self.projectiles: List[Projectile] = []
         self.respawn_timer = 0.0
 
         self.save_system = save_system
@@ -194,6 +197,9 @@ class World:
         shop_data = generate_shop_inventory(self.context)
         if not shop_data:
             shop_data = generate_shop_inventory(self.context)
+        # Guaranteed regardless of what the LLM comes up with, so ranged combat
+        # doesn't depend entirely on loot RNG for its ammo.
+        shop_data += [{"name": "Arrows", "item_type": "ammo", "rarity": "common", "price": 2} for _ in range(2)]
         merchant.set_shop(shop_data)
 
     def talk_npc(self, player: Player):
@@ -207,46 +213,34 @@ class World:
                     return None
                 return npc
 
-    def handle_attack(self, player: Player, quest_system: QuestSystem, monsters: List[Monster] = None):
+    def handle_attack(
+        self,
+        player: Player,
+        quest_system: QuestSystem,
+        monsters: List[Monster] = None,
+        projectiles: List[Projectile] = None,
+    ):
         """`monsters` overrides the target list for an indoor fight; loot then goes straight to
         the player instead of dropping a world item, since interior coordinates aren't outdoor ones."""
+        indoor = monsters is not None
+        monster_list = monsters if indoor else self.monsters
+        proj_list = projectiles if indoor else self.projectiles
+
+        weapon = player.equipped_item("weapon")
+        if weapon is not None and weapon.is_ranged:
+            self._fire_arrow(player, proj_list)
+            return
+
         player.start_attack_anim()
         play_sound("attack")
         pos = player.get_pos(c.Player.ATTACK_REACH)
-        indoor = monsters is not None
-        monster_list = monsters if indoor else self.monsters
 
         attack_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
         for monster in monster_list:
             if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + monster.kind.size // 2:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
-                if monster.receive_damage(attack_damage):
-                    player.stats.train("vitality", c.Stats.XP_PER_KILL)
-                    play_sound("monster_death")
-                    get_particles().spawn_burst(
-                        monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5
-                    )
-                    quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
-                    if quest_item is not None:
-                        if indoor:
-                            player.inventory.append(quest_item)
-                        else:
-                            self.items.append(quest_item)
-                    drop_chance = c.LootBox.DROP_CHANCE
-                    if self.events.blood_night_active:
-                        drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
-                    if random.random() < drop_chance:
-                        if indoor:
-                            coins, loot_item = open_lootbox(monster.x, monster.y, roll_rarity())
-                            player.add_coins(coins)
-                            if loot_item is not None:
-                                player.inventory.append(loot_item)
-                        else:
-                            self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
-                    monster_list.remove(monster)
-                    return
-                play_sound("hit")
-                get_particles().spawn_burst(monster.x, monster.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+                self._resolve_monster_hit(monster, monster_list, attack_damage, player, quest_system, indoor)
+                return
 
         if indoor:
             return
@@ -254,18 +248,112 @@ class World:
         for npc in self.npcs:
             if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
-                if npc.receive_damage(attack_damage):
-                    stolen_item = quest_system.on_npc_killed(npc)
-                    if stolen_item is not None:
-                        self.items.append(stolen_item)
-                    # Drop any quest this NPC was offering so it can't become uncompletable
-                    quest_system.remove_quest(npc)
-                    play_sound("monster_death")
-                    get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5)
-                    self.npcs.remove(npc)
-                    return
-                play_sound("hit")
-                get_particles().spawn_burst(npc.x, npc.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+                self._resolve_npc_hit(npc, attack_damage, quest_system)
+                return
+
+    def _fire_arrow(self, player: Player, proj_list: List[Projectile]):
+        ammo = next((item for item in player.inventory if item.item_type == "ammo"), None)
+        if ammo is None:
+            return
+        player.inventory.remove(ammo)
+
+        player.start_attack_anim()
+        play_sound("shoot")
+        damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        proj_list.append(Projectile(player.x, player.y, player.orientation, damage))
+
+    def _resolve_monster_hit(
+        self,
+        monster: Monster,
+        monster_list: List[Monster],
+        damage: int,
+        player: Player,
+        quest_system: QuestSystem,
+        indoor: bool,
+    ) -> bool:
+        """Applies damage to a monster and its kill rewards. Returns True if it died."""
+        if monster.receive_damage(damage):
+            player.stats.train("vitality", c.Stats.XP_PER_KILL)
+            play_sound("monster_death")
+            get_particles().spawn_burst(monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5)
+            quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
+            if quest_item is not None:
+                if indoor:
+                    player.inventory.append(quest_item)
+                else:
+                    self.items.append(quest_item)
+            drop_chance = c.LootBox.DROP_CHANCE
+            if self.events.blood_night_active:
+                drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
+            if random.random() < drop_chance:
+                if indoor:
+                    coins, loot_item = open_lootbox(monster.x, monster.y, roll_rarity())
+                    player.add_coins(coins)
+                    if loot_item is not None:
+                        player.inventory.append(loot_item)
+                else:
+                    self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
+            monster_list.remove(monster)
+            return True
+        play_sound("hit")
+        get_particles().spawn_burst(monster.x, monster.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+        return False
+
+    def _resolve_npc_hit(self, npc: NPC, damage: int, quest_system: QuestSystem) -> bool:
+        """Applies damage to an NPC and handles death. Returns True if it died."""
+        if npc.receive_damage(damage):
+            stolen_item = quest_system.on_npc_killed(npc)
+            if stolen_item is not None:
+                self.items.append(stolen_item)
+            # Drop any quest this NPC was offering so it can't become uncompletable
+            quest_system.remove_quest(npc)
+            play_sound("monster_death")
+            get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5)
+            self.npcs.remove(npc)
+            return True
+        play_sound("hit")
+        get_particles().spawn_burst(npc.x, npc.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+        return False
+
+    def update_projectiles(
+        self,
+        proj_list: List[Projectile],
+        monster_list: List[Monster],
+        player: Player,
+        quest_system: QuestSystem,
+        dt,
+        blocked=None,
+        indoor: bool = False,
+    ):
+        for proj in list(proj_list):
+            proj.update(dt, blocked)
+            if proj.dead:
+                proj_list.remove(proj)
+                continue
+
+            hit_monster = next(
+                (m for m in monster_list if proj.distance_to_point((m.x, m.y)) < c.Projectile.SIZE + m.kind.size // 2),
+                None,
+            )
+            if hit_monster is not None:
+                player.stats.train("strength", c.Stats.XP_PER_HIT)
+                self._resolve_monster_hit(hit_monster, monster_list, proj.damage, player, quest_system, indoor)
+                proj_list.remove(proj)
+                continue
+
+            if not indoor:
+                hit_npc = next(
+                    (
+                        n
+                        for n in self.npcs
+                        if proj.distance_to_point((n.x, n.y)) < c.Projectile.SIZE + c.Entities.NPC_SIZE // 2
+                    ),
+                    None,
+                )
+                if hit_npc is not None:
+                    player.stats.train("strength", c.Stats.XP_PER_HIT)
+                    self._resolve_npc_hit(hit_npc, proj.damage, quest_system)
+                    proj_list.remove(proj)
 
     def pickup_item(self, player: Player):
         for item in self.items:
@@ -296,6 +384,8 @@ class World:
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         self.monsters = [m for m in self.monsters if m.distance_to_point(player.get_pos()) <= c.World.DESPAWN_DISTANCE]
+
+        self.update_projectiles(self.projectiles, self.monsters, player, quest_system, dt, self.blocked)
 
         for npc in self.npcs:
             npc.update(player, dt, self.blocked)
