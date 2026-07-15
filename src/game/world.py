@@ -66,8 +66,8 @@ class World:
             self._start_landmark_naming()
 
     def _populate_npcs(self):
-        """Every NPC lives at a building: one merchant per shop, villagers spread over houses and inns."""
-        homes = [b for b in self.buildings if b.kind in ("house", "inn")]
+        """Every NPC lives at a building: one merchant per shop, villagers spread over houses and taverns."""
+        homes = [b for b in self.buildings if b.kind in ("house", "tavern")]
         for shop in (b for b in self.buildings if b.kind == "shop"):
             npc = NPC(*shop.door_front())
             npc.is_merchant = True

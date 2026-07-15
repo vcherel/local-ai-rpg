@@ -270,10 +270,10 @@ class Game:
         if self.player.hp >= self.player.max_hp:
             self.loot_notification.show("You are already fully rested", c.Colors.WHITE)
             return
-        if self.player.coins < c.Buildings.INN_SLEEP_COST:
+        if self.player.coins < c.Buildings.TAVERN_SLEEP_COST:
             self.loot_notification.show("Not enough coins to rest here", c.Colors.RED)
             return
-        self.player.add_coins(-c.Buildings.INN_SLEEP_COST)
+        self.player.add_coins(-c.Buildings.TAVERN_SLEEP_COST)
         self.player.hp = self.player.max_hp
         self.loot_notification.show("You rest and recover fully", c.Colors.GREEN)
         play_sound("quest_complete")
