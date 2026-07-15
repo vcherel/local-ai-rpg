@@ -246,22 +246,28 @@ class DialogueManager:
                         self.conversation.update_last_assistant_message(cleaned_content)
 
     def close(self):
-        if self.active and self.generator is None:
-            log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
+        if not self.active:
+            return
 
-            if not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
-                self.pending_quest_analysis = True
-            self.pending_affinity_analysis = True
+        # Escape can be pressed mid-stream; abandon the in-flight generator rather than
+        # waiting for it, so closing the dialogue is never blocked on the LLM.
+        self.generator = None
 
-            self._execute_pending_actions(log_path)
+        log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
 
-            self.active = False
-            self.waiting_for_llm = False
-            self.system_prompt = ""
-            self.conversation.clear()
-            self.ui.reset()
-            self.conversation_ended = False
-            self.pending_quest_completion = None
+        if not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
+            self.pending_quest_analysis = True
+        self.pending_affinity_analysis = True
+
+        self._execute_pending_actions(log_path)
+
+        self.active = False
+        self.waiting_for_llm = False
+        self.system_prompt = ""
+        self.conversation.clear()
+        self.ui.reset()
+        self.conversation_ended = False
+        self.pending_quest_completion = None
 
     def _execute_pending_actions(self, log_path):
         # Snapshot the conversation now: close() clears it right after this returns,
