@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from ui.menus.base_menu import BaseMenu
+from ui import widgets
+from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
 if TYPE_CHECKING:
     from llm.quest_system import QuestSystem
@@ -13,7 +14,8 @@ if TYPE_CHECKING:
 
 class QuestMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=700, height=550)
+        super().__init__(screen, width=720, height=560)
+        self.header_height = HEADER_HEIGHT
 
         self.card_width = self.width - 2 * self.padding
         self.card_height = 140
@@ -32,7 +34,7 @@ class QuestMenu(BaseMenu):
         relative_mouse_x = mouse_x - menu_x
         relative_mouse_y = mouse_y - menu_y
 
-        content_start_y = self.padding + 100
+        content_start_y = self.content_top
 
         if relative_mouse_x < self.padding or relative_mouse_x > self.width - self.padding:
             return None
@@ -55,14 +57,17 @@ class QuestMenu(BaseMenu):
         if not self.active:
             return False
 
+        max_scroll = max(0, len(quest_system.active_quests) - self.max_visible_quests)
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
                 self.scroll_offset = max(0, self.scroll_offset - 1)
             elif event.key == pygame.K_DOWN:
-                max_scroll = max(0, len(quest_system.active_quests) - self.max_visible_quests)
                 self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
             elif event.key in (pygame.K_q, pygame.K_ESCAPE):
                 self.close()
+        elif event.type == pygame.MOUSEWHEEL:
+            self.scroll_offset = max(0, min(max_scroll, self.scroll_offset - event.y))
 
         return True
 
@@ -74,26 +79,25 @@ class QuestMenu(BaseMenu):
 
         self.draw_overlay()
 
-        menu_surface = self.create_menu_surface()
-
-        title = c.Fonts.title.render("Active Quests", True, c.Colors.WHITE)
-        title_x = (self.width - title.get_width()) // 2
-        menu_surface.blit(title, (title_x, self.padding))
+        menu_surface = self.create_menu_surface("Active Quests")
 
         quest_count = len(quest_system.active_quests)
-        count_text = c.Fonts.text.render(f"Quests: {quest_count}", True, c.Colors.YELLOW)
-        menu_surface.blit(count_text, (self.padding, self.padding + 50))
+        count_text = c.Fonts.text.render(f"{quest_count} active", True, c.Colors.ACCENT)
+        menu_surface.blit(
+            count_text,
+            (self.width - self.padding - count_text.get_width(), (HEADER_HEIGHT - count_text.get_height()) // 2),
+        )
 
         mouse_pos = pygame.mouse.get_pos()
         self.hovered_quest_index = self.get_quest_at_mouse(mouse_pos[0], mouse_pos[1], menu_x, menu_y, quest_count)
 
         if quest_count == 0:
-            no_quests_text = c.Fonts.heading.render("No active quests", True, c.Colors.WHITE)
+            no_quests_text = c.Fonts.heading.render("No active quests", True, c.Colors.MUTED)
             text_x = (self.width - no_quests_text.get_width()) // 2
             text_y = (self.height - no_quests_text.get_height()) // 2
             menu_surface.blit(no_quests_text, (text_x, text_y))
         else:
-            content_start_y = self.padding + 100
+            content_start_y = self.content_top
 
             for i in range(min(quest_count, self.max_visible_quests)):
                 visible_index = i + self.scroll_offset
@@ -103,17 +107,8 @@ class QuestMenu(BaseMenu):
                 quest = quest_system.active_quests[visible_index]
                 card_y = content_start_y + i * (self.card_height + self.card_spacing)
 
-                if visible_index == self.hovered_quest_index:
-                    card_color = c.Colors.BUTTON_HOVERED
-                    border_color = c.Colors.BORDER_HOVERED
-                else:
-                    card_color = c.Colors.BUTTON
-                    border_color = c.Colors.BORDER
-
-                pygame.draw.rect(menu_surface, card_color, (self.padding, card_y, self.card_width, self.card_height))
-                pygame.draw.rect(
-                    menu_surface, border_color, (self.padding, card_y, self.card_width, self.card_height), 2
-                )
+                card_rect = pygame.Rect(self.padding, card_y, self.card_width, self.card_height)
+                widgets.draw_slot(menu_surface, card_rect, hovered=visible_index == self.hovered_quest_index, radius=10)
 
                 text_x = self.padding + 15
                 text_y = card_y + 10
@@ -178,14 +173,14 @@ class QuestMenu(BaseMenu):
         return lines
 
     def _draw_scroll_indicator(self, surface, quest_count):
-        indicator_x = self.width - 15
-        indicator_y = self.padding + 100
+        indicator_x = self.width - 12
+        indicator_y = self.content_top
         indicator_height = self.max_visible_quests * (self.card_height + self.card_spacing) - self.card_spacing
 
-        pygame.draw.rect(surface, (80, 80, 80), (indicator_x, indicator_y, 5, indicator_height))
+        pygame.draw.rect(surface, c.Colors.SLOT_BG, (indicator_x, indicator_y, 6, indicator_height), border_radius=3)
 
         thumb_height = max(20, (self.max_visible_quests / quest_count) * indicator_height)
         thumb_y = indicator_y + (self.scroll_offset / (quest_count - self.max_visible_quests)) * (
             indicator_height - thumb_height
         )
-        pygame.draw.rect(surface, c.Colors.YELLOW, (indicator_x, thumb_y, 5, thumb_height))
+        pygame.draw.rect(surface, c.Colors.ACCENT, (indicator_x, thumb_y, 6, thumb_height), border_radius=3)

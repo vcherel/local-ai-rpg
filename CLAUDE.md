@@ -53,6 +53,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/core/audio.py`: `SoundManager`, procedural sound effects synthesised in memory (no audio asset files)
 
 ### ui
+- `src/ui/widgets.py`: shared menu/HUD draw primitives (rounded gradient panels, drop shadow, buttons, slots, scaled item icons); all menus draw through these for one consistent dark theme
 - `src/ui/game_renderer.py`: `GameRenderer`, draws the world, entities, camera-relative UI
 - `src/ui/conversation_ui.py`: `ConversationUI`, dialogue text box rendering, scrolling, text input
 - `src/ui/notification.py`: `QuestNotification`, `ToastNotification`, on-screen popups

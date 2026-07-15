@@ -1,7 +1,7 @@
 import pygame
 
 import core.constants as c
-from ui.menus.base_menu import BaseMenu
+from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
 CONTROLS = [
     ("W / Z", "Move forward (aim with mouse)"),
@@ -21,7 +21,7 @@ CONTROLS = [
 
 class HelpMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=460, height=80 + len(CONTROLS) * 34)
+        super().__init__(screen, width=480, height=HEADER_HEIGHT + len(CONTROLS) * 34 + 60)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -39,18 +39,14 @@ class HelpMenu(BaseMenu):
         if not self.active:
             return
 
-        menu_x, menu_y = self.get_centered_position()
         self.draw_overlay()
-        surface = self.create_menu_surface()
+        surface = self.create_menu_surface("Controls")
 
-        title = c.Fonts.title.render("Controls", True, c.Colors.WHITE)
-        surface.blit(title, ((self.width - title.get_width()) // 2, self.padding))
-
-        y = self.padding + 55
+        y = self.content_top
         key_x = self.padding
         desc_x = self.padding + 130
         for key, description in CONTROLS:
-            key_surf = c.Fonts.heading.render(key, True, c.Colors.YELLOW)
+            key_surf = c.Fonts.heading.render(key, True, c.Colors.ACCENT)
             surface.blit(key_surf, (key_x, y))
 
             desc_surf = c.Fonts.text.render(description, True, c.Colors.WHITE)
@@ -58,7 +54,5 @@ class HelpMenu(BaseMenu):
 
             y += 34
 
-        hint = c.Fonts.small.render("H or ESC to close", True, c.Colors.BORDER)
-        surface.blit(hint, ((self.width - hint.get_width()) // 2, self.height - self.padding - hint.get_height()))
-
-        self.screen.blit(surface, (menu_x, menu_y))
+        self.draw_hint(surface, "H or ESC to close")
+        self.blit_panel(surface)
