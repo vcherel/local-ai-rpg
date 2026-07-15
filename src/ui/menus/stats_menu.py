@@ -72,15 +72,14 @@ class StatsMenu(BaseMenu):
             ratio = min(stats.xp[key] / stats.xp_to_next(key), 1.0)
             bar_y = y + 50
             bar_h = 10
-            pygame.draw.rect(surface, c.Colors.SLOT_BG, (self.padding, bar_y, bar_w, bar_h), border_radius=5)
+            pygame.draw.rect(surface, c.Colors.SLOT_BG, (self.padding, bar_y, bar_w, bar_h))
             if ratio > 0:
                 pygame.draw.rect(
                     surface,
                     c.Colors.GREEN,
                     (self.padding, bar_y, max(bar_h, int(bar_w * ratio)), bar_h),
-                    border_radius=5,
                 )
-            pygame.draw.rect(surface, c.Colors.SLOT_BORDER, (self.padding, bar_y, bar_w, bar_h), 1, border_radius=5)
+            pygame.draw.rect(surface, c.Colors.SLOT_BORDER, (self.padding, bar_y, bar_w, bar_h), 1)
 
             y += ROW_HEIGHT
 

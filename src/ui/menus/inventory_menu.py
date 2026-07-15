@@ -198,7 +198,7 @@ class InventoryMenu(BaseMenu):
             surface.blit(label_surf, (rect.centerx - label_surf.get_width() // 2, rect.y - 22))
 
             border = c.Colors.ACCENT if item else c.Colors.SLOT_BORDER
-            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border, radius=10)
+            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border)
 
             if item is not None:
                 widgets.draw_item_scaled(surface, item, rect.centerx, rect.centery - 6, 58)
@@ -254,20 +254,20 @@ class InventoryMenu(BaseMenu):
         text = c.Fonts.small.render(f"x{count}", True, c.Colors.BLACK)
         pill = pygame.Rect(0, 0, text.get_width() + 10, text.get_height() + 2)
         pill.bottomright = (rect.right - 4, rect.bottom - 4)
-        pygame.draw.rect(surface, c.Colors.ACCENT, pill, border_radius=6)
+        pygame.draw.rect(surface, c.Colors.ACCENT, pill)
         surface.blit(text, (pill.x + 5, pill.y + 1))
 
     def _draw_scrollbar(self, surface, g, item_count):
         track_x = g["start_x"] + g["cols"] * g["step"] - self.cell_padding + 4
         track_y = g["start_y"]
         track_h = g["rows"] * g["step"] - self.cell_padding
-        pygame.draw.rect(surface, c.Colors.SLOT_BG, (track_x, track_y, 6, track_h), border_radius=3)
+        pygame.draw.rect(surface, c.Colors.SLOT_BG, (track_x, track_y, 6, track_h))
 
         total_rows = math.ceil(item_count / g["cols"])
         thumb_h = max(24, int(track_h * g["rows"] / total_rows))
         max_scroll = self._max_scroll(item_count)
         thumb_y = track_y + int((track_h - thumb_h) * (self.scroll_row / max_scroll)) if max_scroll else track_y
-        pygame.draw.rect(surface, c.Colors.ACCENT, (track_x, thumb_y, 6, thumb_h), border_radius=3)
+        pygame.draw.rect(surface, c.Colors.ACCENT, (track_x, thumb_y, 6, thumb_h))
 
     def _fit(self, surf, text, max_width, color):
         """Truncate a rendered label with an ellipsis so it fits `max_width`."""
@@ -303,5 +303,5 @@ class InventoryMenu(BaseMenu):
             y = rel_y - h - 16
 
         rect = pygame.Rect(x, y, w, h)
-        widgets.draw_panel(surface, rect, radius=8, top=(28, 28, 34), bottom=(20, 20, 26), border=c.Colors.ACCENT)
+        widgets.draw_panel(surface, rect, fill=(24, 24, 30), border=c.Colors.ACCENT)
         surface.blit(label, (x + 10, y + 6))

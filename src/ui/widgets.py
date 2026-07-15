@@ -1,9 +1,8 @@
 """Shared drawing primitives for menus and HUD.
 
 Every panel, button and slot in the game draws through these helpers so a visual
-tweak lands everywhere at once instead of being reinvented per menu. The look is a
-polished dark theme: rounded corners, a soft drop shadow, a subtle vertical
-gradient fill and a gold accent on focus.
+tweak lands everywhere at once instead of being reinvented per menu. The look is
+flat and square: solid fills, plain borders, a gold accent on hover/focus.
 """
 
 from __future__ import annotations
@@ -18,56 +17,20 @@ if TYPE_CHECKING:
     from game.entities.items import Item
 
 
-def _vertical_gradient(width: int, height: int, top: tuple, bottom: tuple) -> pygame.Surface:
-    grad = pygame.Surface((width, height), pygame.SRCALPHA)
-    if height <= 1:
-        grad.fill((*top, 255))
-        return grad
-    for y in range(height):
-        t = y / (height - 1)
-        col = (
-            int(top[0] + (bottom[0] - top[0]) * t),
-            int(top[1] + (bottom[1] - top[1]) * t),
-            int(top[2] + (bottom[2] - top[2]) * t),
-            255,
-        )
-        pygame.draw.line(grad, col, (0, y), (width, y))
-    return grad
-
-
-def draw_shadow(surface: pygame.Surface, rect: pygame.Rect, radius: int = 14, offset: int = 8, blur: int = 9):
-    """Cast a soft drop shadow for `rect`, offset downward, faked with expanding rings."""
-    if rect.width <= 0 or rect.height <= 0:
-        return
-    shadow = pygame.Surface((rect.width + blur * 2, rect.height + blur * 2), pygame.SRCALPHA)
-    for i in range(blur, 0, -1):
-        alpha = int(c.Colors.SHADOW_ALPHA * (blur - i + 1) / blur / blur)
-        ring = pygame.Rect(blur - i, blur - i, rect.width + i * 2, rect.height + i * 2)
-        pygame.draw.rect(shadow, (0, 0, 0, alpha), ring, border_radius=radius + i)
-    surface.blit(shadow, (rect.x - blur, rect.y - blur + offset))
-
-
 def draw_panel(
     surface: pygame.Surface,
     rect: pygame.Rect,
-    radius: int = 14,
-    top: Optional[tuple] = None,
-    bottom: Optional[tuple] = None,
+    fill: Optional[tuple] = None,
     border: Optional[tuple] = None,
     border_w: int = 2,
 ):
-    """Fill `rect` with a rounded vertical-gradient panel and a border."""
-    top = top or c.Colors.PANEL_TOP
-    bottom = bottom or c.Colors.PANEL_BOTTOM
-    border = border or c.Colors.PANEL_BORDER
+    """Fill `rect` with a flat panel color and a square border."""
+    fill = fill or c.Colors.MENU_BACKGROUND
+    border = border or c.Colors.BORDER
 
-    grad = _vertical_gradient(rect.width, rect.height, top, bottom)
-    mask = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-    pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=radius)
-    grad.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-    surface.blit(grad, rect.topleft)
+    pygame.draw.rect(surface, fill, rect)
     if border_w:
-        pygame.draw.rect(surface, border, rect, border_w, border_radius=radius)
+        pygame.draw.rect(surface, border, rect, border_w)
 
 
 def draw_button(
@@ -80,26 +43,15 @@ def draw_button(
     text_color: Optional[tuple] = None,
     accent: Optional[tuple] = None,
 ):
-    """A tactile button: drop shadow, gradient fill, gold border on hover, sinks when pressed."""
+    """A flat, square button with a gold border on hover, sinks slightly when pressed."""
     accent = accent or c.Colors.ACCENT
     text_color = text_color or c.Colors.WHITE
     draw_rect = rect.move(0, 2) if pressed else rect
 
-    draw_shadow(surface, draw_rect, radius=10, offset=4, blur=6)
-
-    top, bottom = c.Colors.BUTTON_TOP, c.Colors.BUTTON_BOTTOM
-    if hovered:
-        top = tuple(min(255, v + 16) for v in top)
-        bottom = tuple(min(255, v + 16) for v in bottom)
-    draw_panel(
-        surface,
-        draw_rect,
-        radius=10,
-        top=top,
-        bottom=bottom,
-        border=accent if hovered else c.Colors.PANEL_BORDER,
-        border_w=2,
-    )
+    fill = c.Colors.BUTTON_HOVERED if hovered else c.Colors.BUTTON
+    border = accent if hovered else c.Colors.BORDER
+    pygame.draw.rect(surface, fill, draw_rect)
+    pygame.draw.rect(surface, border, draw_rect, 2)
 
     label = font.render(text, True, text_color)
     surface.blit(label, label.get_rect(center=draw_rect.center))
@@ -111,18 +63,17 @@ def draw_slot(
     hovered: bool = False,
     border_color: Optional[tuple] = None,
     glow_color: Optional[tuple] = None,
-    radius: int = 8,
     border_w: int = 2,
 ):
     """An inset slot for grid cells and list rows, with an optional rarity tint/glow."""
     bg = c.Colors.SLOT_BG_HOVER if hovered else c.Colors.SLOT_BG
-    pygame.draw.rect(surface, bg, rect, border_radius=radius)
+    pygame.draw.rect(surface, bg, rect)
     if glow_color:
-        glow = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(glow, (*glow_color, 46), glow.get_rect(), border_radius=radius)
+        glow = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(glow, (*glow_color, 46), glow.get_rect())
         surface.blit(glow, rect.topleft)
     bc = border_color or (c.Colors.ACCENT if hovered else c.Colors.SLOT_BORDER)
-    pygame.draw.rect(surface, bc, rect, border_w, border_radius=radius)
+    pygame.draw.rect(surface, bc, rect, border_w)
 
 
 def wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:

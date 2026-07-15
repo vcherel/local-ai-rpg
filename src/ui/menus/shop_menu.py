@@ -200,7 +200,7 @@ class ShopMenu(BaseMenu):
     ):
         r = self._row_rect(panel_x, index)
         rarity_border = rarity_color(item.rarity) if item.rarity != "common" else None
-        widgets.draw_slot(surface, r, hovered=hovered, border_color=rarity_border, radius=8)
+        widgets.draw_slot(surface, r, hovered=hovered, border_color=rarity_border)
 
         icon_x = r.x + 30
         icon_y = r.centery
