@@ -137,19 +137,19 @@ class Events:
 class Buildings:
     NB_HOUSES: int = 8
     NB_SHOPS: int = 3
-    NB_INNS: int = 2
+    NB_TAVERNS: int = 2
 
     # (width range, height range) per kind. The landmark ruin has no door and no interior.
     SIZES = {
         "house": ((170, 230), (140, 200)),
         "shop": ((190, 230), (150, 180)),
-        "inn": ((260, 310), (200, 240)),
+        "tavern": ((260, 310), (200, 240)),
         "landmark": ((280, 330), (240, 290)),
     }
     ROOF_COLORS = {
         "house": (152, 76, 56),
         "shop": (88, 110, 152),
-        "inn": (122, 88, 140),
+        "tavern": (122, 88, 140),
     }
 
     # Buildings keep their distance from each other, the spawn point and the world edge.
@@ -166,7 +166,7 @@ class Buildings:
     ROOM_H: int = 700
     ROOM_WALL: int = 25
 
-    INN_SLEEP_COST: int = 15
+    TAVERN_SLEEP_COST: int = 15
     INTERACT_DISTANCE: int = 120
 
     WALL_COLOR: tuple = (72, 56, 44)

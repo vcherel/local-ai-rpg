@@ -38,7 +38,7 @@ def generate_buildings() -> List["Building"]:
     """Scatter buildings across the map, keeping them apart and away from the spawn point."""
     counts = [
         ("landmark", 1),
-        ("inn", c.Buildings.NB_INNS),
+        ("tavern", c.Buildings.NB_TAVERNS),
         ("shop", c.Buildings.NB_SHOPS),
         ("house", c.Buildings.NB_HOUSES),
     ]
@@ -229,7 +229,7 @@ class Building:
                 if crate:
                     solids.append((crate, "crate"))
 
-        elif self.kind == "inn":
+        elif self.kind == "tavern":
             nb_beds = rng.randint(3, 4)
             bed_w, bed_h = 95, 150
             span = floor.width - 80 - bed_w
@@ -289,8 +289,8 @@ class Building:
 
         if self.kind == "shop":
             self._draw_awning(screen, srect)
-        elif self.kind == "inn":
-            self._draw_inn_sign(screen, srect)
+        elif self.kind == "tavern":
+            self._draw_tavern_sign(screen, srect)
 
     def _draw_awning(self, screen, srect: pygame.Rect):
         band = pygame.Rect(round(srect.centerx - 110), srect.bottom - 6, 220, 16)
@@ -301,11 +301,12 @@ class Building:
             )
         pygame.draw.rect(screen, (60, 45, 35), band, 2)
 
-    def _draw_inn_sign(self, screen, srect: pygame.Rect):
-        sign = pygame.Rect(round(srect.centerx + c.Buildings.DOOR_WIDTH / 2) + 12, srect.bottom - 28, 50, 24)
+    def _draw_tavern_sign(self, screen, srect: pygame.Rect):
+        text = c.Fonts.small.render("TAVERN", True, (60, 45, 35))
+        sign = pygame.Rect(0, 0, text.get_width() + 16, 24)
+        sign.midleft = (round(srect.centerx + c.Buildings.DOOR_WIDTH / 2) + 12, srect.bottom - 16)
         pygame.draw.rect(screen, (225, 190, 70), sign)
         pygame.draw.rect(screen, (60, 45, 35), sign, 2)
-        text = c.Fonts.small.render("INN", True, (60, 45, 35))
         screen.blit(text, text.get_rect(center=sign.center))
 
     def _ruin_shape(self) -> dict:
@@ -425,7 +426,7 @@ class Building:
         for bed in layout["beds"]:
             if math.hypot(player.x - bed.centerx, player.y - bed.centery) <= c.Buildings.INTERACT_DISTANCE:
                 bed_screen = to_screen(bed)
-                text = f"E: sleep ({c.Buildings.INN_SLEEP_COST} coins)"
+                text = f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
                 draw_label(screen, text, (bed_screen.centerx, bed_screen.top - 18))
 
     def _draw_furniture(self, screen, rect: pygame.Rect, kind: str, world_rect: pygame.Rect):
