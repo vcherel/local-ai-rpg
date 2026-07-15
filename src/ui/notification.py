@@ -2,70 +2,61 @@ import pygame
 
 import core.constants as c
 from game.quest import Quest
+from ui import widgets
 
 
-class QuestNotification:
-    def __init__(self, screen: pygame.Surface):
+class _TimedBanner:
+    """Shared slide-in/hold/slide-out animation and auto-expiry for a screen banner."""
+
+    def __init__(self, screen: pygame.Surface, duration_ms: int, slide_duration_ms: int = 300, target_x: int = 20):
         self.screen: pygame.Surface = screen
         self.active = False
+        self.start_time = 0
+        self.duration = duration_ms
+        self.slide_duration = slide_duration_ms
+        self.target_x = target_x
+
+    def _activate(self):
+        self.active = True
+        self.start_time = pygame.time.get_ticks()
+
+    def _expired(self) -> bool:
+        if not self.active:
+            return True
+        if pygame.time.get_ticks() - self.start_time > self.duration:
+            self.active = False
+            return True
+        return False
+
+    def _current_x(self, start_x: float) -> float:
+        elapsed = pygame.time.get_ticks() - self.start_time
+
+        if elapsed < self.slide_duration:
+            progress = elapsed / self.slide_duration
+            return start_x + (self.target_x - start_x) * progress
+        elif elapsed > self.duration - self.slide_duration:
+            progress = (elapsed - (self.duration - self.slide_duration)) / self.slide_duration
+            return self.target_x + (start_x - self.target_x) * progress
+        else:
+            return self.target_x
+
+
+class QuestNotification(_TimedBanner):
+    def __init__(self, screen: pygame.Surface):
+        super().__init__(screen, duration_ms=8000)
         self.quest = None
 
         self.width = 1000
         self.height = 150
         self.padding = 15
-
-        self.target_x = 20
         self.start_x = -self.width
-
-        self.start_time = 0
-        self.duration = 8000  # 8 seconds
-        self.slide_duration = 300  # ms
 
     def show(self, quest: Quest):
         self.quest = quest
-        self.active = True
-        self.start_time = pygame.time.get_ticks()
-
-    def _get_current_x(self):
-        elapsed = pygame.time.get_ticks() - self.start_time
-
-        if elapsed < self.slide_duration:
-            progress = elapsed / self.slide_duration
-            return self.start_x + (self.target_x - self.start_x) * progress
-        elif elapsed > self.duration - self.slide_duration:
-            progress = (elapsed - (self.duration - self.slide_duration)) / self.slide_duration
-            return self.target_x + (self.start_x - self.target_x) * progress
-        else:
-            return self.target_x
-
-    def _wrap_text(self, text: str, max_width, font: pygame.font.Font):
-        words = text.split(" ")
-        lines = []
-        current_line = []
-
-        for word in words:
-            current_line.append(word)
-            line = " ".join(current_line)
-            if font.size(line)[0] > max_width:
-                if len(current_line) == 1:
-                    lines.append(line)
-                    current_line = []
-                else:
-                    current_line.pop()
-                    lines.append(" ".join(current_line))
-                    current_line = [word]
-
-        if current_line:
-            lines.append(" ".join(current_line))
-
-        return lines
+        self._activate()
 
     def draw(self):
-        if not self.active or not self.quest:
-            return
-
-        if pygame.time.get_ticks() - self.start_time > self.duration:
-            self.active = False
+        if self._expired() or not self.quest:
             return
 
         title_text = f"New quest from {self.quest.npc_name}"
@@ -79,7 +70,7 @@ class QuestNotification:
 
         max_desc_width = 0
         max_width = 2000  # Maximum width to prevent overly wide notifications
-        desc_lines = self._wrap_text(self.quest.description, max_width - 2 * self.padding, c.Fonts.text)
+        desc_lines = widgets.wrap_text(self.quest.description, c.Fonts.text, max_width - 2 * self.padding)
         desc_line_height = 20
 
         for line in desc_lines[:2]:
@@ -88,7 +79,7 @@ class QuestNotification:
 
         self.width = min(max(title_width, npc_width, max_desc_width) + 2 * self.padding, max_width)
 
-        x = self._get_current_x()
+        x = self._current_x(self.start_x)
         y = 120
 
         surface = pygame.Surface((self.width, self.height))
@@ -111,54 +102,30 @@ class QuestNotification:
         self.screen.blit(surface, (int(x), y))
 
 
-class ToastNotification:
+class ToastNotification(_TimedBanner):
     """Short, single-line sliding banner for one-off events like opening a lootbox."""
 
     def __init__(self, screen: pygame.Surface):
-        self.screen: pygame.Surface = screen
-        self.active = False
+        super().__init__(screen, duration_ms=4000)
         self.text = ""
         self.color = c.Colors.YELLOW
 
         self.height = 60
         self.padding = 15
 
-        self.target_x = 20
-        self.start_time = 0
-        self.duration = 4000  # 4 seconds
-        self.slide_duration = 300  # ms
-
     def show(self, text: str, color: tuple = None):
         self.text = text
         self.color = color or c.Colors.YELLOW
-        self.active = True
-        self.start_time = pygame.time.get_ticks()
-
-    def _get_current_x(self, width):
-        elapsed = pygame.time.get_ticks() - self.start_time
-        start_x = -width
-
-        if elapsed < self.slide_duration:
-            progress = elapsed / self.slide_duration
-            return start_x + (self.target_x - start_x) * progress
-        elif elapsed > self.duration - self.slide_duration:
-            progress = (elapsed - (self.duration - self.slide_duration)) / self.slide_duration
-            return self.target_x + (start_x - self.target_x) * progress
-        else:
-            return self.target_x
+        self._activate()
 
     def draw(self):
-        if not self.active:
-            return
-
-        if pygame.time.get_ticks() - self.start_time > self.duration:
-            self.active = False
+        if self._expired():
             return
 
         text_surface = c.Fonts.button.render(self.text, True, self.color)
         width = text_surface.get_width() + 2 * self.padding
 
-        x = self._get_current_x(width)
+        x = self._current_x(-width)
         y = 280
 
         surface = pygame.Surface((width, self.height))

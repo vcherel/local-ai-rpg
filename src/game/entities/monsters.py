@@ -36,15 +36,9 @@ class Monster(Entity):
 
     def start_attack_anim(self, dist):
         """Return True in case of hit to the player"""
-        if not self.attack_in_progress:
-            self.attack_in_progress = True
-            self.attack_progress = 0.0
-            self.attack_hand = random.choice(["left", "right"])
-
-            if dist < self.kind.attack_range + c.Player.SIZE // 2:
-                return True
-
-        return False
+        was_attacking = self.attack_in_progress
+        super().start_attack_anim()
+        return not was_attacking and dist < self.kind.attack_range + c.Player.SIZE // 2
 
     # Deflection angles tried when the straight line to the player is blocked, alternating
     # sides so the monster steers around whichever edge of the obstacle is nearer.

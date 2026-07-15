@@ -118,7 +118,7 @@ class QuestMenu(BaseMenu):
 
                 desc_y = text_y + 40
                 max_width = self.card_width - 30
-                wrapped_lines = self._wrap_text(quest.description, max_width)
+                wrapped_lines = widgets.wrap_text(quest.description, c.Fonts.text, max_width)
 
                 for line in wrapped_lines[:2]:  # Show max 2 lines
                     desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
@@ -150,27 +150,6 @@ class QuestMenu(BaseMenu):
                 self._draw_scroll_indicator(menu_surface, quest_count)
 
         self.screen.blit(menu_surface, (menu_x, menu_y))
-
-    def _wrap_text(self, text: str, max_width):
-        words = text.split()
-        lines = []
-        current_line = []
-
-        for word in words:
-            test_line = " ".join(current_line + [word])
-            test_surface = c.Fonts.text.render(test_line, True, c.Colors.WHITE)
-
-            if test_surface.get_width() <= max_width:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(" ".join(current_line))
-                current_line = [word]
-
-        if current_line:
-            lines.append(" ".join(current_line))
-
-        return lines
 
     def _draw_scroll_indicator(self, surface, quest_count):
         indicator_x = self.width - 12
