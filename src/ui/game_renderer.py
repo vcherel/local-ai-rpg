@@ -85,12 +85,12 @@ class GameRenderer:
 
     def draw_ui(self, nb_items, nb_coins, nb_quests, active_task_count, player: Player):
         mouse_pos = pygame.mouse.get_pos()
-        self._draw_button(self.inv_button_rect, "Inventory", mouse_pos)
-        self._draw_button(self.quest_button_rect, "Quests", mouse_pos)
-        self._draw_button(self.stats_button_rect, "Character", mouse_pos)
-        self._draw_button(self.lore_button_rect, "Lore", mouse_pos)
-        self._draw_button(self.help_button_rect, "Help", mouse_pos)
-        self._draw_button(self.pause_button_rect, "Pause", mouse_pos)
+        self._draw_button(self.inv_button_rect, "Inventory (I)", mouse_pos)
+        self._draw_button(self.quest_button_rect, "Quests (Q)", mouse_pos)
+        self._draw_button(self.stats_button_rect, "Character (C)", mouse_pos)
+        self._draw_button(self.lore_button_rect, "Lore (L)", mouse_pos)
+        self._draw_button(self.help_button_rect, "Help (H)", mouse_pos)
+        self._draw_button(self.pause_button_rect, "Pause (P)", mouse_pos)
 
         coins_text = f"Coins: {nb_coins}"
         objects_text = f"Items: {nb_items}"
