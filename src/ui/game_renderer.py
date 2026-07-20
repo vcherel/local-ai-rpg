@@ -7,8 +7,16 @@ import pygame
 
 import core.constants as c
 from core.particles import get_particles
+from game.entities.items import draw_shape_with_border, rarity_color
 from ui import widgets
 from ui.loading_indicator import LoadingIndicator
+
+# HUD equipment strip: (slot key, caption, ghost glyph shown when empty).
+_EQUIP_HUD_SLOTS = (
+    ("weapon", "Weapon", "sword"),
+    ("armor", "Armor", "shield"),
+    ("accessory", "Accessory", "gem"),
+)
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -113,16 +121,7 @@ class GameRenderer:
         self.screen.blit(objects_surface, (12, 90))
         self.screen.blit(quests_surface, (12, 125))
 
-        weapon = player.equipped_item("weapon")
-        armor = player.equipped_item("armor")
-        accessory = player.equipped_item("accessory")
-        equipped_text = (
-            f"Weapon: {weapon.name if weapon else '-'}  "
-            f"Armor: {armor.name if armor else '-'}  "
-            f"Accessory: {accessory.name if accessory else '-'}"
-        )
-        equipped_surface = c.Fonts.small.render(equipped_text, True, c.Colors.BORDER)
-        self.screen.blit(equipped_surface, (12, 160))
+        self._draw_equipped(player)
 
         self.loading_indicator.update()
         if active_task_count > 0:
@@ -133,6 +132,25 @@ class GameRenderer:
 
         if self.show_llm_tasks:
             self._draw_llm_task_panel(llm_tasks)
+
+    def _draw_equipped(self, player: Player):
+        """A mini paper-doll on the HUD: one captioned slot per equip type."""
+        slot = 46
+        step = 70
+        top = 158
+        for i, (item_type, caption, glyph) in enumerate(_EQUIP_HUD_SLOTS):
+            item = player.equipped_item(item_type)
+            rect = pygame.Rect(12 + i * step, top, slot, slot)
+
+            border = rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER
+            widgets.draw_slot(self.screen, rect, border_color=border)
+            if item is not None:
+                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 34)
+            else:
+                draw_shape_with_border(self.screen, glyph, rect.center, 15, (60, 60, 70), 2, (84, 84, 98))
+
+            label = c.Fonts.small.render(caption, True, c.Colors.MUTED)
+            self.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 3))
 
     def _draw_llm_task_panel(self, llm_tasks):
         width = 240
