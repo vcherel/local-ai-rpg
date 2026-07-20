@@ -13,7 +13,7 @@ from game.entities.player import Player
 from game.loot import open_lootbox
 from game.world import World
 from llm.dialogue_manager import DialogueManager
-from llm.llm_request_queue import get_llm_task_count
+from llm.llm_request_queue import get_llm_tasks
 from llm.name_generator import NPCNameGenerator
 from ui.game_renderer import GameRenderer
 from ui.menus.context_menu import ContextMenu
@@ -135,6 +135,9 @@ class Game:
 
                         elif self.game_renderer.pause_button_rect.collidepoint(event.pos):
                             self.pause_menu.toggle()
+
+                        elif self.game_renderer.loading_indicator.rect.collidepoint(event.pos):
+                            self.game_renderer.show_llm_tasks = not self.game_renderer.show_llm_tasks
 
                         elif self.interior is None:
                             self.world.handle_attack(
@@ -370,7 +373,7 @@ class Game:
                     len(self.player.inventory),
                     self.player.coins,
                     len(self.dialogue_manager.quest_system.active_quests),
-                    get_llm_task_count(),
+                    get_llm_tasks(),
                     self.player,
                 )
 
