@@ -24,8 +24,10 @@ class LLMRequestQueue:
         self.running = False
         self.lock = threading.Lock()
 
-        self.active_requests = 0
-        self.queued_requests = 0
+        # task_id -> {category, state ("queued"/"running"), start (monotonic)}.
+        # Insertion order is FIFO, so the running task (oldest) always sorts first.
+        self.tasks = {}
+        self._next_task_id = 0
 
     def start(self):
         if not self.running:
@@ -35,7 +37,23 @@ class LLMRequestQueue:
 
     def get_active_task_count(self):
         with self.lock:
-            return self.active_requests + self.queued_requests
+            return len(self.tasks)
+
+    def get_active_tasks(self):
+        """Snapshot of in-flight tasks: category, state, and elapsed seconds."""
+        now = time.monotonic()
+        with self.lock:
+            return [
+                {"category": t["category"], "state": t["state"], "elapsed": now - t["start"]}
+                for t in self.tasks.values()
+            ]
+
+    def _register_task(self, category):
+        with self.lock:
+            task_id = self._next_task_id
+            self._next_task_id += 1
+            self.tasks[task_id] = {"category": category, "state": "queued", "start": time.monotonic()}
+        return task_id
 
     def _process_queue(self):
         while self.running:
@@ -43,9 +61,12 @@ class LLMRequestQueue:
                 # Get next request with timeout to allow checking self.running
                 request = self.request_queue.get(timeout=0.1)
 
+                task_id = request["task_id"]
                 with self.lock:
-                    self.queued_requests -= 1
-                    self.active_requests += 1
+                    task = self.tasks.get(task_id)
+                    if task is not None:
+                        task["state"] = "running"
+                        task["start"] = time.monotonic()
 
                 try:
                     result = request["func"]()
@@ -54,7 +75,7 @@ class LLMRequestQueue:
                     request["result_queue"].put(("error", str(e)))
                 finally:
                     with self.lock:
-                        self.active_requests -= 1
+                        self.tasks.pop(task_id, None)
                     self.request_queue.task_done()
 
             except queue.Empty:
@@ -68,10 +89,8 @@ class LLMRequestQueue:
         def request_func():
             return generate_response_internal(prompt, system_prompt, category, max_tokens=max_tokens, raw=raw)
 
-        with self.lock:
-            self.queued_requests += 1
-
-        self.request_queue.put({"func": request_func, "result_queue": result_queue})
+        task_id = self._register_task(category)
+        self.request_queue.put({"func": request_func, "result_queue": result_queue, "task_id": task_id})
 
         status, result = result_queue.get()
         if status == "error":
@@ -88,10 +107,8 @@ class LLMRequestQueue:
             stream_queue.put(("done", None))
             return None
 
-        with self.lock:
-            self.queued_requests += 1
-
-        self.request_queue.put({"func": request_func, "result_queue": result_queue})
+        task_id = self._register_task(category)
+        self.request_queue.put({"func": request_func, "result_queue": result_queue, "task_id": task_id})
 
         # Yield empty string immediately so UI doesn't block
         yield ""
@@ -131,6 +148,10 @@ def get_llm_queue():
 
 def get_llm_task_count():
     return get_llm_queue().get_active_task_count()
+
+
+def get_llm_tasks():
+    return get_llm_queue().get_active_tasks()
 
 
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):

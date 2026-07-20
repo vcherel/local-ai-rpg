@@ -13,6 +13,10 @@ class LoadingIndicator:
         self.x = x
         self.y = y
 
+    @property
+    def rect(self):
+        return pygame.Rect(self.x - 20, self.y - 20, 40, 40)
+
     def update(self):
         self.angle = (self.angle + self.speed) % 360
 

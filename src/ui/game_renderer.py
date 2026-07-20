@@ -34,6 +34,8 @@ class GameRenderer:
         self.help_button_rect = pygame.Rect(570, 10, 120, 35)
         self.pause_button_rect = pygame.Rect(700, 10, 120, 35)
         self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
+        # Toggled by clicking the loading indicator; lists the LLM's in-flight tasks.
+        self.show_llm_tasks = False
 
     @staticmethod
     def _on_screen(camera: Camera, x, y, margin=60):
@@ -91,7 +93,8 @@ class GameRenderer:
         hover = rect.collidepoint(mouse_pos)
         widgets.draw_button(self.screen, rect, label, c.Fonts.button, hovered=hover)
 
-    def draw_ui(self, nb_items, nb_coins, nb_quests, active_task_count, player: Player):
+    def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player):
+        active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
         self._draw_button(self.inv_button_rect, "Inventory (I)", mouse_pos)
         self._draw_button(self.quest_button_rect, "Quests (Q)", mouse_pos)
@@ -124,6 +127,39 @@ class GameRenderer:
         self.loading_indicator.update()
         if active_task_count > 0:
             self.loading_indicator.draw_task_indicator(active_task_count)
+        else:
+            # Nothing running: the icon is gone, so there's nothing left to reopen from.
+            self.show_llm_tasks = False
+
+        if self.show_llm_tasks:
+            self._draw_llm_task_panel(llm_tasks)
+
+    def _draw_llm_task_panel(self, llm_tasks):
+        width = 240
+        pad = 10
+        row_h = 34
+        header_h = 26
+        height = header_h + pad + max(len(llm_tasks), 1) * row_h + pad
+        right = c.Screen.WIDTH - 10
+        top = self.loading_indicator.rect.bottom + 6
+        panel = pygame.Rect(right - width, top, width, height)
+        widgets.draw_panel(self.screen, panel)
+
+        title = c.Fonts.button.render(f"LLM tasks ({len(llm_tasks)})", True, c.Colors.ACCENT)
+        self.screen.blit(title, (panel.x + pad, panel.y + pad))
+
+        y = panel.y + pad + header_h
+        for task in llm_tasks:
+            running = task["state"] == "running"
+            bullet = "●" if running else "○"
+            color = c.Colors.WHITE if running else c.Colors.BORDER
+            label = c.Fonts.small.render(f"{bullet} {task['category']}", True, color)
+            self.screen.blit(label, (panel.x + pad, y))
+
+            status = f"running  {task['elapsed']:.1f}s" if running else "queued"
+            status_surface = c.Fonts.small.render(status, True, c.Colors.BORDER)
+            self.screen.blit(status_surface, (panel.x + pad + 16, y + 15))
+            y += row_h
 
     def draw_offscreen_indicators(self, camera: Camera, items: List[Item], npcs: List[NPC], player: Player):
         margin = 30
