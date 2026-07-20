@@ -9,6 +9,7 @@ CONTROLS = [
     ("Shift", "Run"),
     ("Left Click", "Attack"),
     ("E", "Interact, talk, pick up"),
+    ("M", "Toggle menu buttons"),
     ("I", "Inventory"),
     ("Q", "Quests"),
     ("C", "Character"),

@@ -31,16 +31,22 @@ if TYPE_CHECKING:
 class GameRenderer:
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
+        # A single Menu button lives in the corner. The row of menu buttons is
+        # hidden by default and unfolds to its right when Menu is clicked, so the
+        # top of the screen stays clear. Toggled by self.show_hud_buttons.
+        self.menu_button_rect = pygame.Rect(10, 10, 110, 35)
+        self.show_hud_buttons = False
         # Grouped left to right: player panels, world info, system controls,
         # with an extra gap between each group so the bar reads as clusters.
-        self.inv_button_rect = pygame.Rect(10, 10, 120, 35)
-        self.quest_button_rect = pygame.Rect(140, 10, 120, 35)
-        self.stats_button_rect = pygame.Rect(270, 10, 120, 35)
+        # All shifted right to sit after the Menu button when expanded.
+        self.inv_button_rect = pygame.Rect(130, 10, 120, 35)
+        self.quest_button_rect = pygame.Rect(260, 10, 120, 35)
+        self.stats_button_rect = pygame.Rect(390, 10, 120, 35)
 
-        self.lore_button_rect = pygame.Rect(420, 10, 120, 35)
+        self.lore_button_rect = pygame.Rect(540, 10, 120, 35)
 
-        self.help_button_rect = pygame.Rect(570, 10, 120, 35)
-        self.pause_button_rect = pygame.Rect(700, 10, 120, 35)
+        self.help_button_rect = pygame.Rect(690, 10, 120, 35)
+        self.pause_button_rect = pygame.Rect(820, 10, 120, 35)
         self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
         # Toggled by clicking the loading indicator; lists the LLM's in-flight tasks.
         self.show_llm_tasks = False
@@ -104,12 +110,15 @@ class GameRenderer:
     def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player):
         active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
-        self._draw_button(self.inv_button_rect, "Inventory (I)", mouse_pos)
-        self._draw_button(self.quest_button_rect, "Quests (Q)", mouse_pos)
-        self._draw_button(self.stats_button_rect, "Character (C)", mouse_pos)
-        self._draw_button(self.lore_button_rect, "Lore (L)", mouse_pos)
-        self._draw_button(self.help_button_rect, "Help (H)", mouse_pos)
-        self._draw_button(self.pause_button_rect, "Pause (P)", mouse_pos)
+        menu_label = "Menu (M)" if not self.show_hud_buttons else "Close (M)"
+        self._draw_button(self.menu_button_rect, menu_label, mouse_pos)
+        if self.show_hud_buttons:
+            self._draw_button(self.inv_button_rect, "Inventory (I)", mouse_pos)
+            self._draw_button(self.quest_button_rect, "Quests (Q)", mouse_pos)
+            self._draw_button(self.stats_button_rect, "Character (C)", mouse_pos)
+            self._draw_button(self.lore_button_rect, "Lore (L)", mouse_pos)
+            self._draw_button(self.help_button_rect, "Help (H)", mouse_pos)
+            self._draw_button(self.pause_button_rect, "Pause (P)", mouse_pos)
 
         coins_text = f"Coins: {nb_coins}"
         objects_text = f"Items: {nb_items}"
