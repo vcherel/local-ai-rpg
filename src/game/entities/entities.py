@@ -45,9 +45,9 @@ class Entity:
             self.attack_progress = 0.0
             self.attack_hand = random.choice(["left", "right"])
 
-    def update_attack_anim(self, dt):
+    def update_attack_anim(self, dt, speed_mult=1.0):
         if self.attack_in_progress:
-            self.attack_progress += dt * c.Entities.SWING_SPEED
+            self.attack_progress += dt * c.Entities.SWING_SPEED * speed_mult
             if self.attack_progress >= 1.0:
                 self.attack_progress = 0.0
                 self.attack_in_progress = False

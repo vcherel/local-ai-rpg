@@ -32,8 +32,8 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/entities/npcs.py`: `NPC(Entity)`, tracks per-NPC `affinity` (LLM-judged relationship level, feeds dialogue tone/quest rewards/shop prices)
 - `src/game/entities/monsters.py`: `Monster(Entity)`, `pick_monster_kind` (spawn selection by distance from center)
 - `src/game/entities/buildings.py`: `Building`, `generate_buildings`, `set_active_buildings`, town layout and building placement
-- `src/game/entities/items.py`: `Item` (weapon/armor/accessory/ammo/misc, `is_ranged` for bows), rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
-- `src/game/entities/projectile.py`: `Projectile`, a fired arrow travelling in a straight line until it hits or runs out of range
+- `src/game/entities/items.py`: `Item` (weapon/armor/accessory/ammo/misc), rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
+- `src/game/entities/projectile.py`: `Projectile`, a fired arrow or magic bolt travelling in a straight line until it hits or runs out of range (`style`, `color`, `knockback`, `shake`)
 - `src/game/entities/stats.py`: `Stats` class, use-based character progression (xp, training, derived bonuses like attack/damage reduction/speed)
 
 ### llm
@@ -44,9 +44,9 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/llm/name_generator.py`: `NPCNameGenerator`, background-thread generation of NPC names ahead of time
 
 ### core
-- `src/core/constants.py`: all game constants (screen size, player stats, LLM hyperparameters, colours, fonts)
+- `src/core/constants.py`: all game constants (screen size, player stats, LLM hyperparameters, colours, fonts); `WeaponArchetype` per-family combat feel (reach/swing/damage/cooldown/knockback/crit/cleave/shake) resolved by `weapon_archetype(name)`, plus `Combat` tuning
 - `src/core/save.py`: `SaveSystem`, JSON save system (keys: `context`, `coins`, `name`)
-- `src/core/camera.py`: `Camera`, world to screen coordinate translation only
+- `src/core/camera.py`: `Camera`, world to screen coordinate translation; `ScreenShake`/`get_shake` global camera-shake state applied in the translation
 - `src/core/utils.py`: `ConversationHistory`, random color/coordinate helpers, `parse_shop_inventory` / `parse_response_quest_analysis` / `parse_response_affinity_analysis` (LLM response parsing)
 - `src/core/dialogue_log.py`: `write_conversation`, persists finished NPC conversations to Markdown files under `logs/dialogues/`
 - `src/core/llm_log.py`: `log_call`, appends every LLM generation (any category, streaming or not) as a JSON line to `logs/llm_calls.jsonl`, with prompts, response, duration, and token counts, for later quality/speed analysis

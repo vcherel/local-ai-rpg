@@ -5,8 +5,11 @@ import random
 import threading
 from typing import TYPE_CHECKING, List
 
+import pygame
+
 import core.constants as c
 from core.audio import play_sound
+from core.camera import get_shake
 from core.particles import get_particles
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.items import Item, roll_rarity
@@ -219,48 +222,160 @@ class World:
         quest_system: QuestSystem,
         monsters: List[Monster] = None,
         projectiles: List[Projectile] = None,
+        blocked=None,
     ):
         """`monsters` overrides the target list for an indoor fight; loot then goes straight to
-        the player instead of dropping a world item, since interior coordinates aren't outdoor ones."""
+        the player instead of dropping a world item, since interior coordinates aren't outdoor ones.
+        The weapon's archetype (constants.weapon_archetype) drives reach, damage, cadence, crit,
+        knockback and cleave, so different weapon families feel different to swing."""
         indoor = monsters is not None
         monster_list = monsters if indoor else self.monsters
         proj_list = projectiles if indoor else self.projectiles
+        if blocked is None:
+            blocked = self.blocked
 
         weapon = player.equipped_item("weapon")
-        if weapon is not None and weapon.is_ranged:
-            self._fire_arrow(player, proj_list)
+        arch = c.weapon_archetype(weapon.name if weapon else None)
+
+        if arch.ranged:
+            self._fire_ranged(player, proj_list, arch)
             return
+
+        now = pygame.time.get_ticks()
+        if now < player.attack_ready_ms:  # still on cooldown from the previous swing
+            return
+        player.attack_ready_ms = now + arch.cooldown_ms
+        player.attack_swing_mult = arch.swing_mult
 
         player.start_attack_anim()
         play_sound("attack")
-        pos = player.get_pos(c.Player.ATTACK_REACH)
 
-        attack_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
-        for monster in monster_list:
-            if monster.distance_to_point(pos) < c.Player.ATTACK_REACH + monster.kind.size // 2:
-                player.stats.train("strength", c.Stats.XP_PER_HIT)
-                self._resolve_monster_hit(monster, monster_list, attack_damage, player, quest_system, indoor)
-                return
+        reach = c.Player.ATTACK_REACH * arch.reach_mult
+        pos = player.get_pos(reach)
+        base_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
+
+        monster_targets = [m for m in monster_list if m.distance_to_point(pos) < hit_radius + m.kind.size // 2]
+        if monster_targets:
+            if not arch.cleave:
+                monster_targets = [min(monster_targets, key=lambda m: m.distance_to_point(pos))]
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            for monster in monster_targets:
+                self._strike_monster(monster, monster_list, base_damage, arch, player, quest_system, indoor, blocked)
+            return
 
         if indoor:
             return
 
-        for npc in self.npcs:
-            if npc.distance_to_point(pos) < c.Player.ATTACK_REACH + c.Entities.NPC_SIZE // 2:
-                player.stats.train("strength", c.Stats.XP_PER_HIT)
-                self._resolve_npc_hit(npc, attack_damage, quest_system)
-                return
+        npc_targets = [n for n in self.npcs if n.distance_to_point(pos) < hit_radius + c.Entities.NPC_SIZE // 2]
+        if npc_targets:
+            if not arch.cleave:
+                npc_targets = [min(npc_targets, key=lambda n: n.distance_to_point(pos))]
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            for npc in npc_targets:
+                self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
 
-    def _fire_arrow(self, player: Player, proj_list: List[Projectile]):
-        ammo = next((item for item in player.inventory if item.item_type == "ammo"), None)
-        if ammo is None:
+    def _fire_ranged(self, player: Player, proj_list: List[Projectile], arch: c.WeaponArchetype):
+        now = pygame.time.get_ticks()
+        if now < player.attack_ready_ms:
             return
-        player.inventory.remove(ammo)
+        if arch.uses_ammo:
+            ammo = next((item for item in player.inventory if item.item_type == "ammo"), None)
+            if ammo is None:
+                return
+            player.inventory.remove(ammo)
 
+        player.attack_ready_ms = now + arch.cooldown_ms
+        player.attack_swing_mult = arch.swing_mult
         player.start_attack_anim()
         play_sound("shoot")
-        damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
-        proj_list.append(Projectile(player.x, player.y, player.orientation, damage))
+
+        base_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        damage = max(1, int(round(base_damage * arch.damage_mult)))
+        if arch.name == "staff":
+            proj = Projectile(
+                player.x,
+                player.y,
+                player.orientation,
+                damage,
+                style="bolt",
+                color=(150, 90, 230),
+                knockback=arch.knockback,
+                shake=arch.shake,
+            )
+        else:
+            proj = Projectile(
+                player.x,
+                player.y,
+                player.orientation,
+                damage,
+                knockback=arch.knockback,
+                shake=arch.shake,
+            )
+        proj_list.append(proj)
+
+    def _roll_hit(self, base_damage: float, arch: c.WeaponArchetype) -> tuple[int, bool]:
+        """Apply the weapon's damage multiplier and roll for a crit."""
+        damage = base_damage * arch.damage_mult
+        crit = random.random() < arch.crit_chance
+        if crit:
+            damage *= c.Combat.CRIT_MULT
+        return max(1, int(round(damage))), crit
+
+    @staticmethod
+    def _dir_from(x0, y0, x1, y1):
+        """Unit vector from (x0,y0) toward (x1,y1), or None if they coincide."""
+        dx, dy = x1 - x0, y1 - y0
+        dist = math.hypot(dx, dy)
+        if dist == 0:
+            return None
+        return (dx / dist, dy / dist)
+
+    @staticmethod
+    def _knockback(target, radius, kb_dir, distance, blocked):
+        """Shove a target along kb_dir, sliding along walls one axis at a time."""
+        if not kb_dir or distance <= 0:
+            return
+        step_x, step_y = kb_dir[0] * distance, kb_dir[1] * distance
+        if blocked is not None and blocked(target.x + step_x, target.y, radius):
+            step_x = 0
+        target.x += step_x
+        if blocked is not None and blocked(target.x, target.y + step_y, radius):
+            step_y = 0
+        target.y += step_y
+
+    def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, indoor, blocked):
+        damage, crit = self._roll_hit(base_damage, arch)
+        shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
+        kb_dir = self._dir_from(player.x, player.y, monster.x, monster.y)
+        self._resolve_monster_hit(
+            monster,
+            monster_list,
+            damage,
+            player,
+            quest_system,
+            indoor,
+            crit=crit,
+            shake=shake,
+            knockback=arch.knockback,
+            kb_dir=kb_dir,
+            blocked=blocked,
+        )
+
+    def _strike_npc(self, npc, base_damage, arch, player, quest_system, blocked):
+        damage, crit = self._roll_hit(base_damage, arch)
+        shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
+        kb_dir = self._dir_from(player.x, player.y, npc.x, npc.y)
+        self._resolve_npc_hit(
+            npc,
+            damage,
+            quest_system,
+            crit=crit,
+            shake=shake,
+            knockback=arch.knockback,
+            kb_dir=kb_dir,
+            blocked=blocked,
+        )
 
     def _resolve_monster_hit(
         self,
@@ -270,8 +385,14 @@ class World:
         player: Player,
         quest_system: QuestSystem,
         indoor: bool,
+        crit: bool = False,
+        shake: float = 0.0,
+        knockback: float = 0.0,
+        kb_dir=None,
+        blocked=None,
     ) -> bool:
         """Applies damage to a monster and its kill rewards. Returns True if it died."""
+        get_shake().add(shake)
         if monster.receive_damage(damage):
             player.stats.train("vitality", c.Stats.XP_PER_KILL)
             play_sound("monster_death")
@@ -295,12 +416,23 @@ class World:
                     self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
             monster_list.remove(monster)
             return True
-        play_sound("hit")
-        get_particles().spawn_burst(monster.x, monster.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+        self._hit_feedback(monster.x, monster.y, crit)
+        self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
         return False
 
-    def _resolve_npc_hit(self, npc: NPC, damage: int, quest_system: QuestSystem) -> bool:
+    def _resolve_npc_hit(
+        self,
+        npc: NPC,
+        damage: int,
+        quest_system: QuestSystem,
+        crit: bool = False,
+        shake: float = 0.0,
+        knockback: float = 0.0,
+        kb_dir=None,
+        blocked=None,
+    ) -> bool:
         """Applies damage to an NPC and handles death. Returns True if it died."""
+        get_shake().add(shake)
         if npc.receive_damage(damage):
             stolen_item = quest_system.on_npc_killed(npc)
             if stolen_item is not None:
@@ -311,9 +443,24 @@ class World:
             get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5)
             self.npcs.remove(npc)
             return True
-        play_sound("hit")
-        get_particles().spawn_burst(npc.x, npc.y, (255, 180, 180), count=6, speed=3, life=300, size=3)
+        self._hit_feedback(npc.x, npc.y, crit)
+        self._knockback(npc, c.Entities.NPC_SIZE / 2, kb_dir, knockback, blocked)
         return False
+
+    @staticmethod
+    def _hit_feedback(x, y, crit: bool):
+        """Sound + particle burst for a non-fatal hit; crits read brighter and louder."""
+        play_sound("crit" if crit else "hit")
+        color = (255, 240, 160) if crit else (255, 180, 180)
+        get_particles().spawn_burst(
+            x,
+            y,
+            color,
+            count=12 if crit else 6,
+            speed=4 if crit else 3,
+            life=350 if crit else 300,
+            size=4 if crit else 3,
+        )
 
     def update_projectiles(
         self,
@@ -337,7 +484,19 @@ class World:
             )
             if hit_monster is not None:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
-                self._resolve_monster_hit(hit_monster, monster_list, proj.damage, player, quest_system, indoor)
+                kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
+                self._resolve_monster_hit(
+                    hit_monster,
+                    monster_list,
+                    proj.damage,
+                    player,
+                    quest_system,
+                    indoor,
+                    shake=proj.shake,
+                    knockback=proj.knockback,
+                    kb_dir=kb_dir,
+                    blocked=blocked,
+                )
                 proj_list.remove(proj)
                 continue
 
@@ -352,7 +511,16 @@ class World:
                 )
                 if hit_npc is not None:
                     player.stats.train("strength", c.Stats.XP_PER_HIT)
-                    self._resolve_npc_hit(hit_npc, proj.damage, quest_system)
+                    kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
+                    self._resolve_npc_hit(
+                        hit_npc,
+                        proj.damage,
+                        quest_system,
+                        shake=proj.shake,
+                        knockback=proj.knockback,
+                        kb_dir=kb_dir,
+                        blocked=blocked,
+                    )
                     proj_list.remove(proj)
 
     def pickup_item(self, player: Player):
