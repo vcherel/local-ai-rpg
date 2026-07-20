@@ -7,6 +7,7 @@ import pygame
 
 import core.constants as c
 from core.audio import play_sound
+from core.camera import get_shake
 from core.particles import get_particles
 from game.entities.entities import Entity
 from game.entities.stats import Stats
@@ -31,6 +32,11 @@ class Player(Entity):
         self.save_system: SaveSystem = save_system
         self.inventory = []
         self.coins = coins
+
+        # Earliest tick at which the next swing is allowed, and the current weapon's
+        # animation speed. Both are set by World.handle_attack.
+        self.attack_ready_ms = 0
+        self.attack_swing_mult = 1.0
 
         self.stats = Stats(save_system.load("stats", None))
         self.max_hp = self.stats.max_hp()
@@ -105,7 +111,7 @@ class Player(Entity):
         dy = mouse_y - c.Screen.ORIGIN_Y
         self.orientation = math.atan2(dx, -dy)
 
-        self.update_attack_anim(dt)
+        self.update_attack_anim(dt, self.attack_swing_mult)
 
         self.max_hp = self.stats.max_hp()
         if self.hp < self.max_hp:
@@ -183,6 +189,7 @@ class Player(Entity):
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
         get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4)
+        get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
 
     def draw(self, screen):
         super().draw(

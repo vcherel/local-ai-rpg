@@ -6,7 +6,7 @@ import pygame
 
 import core.constants as c
 from core.audio import play_sound
-from core.camera import Camera
+from core.camera import Camera, get_shake
 from core.particles import get_particles
 from game.entities.items import rarity_color
 from game.entities.player import Player
@@ -137,7 +137,9 @@ class Game:
                             self.pause_menu.toggle()
 
                         elif self.interior is None:
-                            self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
+                            self.world.handle_attack(
+                                self.player, self.dialogue_manager.quest_system, blocked=self.world.blocked
+                            )
 
                         else:
                             self.world.handle_attack(
@@ -145,6 +147,7 @@ class Game:
                                 self.dialogue_manager.quest_system,
                                 monsters=self.indoor_monsters,
                                 projectiles=self.indoor_projectiles,
+                                blocked=self.interior.interior_blocked,
                             )
 
                 if event.type == pygame.KEYDOWN:
@@ -355,6 +358,7 @@ class Game:
                     self.world.update(self.player, dt, self.dialogue_manager.quest_system, self.npc_name_generator)
                     self._check_building_entry()
                 self.update_camera()
+                get_shake().update(dt)
 
                 if self.interior is not None:
                     self.game_renderer.draw_interior(

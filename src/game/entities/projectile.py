@@ -14,13 +14,17 @@ if TYPE_CHECKING:
 class Projectile:
     """A fired arrow travelling in a straight line until it hits, hits a wall, or runs out of range."""
 
-    def __init__(self, x, y, angle, damage):
+    def __init__(self, x, y, angle, damage, style="arrow", color=(180, 140, 90), knockback=0.0, shake=0.0):
         self.x = x
         self.y = y
         self.angle = angle
         self.vx = math.sin(angle) * c.Projectile.SPEED
         self.vy = -math.cos(angle) * c.Projectile.SPEED
         self.damage = damage
+        self.style = style  # "arrow" or "bolt" (glowing magic orb)
+        self.color = color
+        self.knockback = knockback
+        self.shake = shake
         self.traveled = 0.0
         self.dead = False
 
@@ -45,8 +49,15 @@ class Projectile:
         else:
             x, y = self.x, self.y
 
+        if self.style == "bolt":
+            glow = pygame.Surface((16, 16), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*self.color, 90), (8, 8), 8)
+            screen.blit(glow, (x - 8, y - 8))
+            pygame.draw.circle(screen, self.color, (int(x), int(y)), 4)
+            return
+
         length = 16
         tail_x = x - math.sin(self.angle) * length
         tail_y = y + math.cos(self.angle) * length
         pygame.draw.line(screen, (90, 60, 30), (tail_x, tail_y), (x, y), 3)
-        pygame.draw.circle(screen, (180, 140, 90), (x, y), 2)
+        pygame.draw.circle(screen, self.color, (x, y), 2)

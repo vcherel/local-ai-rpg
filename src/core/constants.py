@@ -38,6 +38,79 @@ class Projectile:
 
 
 @dataclass(frozen=True)
+class Combat:
+    CRIT_MULT: float = 1.8
+    # Extra screen shake added on top of a weapon's base shake when a hit crits.
+    CRIT_SHAKE_BONUS: float = 6.0
+    PLAYER_HURT_SHAKE: float = 5.0
+    # Camera never shakes more than this, so heavy hits stay readable rather than nauseating.
+    MAX_SHAKE: float = 30.0
+    SHAKE_DECAY: float = 0.82  # per-60fps-frame multiplier
+
+
+@dataclass(frozen=True)
+class WeaponArchetype:
+    """Feel profile for a weapon family, resolved from the weapon name's keyword.
+
+    Multipliers apply to the base melee values (`Player.ATTACK_REACH/ATTACK_DAMAGE`,
+    `Entities.SWING_SPEED`). `shake` and `knockback` are in world pixels.
+    """
+
+    name: str
+    reach_mult: float
+    swing_mult: float  # >1 swings faster (cosmetic animation speed)
+    damage_mult: float
+    cooldown_ms: int  # minimum time between swings
+    knockback: float  # pixels the target is shoved on a hit
+    crit_chance: float
+    cleave: bool  # hit every target in the swing radius, not just the nearest
+    cleave_radius_mult: float  # widens the hit radius for cleave weapons
+    shake: float  # base screen shake on a hit
+    ranged: bool  # fires a projectile instead of swinging
+    uses_ammo: bool  # ranged weapons only: consume an ammo item per shot
+
+
+UNARMED = WeaponArchetype("unarmed", 1.0, 1.0, 1.0, 350, 8, 0.08, False, 1.0, 2.0, False, False)
+
+WEAPON_ARCHETYPES: dict[str, WeaponArchetype] = {
+    "dagger": WeaponArchetype("dagger", 0.8, 1.8, 0.7, 180, 4, 0.30, False, 1.0, 2.0, False, False),
+    "sword": WeaponArchetype("sword", 1.0, 1.0, 1.0, 350, 10, 0.12, True, 1.4, 4.0, False, False),
+    "axe": WeaponArchetype("axe", 1.05, 0.7, 1.25, 520, 14, 0.10, True, 1.8, 7.0, False, False),
+    "hammer": WeaponArchetype("hammer", 0.9, 0.55, 1.6, 620, 26, 0.05, False, 1.0, 14.0, False, False),
+    "spear": WeaponArchetype("spear", 1.8, 0.9, 0.95, 380, 8, 0.12, False, 1.0, 4.0, False, False),
+    "staff": WeaponArchetype("staff", 1.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False),
+    "bow": WeaponArchetype("bow", 1.0, 1.0, 1.0, 400, 4, 0.10, False, 1.0, 1.0, True, True),
+}
+
+# Weapon-name keyword -> archetype key. Keywords mirror items.WEAPON_KEYWORDS.
+_KEYWORD_TO_ARCHETYPE = {
+    "dagger": "dagger",
+    "knife": "dagger",
+    "sword": "sword",
+    "blade": "sword",
+    "axe": "axe",
+    "club": "hammer",
+    "mace": "hammer",
+    "hammer": "hammer",
+    "spear": "spear",
+    "lance": "spear",
+    "staff": "staff",
+    "bow": "bow",
+}
+
+
+def weapon_archetype(name: str | None) -> WeaponArchetype:
+    """Resolve a weapon name to its feel profile; generic/unknown weapons swing like a sword."""
+    if not name:
+        return UNARMED
+    lower = name.lower()
+    for keyword, key in _KEYWORD_TO_ARCHETYPE.items():
+        if keyword in lower:
+            return WEAPON_ARCHETYPES[key]
+    return WEAPON_ARCHETYPES["sword"]
+
+
+@dataclass(frozen=True)
 class MonsterKind:
     name: str
     color: tuple

@@ -27,8 +27,6 @@ WEAPON_KEYWORDS = {
     "lance",
     "hammer",
 }
-# Weapons whose name matches this fire a projectile instead of swinging in melee.
-RANGED_WEAPON_KEYWORDS = {"bow"}
 AMMO_KEYWORDS = {"arrow", "bolt"}
 ARMOR_KEYWORDS = {
     "shield",
@@ -146,12 +144,6 @@ class Item:
             self.color = random_color()
             self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
         self.picked_up = False
-
-    @property
-    def is_ranged(self) -> bool:
-        """A weapon that fires a projectile instead of swinging in melee."""
-        lower = self.name.lower()
-        return self.item_type == "weapon" and any(kw in lower for kw in RANGED_WEAPON_KEYWORDS)
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
