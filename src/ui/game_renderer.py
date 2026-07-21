@@ -79,6 +79,10 @@ class GameRenderer:
             if self._on_screen(camera, monster.x, monster.y):
                 monster.draw(self.screen, camera)
 
+        for boss in world.bosses:
+            if self._on_screen(camera, boss.x, boss.y, margin=boss.kind.size + c.Boss.SLAM_RADIUS):
+                boss.draw(self.screen, camera)
+
         for item in (i for i in world.items if not i.picked_up):
             if self._on_screen(camera, item.x, item.y):
                 item.draw(self.screen, camera)
@@ -90,7 +94,8 @@ class GameRenderer:
 
         player.draw(self.screen)
 
-        self.draw_offscreen_indicators(camera, world.items, world.npcs, player)
+        self.draw_offscreen_indicators(camera, world.items, world.npcs, player, world.bosses)
+        self.draw_boss_bar(world, player)
 
     def draw_interior(
         self, camera: Camera, building, player: Player, monsters: List[Monster], projectiles: List[Projectile] = ()
@@ -188,7 +193,29 @@ class GameRenderer:
             self.screen.blit(status_surface, (panel.x + pad + 16, y + 15))
             y += row_h
 
-    def draw_offscreen_indicators(self, camera: Camera, items: List[Item], npcs: List[NPC], player: Player):
+    def draw_boss_bar(self, world: World, player: Player):
+        """A wide health bar pinned near the top of the screen for the nearest engaged boss."""
+        active = [b for b in world.bosses if b.distance_to_point((player.x, player.y)) <= c.Boss.AGGRO_RANGE]
+        if not active:
+            return
+        boss = min(active, key=lambda b: b.distance_to_point((player.x, player.y)))
+
+        width, height = c.Boss.BAR_WIDTH, c.Boss.BAR_HEIGHT
+        x = (c.Screen.WIDTH - width) // 2
+        y = c.Boss.BAR_TOP
+        fill_color = c.Colors.BOSS_BAR_ENRAGED if boss.enraged else c.Colors.BOSS_BAR
+        ratio = max(boss.hp / boss.max_hp, 0)
+
+        pygame.draw.rect(self.screen, c.Colors.MENU_BACKGROUND, (x - 3, y - 3, width + 6, height + 6))
+        pygame.draw.rect(self.screen, (20, 20, 24), (x, y, width, height))
+        pygame.draw.rect(self.screen, fill_color, (x, y, int(width * ratio), height))
+        pygame.draw.rect(self.screen, c.Colors.BORDER, (x, y, width, height), 2)
+
+        label = boss.display_name + ("  [ENRAGED]" if boss.enraged else "")
+        name_surface = c.Fonts.button.render(label, True, c.Colors.WHITE)
+        self.screen.blit(name_surface, ((c.Screen.WIDTH - name_surface.get_width()) // 2, y - 26))
+
+    def draw_offscreen_indicators(self, camera: Camera, items: List[Item], npcs: List[NPC], player: Player, bosses=()):
         margin = 30
         arrow_size = 32
 
@@ -238,6 +265,10 @@ class GameRenderer:
         for npc in npcs:
             if npc.has_active_quest and npc.quest.item in player.inventory:
                 draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
+
+        # Bosses are always worth pointing to, wherever they are.
+        for boss in bosses:
+            draw_arrow(boss.x, boss.y, c.Colors.BOSS_BAR_ENRAGED)
 
     def draw_fps(self, fps):
         fps_text = c.Fonts.small.render(f"FPS: {int(fps)}", True, c.Colors.MENU_BACKGROUND)
