@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 class Projectile:
     """A fired arrow travelling in a straight line until it hits, hits a wall, or runs out of range."""
 
-    def __init__(self, x, y, angle, damage, style="arrow", color=(180, 140, 90), knockback=0.0, shake=0.0):
+    def __init__(
+        self, x, y, angle, damage, style="arrow", color=(180, 140, 90), knockback=0.0, shake=0.0, hostile=False
+    ):
         self.x = x
         self.y = y
         self.angle = angle
@@ -25,6 +27,8 @@ class Projectile:
         self.color = color
         self.knockback = knockback
         self.shake = shake
+        # Player arrows/bolts hit monsters and NPCs; a boss's bolts are hostile and hit the player.
+        self.hostile = hostile
         self.traveled = 0.0
         self.dead = False
 

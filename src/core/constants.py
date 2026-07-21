@@ -138,6 +138,118 @@ MONSTER_MAX_SIZE: int = max(kind.size for kind in MONSTER_KINDS)
 
 
 @dataclass(frozen=True)
+class BossKind:
+    """Template for a boss archetype. The LLM fills in the name/title at spawn; these
+    fields fix the stats, look and which special abilities the boss can use."""
+
+    archetype: str  # "brute" | "warlock" | "colossus"
+    color: tuple
+    aura: tuple  # glow ring color behind the body
+    size: int
+    hp: int
+    speed: float
+    attack_range: int
+    damage: int
+    # Any of ("slam", "volley", "summon"); one is rolled each time the ability cooldown fires.
+    abilities: tuple
+    summon_kind: str  # MonsterKind name spawned as adds by the "summon" ability
+    flavor: str  # short hint fed to the LLM when it names this boss
+
+
+# The three boss archetypes. Stats sit well above the toughest normal monster (Troll, 60 hp)
+# so a boss is a real fight, not just a big monster.
+BOSS_KINDS: tuple[BossKind, ...] = (
+    BossKind(
+        "brute",
+        (170, 45, 45),
+        (255, 110, 60),
+        60,
+        320,
+        3.2,
+        22,
+        26,
+        abilities=("slam", "summon"),
+        summon_kind="Bandit",
+        flavor="a towering brute that crushes any who come near",
+    ),
+    BossKind(
+        "warlock",
+        (120, 60, 195),
+        (185, 120, 255),
+        52,
+        240,
+        3.6,
+        22,
+        18,
+        abilities=("volley", "summon"),
+        summon_kind="Wolf",
+        flavor="a dark sorcerer that hurls bolts of ruinous energy",
+    ),
+    BossKind(
+        "colossus",
+        (95, 115, 90),
+        (150, 225, 150),
+        74,
+        460,
+        2.4,
+        26,
+        34,
+        abilities=("slam",),
+        summon_kind="Troll",
+        flavor="an ancient stone colossus, slow but earth-shattering",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class Boss:
+    # A boss only chases and uses abilities within this range; farther out it idles.
+    AGGRO_RANGE: int = 700
+
+    # Second phase: when HP drops below this fraction the boss enrages (faster, hits harder).
+    ENRAGE_HP_RATIO: float = 0.5
+    ENRAGE_SPEED_MULT: float = 1.5
+    ENRAGE_COOLDOWN_MULT: float = 0.6  # abilities come faster when enraged
+    ENRAGE_DAMAGE_MULT: float = 1.3
+
+    # Special abilities fire on this cooldown (ms), randomised within the range.
+    ABILITY_COOLDOWN_RANGE_MS: tuple = (4500, 7000)
+
+    # Slam: a telegraphed ground pound. Warns for TELEGRAPH_MS, then damages anyone
+    # still within RADIUS of the boss.
+    SLAM_TELEGRAPH_MS: int = 700
+    SLAM_RADIUS: int = 190
+    SLAM_DAMAGE: int = 24
+    SLAM_SHAKE: float = 22.0
+
+    # Volley: a fan of hostile bolts aimed at the player.
+    VOLLEY_COUNT: int = 5
+    VOLLEY_SPREAD_DEG: float = 44.0
+    VOLLEY_DAMAGE: int = 14
+
+    # Summon: adds spawned in a ring around the boss.
+    SUMMON_COUNT: int = 3
+    SUMMON_RADIUS: int = 170
+
+    # A slain boss always drops a lootbox of this rarity, on top of the usual roll.
+    REWARD_RARITY: str = "legendary"
+
+    # No more than this many bosses exist at once (the landmark guardian counts).
+    MAX_ACTIVE: int = 3
+    # Wandering far from the world center can spawn a roaming boss, rolled on this cadence.
+    ROAM_MIN_DISTANCE: int = 3500
+    ROAM_CHECK_INTERVAL_MS: int = 45_000
+    ROAM_CHANCE: float = 0.25
+    ROAM_SPAWN_MIN_DIST: int = 900
+    ROAM_SPAWN_MAX_DIST: int = 1400
+
+    # Health-bar geometry, pinned near the top of the screen (screen space).
+    BAR_WIDTH: int = 620
+    BAR_HEIGHT: int = 26
+    BAR_TOP: int = 72
+
+
+@dataclass(frozen=True)
 class Entities:
     NPC_SIZE: int = 30
     ITEM_SIZE: int = 25
@@ -195,6 +307,10 @@ class Events:
     WEIGHT_RUMOR: int = 5
     WEIGHT_PROPHETIC_RUMOR: int = 2
     WEIGHT_CRISIS: int = 3
+    WEIGHT_BOSS: int = 2
+
+    BOSS_EVENT_MIN_DIST: int = 800
+    BOSS_EVENT_MAX_DIST: int = 1200
 
     # Chance a treasure or blood night is preceded by a short lore warning instead of striking instantly.
     PRESAGE_CHANCE: float = 0.5
@@ -359,6 +475,10 @@ class Colors:
     WHITE: tuple = (255, 255, 255)
     YELLOW: tuple = (255, 255, 0)
     CYAN: tuple = (0, 255, 255)
+
+    # Boss health bar: deep crimson, turning to a hotter orange-red once the boss enrages.
+    BOSS_BAR: tuple = (150, 30, 40)
+    BOSS_BAR_ENRAGED: tuple = (235, 80, 30)
 
     PLAYER: tuple = (255, 200, 160)
     MERCHANT: tuple = (220, 170, 50)

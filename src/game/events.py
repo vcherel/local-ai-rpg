@@ -63,6 +63,8 @@ class EventSystem:
             kinds.append(("merchant", c.Events.WEIGHT_MERCHANT))
         if not self.blood_night_active:
             kinds.append(("blood_night", c.Events.WEIGHT_BLOOD_NIGHT))
+        if len(self.world.bosses) < c.Boss.MAX_ACTIVE:
+            kinds.append(("boss", c.Events.WEIGHT_BOSS))
 
         kind = random.choices([k for k, _ in kinds], weights=[w for _, w in kinds])[0]
 
@@ -78,6 +80,11 @@ class EventSystem:
                 threading.Thread(target=self._blood_night_with_presage, daemon=True).start()
             else:
                 self._start_blood_night()
+        elif kind == "boss":
+            if random.random() < c.Events.PRESAGE_CHANCE:
+                threading.Thread(target=self._boss_event_with_presage, args=(player,), daemon=True).start()
+            else:
+                self._spawn_boss_event(player)
         elif kind == "rumor":
             threading.Thread(target=self._generate_rumor, daemon=True).start()
         elif kind == "prophetic_rumor":
@@ -159,6 +166,26 @@ class EventSystem:
         self.notify(text or "Something dark is coming with the night...", c.Colors.RED)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
         self._start_blood_night()
+
+    # ------------------------------------------------------------------ boss
+
+    def _spawn_boss_event(self, player: Player, message: str = None):
+        if len(self.world.bosses) >= c.Boss.MAX_ACTIVE:
+            return
+        pos = self._point_near_player(
+            player, c.Events.BOSS_EVENT_MIN_DIST, c.Events.BOSS_EVENT_MAX_DIST, c.MONSTER_MAX_SIZE
+        )
+        if pos is None:
+            return
+        self.world.spawn_boss(*pos, announce=message or "A monstrous presence, {name}, stirs nearby")
+
+    def _boss_event_with_presage(self, player: Player):
+        text = self._generate_lore_line(
+            "In one short ominous sentence, warn that a terrible beast or boss is about to rise nearby."
+        )
+        self.notify(text or "The ground trembles with something monstrous...", c.Colors.BOSS_BAR)
+        time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
+        self._spawn_boss_event(player, "{name} has risen, and it hungers")
 
     # ------------------------------------------------------------------ rumors
 

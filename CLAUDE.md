@@ -21,9 +21,9 @@ One line per file. Update this when adding, removing, or substantially repurposi
 
 ### game
 - `src/game/game.py`: `Game` class, main loop, input handling, state orchestration
-- `src/game/world.py`: `World` class, world entities (NPCs, monsters, items), AI context generation
+- `src/game/world.py`: `World` class, world entities (NPCs, monsters, bosses, items), AI context generation, boss spawning (landmark guardian, roaming, quest) and per-frame boss updates
 - `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis)
-- `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen types), to_dict/from_dict (de)serialisation
+- `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss types), to_dict/from_dict (de)serialisation
 - `src/game/loot.py`: `open_lootbox`, rolls coins/item from a lootbox rarity
 
 ### game/entities
@@ -31,9 +31,10 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/entities/player.py`: `Player(Entity)`, movement, inventory, equipment slots
 - `src/game/entities/npcs.py`: `NPC(Entity)`, tracks per-NPC `affinity` (LLM-judged relationship level, feeds dialogue tone/quest rewards/shop prices)
 - `src/game/entities/monsters.py`: `Monster(Entity)`, `pick_monster_kind` (spawn selection by distance from center)
+- `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam AoE, hostile bolt volley, summon adds), knockback immune; spawned at the landmark, by roaming, by events and by slay_boss quests
 - `src/game/entities/buildings.py`: `Building`, `generate_buildings`, `set_active_buildings`, town layout and building placement
 - `src/game/entities/items.py`: `Item` (weapon/armor/accessory/ammo/misc), rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
-- `src/game/entities/projectile.py`: `Projectile`, a fired arrow or magic bolt travelling in a straight line until it hits or runs out of range (`style`, `color`, `knockback`, `shake`)
+- `src/game/entities/projectile.py`: `Projectile`, a fired arrow or magic bolt travelling in a straight line until it hits or runs out of range (`style`, `color`, `knockback`, `shake`, `hostile` for boss bolts that damage the player)
 - `src/game/entities/stats.py`: `Stats` class, use-based character progression (xp, training, derived bonuses like attack/damage reduction/speed)
 
 ### llm
@@ -44,7 +45,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/llm/name_generator.py`: `NPCNameGenerator`, background-thread generation of NPC names ahead of time
 
 ### core
-- `src/core/constants.py`: all game constants (screen size, player stats, LLM hyperparameters, colours, fonts); `WeaponArchetype` per-family combat feel (reach/swing/damage/cooldown/knockback/crit/cleave/shake) resolved by `weapon_archetype(name)`, plus `Combat` tuning
+- `src/core/constants.py`: all game constants (screen size, player stats, LLM hyperparameters, colours, fonts); `WeaponArchetype` per-family combat feel (reach/swing/damage/cooldown/knockback/crit/cleave/shake) resolved by `weapon_archetype(name)`, plus `Combat` tuning; `BossKind`/`BOSS_KINDS` archetype templates (brute/warlock/colossus) and `Boss` tuning (enrage, abilities, rewards, spawn caps, health bar)
 - `src/core/save.py`: `SaveSystem`, JSON save system (keys: `context`, `coins`, `name`)
 - `src/core/camera.py`: `Camera`, world to screen coordinate translation; `ScreenShake`/`get_shake` global camera-shake state applied in the translation
 - `src/core/utils.py`: `ConversationHistory`, random color/coordinate helpers, `parse_shop_inventory` / `parse_response_quest_analysis` / `parse_response_affinity_analysis` (LLM response parsing)

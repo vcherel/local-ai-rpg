@@ -11,6 +11,7 @@ import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
 from core.particles import get_particles
+from game.entities.boss import Boss
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.items import Item, roll_rarity
 from game.entities.monsters import Monster, pick_monster_kind
@@ -38,13 +39,18 @@ class World:
         self.items: List[Item] = []
         self.npcs: List[NPC] = []
         self.monsters: List[Monster] = []
+        # Named, multi-phase bosses. Kept apart from monsters: they never despawn, don't
+        # count toward the monster cap, and get their own update, health bar and rewards.
+        self.bosses: List[Boss] = []
         self.buildings: List[Building] = []
         # Arrows in flight; transient like particles, never saved.
         self.projectiles: List[Projectile] = []
         self.respawn_timer = 0.0
+        self.boss_roam_timer = 0.0
 
         self.save_system = save_system
         self.context_window = context_window
+        self.notify = notify
         self.context = self.save_system.load("context", None)
         self.events = EventSystem(self, notify)
 
@@ -62,6 +68,7 @@ class World:
             self.monsters = [
                 self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
             ]
+            self._spawn_landmark_boss()
         set_active_buildings(self.buildings)
 
         if self.context is None:
@@ -108,6 +115,7 @@ class World:
         items_by_id = {item.id: item for item in self.items}
         self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
         self.monsters = [Monster.from_dict(d) for d in self.save_system.load("monsters", [])]
+        self.bosses = [Boss.from_dict(d) for d in self.save_system.load("bosses", [])]
 
     def serialize(self) -> dict:
         # A wandering merchant is a transient event; drop it rather than saving it as permanent.
@@ -116,6 +124,7 @@ class World:
             "items": [item.to_dict() for item in self.items],
             "npcs": [npc.to_dict() for npc in npcs],
             "monsters": [monster.to_dict() for monster in self.monsters],
+            "bosses": [boss.to_dict() for boss in self.bosses],
             "buildings": [building.to_dict() for building in self.buildings],
         }
 
@@ -178,6 +187,8 @@ class World:
         for npc in self.npcs:
             if npc.is_merchant:
                 threading.Thread(target=self.generate_merchant_shop, args=(npc,), daemon=True).start()
+        for boss in self.bosses:
+            threading.Thread(target=self._generate_boss_identity, args=(boss, None), daemon=True).start()
         self._start_landmark_naming()
 
     def _start_landmark_naming(self):
@@ -193,6 +204,70 @@ class World:
         name = name.strip().strip('"').strip(".")
         if name:
             landmark.name = " ".join(name.split()[:5])
+
+    # ------------------------------------------------------------------ bosses
+
+    def spawn_boss(self, x, y, template: c.BossKind = None, quest_tag: str = None, announce: str = None) -> Boss:
+        """Create a boss, register it, and kick off LLM naming. `announce`, if given, is a
+        message template shown once the name is ready (use '{name}' for the boss's name)."""
+        boss = Boss(x, y, template or random.choice(c.BOSS_KINDS), quest_tag=quest_tag)
+        self.bosses.append(boss)
+        if self.context:
+            threading.Thread(target=self._generate_boss_identity, args=(boss, announce), daemon=True).start()
+        return boss
+
+    def _spawn_landmark_boss(self):
+        """A guardian waits at the ruined landmark from the very first world. It's named
+        later, once the world context has finished generating."""
+        landmark = next((b for b in self.buildings if b.kind == "landmark"), None)
+        if landmark is None:
+            return
+        self.spawn_boss(landmark.x, landmark.y + landmark.h / 2 + 90)
+
+    def spawn_boss_for_quest(self) -> Boss:
+        """Spawn a boss out in the dangerous outer ring as a quest hunt target."""
+        center = c.World.WORLD_SIZE // 2
+        for _ in range(20):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(c.Boss.ROAM_MIN_DISTANCE, c.World.WORLD_SIZE // 2)
+            x = center + math.cos(angle) * dist
+            y = center + math.sin(angle) * dist
+            if (
+                0 <= x <= c.World.WORLD_SIZE
+                and 0 <= y <= c.World.WORLD_SIZE
+                and not self.blocked(x, y, c.MONSTER_MAX_SIZE)
+            ):
+                break
+        tag = f"quest_boss_{random.randint(1000, 9999)}"
+        return self.spawn_boss(x, y, quest_tag=tag)
+
+    def _generate_boss_identity(self, boss: Boss, announce: str = None):
+        system_prompt = (
+            "You name bosses for a dark fantasy RPG. Reply with only the name, optionally as "
+            "'Name, the Epithet'. No quotes, no other text."
+        )
+        prompt = f"World: {self.context}\nName {boss.template.flavor}. 2 to 5 words."
+        text = generate_response_queued(prompt, system_prompt, "Boss naming") or ""
+        boss.set_identity(text)
+        if announce and self.notify:
+            self.notify(announce.format(name=boss.name), c.Colors.BOSS_BAR)
+
+    def _maybe_spawn_roaming_boss(self, player: Player):
+        if len(self.bosses) >= c.Boss.MAX_ACTIVE:
+            return
+        center = c.World.WORLD_SIZE // 2
+        if math.hypot(player.x - center, player.y - center) < c.Boss.ROAM_MIN_DISTANCE:
+            return
+        if random.random() > c.Boss.ROAM_CHANCE:
+            return
+        for _ in range(10):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(c.Boss.ROAM_SPAWN_MIN_DIST, c.Boss.ROAM_SPAWN_MAX_DIST)
+            x = player.x + math.cos(angle) * dist
+            y = player.y + math.sin(angle) * dist
+            if not self.blocked(x, y, c.MONSTER_MAX_SIZE):
+                self.spawn_boss(x, y, announce="A roaming terror, {name}, prowls the wilds")
+                return
 
     def generate_merchant_shop(self, merchant: NPC):
         from llm.merchant_system import generate_shop_inventory
@@ -254,6 +329,17 @@ class World:
         pos = player.get_pos(reach)
         base_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
+
+        # Bosses live outdoors only, and a swing that reaches one should always land on it.
+        if not indoor and self.bosses:
+            boss_targets = [b for b in self.bosses if b.distance_to_point(pos) < hit_radius + b.kind.size // 2]
+            if boss_targets:
+                if not arch.cleave:
+                    boss_targets = [min(boss_targets, key=lambda b: b.distance_to_point(pos))]
+                player.stats.train("strength", c.Stats.XP_PER_HIT)
+                for boss in boss_targets:
+                    self._strike_monster(boss, self.bosses, base_damage, arch, player, quest_system, False, blocked)
+                return
 
         monster_targets = [m for m in monster_list if m.distance_to_point(pos) < hit_radius + m.kind.size // 2]
         if monster_targets:
@@ -396,6 +482,10 @@ class World:
         if monster.receive_damage(damage):
             player.stats.train("vitality", c.Stats.XP_PER_KILL)
             play_sound("monster_death")
+            if isinstance(monster, Boss):
+                self._on_boss_killed(monster, quest_system)
+                monster_list.remove(monster)
+                return True
             get_particles().spawn_burst(monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5)
             quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
             if quest_item is not None:
@@ -417,8 +507,20 @@ class World:
             monster_list.remove(monster)
             return True
         self._hit_feedback(monster.x, monster.y, crit)
-        self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
+        if not getattr(monster, "knockback_immune", False):
+            self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
         return False
+
+    def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem):
+        """A boss dies with extra spectacle and a guaranteed legendary lootbox."""
+        get_particles().spawn_burst(boss.x, boss.y, boss.template.aura, count=40, speed=10, life=800, size=7)
+        get_shake().add(c.Boss.SLAM_SHAKE)
+        quest_system.on_boss_killed(boss)
+        reward = Item(boss.x, boss.y, "Lootbox", "lootbox")
+        reward.rarity = c.Boss.REWARD_RARITY
+        self.items.append(reward)
+        if self.notify:
+            self.notify(f"{boss.name} has been slain!", c.Colors.BOSS_BAR_ENRAGED)
 
     def _resolve_npc_hit(
         self,
@@ -478,6 +580,14 @@ class World:
                 proj_list.remove(proj)
                 continue
 
+            # A boss's bolts fly past monsters and NPCs and only threaten the player.
+            if proj.hostile:
+                if not indoor and proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
+                    player.receive_damage(proj.damage)
+                    get_shake().add(proj.shake)
+                    proj_list.remove(proj)
+                continue
+
             hit_monster = next(
                 (m for m in monster_list if proj.distance_to_point((m.x, m.y)) < c.Projectile.SIZE + m.kind.size // 2),
                 None,
@@ -499,6 +609,33 @@ class World:
                 )
                 proj_list.remove(proj)
                 continue
+
+            if not indoor and self.bosses:
+                hit_boss = next(
+                    (
+                        b
+                        for b in self.bosses
+                        if proj.distance_to_point((b.x, b.y)) < c.Projectile.SIZE + b.kind.size // 2
+                    ),
+                    None,
+                )
+                if hit_boss is not None:
+                    player.stats.train("strength", c.Stats.XP_PER_HIT)
+                    kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
+                    self._resolve_monster_hit(
+                        hit_boss,
+                        self.bosses,
+                        proj.damage,
+                        player,
+                        quest_system,
+                        False,
+                        shake=proj.shake,
+                        knockback=proj.knockback,
+                        kb_dir=kb_dir,
+                        blocked=blocked,
+                    )
+                    proj_list.remove(proj)
+                    continue
 
             if not indoor:
                 hit_npc = next(
@@ -552,6 +689,15 @@ class World:
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         self.monsters = [m for m in self.monsters if m.distance_to_point(player.get_pos()) <= c.World.DESPAWN_DISTANCE]
+
+        # Bosses never despawn; they chase, cast and enrage on their own schedule.
+        for boss in list(self.bosses):
+            boss.update_boss(self, player, dt, quest_system)
+
+        self.boss_roam_timer += dt
+        if self.boss_roam_timer >= c.Boss.ROAM_CHECK_INTERVAL_MS:
+            self.boss_roam_timer = 0.0
+            self._maybe_spawn_roaming_boss(player)
 
         self.update_projectiles(self.projectiles, self.monsters, player, quest_system, dt, self.blocked)
 

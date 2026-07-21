@@ -17,8 +17,9 @@ class Quest:
     reward_coins: int = 0
     reward_item_name: str = ""
     # "fetch" (bring back item_name), "kill_mob" (kill kill_count of target_monster_kind),
-    # "loot_mob" (kill target_monster_kind until item_name drops), or "recover_stolen"
-    # (item_name is held by the NPC named thief_npc_name until they're defeated).
+    # "loot_mob" (kill target_monster_kind until item_name drops), "recover_stolen"
+    # (item_name is held by the NPC named thief_npc_name until they're defeated), or
+    # "slay_boss" (defeat the boss whose quest_tag equals target_monster_kind).
     quest_type: str = "fetch"
     target_monster_kind: str = ""
     kill_count: int = 0

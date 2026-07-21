@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
 
-QUEST_TYPES = ("fetch", "kill_mob", "loot_mob", "recover_stolen")
+QUEST_TYPES = ("fetch", "kill_mob", "loot_mob", "recover_stolen", "slay_boss")
 
 
 class QuestSystem:
@@ -25,6 +25,8 @@ class QuestSystem:
         self.player: Player = player
         self.npcs: List[NPC] = npcs
         self.active_quests: List[Quest] = []
+        # Set by Game once the world exists; slay_boss quests need it to spawn the boss.
+        self.world = None
 
     @staticmethod
     def _strip_article(name: str) -> str:
@@ -51,12 +53,13 @@ class QuestSystem:
             "fetch (bring back a specific item), "
             "kill_mob (kill a number of a kind of monster or creature), "
             "loot_mob (kill monsters of a kind until a specific item drops from them), "
-            "recover_stolen (recover a specific item that was stolen from the NPC by someone else). "
+            "recover_stolen (recover a specific item that was stolen from the NPC by someone else), "
+            "slay_boss (defeat a single powerful named boss, beast or warlord terrorizing the area). "
             "Reply ONLY with valid JSON, with no extra text."
         )
 
         json_format = (
-            '{"has_quest": true/false, "quest_type": "fetch/kill_mob/loot_mob/recover_stolen",'
+            '{"has_quest": true/false, "quest_type": "fetch/kill_mob/loot_mob/recover_stolen/slay_boss",'
             ' "quest_description": "short description",'
             ' "item_name": "item to fetch, loot or recover, empty for kill_mob",'
             ' "monster_hint": "kind of monster or creature involved, empty for fetch/recover_stolen",'
@@ -123,6 +126,22 @@ class QuestSystem:
                 reward_item_name=reward_item_name,
             )
 
+        elif quest_type == "slay_boss":
+            # No world reference means we can't place the boss; drop the quest rather than
+            # leave an untargetable objective.
+            if self.world is None:
+                return
+            boss = self.world.spawn_boss_for_quest()
+            quest = Quest(
+                npc_name=npc.name,
+                description=description,
+                item_name="",
+                quest_type="slay_boss",
+                target_monster_kind=boss.quest_tag,
+                kill_count=1,
+                reward_item_name=reward_item_name,
+            )
+
         elif quest_type == "recover_stolen":
             if not quest_info.get("item_name"):
                 return
@@ -172,6 +191,12 @@ class QuestSystem:
                 dropped_item = Item(x, y, quest.item_name)
                 quest.item = dropped_item
         return dropped_item
+
+    def on_boss_killed(self, boss) -> None:
+        """Complete the objective of any slay_boss quest targeting this boss."""
+        for quest in self.active_quests:
+            if quest.quest_type == "slay_boss" and quest.target_monster_kind == boss.quest_tag:
+                quest.kills_done = quest.kill_count
 
     def on_npc_killed(self, npc: NPC) -> Optional[Item]:
         """Drop the stolen item this NPC was carrying, if they're the thief of an active quest."""
@@ -242,7 +267,7 @@ class QuestSystem:
         if not quest:
             return
 
-        if quest.quest_type == "kill_mob":
+        if quest.quest_type in ("kill_mob", "slay_boss"):
             if quest.kills_done < quest.kill_count:
                 return
         else:

@@ -94,7 +94,12 @@ class DialogueManager:
         if npc.has_active_quest:
             quest = npc.quest
             if quest_complete:
-                if quest.quest_type == "kill_mob":
+                if quest.quest_type == "slay_boss":
+                    system_prompt += (
+                        f"The player has just slain the boss you asked them to defeat ({quest.description}). "
+                        f"Thank them and give them their reward"
+                    )
+                elif quest.quest_type == "kill_mob":
                     system_prompt += (
                         f"The player has just killed the {quest.kill_count} {quest.target_monster_kind}(s) "
                         f"you asked for ({quest.description}). Thank them and give them their reward"
@@ -109,6 +114,13 @@ class DialogueManager:
                 else:
                     system_prompt += " in coins"
                 system_prompt += ". "
+            elif quest.quest_type == "slay_boss":
+                system_prompt += (
+                    f"You asked the player to slay a powerful boss terrorizing the area ({quest.description}). "
+                )
+                if quest.reward_item_name:
+                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
+                system_prompt += "They have not defeated it yet. "
             elif quest.quest_type == "kill_mob":
                 system_prompt += f"You asked the player to kill {quest.kill_count} {quest.target_monster_kind}(s). "
                 if quest.reward_item_name:
@@ -148,7 +160,7 @@ class DialogueManager:
         quest_complete = False
         if npc.has_active_quest:
             quest = npc.quest
-            if quest.quest_type == "kill_mob":
+            if quest.quest_type in ("kill_mob", "slay_boss"):
                 quest_complete = quest.kills_done >= quest.kill_count
             else:
                 quest_complete = quest.item in self.quest_system.player.inventory

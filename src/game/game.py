@@ -53,6 +53,8 @@ class Game:
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
 
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
+        # slay_boss quests spawn their target through the world.
+        self.dialogue_manager.quest_system.world = self.world
         self.npc_name_generator = NPCNameGenerator(self.save_system)
         self.active_menu = False
 
@@ -333,6 +335,7 @@ class Game:
         self.save_system.update("items", world_state["items"])
         self.save_system.update("npcs", world_state["npcs"])
         self.save_system.update("monsters", monsters)
+        self.save_system.update("bosses", world_state["bosses"])
         self.save_system.update("buildings", world_state["buildings"])
 
         self.save_system.save_all()
