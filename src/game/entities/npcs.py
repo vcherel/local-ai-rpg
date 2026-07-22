@@ -154,11 +154,14 @@ class NPC(Entity):
             if blocked is not None and blocked(self.x, self.y + step_y, radius):
                 step_y = 0
             self.y += step_y
-            # A blocked NPC would otherwise loiter against a wall forever; drop the target so it repicks.
-            if step_x == 0 and step_y == 0:
+            # Face the way it actually moved, not the way it wanted to: a slider looks along
+            # the wall, and one pinned against a building stops staring straight into it.
+            if step_x or step_y:
+                self.orientation = math.atan2(step_y, step_x) + math.pi / 2
+            # If a wall swallowed most of the intended step, stop grinding against it and repick.
+            if math.hypot(step_x, step_y) < step * 0.25:
                 self.wander_target = None
                 self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
-            self.orientation = angle + math.pi / 2
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
