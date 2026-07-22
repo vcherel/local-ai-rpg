@@ -157,6 +157,11 @@ class Building:
         # Well above the exit zone so entering does not instantly trigger an exit.
         return (c.Buildings.ROOM_W / 2, self.interior_floor().bottom - 100)
 
+    def interior_door_pos(self) -> tuple:
+        # Just inside the doorway: a chasing monster appears at the door and then runs
+        # up after the player, rather than popping in higher up in the room.
+        return (c.Buildings.ROOM_W / 2, self.interior_floor().bottom - 30)
+
     def interior_blocked(self, x, y, radius, door_open=True) -> bool:
         if self.interior_exit_zone().collidepoint(x, y):
             return False
