@@ -82,6 +82,7 @@ class Building:
         self.h = h if h is not None else random.randint(*h_range)
         self.name = None  # Only the landmark gets an LLM-generated name
         self.looted = False
+        self.broken_crates: set = set()  # indices into interior_layout()["crates"] already smashed
         self._layout = None
         self._ruin = None
 
@@ -125,6 +126,7 @@ class Building:
             "h": self.h,
             "name": self.name,
             "looted": self.looted,
+            "broken_crates": sorted(self.broken_crates),
         }
 
     @classmethod
@@ -133,6 +135,7 @@ class Building:
         building.id = data["id"]
         building.name = data["name"]
         building.looted = data["looted"]
+        building.broken_crates = set(data.get("broken_crates", []))
         return building
 
     # ------------------------------------------------------------------ interior
@@ -184,6 +187,7 @@ class Building:
         floor = self.interior_floor()
         solids: list = []
         beds: List[pygame.Rect] = []
+        crates: List[pygame.Rect] = []
         chest = None
 
         # Keep a corridor from the door to the middle of the room clear of furniture.
@@ -232,7 +236,10 @@ class Building:
             for _ in range(3):
                 crate = try_place(58, 58)
                 if crate:
+                    # Always placed (so positions stay deterministic across saves); broken
+                    # ones are dropped from the collision set below but keep their index.
                     solids.append((crate, "crate"))
+                    crates.append(crate)
 
         elif self.kind == "tavern":
             nb_beds = rng.randint(3, 4)
@@ -251,8 +258,34 @@ class Building:
         rug = pygame.Rect(0, 0, 190, 120)
         rug.center = (round(c.Buildings.ROOM_W / 2), round(c.Buildings.ROOM_H / 2) - 40)
 
-        self._layout = {"solids": solids, "beds": beds, "chest": chest, "rug": rug}
+        # Smashed crates no longer block movement, but stay in `crates` so their debris
+        # still draws and their index keeps matching the saved broken set.
+        broken = {crates[i] for i in self.broken_crates if i < len(crates)}
+        solids = [(rect, kind) for rect, kind in solids if not (kind == "crate" and rect in broken)]
+
+        self._layout = {"solids": solids, "beds": beds, "crates": crates, "chest": chest, "rug": rug}
         return self._layout
+
+    def break_crate_at(self, pos, hit_radius) -> Optional[pygame.Rect]:
+        """Smash the nearest intact crate a swing reaches. Returns its rect, or None if none in range."""
+        layout = self.interior_layout()
+        px, py = pos
+        best = None
+        for idx, crate in enumerate(layout["crates"]):
+            if idx in self.broken_crates:
+                continue
+            dist = math.hypot(px - crate.centerx, py - crate.centery)
+            if dist < hit_radius + crate.width / 2 and (best is None or dist < best[1]):
+                best = (idx, dist, crate)
+        if best is None:
+            return None
+        idx, _dist, crate = best
+        self.broken_crates.add(idx)
+        # Drop it from the cached collision set so the player can walk through the wreckage now.
+        self._layout["solids"] = [
+            (rect, kind) for rect, kind in self._layout["solids"] if not (kind == "crate" and rect == crate)
+        ]
+        return crate
 
     def interactable_at(self, x, y) -> Optional[tuple]:
         """Return ("chest", rect) or ("bed", rect) within reach of (x, y), else None."""
@@ -422,6 +455,11 @@ class Building:
         for rect, kind in layout["solids"]:
             self._draw_furniture(screen, to_screen(rect), kind, rect)
 
+        for idx in self.broken_crates:
+            if idx < len(layout["crates"]):
+                world_rect = layout["crates"][idx]
+                self._draw_broken_crate(screen, to_screen(world_rect), world_rect)
+
         chest = layout["chest"]
         if chest and not self.looted:
             reach = math.hypot(player.x - chest.centerx, player.y - chest.centery) <= c.Buildings.INTERACT_DISTANCE
@@ -433,6 +471,17 @@ class Building:
                 bed_screen = to_screen(bed)
                 text = f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
                 draw_label(screen, text, (bed_screen.centerx, bed_screen.top - 18))
+
+    def _draw_broken_crate(self, screen, rect: pygame.Rect, world_rect: pygame.Rect):
+        """A smashed crate: a scatter of splintered planks left on the floor."""
+        # Seed from the world rect so the debris keeps its shape as the camera pans.
+        rng = random.Random(world_rect.left * 31 + world_rect.top)
+        for _ in range(6):
+            px = rng.randint(rect.left, rect.right - 16)
+            py = rng.randint(rect.centery - 6, rect.bottom - 6)
+            plank = pygame.Rect(px, py, rng.randint(12, 22), rng.randint(4, 7))
+            pygame.draw.rect(screen, (110, 78, 48), plank)
+            pygame.draw.rect(screen, (60, 42, 30), plank, 1)
 
     def _draw_furniture(self, screen, rect: pygame.Rect, kind: str, world_rect: pygame.Rect):
         if kind == "bed":

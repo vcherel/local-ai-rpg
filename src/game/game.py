@@ -172,6 +172,7 @@ class Game:
                                 monsters=self.indoor_monsters,
                                 projectiles=self.indoor_projectiles,
                                 blocked=self.interior.interior_blocked,
+                                interior=self.interior,
                             )
 
                 if event.type == pygame.KEYDOWN:
