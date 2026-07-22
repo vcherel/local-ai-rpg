@@ -24,7 +24,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/world.py`: `World` class, world entities (NPCs, monsters, bosses, items), AI context generation, boss spawning (landmark guardian, roaming, quest) and per-frame boss updates
 - `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis)
 - `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss types), to_dict/from_dict (de)serialisation
-- `src/game/loot.py`: `open_lootbox`, rolls coins/item from a lootbox rarity
+- `src/game/loot.py`: `open_lootbox` rolls coins/item from a lootbox rarity; `break_crate` rolls the smaller coins/common-item reward from a smashed shop crate
 
 ### game/entities
 - `src/game/entities/entities.py`: `Entity` base class (hp, damage, attack animation), `draw_human` sprite renderer
@@ -32,7 +32,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/entities/npcs.py`: `NPC(Entity)`, tracks per-NPC `affinity` (LLM-judged relationship level, feeds dialogue tone/quest rewards/shop prices)
 - `src/game/entities/monsters.py`: `Monster(Entity)`, `pick_monster_kind` (spawn selection by distance from center)
 - `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam AoE, hostile bolt volley, summon adds), knockback immune; spawned at the landmark, by roaming, by events and by slay_boss quests
-- `src/game/entities/buildings.py`: `Building`, `generate_buildings`, `set_active_buildings`, town layout and building placement
+- `src/game/entities/buildings.py`: `Building`, `generate_buildings`, `set_active_buildings`, town layout and building placement; shop crates are breakable (`break_crate_at`, per-crate `broken_crates` state, debris drawing)
 - `src/game/entities/items.py`: `Item` (weapon/armor/accessory/ammo/misc), rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, shape/polygon drawing for item icons
 - `src/game/entities/projectile.py`: `Projectile`, a fired arrow or magic bolt travelling in a straight line until it hits or runs out of range (`style`, `color`, `knockback`, `shake`, `hostile` for boss bolts that damage the player)
 - `src/game/entities/stats.py`: `Stats` class, use-based character progression (xp, training, derived bonuses like attack/damage reduction/speed)

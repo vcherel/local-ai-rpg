@@ -43,6 +43,8 @@ class Combat:
     # Extra screen shake added on top of a weapon's base shake when a hit crits.
     CRIT_SHAKE_BONUS: float = 6.0
     PLAYER_HURT_SHAKE: float = 5.0
+    # Kick when a shop crate is smashed.
+    CRATE_SHAKE: float = 5.0
     # Camera never shakes more than this, so heavy hits stay readable rather than nauseating.
     MAX_SHAKE: float = 30.0
     SHAKE_DECAY: float = 0.82  # per-60fps-frame multiplier
@@ -364,6 +366,11 @@ class Buildings:
 
     TAVERN_SLEEP_COST: int = 15
     INTERACT_DISTANCE: int = 120
+
+    # Smashing a shop crate always yields a few coins and sometimes a common item.
+    CRATE_COIN_MIN: int = 2
+    CRATE_COIN_MAX: int = 12
+    CRATE_ITEM_CHANCE: float = 0.2
 
     WALL_COLOR: tuple = (72, 56, 44)
     FLOOR_COLOR: tuple = (152, 112, 72)

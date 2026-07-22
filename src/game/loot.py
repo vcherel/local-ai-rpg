@@ -32,3 +32,27 @@ def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
         item.picked_up = True
 
     return coins, item
+
+
+def break_crate() -> tuple[int, Item | None]:
+    """Contents of a smashed shop crate: a few coins and a small chance of a common item.
+
+    Coordinates don't matter: crates are only ever broken indoors, where loot goes straight
+    to the player's inventory rather than dropping into interior coordinate space.
+    """
+    coins = random.randint(c.Buildings.CRATE_COIN_MIN, c.Buildings.CRATE_COIN_MAX)
+
+    item = None
+    if random.random() < c.Buildings.CRATE_ITEM_CHANCE:
+        rarity = "common"
+        item_type = random.choice(["weapon", "armor", "accessory", "ammo"])
+        if item_type == "ammo":
+            name = AMMO_LOOT_NAME
+        else:
+            name = random.choice(
+                {"weapon": WEAPON_LOOT_NAMES, "armor": ARMOR_LOOT_NAMES, "accessory": ACCESSORY_LOOT_NAMES}[item_type]
+            )
+        item = Item(0, 0, name, item_type, roll_bonus(item_type, rarity), rarity)
+        item.picked_up = True
+
+    return coins, item

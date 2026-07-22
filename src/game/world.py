@@ -13,12 +13,12 @@ from core.camera import get_shake
 from core.particles import get_particles
 from game.entities.boss import Boss
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
-from game.entities.items import Item, roll_rarity
+from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.projectile import Projectile
 from game.events import EventSystem
-from game.loot import open_lootbox
+from game.loot import break_crate, open_lootbox
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:
@@ -298,6 +298,7 @@ class World:
         monsters: List[Monster] = None,
         projectiles: List[Projectile] = None,
         blocked=None,
+        interior=None,
     ):
         """`monsters` overrides the target list for an indoor fight; loot then goes straight to
         the player instead of dropping a world item, since interior coordinates aren't outdoor ones.
@@ -351,6 +352,11 @@ class World:
             return
 
         if indoor:
+            # No monster in range: a swing that reaches a shop crate smashes it instead.
+            if interior is not None:
+                crate = interior.break_crate_at(pos, hit_radius)
+                if crate is not None:
+                    self._break_crate(player, crate)
             return
 
         npc_targets = [n for n in self.npcs if n.distance_to_point(pos) < hit_radius + c.Entities.NPC_SIZE // 2]
@@ -462,6 +468,28 @@ class World:
             kb_dir=kb_dir,
             blocked=blocked,
         )
+
+    def _break_crate(self, player: Player, crate):
+        """Smash a shop crate: juice, a few coins, and a small chance of a common item.
+
+        The crate has already been removed from the interior's collision set by
+        break_crate_at; here we only handle feedback and the loot, which goes straight
+        to the player since interior coordinates aren't outdoor world coordinates.
+        """
+        get_shake().add(c.Combat.CRATE_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(crate.centerx, crate.centery, (150, 110, 70), count=16, speed=5, life=500, size=5)
+
+        coins, loot_item = break_crate()
+        player.add_coins(coins)
+        message = f"Crate smashed: +{coins} coins"
+        color = c.Colors.WHITE
+        if loot_item is not None:
+            player.inventory.append(loot_item)
+            message += f" and a {loot_item.rarity} {loot_item.name}!"
+            color = rarity_color(loot_item.rarity)
+        if self.notify:
+            self.notify(message, color)
 
     def _resolve_monster_hit(
         self,
