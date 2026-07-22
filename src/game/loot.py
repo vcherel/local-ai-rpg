@@ -35,7 +35,7 @@ def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
 
 
 def break_crate() -> tuple[int, Item | None]:
-    """Contents of a smashed shop crate: a few coins and a small chance of a common item.
+    """Contents of a smashed crate (shop or tavern): a few coins and a small chance of a common item.
 
     Coordinates don't matter: crates are only ever broken indoors, where loot goes straight
     to the player's inventory rather than dropping into interior coordinate space.

@@ -352,7 +352,7 @@ class World:
             return
 
         if indoor:
-            # No monster in range: a swing that reaches a shop crate smashes it instead.
+            # No monster in range: a swing that reaches a crate (shop or tavern) smashes it instead.
             if interior is not None:
                 crate = interior.break_crate_at(pos, hit_radius)
                 if crate is not None:
@@ -470,7 +470,7 @@ class World:
         )
 
     def _break_crate(self, player: Player, crate):
-        """Smash a shop crate: juice, a few coins, and a small chance of a common item.
+        """Smash a shop or tavern crate: juice, a few coins, and a small chance of a common item.
 
         The crate has already been removed from the interior's collision set by
         break_crate_at; here we only handle feedback and the loot, which goes straight
