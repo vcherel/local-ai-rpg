@@ -254,6 +254,13 @@ class Building:
                 table = try_place(110, 85)
                 if table:
                     solids.append((table, "table"))
+            for _ in range(2):
+                crate = try_place(58, 58)
+                if crate:
+                    # Same deal as the shop: always placed for deterministic indices, dropped
+                    # from the collision set once broken (see the broken-crate filter below).
+                    solids.append((crate, "crate"))
+                    crates.append(crate)
 
         rug = pygame.Rect(0, 0, 190, 120)
         rug.center = (round(c.Buildings.ROOM_W / 2), round(c.Buildings.ROOM_H / 2) - 40)
@@ -267,7 +274,7 @@ class Building:
         return self._layout
 
     def break_crate_at(self, pos, hit_radius) -> Optional[pygame.Rect]:
-        """Smash the nearest intact crate a swing reaches. Returns its rect, or None if none in range."""
+        """Smash the nearest intact crate (shop or tavern) a swing reaches. Returns its rect, or None if none near."""
         layout = self.interior_layout()
         px, py = pos
         best = None
