@@ -68,6 +68,10 @@ class Game:
         # Arrows fired while indoors live in interior coordinate space, separate from
         # the outdoor world's projectile list.
         self.indoor_projectiles = []
+        # Chasers that were too far to already be at the door: (monster, arrival_tick_ms).
+        # They step into the interior once enough time has passed to cover the distance,
+        # so a distant pursuer arrives a moment later instead of teleporting in at once.
+        self.pending_indoor = []
 
         self._restore_player_state()
 
@@ -250,18 +254,47 @@ class Game:
     def _enter_building(self, building):
         self._interior_return_pos = building.door_front()
 
-        # Monsters that were actively chasing the player right up to the door follow inside.
+        # Only monsters actually chasing the player (attracted, i.e. within detection
+        # range) follow inside; ones merely in view but idle are not drawn in. Each
+        # enters after the time it would take to run from where it was to the door, so a
+        # nearby chaser steps in almost at once while a distant one arrives moments later
+        # instead of every pursuer teleporting into the room together.
         chase_range = c.World.DETECTION_RANGE + c.Player.SIZE // 2
-        pursuers = [m for m in self.world.monsters if m.distance_to_point((self.player.x, self.player.y)) < chase_range]
-        entry_x, entry_y = building.interior_entry_pos()
-        for monster in pursuers:
+        now = pygame.time.get_ticks()
+        self.indoor_monsters = []
+        self.pending_indoor = []
+        entry_x, entry_y = building.interior_door_pos()
+        for monster in list(self.world.monsters):
+            dist = monster.distance_to_point((self.player.x, self.player.y))
+            if dist >= chase_range:
+                continue
             self.world.monsters.remove(monster)
-            monster.x = entry_x + monster.target_offset[0]
-            monster.y = entry_y + monster.target_offset[1]
-        self.indoor_monsters = pursuers
+            travel_ms = dist / (monster.kind.speed * c.TARGET_FPS) * 1000.0
+            if travel_ms <= 0:
+                monster.x = entry_x + monster.target_offset[0]
+                monster.y = entry_y + monster.target_offset[1]
+                self.indoor_monsters.append(monster)
+            else:
+                self.pending_indoor.append((monster, now + travel_ms))
 
         self.interior = building
         self.player.x, self.player.y = building.interior_entry_pos()
+
+    def _update_pending_indoor(self):
+        """Move chasers whose travel time has elapsed from the pending queue into the room."""
+        if not self.pending_indoor:
+            return
+        now = pygame.time.get_ticks()
+        entry_x, entry_y = self.interior.interior_door_pos()
+        still_waiting = []
+        for monster, arrival in self.pending_indoor:
+            if now >= arrival:
+                monster.x = entry_x + monster.target_offset[0]
+                monster.y = entry_y + monster.target_offset[1]
+                self.indoor_monsters.append(monster)
+            else:
+                still_waiting.append((monster, arrival))
+        self.pending_indoor = still_waiting
 
     def _check_building_entry(self):
         for building in self.world.buildings:
@@ -273,11 +306,15 @@ class Game:
     def _check_interior_exit(self):
         if self.interior.interior_exit_zone().collidepoint(self.player.x, self.player.y):
             door_x, door_y = self._interior_return_pos
-            for monster in self.indoor_monsters:
+            # Chasers already inside, plus any that were still en route, spill back out
+            # at the door the player steps through.
+            returning = self.indoor_monsters + [monster for monster, _arrival in self.pending_indoor]
+            for monster in returning:
                 monster.x = door_x + monster.target_offset[0]
                 monster.y = door_y + monster.target_offset[1]
                 self.world.monsters.append(monster)
             self.indoor_monsters = []
+            self.pending_indoor = []
             self.indoor_projectiles = []
 
             self.player.x, self.player.y = self._interior_return_pos
@@ -328,7 +365,8 @@ class Game:
             # Indoor pursuers live in the building's interior coordinate space, not the
             # outdoor world; save them at the door they'd step back out to instead.
             door_x, door_y = self._interior_return_pos
-            for monster in self.indoor_monsters:
+            indoor = self.indoor_monsters + [monster for monster, _arrival in self.pending_indoor]
+            for monster in indoor:
                 monster_state = monster.to_dict()
                 monster_state["x"], monster_state["y"] = door_x, door_y
                 monsters.append(monster_state)
@@ -365,6 +403,7 @@ class Game:
                 dt = self.clock.get_time()
                 if self.interior is not None:
                     self.player.move(self.camera.get_pos(), dt, self.interior.interior_blocked)
+                    self._update_pending_indoor()
                     for monster in self.indoor_monsters:
                         monster.move(self.player, dt, self.interior.interior_blocked)
                     self.world.update_projectiles(
