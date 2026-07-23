@@ -13,7 +13,7 @@ from core.camera import get_shake
 from core.particles import get_particles
 from game.entities.boss import Boss
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
-from game.entities.items import Item, rarity_color, roll_rarity
+from game.entities.items import AMMO_BUNDLE, Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.projectile import Projectile
@@ -294,7 +294,10 @@ class World:
             shop_data = generate_shop_inventory(self.context)
         # Guaranteed regardless of what the LLM comes up with, so ranged combat
         # doesn't depend entirely on loot RNG for its ammo.
-        shop_data += [{"name": "Arrows", "item_type": "ammo", "rarity": "common", "price": 2} for _ in range(2)]
+        shop_data += [
+            {"name": "Arrows", "item_type": "ammo", "rarity": "common", "price": 30, "quantity": AMMO_BUNDLE}
+            for _ in range(2)
+        ]
         merchant.set_shop(shop_data)
         self.persist_world()
 
@@ -393,7 +396,9 @@ class World:
             ammo = next((item for item in player.inventory if item.item_type == "ammo"), None)
             if ammo is None:
                 return
-            player.inventory.remove(ammo)
+            ammo.quantity -= 1
+            if ammo.quantity <= 0:
+                player.inventory.remove(ammo)
 
         player.attack_ready_ms = now + arch.cooldown_ms
         player.attack_swing_mult = arch.swing_mult
@@ -402,6 +407,11 @@ class World:
 
         base_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
         damage = max(1, int(round(base_damage * arch.damage_mult)))
+        # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
+        crit = random.random() < arch.crit_chance + player.crit_bonus()
+        if crit:
+            damage = max(1, int(round(damage * c.Combat.CRIT_MULT)))
+        shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
         if arch.name == "staff":
             proj = Projectile(
                 player.x,
@@ -411,7 +421,7 @@ class World:
                 style="bolt",
                 color=(150, 90, 230),
                 knockback=arch.knockback,
-                shake=arch.shake,
+                shake=shake,
             )
         else:
             proj = Projectile(
@@ -420,14 +430,15 @@ class World:
                 player.orientation,
                 damage,
                 knockback=arch.knockback,
-                shake=arch.shake,
+                shake=shake,
             )
+        proj.pierce = player.pierce_count()
         proj_list.append(proj)
 
-    def _roll_hit(self, base_damage: float, arch: c.WeaponArchetype) -> tuple[int, bool]:
-        """Apply the weapon's damage multiplier and roll for a crit."""
+    def _roll_hit(self, base_damage: float, arch: c.WeaponArchetype, crit_bonus: float = 0.0) -> tuple[int, bool]:
+        """Apply the weapon's damage multiplier and roll for a crit (weapon + affix chance)."""
         damage = base_damage * arch.damage_mult
-        crit = random.random() < arch.crit_chance
+        crit = random.random() < arch.crit_chance + crit_bonus
         if crit:
             damage *= c.Combat.CRIT_MULT
         return max(1, int(round(damage))), crit
@@ -455,10 +466,10 @@ class World:
         target.y += step_y
 
     def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, indoor, blocked):
-        damage, crit = self._roll_hit(base_damage, arch)
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
         shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
         kb_dir = self._dir_from(player.x, player.y, monster.x, monster.y)
-        self._resolve_monster_hit(
+        died = self._resolve_monster_hit(
             monster,
             monster_list,
             damage,
@@ -471,9 +482,14 @@ class World:
             kb_dir=kb_dir,
             blocked=blocked,
         )
+        self._apply_on_hit_effects(monster, monster_list, damage, player, quest_system, indoor, died)
 
     def _strike_npc(self, npc, base_damage, arch, player, quest_system, blocked):
-        damage, crit = self._roll_hit(base_damage, arch)
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
+        # Lifesteal works on any struck target, NPCs included.
+        frac = player.lifesteal_frac()
+        if frac > 0:
+            player.heal(damage * frac)
         shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
         kb_dir = self._dir_from(player.x, player.y, npc.x, npc.y)
         self._resolve_npc_hit(
@@ -499,11 +515,11 @@ class World:
         get_particles().spawn_burst(crate.centerx, crate.centery, (150, 110, 70), count=16, speed=5, life=500, size=5)
 
         coins, loot_item = break_crate()
-        player.add_coins(coins)
+        player.gain_coins(coins)
         message = f"Crate smashed: +{coins} coins"
         color = c.Colors.WHITE
         if loot_item is not None:
-            player.inventory.append(loot_item)
+            player.add_item(loot_item)
             message += f" and a {loot_item.rarity} {loot_item.name}!"
             color = rarity_color(loot_item.rarity)
         if self.notify:
@@ -526,36 +542,58 @@ class World:
         """Applies damage to a monster and its kill rewards. Returns True if it died."""
         get_shake().add(shake)
         if monster.receive_damage(damage):
-            player.stats.train("vitality", c.Stats.XP_PER_KILL)
-            play_sound("monster_death")
-            if isinstance(monster, Boss):
-                self._on_boss_killed(monster, quest_system)
-                monster_list.remove(monster)
-                return True
-            get_particles().spawn_burst(monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5)
-            quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
-            if quest_item is not None:
-                if indoor:
-                    player.inventory.append(quest_item)
-                else:
-                    self.items.append(quest_item)
-            drop_chance = c.LootBox.DROP_CHANCE
-            if self.events.blood_night_active:
-                drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
-            if random.random() < drop_chance:
-                if indoor:
-                    coins, loot_item = open_lootbox(monster.x, monster.y, roll_rarity())
-                    player.add_coins(coins)
-                    if loot_item is not None:
-                        player.inventory.append(loot_item)
-                else:
-                    self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
-            monster_list.remove(monster)
+            self._kill_monster(monster, monster_list, player, quest_system, indoor)
             return True
         self._hit_feedback(monster.x, monster.y, crit)
         if not getattr(monster, "knockback_immune", False):
             self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
         return False
+
+    def _kill_monster(self, monster, monster_list, player: Player, quest_system: QuestSystem, indoor: bool):
+        """Death rewards and cleanup for a slain monster, shared by hits and burn ticks."""
+        player.stats.train("vitality", c.Stats.XP_PER_KILL)
+        play_sound("monster_death")
+        if isinstance(monster, Boss):
+            self._on_boss_killed(monster, quest_system)
+            monster_list.remove(monster)
+            return
+        get_particles().spawn_burst(monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5)
+        quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
+        if quest_item is not None:
+            if indoor:
+                player.inventory.append(quest_item)
+            else:
+                self.items.append(quest_item)
+        drop_chance = c.LootBox.DROP_CHANCE
+        if self.events.blood_night_active:
+            drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
+        if random.random() < drop_chance:
+            if indoor:
+                coins, loot_item = open_lootbox(monster.x, monster.y, roll_rarity())
+                player.gain_coins(coins)
+                if loot_item is not None:
+                    player.add_item(loot_item)
+            else:
+                self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
+        monster_list.remove(monster)
+
+    def _apply_on_hit_effects(self, monster, monster_list, damage, player, quest_system, indoor, died):
+        """Weapon lifesteal/burn/execute after a hit lands. `died` is the hit's own result."""
+        frac = player.lifesteal_frac()
+        if frac > 0 and damage > 0:
+            player.heal(damage * frac)
+            get_particles().spawn_burst(player.x, player.y, c.Colors.GREEN, count=5, speed=3, life=300, size=3)
+        if died:
+            return
+        burn = player.burn_damage()
+        if burn > 0:
+            monster.apply_burn(burn)
+        # Execute finishes off a badly wounded non-boss outright.
+        thr = player.execute_threshold()
+        if thr > 0 and not isinstance(monster, Boss) and 0 < monster.hp <= monster.max_hp * thr:
+            get_particles().spawn_burst(monster.x, monster.y, (255, 60, 60), count=10, speed=5, life=400, size=4)
+            if monster.receive_damage(monster.hp):
+                self._kill_monster(monster, monster_list, player, quest_system, indoor)
 
     def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem):
         """A boss dies with extra spectacle and a guaranteed legendary lootbox."""
@@ -635,13 +673,18 @@ class World:
                 continue
 
             hit_monster = next(
-                (m for m in monster_list if proj.distance_to_point((m.x, m.y)) < c.Projectile.SIZE + m.kind.size // 2),
+                (
+                    m
+                    for m in monster_list
+                    if id(m) not in proj.hit_ids
+                    and proj.distance_to_point((m.x, m.y)) < c.Projectile.SIZE + m.kind.size // 2
+                ),
                 None,
             )
             if hit_monster is not None:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
                 kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-                self._resolve_monster_hit(
+                died = self._resolve_monster_hit(
                     hit_monster,
                     monster_list,
                     proj.damage,
@@ -653,7 +696,8 @@ class World:
                     kb_dir=kb_dir,
                     blocked=blocked,
                 )
-                proj_list.remove(proj)
+                self._apply_on_hit_effects(hit_monster, monster_list, proj.damage, player, quest_system, indoor, died)
+                self._projectile_after_hit(proj, proj_list, hit_monster)
                 continue
 
             if not indoor and self.bosses:
@@ -661,14 +705,15 @@ class World:
                     (
                         b
                         for b in self.bosses
-                        if proj.distance_to_point((b.x, b.y)) < c.Projectile.SIZE + b.kind.size // 2
+                        if id(b) not in proj.hit_ids
+                        and proj.distance_to_point((b.x, b.y)) < c.Projectile.SIZE + b.kind.size // 2
                     ),
                     None,
                 )
                 if hit_boss is not None:
                     player.stats.train("strength", c.Stats.XP_PER_HIT)
                     kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-                    self._resolve_monster_hit(
+                    died = self._resolve_monster_hit(
                         hit_boss,
                         self.bosses,
                         proj.damage,
@@ -680,7 +725,8 @@ class World:
                         kb_dir=kb_dir,
                         blocked=blocked,
                     )
-                    proj_list.remove(proj)
+                    self._apply_on_hit_effects(hit_boss, self.bosses, proj.damage, player, quest_system, False, died)
+                    self._projectile_after_hit(proj, proj_list, hit_boss)
                     continue
 
             if not indoor:
@@ -688,7 +734,8 @@ class World:
                     (
                         n
                         for n in self.npcs
-                        if proj.distance_to_point((n.x, n.y)) < c.Projectile.SIZE + c.Entities.NPC_SIZE // 2
+                        if id(n) not in proj.hit_ids
+                        and proj.distance_to_point((n.x, n.y)) < c.Projectile.SIZE + c.Entities.NPC_SIZE // 2
                     ),
                     None,
                 )
@@ -704,7 +751,30 @@ class World:
                         kb_dir=kb_dir,
                         blocked=blocked,
                     )
-                    proj_list.remove(proj)
+                    frac = player.lifesteal_frac()
+                    if frac > 0:
+                        player.heal(proj.damage * frac)
+                    self._projectile_after_hit(proj, proj_list, hit_npc)
+
+    def _tick_burns(self, monster_list: List[Monster], player: Player, quest_system: QuestSystem):
+        now = pygame.time.get_ticks()
+        for monster in list(monster_list):
+            if monster.burn_ticks_remaining <= 0 or now < monster.burn_next_ms:
+                continue
+            monster.burn_ticks_remaining -= 1
+            monster.burn_next_ms = now + c.Affixes.BURN_INTERVAL_MS
+            get_particles().spawn_burst(monster.x, monster.y, (255, 140, 40), count=4, speed=2, life=300, size=3)
+            if monster.receive_damage(monster.burn_damage):
+                self._kill_monster(monster, monster_list, player, quest_system, indoor=False)
+
+    @staticmethod
+    def _projectile_after_hit(proj: Projectile, proj_list: List[Projectile], target):
+        """Record the target and either pierce onward (arrow-pierce) or stop the projectile."""
+        proj.hit_ids.add(id(target))
+        if proj.pierce > 0:
+            proj.pierce -= 1
+        else:
+            proj_list.remove(proj)
 
     def pickup_item(self, player: Player):
         for item in self.items:
@@ -735,6 +805,10 @@ class World:
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         self.monsters = [m for m in self.monsters if m.distance_to_point(player.get_pos()) <= c.World.DESPAWN_DISTANCE]
+
+        # Burn (weapon affix) ticks over time and can finish a wounded target off.
+        self._tick_burns(self.monsters, player, quest_system)
+        self._tick_burns(self.bosses, player, quest_system)
 
         # Bosses never despawn; they chase, cast and enrage on their own schedule.
         for boss in list(self.bosses):

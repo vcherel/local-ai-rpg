@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 import pygame
 
 import core.constants as c
-from game.entities.items import rarity_color, rarity_tier
+from game.entities.items import ACCESSORY_FLAVOR_LABELS, base_value, rarity_color
 from ui import widgets
 from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
@@ -19,14 +19,6 @@ PANEL_GAP = 20
 ROW_HEIGHT = 60
 # Room below the column labels for the first row.
 LABEL_GAP = 30
-
-
-def _sell_price(item: Item) -> int:
-    if item.item_type in ("weapon", "armor", "accessory"):
-        base = max(5, item.bonus * 10)
-    else:
-        base = 5
-    return round(base * rarity_tier(item.rarity).price_mult)
 
 
 def _affinity_swing(npc: NPC) -> float:
@@ -82,7 +74,7 @@ class ShopMenu(BaseMenu):
 
     def _sell_price(self, item: Item) -> int:
         swing = _affinity_swing(self.merchant)
-        return max(1, round(_sell_price(item) * self.player.sell_multiplier() * (1.0 + swing)))
+        return max(1, round(base_value(item) * self.player.sell_multiplier() * (1.0 + swing)))
 
     def _slot_at(self, panel_x: int, count: int, rel_x: int, rel_y: int) -> Optional[int]:
         for i in range(count):
@@ -127,8 +119,9 @@ class ShopMenu(BaseMenu):
         self.merchant.shop_items.pop(index)
         del self.merchant.shop_prices[item.id]
         item.picked_up = True
-        self.world_items.append(item)
-        self.player.inventory.append(item)
+        # Ammo merges into an existing stack; only a new entry joins the master world list.
+        if self.player.add_item(item) is item:
+            self.world_items.append(item)
         self.player.add_coins(-price)
         self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
 
@@ -207,12 +200,21 @@ class ShopMenu(BaseMenu):
         widgets.draw_item_scaled(surface, item, icon_x, icon_y, 34)
 
         name_color = rarity_color(item.rarity) if enabled else c.Colors.MUTED
-        name_surf = c.Fonts.text.render(item.name, True, name_color)
+        name = f"{item.name} x{item.quantity}" if item.quantity > 1 else item.name
+        name_surf = c.Fonts.text.render(name, True, name_color)
         surface.blit(name_surf, (r.x + 58, r.y + 8))
 
         if item.bonus > 0 and item.item_type in ("weapon", "armor", "accessory"):
-            label = {"weapon": "atk", "armor": "def"}.get(item.item_type, item.accessory_flavor)
-            stat_surf = c.Fonts.small.render(f"+{item.bonus} {label}", True, c.Colors.MUTED)
+            label = {"weapon": "atk", "armor": "def"}.get(
+                item.item_type, ACCESSORY_FLAVOR_LABELS.get(item.accessory_flavor, item.accessory_flavor)
+            )
+            stat = f"+{item.bonus} {label}"
+            if item.affixes:
+                stat += f"  +{len(item.affixes)} fx"
+            stat_surf = c.Fonts.small.render(stat, True, c.Colors.MUTED)
+            surface.blit(stat_surf, (r.x + 58, r.y + 30))
+        elif item.item_type == "misc":
+            stat_surf = c.Fonts.small.render("valuable", True, c.Colors.MUTED)
             surface.blit(stat_surf, (r.x + 58, r.y + 30))
 
         price_surf = c.Fonts.text.render(f"{price}g", True, price_color)

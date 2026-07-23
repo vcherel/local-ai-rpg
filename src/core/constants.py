@@ -127,13 +127,14 @@ class MonsterKind:
     weight: int
 
 
-# Ordered weakest to strongest. Kept close to the old single Monster stats near the village,
-# scaling up with distance from the world center so wandering further gets more dangerous.
+# Ordered weakest to strongest, scaling up with distance from the world center so wandering
+# further gets more dangerous. Mobs hit harder and reach the player, but the tougher kinds
+# stay spaced out from the world center so there's room to explore before they show up.
 MONSTER_KINDS: tuple[MonsterKind, ...] = (
-    MonsterKind("Slime", (90, 190, 90), 22, 10, 3, 8, 3, min_distance=0, weight=10),
-    MonsterKind("Wolf", (140, 140, 140), 26, 20, 5, 10, 6, min_distance=1200, weight=6),
-    MonsterKind("Bandit", (150, 40, 40), 28, 35, 4, 12, 9, min_distance=2500, weight=4),
-    MonsterKind("Troll", (60, 90, 55), 34, 60, 3, 14, 14, min_distance=4000, weight=2),
+    MonsterKind("Slime", (90, 190, 90), 22, 10, 3, 10, 5, min_distance=0, weight=10),
+    MonsterKind("Wolf", (140, 140, 140), 26, 20, 5, 10, 8, min_distance=1400, weight=6),
+    MonsterKind("Bandit", (150, 40, 40), 28, 35, 4, 12, 12, min_distance=2800, weight=4),
+    MonsterKind("Troll", (60, 90, 55), 34, 60, 3, 14, 18, min_distance=4200, weight=2),
 )
 
 MONSTER_MAX_SIZE: int = max(kind.size for kind in MONSTER_KINDS)
@@ -368,8 +369,8 @@ class Buildings:
     INTERACT_DISTANCE: int = 120
 
     # Smashing a shop crate always yields a few coins and sometimes a common item.
-    CRATE_COIN_MIN: int = 2
-    CRATE_COIN_MAX: int = 12
+    CRATE_COIN_MIN: int = 1
+    CRATE_COIN_MAX: int = 6
     CRATE_ITEM_CHANCE: float = 0.2
 
     WALL_COLOR: tuple = (72, 56, 44)
@@ -381,10 +382,40 @@ class Buildings:
 class LootBox:
     # Chance a slain monster drops a lootbox.
     DROP_CHANCE: float = 0.2
-    COIN_MIN: int = 5
-    COIN_MAX: int = 25
+    COIN_MIN: int = 3
+    COIN_MAX: int = 12
     # Chance the box also contains a weapon or armor piece, on top of coins.
     ITEM_CHANCE: float = 0.35
+
+
+@dataclass(frozen=True)
+class Affixes:
+    """Special effects rolled onto weapons and armour, on top of their flat bonus.
+
+    Every table is indexed by rarity tier (common..legendary); a value of 0 at the
+    common tier means the affix can't roll there. COUNT_BY_TIER caps how many distinct
+    affixes an item of each tier carries.
+    """
+
+    COUNT_BY_TIER: tuple = (0, 1, 1, 2, 3)
+
+    WEAPON_POOL: tuple = ("lifesteal", "burn", "crit", "execute")
+    ARMOR_POOL: tuple = ("thorns", "dodge", "regen_still")
+
+    # Weapon affixes.
+    LIFESTEAL: tuple = (0.0, 0.06, 0.09, 0.12, 0.15)  # fraction of damage dealt healed back
+    BURN: tuple = (0, 2, 3, 4, 6)  # damage per burn tick
+    CRIT: tuple = (0.0, 0.06, 0.09, 0.13, 0.18)  # added crit chance
+    EXECUTE: tuple = (0.0, 0.08, 0.11, 0.15, 0.20)  # kill a non-boss left below this fraction of max hp
+
+    # Burn timing is fixed; only the per-tick damage scales with rarity.
+    BURN_TICKS: int = 4
+    BURN_INTERVAL_MS: int = 500
+
+    # Armour affixes.
+    THORNS: tuple = (0, 2, 3, 5, 8)  # flat damage reflected to a melee attacker
+    DODGE: tuple = (0.0, 0.05, 0.08, 0.12, 0.16)  # chance to take no damage from a hit
+    REGEN_STILL: tuple = (0.0, 0.002, 0.003, 0.005, 0.008)  # extra hp/ms regen while standing still
 
 
 @dataclass(frozen=True)
@@ -439,10 +470,17 @@ class Stats:
     ACCESSORY_SPEED_PER_BONUS: float = 0.01  # +1% move speed per bonus point
     ACCESSORY_REGEN_PER_BONUS: float = 0.0005  # extra HP regen per bonus point
     ACCESSORY_LUCK_PER_BONUS: float = 0.01  # +1% better prices per bonus point
+    ACCESSORY_CRIT_PER_BONUS: float = 0.012  # +1.2% crit chance per bonus point
+    ACCESSORY_LIFESTEAL_PER_BONUS: float = 0.01  # +1% of damage healed per bonus point
+    ACCESSORY_COINFIND_PER_BONUS: float = 0.06  # +6% coins from loot per bonus point
+    ACCESSORY_XP_PER_BONUS: float = 0.04  # +4% xp from all actions per bonus point
+    # Arrow-pierce accessory: each bonus point lets a projectile pass through one more target.
 
+    # Shops buy loot below its worth; bartering raises the fraction toward SELL_CEILING.
+    SELL_BASE: float = 0.6
     # Prices can move at most this far from their base value.
     BUY_FLOOR: float = 0.5
-    SELL_CEILING: float = 2.0
+    SELL_CEILING: float = 1.4
 
     # XP granted per action.
     XP_PER_HIT: float = 4.0

@@ -4,6 +4,8 @@ import math
 import random
 from typing import TYPE_CHECKING
 
+import pygame
+
 import core.constants as c
 from game.entities.entities import Entity
 
@@ -23,6 +25,16 @@ class Monster(Entity):
         super().__init__(x, y, kind.color, kind.size, kind.hp, kind.hp)
         self.kind = kind
         self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
+        # Burn (weapon affix) state: damage per tick, ticks left, and the next tick's time.
+        self.burn_damage = 0
+        self.burn_ticks_remaining = 0
+        self.burn_next_ms = 0
+
+    def apply_burn(self, damage: int):
+        """(Re)ignite this monster: refresh the tick count and take the stronger burn."""
+        self.burn_damage = max(self.burn_damage, damage)
+        self.burn_ticks_remaining = c.Affixes.BURN_TICKS
+        self.burn_next_ms = pygame.time.get_ticks() + c.Affixes.BURN_INTERVAL_MS
 
     def to_dict(self) -> dict:
         return {"x": self.x, "y": self.y, "hp": self.hp, "kind": self.kind.name}
@@ -81,7 +93,7 @@ class Monster(Entity):
         if dist < self.kind.attack_range * 10:
             hit = self.start_attack_anim(dist)
             if hit:
-                player.receive_damage(self.kind.damage)
+                player.receive_damage(self.kind.damage, source=self)
 
         # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
         self.orientation += math.pi / 2

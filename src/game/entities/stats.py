@@ -14,6 +14,8 @@ class Stats:
     def __init__(self, saved: dict | None = None):
         self.level = {name: 1 for name in c.Stats.NAMES}
         self.xp = {name: 0.0 for name in c.Stats.NAMES}
+        # Live multiplier from the xp-gain accessory; the player refreshes it each frame.
+        self.xp_bonus = 1.0
         if saved:
             # A save from before a stat was added won't have its key; default it to level 1.
             self.level = {name: saved["level"].get(name, 1) for name in c.Stats.NAMES}
@@ -27,7 +29,7 @@ class Stats:
 
     def train(self, name: str, amount: float) -> int:
         """Add XP to a stat, applying any level-ups. Returns the number gained."""
-        self.xp[name] += amount
+        self.xp[name] += amount * self.xp_bonus
         gained = 0
         while self.xp[name] >= self.xp_to_next(name):
             self.xp[name] -= self.xp_to_next(name)
@@ -54,7 +56,7 @@ class Stats:
         return max(c.Stats.BUY_FLOOR, 1.0 - (self.level["bartering"] - 1) * c.Stats.BARTER_PER_LEVEL)
 
     def sell_multiplier(self) -> float:
-        return min(c.Stats.SELL_CEILING, 1.0 + (self.level["bartering"] - 1) * c.Stats.BARTER_PER_LEVEL)
+        return min(c.Stats.SELL_CEILING, c.Stats.SELL_BASE + (self.level["bartering"] - 1) * c.Stats.BARTER_PER_LEVEL)
 
     def persuasion_descriptor(self) -> str:
         """A prompt hint reflecting how persuasive the player has become, or "" at low levels."""

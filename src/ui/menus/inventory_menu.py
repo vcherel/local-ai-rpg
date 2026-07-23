@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING, Optional
 import pygame
 
 import core.constants as c
-from game.entities.items import draw_shape_with_border, rarity_color
+from game.entities.items import (
+    ACCESSORY_FLAVOR_LABELS,
+    affix_label,
+    base_value,
+    draw_shape_with_border,
+    rarity_color,
+)
 from ui import widgets
 from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
@@ -48,10 +54,11 @@ class InventoryMenu(BaseMenu):
     def _grouped_items(self, player: Player) -> list[dict]:
         item_dict = {}
         for item in player.inventory:
-            key = (item.name, item.rarity, item.bonus)
+            # Effects and flavour distinguish otherwise-identical items, so they don't merge in the grid.
+            key = (item.name, item.rarity, item.bonus, item.accessory_flavor, tuple(sorted(item.affixes.items())))
             if key not in item_dict:
                 item_dict[key] = {"count": 0, "item": item}
-            item_dict[key]["count"] += 1
+            item_dict[key]["count"] += item.quantity
         return list(item_dict.values())
 
     # --- geometry -------------------------------------------------------------
@@ -283,7 +290,12 @@ class InventoryMenu(BaseMenu):
         elif item.item_type == "armor" and item.bonus > 0:
             text = f"{item.name}  (+{item.bonus} defense)"
         elif item.item_type == "accessory" and item.bonus > 0:
-            text = f"{item.name}  (+{item.bonus} {item.accessory_flavor})"
+            flavor = ACCESSORY_FLAVOR_LABELS.get(item.accessory_flavor, item.accessory_flavor)
+            text = f"{item.name}  (+{item.bonus} {flavor})"
+        elif item.item_type == "ammo":
+            text = f"{item.name}  (x{item.quantity})"
+        elif item.item_type == "misc":
+            text = f"{item.name}  (valuable, sells for ~{base_value(item)}g)"
         else:
             text = item.name
         if is_equipped:
@@ -291,9 +303,13 @@ class InventoryMenu(BaseMenu):
         elif item.item_type in ("weapon", "armor", "accessory"):
             text += "  [click to equip]"
 
-        label = c.Fonts.text.render(text, True, rarity_color(item.rarity))
-        w = label.get_width() + 20
-        h = label.get_height() + 12
+        # Main line in the rarity colour, then one muted line per rolled effect.
+        lines = [(c.Fonts.text.render(text, True, rarity_color(item.rarity)))]
+        for affix, magnitude in item.affixes.items():
+            lines.append(c.Fonts.small.render(affix_label(affix, magnitude), True, c.Colors.ACCENT))
+
+        w = max(line.get_width() for line in lines) + 20
+        h = sum(line.get_height() for line in lines) + 12 + 2 * (len(lines) - 1)
 
         x = rel_x + 16
         y = rel_y + 16
@@ -304,4 +320,7 @@ class InventoryMenu(BaseMenu):
 
         rect = pygame.Rect(x, y, w, h)
         widgets.draw_panel(surface, rect, fill=(24, 24, 30), border=c.Colors.ACCENT)
-        surface.blit(label, (x + 10, y + 6))
+        line_y = y + 6
+        for line in lines:
+            surface.blit(line, (x + 10, line_y))
+            line_y += line.get_height() + 2

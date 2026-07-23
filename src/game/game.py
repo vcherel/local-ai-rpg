@@ -45,6 +45,8 @@ class Game:
         self.help_menu = HelpMenu(self.screen)
         self.pause_menu = PauseMenu(self.screen)
         self.loot_notification = ToastNotification(self.screen)
+        # id of the last picked-up item flagged as a gear upgrade; F equips it.
+        self.pending_upgrade_id = None
 
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window, self.loot_notification.show)
@@ -185,6 +187,9 @@ class Game:
                         else:
                             self._interact_with_world()
 
+                    elif event.key == pygame.K_f:
+                        self._equip_pending_upgrade()
+
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()
 
@@ -223,20 +228,40 @@ class Game:
 
     def _award_loot(self, rarity: str, label: str):
         coins, loot_item = open_lootbox(self.player.x, self.player.y, rarity)
-        self.player.add_coins(coins)
+        self.player.gain_coins(coins)
 
         message = f"{label}: +{coins} coins"
         if loot_item is not None:
-            self.world.items.append(loot_item)
-            self.player.inventory.append(loot_item)
+            # Ammo merges into an existing stack; only a genuinely new entry joins the master list.
+            if self.player.add_item(loot_item) is loot_item:
+                self.world.items.append(loot_item)
             message += f" and a {loot_item.rarity} {loot_item.name}!"
 
         self.loot_notification.show(message, rarity_color(rarity))
         play_sound("lootbox_open")
+        if loot_item is not None:
+            self._offer_upgrade(loot_item)
 
     def _open_lootbox(self, lootbox: Item):
         self.world.items.remove(lootbox)
         self._award_loot(lootbox.rarity, "Lootbox")
+
+    def _offer_upgrade(self, item: Item):
+        """Flag a just-acquired item as an upgrade and prompt to equip it with F."""
+        if not self.player.is_upgrade(item):
+            return
+        self.pending_upgrade_id = item.id
+        self.loot_notification.show(f"New {item.name} (+{item.bonus}), press F to equip", rarity_color(item.rarity))
+
+    def _equip_pending_upgrade(self):
+        if self.pending_upgrade_id is None:
+            return
+        item = next((i for i in self.player.inventory if i.id == self.pending_upgrade_id), None)
+        self.pending_upgrade_id = None
+        if item is None:
+            return
+        self.player.equip(item)
+        self.loot_notification.show(f"Equipped {item.name}", rarity_color(item.rarity))
 
     def _interact_with_world(self):
         item: Item = self.world.pickup_item(self.player)
@@ -245,8 +270,11 @@ class Game:
             if item.item_type == "lootbox":
                 self._open_lootbox(item)
             else:
-                self.player.inventory.append(item)
+                # If ammo merges into a stack, drop the now-orphaned world item.
+                if self.player.add_item(item) is not item and item in self.world.items:
+                    self.world.items.remove(item)
                 play_sound("pickup")
+                self._offer_upgrade(item)
             get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
         else:
             npc = self.world.talk_npc(self.player)

@@ -24,11 +24,13 @@ def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
         item_type = random.choice(["weapon", "armor", "accessory", "ammo"])
         if item_type == "ammo":
             name = AMMO_LOOT_NAME
+            quantity = random.randint(8, 16)
         else:
             name = random.choice(
                 {"weapon": WEAPON_LOOT_NAMES, "armor": ARMOR_LOOT_NAMES, "accessory": ACCESSORY_LOOT_NAMES}[item_type]
             )
-        item = Item(x, y, name, item_type, roll_bonus(item_type, rarity), rarity)
+            quantity = 1
+        item = Item(x, y, name, item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
         item.picked_up = True
 
     return coins, item
@@ -48,11 +50,13 @@ def break_crate() -> tuple[int, Item | None]:
         item_type = random.choice(["weapon", "armor", "accessory", "ammo"])
         if item_type == "ammo":
             name = AMMO_LOOT_NAME
+            quantity = random.randint(5, 10)
         else:
             name = random.choice(
                 {"weapon": WEAPON_LOOT_NAMES, "armor": ARMOR_LOOT_NAMES, "accessory": ACCESSORY_LOOT_NAMES}[item_type]
             )
-        item = Item(0, 0, name, item_type, roll_bonus(item_type, rarity), rarity)
+            quantity = 1
+        item = Item(0, 0, name, item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
         item.picked_up = True
 
     return coins, item
