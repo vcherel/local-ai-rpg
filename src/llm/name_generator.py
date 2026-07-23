@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import queue
 import threading
 import time
 from typing import TYPE_CHECKING, List
@@ -13,27 +12,23 @@ if TYPE_CHECKING:
 
 class NPCNameGenerator:
     def __init__(self, save_system):
-        self.name_queue = queue.Queue(maxsize=1)  # Only keep 1 name ready
-        self.lock = threading.Lock()
+        # A Condition (re-entrant) guards the buffer and lets get_name wait for a name
+        # instead of busy-looping when none is ready yet.
+        self.cond = threading.Condition()
         self.save_system: SaveSystem = save_system
         self.is_generating = False
-        self.used_names: List[str] = []
+        # Both restored from the save so a continued game keeps every name it already
+        # made: used_names avoids duplicates, name_buffer skips regenerating ready names.
+        self.used_names: List[str] = list(save_system.load("used_names", []))
+        self.ready_names: List[str] = list(save_system.load("name_buffer", []))
 
         self.start_generation()
 
     def start_generation(self):
-        with self.lock:
-            if self.is_generating or not self.name_queue.empty():
+        """Ensure one name is being prepared ahead of the next NPC that needs one."""
+        with self.cond:
+            if self.is_generating or self.ready_names:
                 return
-
-            loaded_name: str = self.save_system.load("name", None)
-            if loaded_name:
-                loaded_name = loaded_name.strip()
-                self.name_queue.put(loaded_name)
-                self.used_names.append(loaded_name)
-                self.save_system.update("name", None)
-                return
-
             self.is_generating = True
 
         threading.Thread(target=self._generate_name_background, daemon=True).start()
@@ -45,7 +40,7 @@ class NPCNameGenerator:
             if context is None:
                 time.sleep(0.1)  # avoid busy waiting
 
-        with self.lock:
+        with self.cond:
             used_names = list(self.used_names)
 
         already_generated = (
@@ -60,15 +55,28 @@ class NPCNameGenerator:
         prompt = "Generate a first name and/or a profession for an RPG NPC."
 
         name = generate_response_queued(prompt, system_prompt, "Name generation").strip()
-        self.name_queue.put(name)
 
-        with self.lock:
+        with self.cond:
+            self.ready_names.append(name)
             self.used_names.append(name)
             self.is_generating = False
+            self.cond.notify_all()
+        self.persist()
 
     def get_name(self) -> str:
-        """Get a generated name (waits if necessary)"""
-        name: str = self.name_queue.get()
-        name = name.replace(".", "").strip()
+        """Return a prepared name, kicking off generation and waiting if none is buffered."""
+        with self.cond:
+            while not self.ready_names:
+                self.start_generation()  # no-op if already generating; re-entrant lock
+                self.cond.wait(timeout=0.5)
+            name = self.ready_names.pop(0)
+        self.persist()
 
-        return name
+        return name.replace(".", "").strip()
+
+    def persist(self):
+        """Write the buffered and used names to the save so a restart reuses them."""
+        with self.cond:
+            self.save_system.update("name_buffer", list(self.ready_names))
+            self.save_system.update("used_names", list(self.used_names))
+        self.save_system.save_all()

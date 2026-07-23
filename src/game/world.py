@@ -117,6 +117,21 @@ class World:
         self.monsters = [Monster.from_dict(d) for d in self.save_system.load("monsters", [])]
         self.bosses = [Boss.from_dict(d) for d in self.save_system.load("bosses", [])]
 
+    def persist_world(self):
+        """Flush generated world state to disk. Called by the background generation threads
+        so finished work (context, shops, boss and landmark names) survives a restart
+        instead of being regenerated on the next continue."""
+        try:
+            state = self.serialize()
+        except RuntimeError:
+            # A list mutated on the main thread mid-serialisation; skip this write, the
+            # periodic autosave and the next completion will catch it.
+            return
+        for key, value in state.items():
+            self.save_system.update(key, value)
+        self.save_system.update("context", self.context)
+        self.save_system.save_all()
+
     def serialize(self) -> dict:
         # A wandering merchant is a transient event; drop it rather than saving it as permanent.
         npcs = [npc for npc in self.npcs if npc is not self.events.wandering_merchant]
@@ -182,7 +197,7 @@ class World:
                 self.context = chunk
         self.context_window.finish_streaming()
 
-        self.save_system.update("context", self.context)
+        self.persist_world()
 
         for npc in self.npcs:
             if npc.is_merchant:
@@ -204,6 +219,7 @@ class World:
         name = name.strip().strip('"').strip(".")
         if name:
             landmark.name = " ".join(name.split()[:5])
+            self.persist_world()
 
     # ------------------------------------------------------------------ bosses
 
@@ -249,6 +265,7 @@ class World:
         prompt = f"World: {self.context}\nName {boss.template.flavor}. 2 to 5 words."
         text = generate_response_queued(prompt, system_prompt, "Boss naming") or ""
         boss.set_identity(text)
+        self.persist_world()
         if announce and self.notify:
             self.notify(announce.format(name=boss.name), c.Colors.BOSS_BAR)
 
@@ -279,6 +296,7 @@ class World:
         # doesn't depend entirely on loot RNG for its ammo.
         shop_data += [{"name": "Arrows", "item_type": "ammo", "rarity": "common", "price": 2} for _ in range(2)]
         merchant.set_shop(shop_data)
+        self.persist_world()
 
     def talk_npc(self, player: Player):
         if self.context is None:
