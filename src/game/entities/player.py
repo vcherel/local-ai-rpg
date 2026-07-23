@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 from typing import TYPE_CHECKING
 
 import pygame
@@ -74,8 +75,9 @@ class Player(Entity):
         actual_speed = base_speed * self.speed_multiplier()
 
         forward = keys[pygame.K_z] or keys[pygame.K_w]
+        moving = forward or keys[pygame.K_s]
 
-        if forward or keys[pygame.K_s]:
+        if moving:
             mouse_x, mouse_y = pygame.mouse.get_pos()
 
             world_mouse_x = mouse_x - c.Screen.ORIGIN_X + camera_pos[0]
@@ -113,9 +115,24 @@ class Player(Entity):
 
         self.update_attack_anim(dt, self.attack_swing_mult)
 
+        # Keep the xp-gain accessory's multiplier live for every stat.train call this frame.
+        self.stats.xp_bonus = self.xp_gain_mult()
+
         self.max_hp = self.stats.max_hp()
         if self.hp < self.max_hp:
-            self.hp = min(self.hp + self.regen_rate() * dt, self.max_hp)
+            # Standing still lets the regen-while-still armour affix top up faster.
+            regen = self.regen_rate() + (0.0 if moving else self.regen_still_bonus())
+            self.hp = min(self.hp + regen * dt, self.max_hp)
+
+    def add_item(self, item):
+        """Add an item to the inventory, merging ammo into an existing stack of the same name."""
+        if item.item_type == "ammo":
+            existing = next((i for i in self.inventory if i.item_type == "ammo" and i.name == item.name), None)
+            if existing is not None:
+                existing.quantity += item.quantity
+                return existing
+        self.inventory.append(item)
+        return item
 
     def equipped_ids(self) -> dict:
         return {
@@ -129,6 +146,21 @@ class Player(Entity):
         if item_id is None:
             return None
         return next((item for item in self.inventory if item.id == item_id), None)
+
+    def equip(self, item):
+        """Equip the item into its slot (no toggle), replacing whatever is there."""
+        attr = EQUIP_SLOT_ATTRS.get(item.item_type)
+        if attr is None:
+            return
+        setattr(self, attr, item.id)
+        self.save_system.update("equipped", self.equipped_ids())
+
+    def is_upgrade(self, item) -> bool:
+        """True if the item is equippable and beats (or fills an empty) its slot."""
+        if item.item_type not in EQUIP_SLOT_ATTRS:
+            return False
+        equipped = self.equipped_item(item.item_type)
+        return item.bonus > (equipped.bonus if equipped else -1)
 
     def toggle_equip(self, item):
         """Equip the item into its slot, or unequip it if it's already there."""
@@ -159,6 +191,52 @@ class Player(Entity):
             return item.bonus
         return 0
 
+    # --- affix effects ---------------------------------------------------------
+    # Weapon/armour effects come from the equipped item's rolled affixes; accessories
+    # contribute through their single flavor. Helpers combine both into one value.
+
+    def _weapon_affix(self, name: str) -> float:
+        item = self.equipped_item("weapon")
+        return item.affixes.get(name, 0) if item else 0
+
+    def _armor_affix(self, name: str) -> float:
+        item = self.equipped_item("armor")
+        return item.affixes.get(name, 0) if item else 0
+
+    def crit_bonus(self) -> float:
+        return self._weapon_affix("crit") + self.accessory_bonus("crit") * c.Stats.ACCESSORY_CRIT_PER_BONUS
+
+    def lifesteal_frac(self) -> float:
+        acc = self.accessory_bonus("lifesteal") * c.Stats.ACCESSORY_LIFESTEAL_PER_BONUS
+        return self._weapon_affix("lifesteal") + acc
+
+    def burn_damage(self) -> int:
+        return int(self._weapon_affix("burn"))
+
+    def execute_threshold(self) -> float:
+        return self._weapon_affix("execute")
+
+    def thorns_damage(self) -> int:
+        return int(self._armor_affix("thorns"))
+
+    def dodge_chance(self) -> float:
+        return self._armor_affix("dodge")
+
+    def regen_still_bonus(self) -> float:
+        return self._armor_affix("regen_still")
+
+    def coin_find_mult(self) -> float:
+        return 1.0 + self.accessory_bonus("coinfind") * c.Stats.ACCESSORY_COINFIND_PER_BONUS
+
+    def xp_gain_mult(self) -> float:
+        return 1.0 + self.accessory_bonus("xpgain") * c.Stats.ACCESSORY_XP_PER_BONUS
+
+    def pierce_count(self) -> int:
+        return self.accessory_bonus("pierce")
+
+    def heal(self, amount: float):
+        self.hp = min(self.hp + amount, self.max_hp)
+
     def speed_multiplier(self) -> float:
         return self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
 
@@ -177,7 +255,12 @@ class Player(Entity):
         self.coins += amount
         self.save_system.update("coins", self.coins)
 
-    def receive_damage(self, damage):
+    def receive_damage(self, damage, source=None):
+        # Armour's dodge affix can shrug a hit off entirely.
+        if self.dodge_chance() and random.random() < self.dodge_chance():
+            get_particles().spawn_burst(self.x, self.y, c.Colors.WHITE, count=5, speed=3, life=250, size=3)
+            return
+
         # Taking hits trains resistance and, more slowly, vitality.
         self.stats.train("resistance", c.Stats.XP_PER_DAMAGE_TAKEN)
         self.stats.train("vitality", c.Stats.XP_PER_DAMAGE_TAKEN * 0.5)
@@ -190,6 +273,16 @@ class Player(Entity):
         play_sound("player_hurt")
         get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4)
         get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
+
+        # Thorns reflects flat damage back at a melee attacker, but never lands the kill.
+        thorns = self.thorns_damage()
+        if source is not None and thorns > 0 and getattr(source, "hp", 0) > 0:
+            source.hp = max(1, source.hp - thorns)
+            get_particles().spawn_burst(source.x, source.y, (220, 220, 120), count=6, speed=3, life=300, size=3)
+
+    def gain_coins(self, amount: int):
+        """Add coins from loot, boosted by the coin-find accessory."""
+        self.add_coins(round(amount * self.coin_find_mult()))
 
     def draw(self, screen):
         super().draw(

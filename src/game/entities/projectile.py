@@ -29,6 +29,9 @@ class Projectile:
         self.shake = shake
         # Player arrows/bolts hit monsters and NPCs; a boss's bolts are hostile and hit the player.
         self.hostile = hostile
+        # Pierce lets an arrow pass through this many targets before stopping (arrow-pierce accessory).
+        self.pierce = 0
+        self.hit_ids = set()
         self.traveled = 0.0
         self.dead = False
 

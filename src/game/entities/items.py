@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from core.utils import random_color
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -58,8 +57,12 @@ ARMOR_COLOR = (100, 180, 220)
 ACCESSORY_COLOR = (230, 200, 60)
 LOOTBOX_COLOR = (150, 100, 50)
 AMMO_COLOR = (180, 140, 90)
+VALUABLE_COLOR = (235, 205, 80)
 
-ACCESSORY_FLAVORS = ("speed", "regen", "luck")
+ACCESSORY_FLAVORS = ("speed", "regen", "luck", "crit", "lifesteal", "coinfind", "xpgain", "pierce")
+
+# How many arrows a single loot roll or shop bundle grants.
+AMMO_BUNDLE = 20
 
 
 def item_type_from_name(name: str) -> str:
@@ -103,6 +106,77 @@ def roll_bonus(item_type: str, rarity: str) -> int:
     return 0
 
 
+# Per-affix rarity-indexed magnitude table, resolved from constants.
+_AFFIX_TABLE = {
+    "lifesteal": c.Affixes.LIFESTEAL,
+    "burn": c.Affixes.BURN,
+    "crit": c.Affixes.CRIT,
+    "execute": c.Affixes.EXECUTE,
+    "thorns": c.Affixes.THORNS,
+    "dodge": c.Affixes.DODGE,
+    "regen_still": c.Affixes.REGEN_STILL,
+}
+
+
+def roll_affixes(item_type: str, rarity: str) -> dict:
+    """Roll a weapon's or armour's special effects: {affix_id: magnitude}. Other types get none."""
+    if item_type == "weapon":
+        pool = c.Affixes.WEAPON_POOL
+    elif item_type == "armor":
+        pool = c.Affixes.ARMOR_POOL
+    else:
+        return {}
+    tier_index = c.Rarity.TIERS.index(rarity_tier(rarity))
+    count = min(c.Affixes.COUNT_BY_TIER[tier_index], len(pool))
+    if count <= 0:
+        return {}
+    chosen = random.sample(pool, count)
+    return {affix: _AFFIX_TABLE[affix][tier_index] for affix in chosen}
+
+
+# Human-readable one-liners for each affix, given its rolled magnitude.
+def affix_label(affix: str, magnitude) -> str:
+    if affix == "lifesteal":
+        return f"Lifesteal {round(magnitude * 100)}%"
+    if affix == "burn":
+        return f"Burn {magnitude}/tick"
+    if affix == "crit":
+        return f"+{round(magnitude * 100)}% crit"
+    if affix == "execute":
+        return f"Execute below {round(magnitude * 100)}% hp"
+    if affix == "thorns":
+        return f"Thorns {magnitude}"
+    if affix == "dodge":
+        return f"+{round(magnitude * 100)}% dodge"
+    if affix == "regen_still":
+        return "Regen while still"
+    return affix
+
+
+# Short description of an accessory flavor's effect, for tooltips.
+ACCESSORY_FLAVOR_LABELS = {
+    "speed": "speed",
+    "regen": "regen",
+    "luck": "luck",
+    "crit": "crit",
+    "lifesteal": "lifesteal",
+    "coinfind": "coin find",
+    "xpgain": "xp gain",
+    "pierce": "arrow pierce",
+}
+
+
+def base_value(item: "Item") -> int:
+    """Base sell/worth value before shop multipliers, used by the shop and inventory tooltip."""
+    if item.item_type in ("weapon", "armor", "accessory"):
+        base = max(5, item.bonus * 10)
+    elif item.item_type == "ammo":
+        base = 2
+    else:  # misc valuables are worth selling in their own right
+        base = 20
+    return round(base * rarity_tier(item.rarity).price_mult)
+
+
 class Item:
     def __init__(
         self,
@@ -113,6 +187,7 @@ class Item:
         bonus: int = 0,
         rarity: str = None,
         accessory_flavor: str = None,
+        quantity: int = 1,
     ):
         self.id = uuid.uuid4().hex
         self.x = x
@@ -123,6 +198,8 @@ class Item:
         self.bonus = bonus
         self.rarity = rarity or roll_rarity()
         self.accessory_flavor = accessory_flavor
+        # Only ammo stacks today; every other item keeps quantity 1.
+        self.quantity = quantity
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
             self.shape = "sword"
@@ -140,9 +217,11 @@ class Item:
         elif item_type == "ammo":
             self.color = AMMO_COLOR
             self.shape = "arrow"
-        else:
-            self.color = random_color()
-            self.shape = random.choice(["circle", "triangle", "pentagon", "star"])
+        else:  # misc: a valuable to sell, drawn as a coin so it reads clearly
+            self.color = VALUABLE_COLOR
+            self.shape = "coin"
+        # Weapons and armour carry rolled special effects; everything else stays {}.
+        self.affixes = roll_affixes(item_type, self.rarity)
         self.picked_up = False
 
     def distance_to_point(self, point):
@@ -159,6 +238,8 @@ class Item:
             "bonus": self.bonus,
             "rarity": self.rarity,
             "accessory_flavor": self.accessory_flavor,
+            "quantity": self.quantity,
+            "affixes": self.affixes,
             "color": list(self.color),
             "shape": self.shape,
             "picked_up": self.picked_up,
@@ -174,12 +255,19 @@ class Item:
             data["bonus"],
             data["rarity"],
             data.get("accessory_flavor"),
+            data.get("quantity", 1),
         )
         item.id = data["id"]
         item.angle = data["angle"]
         item.color = tuple(data["color"])
         item.shape = data["shape"]
+        # Restore saved effects rather than the fresh ones __init__ rolled; old saves have none.
+        item.affixes = data.get("affixes", {})
         item.picked_up = data["picked_up"]
+        # Old saves stored misc items as random polygons; normalise them to the coin look.
+        if item.item_type == "misc":
+            item.color = VALUABLE_COLOR
+            item.shape = "coin"
         return item
 
     def draw(self, surface: pygame.Surface, camera: Camera = None, x=None, y=None):
@@ -267,6 +355,17 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width, bo
         ]
         pygame.draw.polygon(surface, color, fletch)
         pygame.draw.polygon(surface, border_color, fletch, 1)
+    elif shape == "coin":
+        pygame.draw.circle(surface, border_color, center, size + border_width)
+        pygame.draw.circle(surface, color, center, size)
+        # Inner ring plus a small highlight so it reads as a minted coin, not a plain disc.
+        pygame.draw.circle(surface, border_color, center, int(size * 0.62), max(1, border_width - 1))
+        pygame.draw.circle(
+            surface,
+            tuple(min(255, v + 40) for v in color),
+            (int(cx - size * 0.28), int(cy - size * 0.28)),
+            max(2, size // 6),
+        )
     elif shape == "chest":
         half_w, half_h = size * 0.75, size * 0.55
         rect = pygame.Rect(0, 0, half_w * 2, half_h * 2)

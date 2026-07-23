@@ -282,6 +282,10 @@ class QuestSystem:
 
         if quest.reward_item_name:
             rtype = item_type_from_name(quest.reward_item_name)
+            # A quest reward should be equippable and useful, not a do-nothing trinket;
+            # anything the name can't classify becomes an accessory.
+            if rtype == "misc":
+                rtype = "accessory"
             rarity = roll_rarity(self._reward_weights(npc))
             rbonus = roll_bonus(rtype, rarity)
             reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity)

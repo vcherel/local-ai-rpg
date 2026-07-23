@@ -109,10 +109,13 @@ class NPC(Entity):
 
         self.shop_items.clear()
         self.shop_prices.clear()
+        from game.entities.items import AMMO_BUNDLE
+
         for entry in shop_data:
             item_type = entry.get("item_type") or item_type_from_name(entry["name"])
             rarity = entry.get("rarity") or roll_rarity()
-            item = Item(0, 0, entry["name"], item_type, roll_bonus(item_type, rarity), rarity)
+            quantity = entry.get("quantity", AMMO_BUNDLE if item_type == "ammo" else 1)
+            item = Item(0, 0, entry["name"], item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
             self.shop_items.append(item)
             self.shop_prices[item.id] = round(entry["price"] * rarity_tier(rarity).price_mult)
         self.shop_ready = True
