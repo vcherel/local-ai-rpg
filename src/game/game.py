@@ -118,7 +118,7 @@ class Game:
             if self.help_menu.handle_event(event):
                 continue
 
-            if self.pause_menu.handle_event(event):
+            if self.pause_menu.handle_event(event, self._save_from_menu):
                 continue
 
             if not self.active_menu:
@@ -349,8 +349,13 @@ class Game:
         self.loot_notification.show("You rest and recover fully", c.Colors.GREEN)
         play_sound("quest_complete")
 
+    def _save_from_menu(self):
+        """Manual save from the pause menu, with an on-screen confirmation."""
+        self.save_data()
+        self.loot_notification.show("Game saved", c.Colors.GREEN)
+
     def save_data(self):
-        self.save_system.update("name", self.npc_name_generator.get_name())
+        # NPC names persist themselves as they're generated/consumed; nothing to do here.
         # The player's live position is in interior space while inside a building;
         # persist the spot they will step back out to instead.
         player_state = self.player.to_dict()
@@ -457,7 +462,7 @@ class Game:
                 self.game_renderer.draw_fps(fps)
 
             current_time = pygame.time.get_ticks()
-            if current_time - last_save_time >= 300_000:
+            if current_time - last_save_time >= 60_000:
                 self.save_data()
                 last_save_time = current_time
 

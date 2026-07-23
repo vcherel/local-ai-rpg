@@ -21,7 +21,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 
 ### game
 - `src/game/game.py`: `Game` class, main loop, input handling, state orchestration
-- `src/game/world.py`: `World` class, world entities (NPCs, monsters, bosses, items), AI context generation, boss spawning (landmark guardian, roaming, quest) and per-frame boss updates
+- `src/game/world.py`: `World` class, world entities (NPCs, monsters, bosses, items), AI context generation, boss spawning (landmark guardian, roaming, quest) and per-frame boss updates; `persist_world` flushes generated state (context, shops, boss/landmark names) to disk the moment a background thread finishes it
 - `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis)
 - `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss types), to_dict/from_dict (de)serialisation
 - `src/game/loot.py`: `open_lootbox` rolls coins/item from a lootbox rarity; `break_crate` rolls the smaller coins/common-item reward from a smashed shop or tavern crate
@@ -42,11 +42,11 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/llm/dialogue_manager.py`: `DialogueManager`, manages NPC dialogue window (streaming, quest detection and affinity analysis on close)
 - `src/llm/quest_system.py`: `QuestSystem`, analyses conversation for quests, creates items, handles completion/rewards
 - `src/llm/merchant_system.py`: `generate_shop_inventory`, asks the LLM for a shop's item list
-- `src/llm/name_generator.py`: `NPCNameGenerator`, background-thread generation of NPC names ahead of time
+- `src/llm/name_generator.py`: `NPCNameGenerator`, background-thread generation of NPC names ahead of time; persists the ready buffer and used-name history so a continued game reuses them instead of regenerating
 
 ### core
 - `src/core/constants.py`: all game constants (screen size, player stats, LLM hyperparameters, colours, fonts); `WeaponArchetype` per-family combat feel (reach/swing/damage/cooldown/knockback/crit/cleave/shake) resolved by `weapon_archetype(name)`, plus `Combat` tuning; `BossKind`/`BOSS_KINDS` archetype templates (brute/warlock/colossus) and `Boss` tuning (enrage, abilities, rewards, spawn caps, health bar)
-- `src/core/save.py`: `SaveSystem`, JSON save system (keys: `context`, `coins`, `name`)
+- `src/core/save.py`: `SaveSystem`, atomic thread-safe JSON save system; background generators persist on completion via `save_all` (keys: `context`, `coins`, `name_buffer`, `used_names`, plus player/world state)
 - `src/core/camera.py`: `Camera`, world to screen coordinate translation; `ScreenShake`/`get_shake` global camera-shake state applied in the translation
 - `src/core/utils.py`: `ConversationHistory`, random color/coordinate helpers, `parse_shop_inventory` / `parse_response_quest_analysis` / `parse_response_affinity_analysis` (LLM response parsing)
 - `src/core/dialogue_log.py`: `write_conversation`, persists finished NPC conversations to Markdown files under `logs/dialogues/`
@@ -64,7 +64,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 ### ui/menus
 - `src/ui/menus/base_menu.py`: `BaseMenu`, shared menu scaffolding other menus subclass
 - `src/ui/menus/main_menu.py`: `MainMenu`, `run_main_menu`, title screen / new-continue-quit
-- `src/ui/menus/pause_menu.py`: `PauseMenu`
+- `src/ui/menus/pause_menu.py`: `PauseMenu`, with a manual Save game button
 - `src/ui/menus/context_menu.py`: `ContextMenu(BaseMenu)`, streaming popup for ambient/context LLM text
 - `src/ui/menus/inventory_menu.py`: `InventoryMenu(BaseMenu)`, item list, equip/unequip
 - `src/ui/menus/shop_menu.py`: `ShopMenu(BaseMenu)`, `_sell_price`, buy/sell UI and pricing (bartering stat and NPC affinity both swing prices)
