@@ -267,7 +267,7 @@ class Building:
 
         # Smashed crates no longer block movement, but stay in `crates` so their debris
         # still draws and their index keeps matching the saved broken set.
-        broken = {crates[i] for i in self.broken_crates if i < len(crates)}
+        broken = [crates[i] for i in self.broken_crates if i < len(crates)]
         solids = [(rect, kind) for rect, kind in solids if not (kind == "crate" and rect in broken)]
 
         self._layout = {"solids": solids, "beds": beds, "crates": crates, "chest": chest, "rug": rug}
