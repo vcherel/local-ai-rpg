@@ -57,6 +57,9 @@ class Game:
         self.dialogue_manager.quest_system.world = self.world
         self.npc_name_generator = NPCNameGenerator(self.save_system)
         self.active_menu = False
+        # Set by the pause menu's "Quit to menu"; breaks the run loop so control
+        # returns to the main menu (game state is saved on the way out).
+        self.quit_to_menu = False
 
         # When inside a building the player moves in that building's interior
         # coordinate space; the world simulation pauses until they step back out.
@@ -118,7 +121,7 @@ class Game:
             if self.help_menu.handle_event(event):
                 continue
 
-            if self.pause_menu.handle_event(event, self._save_from_menu):
+            if self.pause_menu.handle_event(event, self._save_from_menu, self._quit_to_menu):
                 continue
 
             if not self.active_menu:
@@ -354,6 +357,10 @@ class Game:
         self.save_data()
         self.loot_notification.show("Game saved", c.Colors.GREEN)
 
+    def _quit_to_menu(self):
+        """Leave the game and return to the main menu; run() saves as it exits."""
+        self.quit_to_menu = True
+
     def save_data(self):
         # NPC names persist themselves as they're generated/consumed; nothing to do here.
         # The player's live position is in interior space while inside a building;
@@ -402,6 +409,9 @@ class Game:
 
             running = self.handle_input()
             if not running:
+                break
+
+            if self.quit_to_menu:
                 break
 
             # Skip world simulation and rendering while a menu is open to save computation
