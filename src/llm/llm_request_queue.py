@@ -1,4 +1,5 @@
 import queue
+import re
 import threading
 import time
 from queue import Queue
@@ -10,8 +11,21 @@ from core import llm_log
 
 CHAR_FILTER = str.maketrans("", "", '"«»')
 
+# Qwen occasionally drifts into CJK or other glyphs the UI font can't render, which
+# shows up as tofu squares. Keep printable ASCII, the Latin-1/Extended-A/B accented
+# letters DejaVu Sans covers, and the common smart-quote/dash/ellipsis punctuation
+# LLMs favour; drop everything else so it never reaches the screen.
+UNSUPPORTED_GLYPH_RE = re.compile("[^\t\n\r\x20-\x7e -ɏ‐-―‘-‟…]")
+
+ENGLISH_ONLY_REMINDER = "Respond only in English, using standard Latin letters and punctuation."
+
+
+def _strip_unsupported_glyphs(text: str) -> str:
+    return UNSUPPORTED_GLYPH_RE.sub("", text)
+
 
 def _format_prompt(prompt: str, system_prompt: str) -> str:
+    system_prompt = f"{system_prompt} {ENGLISH_ONLY_REMINDER}"
     return (
         f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
     )
@@ -177,7 +191,7 @@ def generate_response_internal(prompt, system_prompt, category, max_tokens=None,
     )
     duration = time.monotonic() - start
 
-    generated_text = response.get("choices", [{}])[0].get("text", "").strip()
+    generated_text = _strip_unsupported_glyphs(response.get("choices", [{}])[0].get("text", "").strip())
 
     if not raw:
         generated_text = generated_text.translate(CHAR_FILTER).strip("\n")
@@ -228,9 +242,10 @@ def generate_response_stream_internal(prompt, system_prompt, category):
             break
 
         accumulated_text += new_token
-        yield accumulated_text.translate(CHAR_FILTER)
+        yield _strip_unsupported_glyphs(accumulated_text).translate(CHAR_FILTER)
 
     duration = time.monotonic() - start
+    accumulated_text = _strip_unsupported_glyphs(accumulated_text)
     llm_log.log_call(
         category=category,
         system_prompt=system_prompt,
