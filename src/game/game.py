@@ -535,10 +535,20 @@ class Game:
                 last_save_time = current_time
 
             if self.player.hp <= 0:
-                # Persist a recoverable state so "Continue" doesn't reload straight into game over
+                # Death has a real cost, not just a free full-heal at the same spot:
+                # dock coins, weaken the player for a while, and send them back to
+                # world spawn so they can't just keep swinging at what killed them.
                 self.player.hp = self.player.max_hp
+                coins_lost = self.player.apply_death_penalty()
+                self.player.x = c.World.WORLD_SIZE // 2
+                self.player.y = c.World.WORLD_SIZE // 2
+                if self.interior is not None:
+                    self.indoor_monsters = []
+                    self.pending_indoor = []
+                    self.indoor_projectiles = []
+                    self.interior = None
                 self.save_data()
-                run_game_over(self.screen, self.clock)
+                run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S)
                 return
 
             pygame.display.flip()
