@@ -173,6 +173,25 @@ class Game:
                                 interior=self.interior,
                             )
 
+                    elif event.button == 3:  # Right click: ranged weapon
+                        if self.interior is None:
+                            self.world.handle_attack(
+                                self.player,
+                                self.dialogue_manager.quest_system,
+                                blocked=self.world.blocked,
+                                ranged=True,
+                            )
+                        else:
+                            self.world.handle_attack(
+                                self.player,
+                                self.dialogue_manager.quest_system,
+                                monsters=self.indoor_monsters,
+                                projectiles=self.indoor_projectiles,
+                                blocked=self.interior.interior_blocked,
+                                interior=self.interior,
+                                ranged=True,
+                            )
+
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
                         if self.interior is not None:

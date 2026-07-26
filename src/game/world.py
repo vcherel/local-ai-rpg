@@ -331,23 +331,30 @@ class World:
         projectiles: List[Projectile] = None,
         blocked=None,
         interior=None,
+        ranged: bool = False,
     ):
         """`monsters` overrides the target list for an indoor fight; loot then goes straight to
         the player instead of dropping a world item, since interior coordinates aren't outdoor ones.
         The weapon's archetype (constants.weapon_archetype) drives reach, damage, cadence, crit,
-        knockback and cleave, so different weapon families feel different to swing."""
+        knockback and cleave, so different weapon families feel different to swing.
+
+        `ranged` selects the ranged weapon slot (right click) instead of the melee one (left
+        click), so a bow/staff and a melee weapon can be carried and used independently."""
         indoor = monsters is not None
         monster_list = monsters if indoor else self.monsters
         proj_list = projectiles if indoor else self.projectiles
         if blocked is None:
             blocked = self.blocked
 
-        weapon = player.equipped_item("weapon")
-        arch = c.weapon_archetype(weapon.name if weapon else None)
-
-        if arch.ranged:
-            self._fire_ranged(player, proj_list, arch)
+        if ranged:
+            weapon = player.equipped_item("ranged_weapon")
+            if weapon is None:
+                return
+            self._fire_ranged(player, proj_list, c.weapon_archetype(weapon.name))
             return
+
+        weapon = player.equipped_item("melee_weapon")
+        arch = c.weapon_archetype(weapon.name if weapon else None)
 
         now = pygame.time.get_ticks()
         if now < player.attack_ready_ms:  # still on cooldown from the previous swing
@@ -464,11 +471,11 @@ class World:
         play_sound("shoot")
 
         base_damage = (
-            c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+            c.Player.ATTACK_DAMAGE + player.weapon_bonus(ranged=True) + player.stats.attack_bonus()
         ) * player.damage_multiplier()
         damage = max(1, int(round(base_damage * arch.damage_mult)))
         # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
-        crit = random.random() < arch.crit_chance + player.crit_bonus()
+        crit = random.random() < arch.crit_chance + player.crit_bonus(ranged=True)
         if crit:
             damage = max(1, int(round(damage * c.Combat.CRIT_MULT)))
         shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
@@ -707,19 +714,21 @@ class World:
                 self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
         monster_list.remove(monster)
 
-    def _apply_on_hit_effects(self, monster, monster_list, damage, player, quest_system, indoor, died):
+    def _apply_on_hit_effects(
+        self, monster, monster_list, damage, player, quest_system, indoor, died, ranged: bool = False
+    ):
         """Weapon lifesteal/burn/execute after a hit lands. `died` is the hit's own result."""
-        frac = player.lifesteal_frac()
+        frac = player.lifesteal_frac(ranged)
         if frac > 0 and damage > 0:
             player.heal(damage * frac)
             get_particles().spawn_burst(player.x, player.y, c.Colors.GREEN, count=5, speed=3, life=300, size=3)
         if died:
             return
-        burn = player.burn_damage()
+        burn = player.burn_damage(ranged)
         if burn > 0:
             monster.apply_burn(burn)
         # Execute finishes off a badly wounded non-boss outright.
-        thr = player.execute_threshold()
+        thr = player.execute_threshold(ranged)
         if thr > 0 and not isinstance(monster, Boss) and 0 < monster.hp <= monster.max_hp * thr:
             get_particles().spawn_burst(monster.x, monster.y, (255, 60, 60), count=10, speed=5, life=400, size=4)
             if monster.receive_damage(monster.hp):
@@ -845,7 +854,9 @@ class World:
                     kb_dir=kb_dir,
                     blocked=blocked,
                 )
-                self._apply_on_hit_effects(hit_monster, monster_list, proj.damage, player, quest_system, indoor, died)
+                self._apply_on_hit_effects(
+                    hit_monster, monster_list, proj.damage, player, quest_system, indoor, died, ranged=True
+                )
                 self._projectile_after_hit(proj, proj_list, hit_monster)
                 continue
 
@@ -874,7 +885,9 @@ class World:
                         kb_dir=kb_dir,
                         blocked=blocked,
                     )
-                    self._apply_on_hit_effects(hit_boss, self.bosses, proj.damage, player, quest_system, False, died)
+                    self._apply_on_hit_effects(
+                        hit_boss, self.bosses, proj.damage, player, quest_system, False, died, ranged=True
+                    )
                     self._projectile_after_hit(proj, proj_list, hit_boss)
                     continue
 
@@ -900,7 +913,7 @@ class World:
                         kb_dir=kb_dir,
                         blocked=blocked,
                     )
-                    frac = player.lifesteal_frac()
+                    frac = player.lifesteal_frac(ranged=True)
                     if frac > 0:
                         player.heal(proj.damage * frac)
                     self._projectile_after_hit(proj, proj_list, hit_npc)

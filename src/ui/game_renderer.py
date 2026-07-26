@@ -15,7 +15,8 @@ from ui.loading_indicator import LoadingIndicator
 
 # HUD equipment strip: (slot key, caption, ghost glyph shown when empty).
 _EQUIP_HUD_SLOTS = (
-    ("weapon", "Weapon", "sword"),
+    ("melee_weapon", "Melee", "sword"),
+    ("ranged_weapon", "Ranged", "sword"),
     ("armor", "Armor", "shield"),
     ("accessory", "Accessory", "gem"),
 )
