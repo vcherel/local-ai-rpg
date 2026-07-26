@@ -25,7 +25,10 @@ class Stats:
         return {"level": self.level, "xp": self.xp}
 
     def xp_to_next(self, name: str) -> float:
-        return c.Stats.BASE_XP * (c.Stats.XP_GROWTH ** (self.level[name] - 1))
+        needed = c.Stats.BASE_XP * (c.Stats.XP_GROWTH ** (self.level[name] - 1))
+        if name in c.Stats.COMBAT_STAT_NAMES:
+            needed *= c.Stats.COMBAT_XP_GROWTH_MULTIPLIER
+        return needed
 
     def train(self, name: str, amount: float) -> int:
         """Add XP to a stat, applying any level-ups. Returns the number gained."""
