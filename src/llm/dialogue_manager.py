@@ -41,6 +41,7 @@ class DialogueManager:
         self.waiting_for_llm = False
         self.system_prompt = ""
         self.conversation_ended = False
+        self._is_first_message = False
 
         self.generator = None
 
@@ -174,6 +175,7 @@ class DialogueManager:
         self.opened_this_frame = True
         self.waiting_for_llm = True
         self.conversation_ended = False
+        self._is_first_message = True
 
         self.conversation.clear()
         self.ui.reset()
@@ -240,8 +242,13 @@ class DialogueManager:
                 partial = next(self.generator)
                 marker_pos = partial.upper().find(END_MARKER)
                 if marker_pos != -1:
-                    self.conversation_ended = True
-                    partial = partial[:marker_pos].rstrip()
+                    stripped = partial[:marker_pos].rstrip()
+                    # The model sometimes tags [END] on the opening greeting, or right
+                    # after asking the player a question, both premature. Drop the tag
+                    # but keep the conversation open in those cases.
+                    if not self._is_first_message and not stripped.endswith("?"):
+                        self.conversation_ended = True
+                    partial = stripped
                 else:
                     partial = _trim_partial_marker(partial)
                 self.conversation.update_last_assistant_message(partial)
@@ -249,6 +256,7 @@ class DialogueManager:
                 self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
+                self._is_first_message = False
 
                 last_msg = self.conversation.get_last_message()
 
@@ -346,9 +354,9 @@ class DialogueManager:
             return
 
         self.conversation.add_user_message(message)
+        self._is_first_message = False
 
         conversation_text = self.conversation.format_for_prompt()
-        conversation_text += f"Player: {message}"
 
         self.generator = generate_response_stream_queued(
             conversation_text + "\nNPC:", self.system_prompt, "Continuing conversation"
