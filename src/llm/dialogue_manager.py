@@ -36,7 +36,7 @@ def _trim_partial_marker(text: str) -> str:
 class DialogueManager:
     def __init__(self, screen, items, player, npcs):
         self.active = False
-        self.opened_this_frame = False
+        self._opened_at_ms = 0
         self.current_npc = None
         self.waiting_for_llm = False
         self.system_prompt = ""
@@ -172,7 +172,7 @@ class DialogueManager:
 
         self.current_npc = npc
         self.active = True
-        self.opened_this_frame = True
+        self._opened_at_ms = pygame.time.get_ticks()
         self.waiting_for_llm = True
         self.conversation_ended = False
         self._is_first_message = True
@@ -203,9 +203,10 @@ class DialogueManager:
             return True
 
         elif event.type == pygame.KEYDOWN:
-            # Swallow keys queued in the same frame the dialogue opened (e.g. a movement
-            # key still held while pressing E), so they don't leak into the input box.
-            if self.opened_this_frame:
+            # Swallow keys for a brief window after opening (e.g. a movement key pressed
+            # right as E was pressed), since its KEYDOWN can arrive a frame late and
+            # otherwise leaks into the input box.
+            if pygame.time.get_ticks() - self._opened_at_ms < 200:
                 return True
 
             if event.key == pygame.K_UP:
