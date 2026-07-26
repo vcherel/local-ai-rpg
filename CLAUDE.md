@@ -28,7 +28,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 
 ### game/entities
 - `src/game/entities/entities.py`: `Entity` base class (hp, damage, attack animation), `draw_human` sprite renderer
-- `src/game/entities/player.py`: `Player(Entity)`, movement, inventory (`add_item` merges ammo stacks), equipment slots (`equip`/`is_upgrade`), affix-effect helpers (crit/lifesteal/burn/execute/thorns/dodge/regen-still/coinfind/xpgain/pierce), `heal`, `gain_coins` (coin-find), thorns/dodge in `receive_damage`
+- `src/game/entities/player.py`: `Player(Entity)`, movement, inventory (`add_item` merges ammo stacks), equipment slots (`equip`/`is_upgrade`) split into separate melee and ranged weapon slots (a bow/staff and a sword can be equipped and carried at once, `_equip_slot` routes a weapon item by its archetype) plus armor/accessory, affix-effect helpers (crit/lifesteal/burn/execute/thorns/dodge/regen-still/coinfind/xpgain/pierce) each taking a `ranged` flag to read the matching weapon slot, `heal`, `gain_coins` (coin-find), thorns/dodge in `receive_damage`
 - `src/game/entities/npcs.py`: `NPC(Entity)`, tracks per-NPC `affinity` (LLM-judged relationship level, feeds dialogue tone/quest rewards/shop prices)
 - `src/game/entities/monsters.py`: `Monster(Entity)`, `pick_monster_kind` (spawn selection by distance from center), `apply_burn` + burn-tick state (weapon burn affix, ticked in `World.update`)
 - `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam AoE, hostile bolt volley, summon adds), knockback immune; spawned at the landmark, by roaming, by events and by slay_boss quests

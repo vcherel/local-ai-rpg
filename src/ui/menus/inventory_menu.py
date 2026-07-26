@@ -21,9 +21,11 @@ if TYPE_CHECKING:
     from game.entities.player import Player
 
 
-# The three equip slots shown in the paper-doll, with the ghost glyph drawn when empty.
+# The equip slots shown in the paper-doll, with the ghost glyph drawn when empty. Melee
+# and ranged are separate slots so a sword and a bow can be carried and equipped at once.
 EQUIP_SLOTS = (
-    ("weapon", "Weapon", "sword"),
+    ("melee_weapon", "Melee", "sword"),
+    ("ranged_weapon", "Ranged", "sword"),
     ("armor", "Armor", "shield"),
     ("accessory", "Accessory", "gem"),
 )
@@ -79,21 +81,28 @@ class InventoryMenu(BaseMenu):
         return {"cols": cols, "rows": rows, "start_x": start_x, "start_y": top, "step": step}
 
     def _paperdoll_rects(self) -> list[tuple[str, str, str, pygame.Rect]]:
-        """(item_type, label, glyph, slot_rect) for each equip slot."""
-        slot = 104
+        """(item_type, label, glyph, slot_rect) for each equip slot, laid out as a 2x2 grid."""
+        slot = 100
         label_h = 24
-        gap = 26
-        block = label_h + slot
-        total = block * len(EQUIP_SLOTS) + gap * (len(EQUIP_SLOTS) - 1)
+        gap_x = 20
+        gap_y = 22
+        cols = 2
+        rows = math.ceil(len(EQUIP_SLOTS) / cols)
+        block_h = label_h + slot
+
+        grid_w = cols * slot + (cols - 1) * gap_x
+        grid_h = rows * block_h + (rows - 1) * gap_y
 
         area_h = self.height - self.content_top - self.footer_height
-        start_y = self.content_top + max(0, (area_h - total) // 2)
-        slot_x = self.padding + (self.paperdoll_width - slot) // 2
+        start_y = self.content_top + max(0, (area_h - grid_h) // 2)
+        start_x = self.padding + (self.paperdoll_width - grid_w) // 2
 
         rects = []
         for i, (item_type, label, glyph) in enumerate(EQUIP_SLOTS):
-            y = start_y + i * (block + gap)
-            rect = pygame.Rect(slot_x, y + label_h, slot, slot)
+            col, row = i % cols, i // cols
+            x = start_x + col * (slot + gap_x)
+            y = start_y + row * (block_h + gap_y)
+            rect = pygame.Rect(x, y + label_h, slot, slot)
             rects.append((item_type, label, glyph, rect))
         return rects
 

@@ -22,10 +22,22 @@ if TYPE_CHECKING:
 
 
 EQUIP_SLOT_ATTRS = {
-    "weapon": "equipped_weapon_id",
+    "melee_weapon": "equipped_melee_weapon_id",
+    "ranged_weapon": "equipped_ranged_weapon_id",
     "armor": "equipped_armor_id",
     "accessory": "equipped_accessory_id",
 }
+
+
+def _equip_slot(item) -> str | None:
+    """Which equip slot an item belongs to. Weapons split into a melee and a ranged
+    slot by archetype (constants.weapon_archetype), so a bow and a sword can be
+    carried and equipped at the same time instead of fighting over one slot."""
+    if item.item_type == "weapon":
+        return "ranged_weapon" if c.weapon_archetype(item.name).ranged else "melee_weapon"
+    if item.item_type in ("armor", "accessory"):
+        return item.item_type
+    return None
 
 
 class Player(Entity):
@@ -48,7 +60,12 @@ class Player(Entity):
         self.hp = self.max_hp
 
         equipped = save_system.load("equipped", {})
-        self.equipped_weapon_id = equipped.get("weapon")
+        self.equipped_melee_weapon_id = equipped.get("melee_weapon")
+        self.equipped_ranged_weapon_id = equipped.get("ranged_weapon")
+        # Migrate a pre-dual-slot save: the old single "weapon" key was always a melee
+        # weapon in practice, since ranged combat had no separate slot to get stuck in.
+        if equipped.get("weapon") and self.equipped_melee_weapon_id is None:
+            self.equipped_melee_weapon_id = equipped["weapon"]
         self.equipped_armor_id = equipped.get("armor")
         self.equipped_accessory_id = equipped.get("accessory")
 
@@ -144,49 +161,53 @@ class Player(Entity):
 
     def equipped_ids(self) -> dict:
         return {
-            "weapon": self.equipped_weapon_id,
+            "melee_weapon": self.equipped_melee_weapon_id,
+            "ranged_weapon": self.equipped_ranged_weapon_id,
             "armor": self.equipped_armor_id,
             "accessory": self.equipped_accessory_id,
         }
 
-    def equipped_item(self, item_type: str):
-        item_id = getattr(self, EQUIP_SLOT_ATTRS[item_type])
+    def equipped_item(self, slot: str):
+        item_id = getattr(self, EQUIP_SLOT_ATTRS[slot])
         if item_id is None:
             return None
         return next((item for item in self.inventory if item.id == item_id), None)
 
     def equip(self, item):
         """Equip the item into its slot (no toggle), replacing whatever is there."""
-        attr = EQUIP_SLOT_ATTRS.get(item.item_type)
-        if attr is None:
+        slot = _equip_slot(item)
+        if slot is None:
             return
-        setattr(self, attr, item.id)
+        setattr(self, EQUIP_SLOT_ATTRS[slot], item.id)
         self.save_system.update("equipped", self.equipped_ids())
 
     def is_upgrade(self, item) -> bool:
         """True if the item is equippable and beats (or fills an empty) its slot."""
-        if item.item_type not in EQUIP_SLOT_ATTRS:
+        slot = _equip_slot(item)
+        if slot is None:
             return False
-        equipped = self.equipped_item(item.item_type)
+        equipped = self.equipped_item(slot)
         return item.bonus > (equipped.bonus if equipped else -1)
 
     def toggle_equip(self, item):
         """Equip the item into its slot, or unequip it if it's already there."""
-        attr = EQUIP_SLOT_ATTRS.get(item.item_type)
-        if attr is None:
+        slot = _equip_slot(item)
+        if slot is None:
             return
+        attr = EQUIP_SLOT_ATTRS[slot]
         setattr(self, attr, None if getattr(self, attr) == item.id else item.id)
         self.save_system.update("equipped", self.equipped_ids())
 
     def unequip_if_equipped(self, item):
         """Clears an item's slot before it leaves the inventory (sold, dropped, etc)."""
-        attr = EQUIP_SLOT_ATTRS.get(item.item_type)
+        slot = _equip_slot(item)
+        attr = EQUIP_SLOT_ATTRS.get(slot)
         if attr and getattr(self, attr) == item.id:
             setattr(self, attr, None)
             self.save_system.update("equipped", self.equipped_ids())
 
-    def weapon_bonus(self) -> int:
-        item = self.equipped_item("weapon")
+    def weapon_bonus(self, ranged: bool = False) -> int:
+        item = self.equipped_item("ranged_weapon" if ranged else "melee_weapon")
         return item.bonus if item else 0
 
     def armor_bonus(self) -> int:
@@ -203,26 +224,26 @@ class Player(Entity):
     # Weapon/armour effects come from the equipped item's rolled affixes; accessories
     # contribute through their single flavor. Helpers combine both into one value.
 
-    def _weapon_affix(self, name: str) -> float:
-        item = self.equipped_item("weapon")
+    def _weapon_affix(self, name: str, ranged: bool = False) -> float:
+        item = self.equipped_item("ranged_weapon" if ranged else "melee_weapon")
         return item.affixes.get(name, 0) if item else 0
 
     def _armor_affix(self, name: str) -> float:
         item = self.equipped_item("armor")
         return item.affixes.get(name, 0) if item else 0
 
-    def crit_bonus(self) -> float:
-        return self._weapon_affix("crit") + self.accessory_bonus("crit") * c.Stats.ACCESSORY_CRIT_PER_BONUS
+    def crit_bonus(self, ranged: bool = False) -> float:
+        return self._weapon_affix("crit", ranged) + self.accessory_bonus("crit") * c.Stats.ACCESSORY_CRIT_PER_BONUS
 
-    def lifesteal_frac(self) -> float:
+    def lifesteal_frac(self, ranged: bool = False) -> float:
         acc = self.accessory_bonus("lifesteal") * c.Stats.ACCESSORY_LIFESTEAL_PER_BONUS
-        return self._weapon_affix("lifesteal") + acc
+        return self._weapon_affix("lifesteal", ranged) + acc
 
-    def burn_damage(self) -> int:
-        return int(self._weapon_affix("burn"))
+    def burn_damage(self, ranged: bool = False) -> int:
+        return int(self._weapon_affix("burn", ranged))
 
-    def execute_threshold(self) -> float:
-        return self._weapon_affix("execute")
+    def execute_threshold(self, ranged: bool = False) -> float:
+        return self._weapon_affix("execute", ranged)
 
     def thorns_damage(self) -> int:
         return int(self._armor_affix("thorns"))
