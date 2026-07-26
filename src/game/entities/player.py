@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+import time
 from typing import TYPE_CHECKING
 
 import pygame
@@ -56,6 +57,10 @@ class Player(Entity):
             self.x = saved["x"]
             self.y = saved["y"]
             self.hp = saved["hp"]
+
+        # Wall-clock timestamp (not a frame counter) so the post-death weakness survives
+        # quitting to the main menu or relaunching, rather than being a free reset.
+        self.death_debuff_until = save_system.load("death_debuff_until", 0.0)
 
     def to_dict(self) -> dict:
         return {"x": self.x, "y": self.y, "hp": self.hp}
@@ -289,6 +294,22 @@ class Player(Entity):
     def gain_coins(self, amount: int):
         """Add coins from loot, boosted by the coin-find accessory."""
         self.add_coins(round(amount * self.coin_find_mult()))
+
+    def is_shaken(self) -> bool:
+        """True while the post-death weakness from apply_death_penalty is still active."""
+        return time.time() < self.death_debuff_until
+
+    def damage_multiplier(self) -> float:
+        return c.Death.DEBUFF_DAMAGE_MULT if self.is_shaken() else 1.0
+
+    def apply_death_penalty(self) -> int:
+        """Dock a share of coins and start the post-respawn weakness timer. Returns the
+        number of coins lost, for the game-over screen to report."""
+        loss = int(self.coins * c.Death.COIN_LOSS_PCT)
+        self.add_coins(-loss)
+        self.death_debuff_until = time.time() + c.Death.DEBUFF_DURATION_S
+        self.save_system.update("death_debuff_until", self.death_debuff_until)
+        return loss
 
     def draw(self, screen):
         super().draw(

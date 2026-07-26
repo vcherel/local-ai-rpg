@@ -357,7 +357,9 @@ class World:
 
         reach = c.Player.ATTACK_REACH * arch.reach_mult
         pos = player.get_pos(reach)
-        base_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        base_damage = (
+            c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        ) * player.damage_multiplier()
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
 
         # Bosses live outdoors only, and a swing that reaches one should always land on it.
@@ -458,7 +460,9 @@ class World:
         player.start_attack_anim()
         play_sound("shoot")
 
-        base_damage = c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        base_damage = (
+            c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+        ) * player.damage_multiplier()
         damage = max(1, int(round(base_damage * arch.damage_mult)))
         # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
         crit = random.random() < arch.crit_chance + player.crit_bonus()

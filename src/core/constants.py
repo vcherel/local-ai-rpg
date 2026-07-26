@@ -31,6 +31,16 @@ class Player:
 
 
 @dataclass(frozen=True)
+class Death:
+    """Dying doesn't reload the save at the same spot with full HP for free: it costs
+    coins and leaves the player weakened for a while after respawning at world spawn."""
+
+    COIN_LOSS_PCT: float = 0.3
+    DEBUFF_DURATION_S: float = 60.0
+    DEBUFF_DAMAGE_MULT: float = 0.75
+
+
+@dataclass(frozen=True)
 class Projectile:
     SPEED: int = 14
     RANGE: int = 650
