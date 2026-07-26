@@ -377,7 +377,7 @@ class World:
             if interior is not None:
                 crate = interior.break_crate_at(pos, hit_radius)
                 if crate is not None:
-                    self._break_crate(player, crate)
+                    self._break_crate(player, interior, crate)
             return
 
         npc_targets = [n for n in self.npcs if n.distance_to_point(pos) < hit_radius + c.Entities.NPC_SIZE // 2]
@@ -503,24 +503,29 @@ class World:
             blocked=blocked,
         )
 
-    def _break_crate(self, player: Player, crate):
-        """Smash a shop or tavern crate: juice, a few coins, and a small chance of a common item.
+    def _break_crate(self, player: Player, building: Building, crate):
+        """Smash a shop or tavern crate: juice, a few coins, and a small chance of a dropped item.
 
         The crate has already been removed from the interior's collision set by
-        break_crate_at; here we only handle feedback and the loot, which goes straight
-        to the player since interior coordinates aren't outdoor world coordinates.
+        break_crate_at; here we handle the feedback and the loot. Coins are credited
+        straight away; an item (if any) pops out onto the floor for the player to walk
+        over and collect, rather than jumping straight into the inventory.
         """
         get_shake().add(c.Combat.CRATE_SHAKE)
         play_sound("crate_break")
-        get_particles().spawn_burst(crate.centerx, crate.centery, (150, 110, 70), count=16, speed=5, life=500, size=5)
+        get_particles().spawn_burst(crate.centerx, crate.centery, (150, 110, 70), count=20, speed=6, life=550, size=5)
 
         coins, loot_item = break_crate()
         player.gain_coins(coins)
         message = f"Crate smashed: +{coins} coins"
         color = c.Colors.WHITE
         if loot_item is not None:
-            player.add_item(loot_item)
-            message += f" and a {loot_item.rarity} {loot_item.name}!"
+            spread = crate.width / 2
+            loot_item.x = crate.centerx + random.uniform(-spread, spread)
+            loot_item.y = crate.centery + random.uniform(-spread, spread)
+            loot_item.start_pop_anim(crate.centerx, crate.centery)
+            building.dropped_items.append(loot_item)
+            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
             color = rarity_color(loot_item.rarity)
         if self.notify:
             self.notify(message, color)

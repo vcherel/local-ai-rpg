@@ -223,6 +223,15 @@ class Item:
         # Weapons and armour carry rolled special effects; everything else stays {}.
         self.affixes = roll_affixes(item_type, self.rarity)
         self.picked_up = False
+        # Set by start_pop_anim for items that should hop out of a source (a smashed
+        # crate, say) and settle into place instead of just appearing.
+        self.pop_start_ms = None
+        self.pop_from = (0.0, 0.0)
+
+    def start_pop_anim(self, from_x, from_y):
+        """Animate the item hopping out from (from_x, from_y) to its resting spot at (self.x, self.y)."""
+        self.pop_start_ms = pygame.time.get_ticks()
+        self.pop_from = (from_x - self.x, from_y - self.y)
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -273,6 +282,17 @@ class Item:
     def draw(self, surface: pygame.Surface, camera: Camera = None, x=None, y=None):
         draw_x = x if x is not None else self.x
         draw_y = y if y is not None else self.y
+
+        if self.pop_start_ms is not None:
+            elapsed = pygame.time.get_ticks() - self.pop_start_ms
+            if elapsed >= c.Entities.DROP_POP_MS:
+                self.pop_start_ms = None
+            else:
+                t = elapsed / c.Entities.DROP_POP_MS
+                ease = 1 - (1 - t) ** 3
+                hop = math.sin(t * math.pi) * c.Entities.DROP_POP_HEIGHT
+                draw_x += self.pop_from[0] * (1 - ease)
+                draw_y += self.pop_from[1] * (1 - ease) - hop
 
         if camera:
             screen_x, screen_y = camera.world_to_screen(draw_x, draw_y)
