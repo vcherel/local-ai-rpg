@@ -541,6 +541,11 @@ class Stats:
     BASE_XP: float = 35.0
     XP_GROWTH: float = 1.45
 
+    # Combat stats level from very frequent actions (per hit, per frame moved) compared
+    # to persuasion/bartering, so they get an extra multiplier on top of the shared curve.
+    COMBAT_STAT_NAMES: tuple = ("strength", "resistance", "speed", "vitality")
+    COMBAT_XP_GROWTH_MULTIPLIER: float = 3.0
+
     # Effect increment per level above 1.
     STRENGTH_PER_LEVEL: int = 2  # flat attack damage
     RESISTANCE_PER_LEVEL: int = 1  # flat damage reduction
