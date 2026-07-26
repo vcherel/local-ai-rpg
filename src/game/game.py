@@ -353,6 +353,11 @@ class Game:
             self.interior = None
 
     def _interior_interact(self):
+        item = self.interior.pickup_dropped_item(self.player.x, self.player.y)
+        if item is not None:
+            self._pickup_dropped_item(item)
+            return
+
         hit = self.interior.interactable_at(self.player.x, self.player.y)
         if hit is None:
             return
@@ -361,6 +366,17 @@ class Game:
             self._open_interior_chest()
         elif kind == "bed":
             self._sleep_in_bed()
+
+    def _pickup_dropped_item(self, item: Item):
+        self.interior.dropped_items.remove(item)
+        item.picked_up = True
+        # If ammo merges into a stack, register the item purely so a saved inventory
+        # id can still find it after reload; it never renders or drops again.
+        if self.player.add_item(item) is item:
+            self.world.items.append(item)
+        play_sound("pickup")
+        self._offer_upgrade(item)
+        get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
 
     def _open_interior_chest(self):
         from game.entities.items import roll_rarity

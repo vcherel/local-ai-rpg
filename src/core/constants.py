@@ -268,6 +268,9 @@ class Entities:
     SWING_SPEED: float = 0.007
     # How long an entity flashes white after being hit (ms).
     FLASH_MS: int = 150
+    # A dropped item pops from its source (a smashed crate, say) and settles into place.
+    DROP_POP_MS: int = 400
+    DROP_POP_HEIGHT: float = 26.0
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from core.utils import random_coordinates
 
 if TYPE_CHECKING:
     from core.camera import Camera
+    from game.entities.items import Item
     from game.entities.player import Player
 
 # The world's buildings, registered so systems without a World reference
@@ -83,6 +84,9 @@ class Building:
         self.name = None  # Only the landmark gets an LLM-generated name
         self.looted = False
         self.broken_crates: set = set()  # indices into interior_layout()["crates"] already smashed
+        # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
+        # persisted: it lives only for the current play session, same as indoor monsters.
+        self.dropped_items: List["Item"] = []
         self._layout = None
         self._ruin = None
 
@@ -294,6 +298,14 @@ class Building:
         ]
         return crate
 
+    def pickup_dropped_item(self, x, y) -> Optional["Item"]:
+        """Nearest dropped item within reach of (x, y), if any."""
+        reach = c.Buildings.INTERACT_DISTANCE
+        for item in self.dropped_items:
+            if math.hypot(x - item.x, y - item.y) <= reach:
+                return item
+        return None
+
     def interactable_at(self, x, y) -> Optional[tuple]:
         """Return ("chest", rect) or ("bed", rect) within reach of (x, y), else None."""
         layout = self.interior_layout()
@@ -466,6 +478,12 @@ class Building:
             if idx < len(layout["crates"]):
                 world_rect = layout["crates"][idx]
                 self._draw_broken_crate(screen, to_screen(world_rect), world_rect)
+
+        for item in self.dropped_items:
+            item.draw(screen, camera)
+            if math.hypot(player.x - item.x, player.y - item.y) <= c.Buildings.INTERACT_DISTANCE:
+                ix, iy = camera.world_to_screen(item.x, item.y)
+                draw_label(screen, f"E: pick up {item.name}", (ix, iy - 26))
 
         chest = layout["chest"]
         if chest and not self.looted:
