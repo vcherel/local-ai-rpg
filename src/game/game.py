@@ -132,37 +132,22 @@ class Game:
             if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
-                        if self.game_renderer.menu_button_rect.collidepoint(event.pos):
-                            self.game_renderer.show_hud_buttons = not self.game_renderer.show_hud_buttons
-
-                        elif self.game_renderer.show_hud_buttons and self.game_renderer.inv_button_rect.collidepoint(
-                            event.pos
-                        ):
+                        if self.game_renderer.inv_button_rect.collidepoint(event.pos):
                             self.inventory_menu.toggle()
 
-                        elif self.game_renderer.show_hud_buttons and self.game_renderer.quest_button_rect.collidepoint(
-                            event.pos
-                        ):
+                        elif self.game_renderer.quest_button_rect.collidepoint(event.pos):
                             self.quest_menu.toggle()
 
-                        elif self.game_renderer.show_hud_buttons and self.game_renderer.stats_button_rect.collidepoint(
-                            event.pos
-                        ):
+                        elif self.game_renderer.stats_button_rect.collidepoint(event.pos):
                             self.stats_menu.toggle()
 
-                        elif self.game_renderer.show_hud_buttons and self.game_renderer.lore_button_rect.collidepoint(
-                            event.pos
-                        ):
+                        elif self.game_renderer.lore_button_rect.collidepoint(event.pos):
                             self._show_lore()
 
-                        elif self.game_renderer.show_hud_buttons and self.game_renderer.help_button_rect.collidepoint(
-                            event.pos
-                        ):
+                        elif self.game_renderer.help_button_rect.collidepoint(event.pos):
                             self.help_menu.toggle()
 
-                        elif self.game_renderer.show_hud_buttons and self.game_renderer.pause_button_rect.collidepoint(
-                            event.pos
-                        ):
+                        elif self.game_renderer.pause_button_rect.collidepoint(event.pos):
                             self.pause_menu.toggle()
 
                         elif self.game_renderer.loading_indicator.rect.collidepoint(event.pos):
@@ -210,9 +195,6 @@ class Game:
 
                     elif event.key in (pygame.K_p, pygame.K_ESCAPE):
                         self.pause_menu.toggle()
-
-                    elif event.key == pygame.K_m:
-                        self.game_renderer.show_hud_buttons = not self.game_renderer.show_hud_buttons
 
         if self.dialogue_manager.shop_requested and not self.dialogue_manager.active:
             npc = self.dialogue_manager.current_npc

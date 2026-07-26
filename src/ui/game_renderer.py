@@ -31,24 +31,34 @@ if TYPE_CHECKING:
 
 
 class GameRenderer:
+    # Everything below sits inside one permanent panel in the top left corner:
+    # a row of icon buttons, then coin/item/quest counters, then equipped gear.
+    HUD_PANEL_RECT = pygame.Rect(8, 8, 300, 170)
+    HUD_ICON_SIZE = 40
+    HUD_ICON_GAP = 8
+
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
-        # A single Menu button lives in the corner. The row of menu buttons is
-        # hidden by default and unfolds to its right when Menu is clicked, so the
-        # top of the screen stays clear. Toggled by self.show_hud_buttons.
-        self.menu_button_rect = pygame.Rect(10, 10, 110, 35)
-        self.show_hud_buttons = False
-        # Grouped left to right: player panels, world info, system controls,
-        # with an extra gap between each group so the bar reads as clusters.
-        # All shifted right to sit after the Menu button when expanded.
-        self.inv_button_rect = pygame.Rect(130, 10, 120, 35)
-        self.quest_button_rect = pygame.Rect(260, 10, 120, 35)
-        self.stats_button_rect = pygame.Rect(390, 10, 120, 35)
 
-        self.lore_button_rect = pygame.Rect(540, 10, 120, 35)
+        icon_y = self.HUD_PANEL_RECT.y + 10
+        icon_x = self.HUD_PANEL_RECT.x + 10
+        step = self.HUD_ICON_SIZE + self.HUD_ICON_GAP
+        self.inv_button_rect = pygame.Rect(icon_x, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
+        self.quest_button_rect = pygame.Rect(icon_x + step, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
+        self.stats_button_rect = pygame.Rect(icon_x + step * 2, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
+        self.lore_button_rect = pygame.Rect(icon_x + step * 3, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
+        self.help_button_rect = pygame.Rect(icon_x + step * 4, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
+        self.pause_button_rect = pygame.Rect(icon_x + step * 5, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
+        # (rect, icon glyph, tooltip label) for the icon dock row, in draw/hit-test order.
+        self.dock_buttons = (
+            (self.inv_button_rect, "bag", "Inventory (I)"),
+            (self.quest_button_rect, "scroll", "Quests (Q)"),
+            (self.stats_button_rect, "person", "Character (C)"),
+            (self.lore_button_rect, "book", "Lore (L)"),
+            (self.help_button_rect, "question", "Help (H)"),
+            (self.pause_button_rect, "pause", "Pause (P)"),
+        )
 
-        self.help_button_rect = pygame.Rect(690, 10, 120, 35)
-        self.pause_button_rect = pygame.Rect(820, 10, 120, 35)
         self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
         # Toggled by clicking the loading indicator; lists the LLM's in-flight tasks.
         self.show_llm_tasks = False
@@ -119,34 +129,85 @@ class GameRenderer:
         get_floating_text().draw(self.screen, camera)
         player.draw(self.screen)
 
-    def _draw_button(self, rect: pygame.Rect, label: str, mouse_pos):
+    def _draw_icon(self, kind: str, center: tuple, size: int, color: tuple):
+        """A small flat glyph for a HUD icon button. `size` is roughly the icon's radius."""
+        cx, cy = center
+        r = size
+        if kind == "bag":
+            top_w, bot_w = r * 0.9, r * 1.3
+            top_y, bot_y = cy - r * 0.3, cy + r * 0.9
+            pygame.draw.polygon(
+                self.screen,
+                color,
+                [(cx - top_w / 2, top_y), (cx + top_w / 2, top_y), (cx + bot_w / 2, bot_y), (cx - bot_w / 2, bot_y)],
+                2,
+            )
+            pygame.draw.arc(self.screen, color, pygame.Rect(cx - r * 0.4, cy - r * 1.3, r * 0.8, r * 1.0), 3.4, 6.0, 2)
+        elif kind == "scroll":
+            rect = pygame.Rect(cx - r * 0.7, cy - r * 0.9, r * 1.4, r * 1.8)
+            pygame.draw.rect(self.screen, color, rect, 2, border_radius=3)
+            for i in range(3):
+                ly = rect.top + rect.height * 0.32 + i * rect.height * 0.22
+                pygame.draw.line(self.screen, color, (rect.left + 4, ly), (rect.right - 4, ly), 1)
+        elif kind == "person":
+            pygame.draw.circle(self.screen, color, (cx, cy - r * 0.5), r * 0.4, 2)
+            pygame.draw.arc(
+                self.screen, color, pygame.Rect(cx - r * 0.7, cy - r * 0.1, r * 1.4, r * 1.3), 3.14, 6.28, 2
+            )
+        elif kind == "book":
+            rect = pygame.Rect(cx - r * 0.9, cy - r * 0.7, r * 1.8, r * 1.4)
+            pygame.draw.rect(self.screen, color, rect, 2)
+            pygame.draw.line(self.screen, color, (cx, rect.top), (cx, rect.bottom), 2)
+        elif kind == "question":
+            label = c.Fonts.button.render("?", True, color)
+            self.screen.blit(label, label.get_rect(center=center))
+        elif kind == "pause":
+            bar_w, gap, h = max(2, int(r * 0.35)), r * 0.4, r * 1.4
+            pygame.draw.rect(self.screen, color, pygame.Rect(cx - gap - bar_w, cy - h / 2, bar_w, h))
+            pygame.draw.rect(self.screen, color, pygame.Rect(cx + gap, cy - h / 2, bar_w, h))
+        elif kind == "coin":
+            pygame.draw.circle(self.screen, color, center, r * 0.9, 2)
+            label = c.Fonts.small.render("$", True, color)
+            self.screen.blit(label, label.get_rect(center=center))
+
+    def _draw_dock_button(self, rect: pygame.Rect, icon: str, tooltip: str, mouse_pos):
         hover = rect.collidepoint(mouse_pos)
-        widgets.draw_button(self.screen, rect, label, c.Fonts.button, hovered=hover)
+        widgets.draw_button(self.screen, rect, "", c.Fonts.button, hovered=hover)
+        self._draw_icon(icon, rect.center, rect.width * 0.32, c.Colors.WHITE)
+        if hover:
+            self._draw_tooltip(rect, tooltip)
+
+    def _draw_tooltip(self, anchor: pygame.Rect, text: str):
+        label = c.Fonts.small.render(text, True, c.Colors.WHITE)
+        pad = 6
+        box = pygame.Rect(anchor.left, anchor.bottom + 4, label.get_width() + pad * 2, label.get_height() + pad * 2)
+        widgets.draw_panel(self.screen, box)
+        self.screen.blit(label, (box.x + pad, box.y + pad))
+
+    def _draw_stat_chip(self, x: int, y: int, icon: str, value: int) -> int:
+        """Draw an icon + number pair at (x, y), returning the x position right after it."""
+        icon_size = 9
+        self._draw_icon(icon, (x + icon_size, y + icon_size), icon_size, c.Colors.MUTED)
+        label = c.Fonts.text.render(str(value), True, c.Colors.WHITE)
+        text_x = x + icon_size * 2 + 6
+        self.screen.blit(label, (text_x, y + icon_size - label.get_height() // 2))
+        return text_x + label.get_width() + 22
 
     def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player):
         active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
-        menu_label = "Menu (M)" if not self.show_hud_buttons else "Close (M)"
-        self._draw_button(self.menu_button_rect, menu_label, mouse_pos)
-        if self.show_hud_buttons:
-            self._draw_button(self.inv_button_rect, "Inventory (I)", mouse_pos)
-            self._draw_button(self.quest_button_rect, "Quests (Q)", mouse_pos)
-            self._draw_button(self.stats_button_rect, "Character (C)", mouse_pos)
-            self._draw_button(self.lore_button_rect, "Lore (L)", mouse_pos)
-            self._draw_button(self.help_button_rect, "Help (H)", mouse_pos)
-            self._draw_button(self.pause_button_rect, "Pause (P)", mouse_pos)
 
-        coins_text = f"Coins: {nb_coins}"
-        objects_text = f"Items: {nb_items}"
-        quests_text = f"Quests: {nb_quests}"
-        coins_surface = c.Fonts.text.render(coins_text, True, c.Colors.WHITE)
-        objects_surface = c.Fonts.text.render(objects_text, True, c.Colors.WHITE)
-        quests_surface = c.Fonts.text.render(quests_text, True, c.Colors.WHITE)
-        self.screen.blit(coins_surface, (12, 55))
-        self.screen.blit(objects_surface, (12, 90))
-        self.screen.blit(quests_surface, (12, 125))
+        widgets.draw_panel(self.screen, self.HUD_PANEL_RECT)
+        for rect, icon, tooltip in self.dock_buttons:
+            self._draw_dock_button(rect, icon, tooltip, mouse_pos)
 
-        self._draw_equipped(player)
+        stats_y = self.inv_button_rect.bottom + 10
+        x = self.HUD_PANEL_RECT.x + 10
+        x = self._draw_stat_chip(x, stats_y, "coin", nb_coins)
+        x = self._draw_stat_chip(x, stats_y, "bag", nb_items)
+        self._draw_stat_chip(x, stats_y, "scroll", nb_quests)
+
+        self._draw_equipped(player, top=stats_y + 30)
 
         self.loading_indicator.update()
         if active_task_count > 0:
@@ -158,14 +219,14 @@ class GameRenderer:
         if self.show_llm_tasks:
             self._draw_llm_task_panel(llm_tasks)
 
-    def _draw_equipped(self, player: Player):
+    def _draw_equipped(self, player: Player, top: int):
         """A mini paper-doll on the HUD: one captioned slot per equip type."""
         slot = 46
         step = 70
-        top = 158
+        left = self.HUD_PANEL_RECT.x + 10
         for i, (item_type, caption, glyph) in enumerate(_EQUIP_HUD_SLOTS):
             item = player.equipped_item(item_type)
-            rect = pygame.Rect(12 + i * step, top, slot, slot)
+            rect = pygame.Rect(left + i * step, top, slot, slot)
 
             border = rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER
             widgets.draw_slot(self.screen, rect, border_color=border)
