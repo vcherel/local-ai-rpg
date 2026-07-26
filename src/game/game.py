@@ -214,9 +214,6 @@ class Game:
                     elif event.key == pygame.K_m:
                         self.game_renderer.show_hud_buttons = not self.game_renderer.show_hud_buttons
 
-        # The frame the dialogue opened is over; later keystrokes are real input.
-        self.dialogue_manager.opened_this_frame = False
-
         if self.dialogue_manager.shop_requested and not self.dialogue_manager.active:
             npc = self.dialogue_manager.current_npc
             if npc is not None and npc.is_merchant:
