@@ -360,6 +360,30 @@ class Events:
 
 
 @dataclass(frozen=True)
+class DayNight:
+    # A full day/night cycle takes this long in real time.
+    CYCLE_LENGTH_MS: int = 600_000
+
+    # Cycle progress (0..1) at which each phase ends; day holds steady from 0, dusk and
+    # dawn ramp darkness up/down between the steady day and night stretches.
+    DAY_END: float = 0.45
+    DUSK_END: float = 0.55
+    NIGHT_END: float = 0.85
+
+    NIGHT_COLOR: tuple = (15, 20, 60)
+    NIGHT_MAX_ALPHA: int = 90
+
+    # Blood night overrides the normal tint with a fixed dark red look, regardless of
+    # whatever the time of day would otherwise show.
+    BLOOD_NIGHT_COLOR: tuple = (80, 0, 10)
+    BLOOD_NIGHT_ALPHA: int = 130
+
+    # Monsters respawn a bit faster after dark, on top of (not stacked with) the
+    # blood night multiplier.
+    NIGHT_RESPAWN_MULT: float = 1.5
+
+
+@dataclass(frozen=True)
 class Buildings:
     NB_HOUSES: int = 8
     NB_SHOPS: int = 3
