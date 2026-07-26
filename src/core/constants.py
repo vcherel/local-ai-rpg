@@ -569,11 +569,11 @@ class Fonts:
     @staticmethod
     def load() -> "Fonts":
         return Fonts(
-            big_title=pygame.font.SysFont("arial", 64, bold=True),
-            title=pygame.font.SysFont("arial", 32, bold=True),
-            heading=pygame.font.SysFont("arial", 22, bold=True),
-            text=pygame.font.SysFont("arial", 20),
-            small=pygame.font.SysFont("arial", 16),
-            medium=pygame.font.SysFont("arial", 22),
-            button=pygame.font.SysFont("arial", 20, bold=True),
+            big_title=pygame.font.SysFont("dejavusans", 64, bold=True),
+            title=pygame.font.SysFont("dejavusans", 32, bold=True),
+            heading=pygame.font.SysFont("dejavusans", 22, bold=True),
+            text=pygame.font.SysFont("dejavusans", 20),
+            small=pygame.font.SysFont("dejavusans", 16),
+            medium=pygame.font.SysFont("dejavusans", 22),
+            button=pygame.font.SysFont("dejavusans", 20, bold=True),
         )
