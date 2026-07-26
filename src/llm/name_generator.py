@@ -48,11 +48,13 @@ class NPCNameGenerator:
         )
         system_prompt = (
             f"You are an NPC generator for an RPG. Context: {context}. "
-            "Reply only with ONE first name and/or ONE profession, "
-            "on a single line, with no repetition and no explanation."
+            "Reply with ONE realistic name for an NPC (first name, optionally with a last "
+            "name), for example 'Elena', 'Bran Thatcher', or 'Mira the herbalist'. You may "
+            "optionally add a short profession or epithet after the name, but never reply "
+            "with a profession alone. Single line, no explanation."
             f"{already_generated}"
         )
-        prompt = "Generate a first name and/or a profession for an RPG NPC."
+        prompt = "Generate a name for an RPG NPC."
 
         name = generate_response_queued(prompt, system_prompt, "Name generation").strip()
 
