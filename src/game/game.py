@@ -7,7 +7,10 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import Camera, get_shake
+from core.decals import get_decals
+from core.floating_text import get_floating_text
 from core.particles import get_particles
+from core.screen_fx import get_hitstop, get_vignette
 from game.entities.items import rarity_color
 from game.entities.player import Player
 from game.loot import open_lootbox
@@ -432,6 +435,7 @@ class Game:
         self.save_system.update("monsters", monsters)
         self.save_system.update("bosses", world_state["bosses"])
         self.save_system.update("buildings", world_state["buildings"])
+        self.save_system.update("breakables", world_state["breakables"])
 
         self.save_system.save_all()
 
@@ -461,27 +465,39 @@ class Game:
             # Skip world simulation and rendering while a menu is open to save computation
             if not self.active_menu:
                 dt = self.clock.get_time()
+                # A heavy hit freezes gameplay motion for a few frames without slowing the
+                # camera shake/particles/damage numbers below, so the impact reads as a
+                # freeze-frame rather than the whole game stuttering.
+                gameplay_dt = get_hitstop().apply(dt)
                 if self.interior is not None:
-                    self.player.move(self.camera.get_pos(), dt, self.interior.interior_blocked)
+                    self.player.move(self.camera.get_pos(), gameplay_dt, self.interior.interior_blocked)
                     self._update_pending_indoor()
                     for monster in self.indoor_monsters:
-                        monster.move(self.player, dt, self.interior.interior_blocked)
+                        monster.move(self.player, gameplay_dt, self.interior.interior_blocked)
                     self.world.update_projectiles(
                         self.indoor_projectiles,
                         self.indoor_monsters,
                         self.player,
                         self.dialogue_manager.quest_system,
-                        dt,
+                        gameplay_dt,
                         self.interior.interior_blocked,
                         indoor=True,
                     )
                     self._check_interior_exit()
                 else:
-                    self.player.move(self.camera.get_pos(), dt, self.world.blocked)
-                    self.world.update(self.player, dt, self.dialogue_manager.quest_system, self.npc_name_generator)
+                    self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked)
+                    self.world.update(
+                        self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator
+                    )
                     self._check_building_entry()
                 self.update_camera()
                 get_shake().update(dt)
+                # Runs here rather than inside World.update so both the outdoor and
+                # indoor branches keep particles/damage numbers animating.
+                get_particles().update(dt)
+                get_floating_text().update(dt)
+                get_decals().update(dt)
+                get_vignette().update(dt)
 
                 if self.interior is not None:
                     self.game_renderer.draw_interior(
@@ -489,6 +505,7 @@ class Game:
                     )
                 else:
                     self.game_renderer.draw_world(self.camera, self.world, self.player)
+                get_vignette().draw(self.screen)
                 self.game_renderer.draw_ui(
                     len(self.player.inventory),
                     self.player.coins,

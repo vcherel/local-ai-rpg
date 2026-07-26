@@ -45,9 +45,23 @@ class Combat:
     PLAYER_HURT_SHAKE: float = 5.0
     # Kick when a shop crate is smashed.
     CRATE_SHAKE: float = 5.0
+    # Softer kicks for the smaller outdoor breaks: a decorative pot/bush, or a window pane.
+    DECOR_BREAK_SHAKE: float = 3.0
+    WINDOW_SHAKE: float = 3.5
     # Camera never shakes more than this, so heavy hits stay readable rather than nauseating.
     MAX_SHAKE: float = 30.0
     SHAKE_DECAY: float = 0.82  # per-60fps-frame multiplier
+
+    # Hit-stop: gameplay dt is multiplied by this for a few frames after a heavy hit,
+    # a near-freeze that sells impact without new animation work.
+    HITSTOP_SLOW_FACTOR: float = 0.06
+    HITSTOP_CRIT_MS: float = 45.0
+    HITSTOP_KILL_MS: float = 55.0
+    HITSTOP_BOSS_MS: float = 110.0
+
+    # Player-hurt screen vignette: triggered amount decays back to 0 at this rate.
+    VIGNETTE_DECAY: float = 0.90  # per-60fps-frame multiplier
+    PLAYER_HURT_VIGNETTE: float = 0.7
 
 
 @dataclass(frozen=True)
@@ -376,9 +390,31 @@ class Buildings:
     CRATE_COIN_MAX: int = 6
     CRATE_ITEM_CHANCE: float = 0.2
 
+    # Two windows flank the door on every non-landmark building's front facade;
+    # broken ones stay broken (per-building index set, like broken crates).
+    WINDOW_W: int = 24
+    WINDOW_H: int = 20
+    WINDOW_Y_FROM_BOTTOM: int = 45
+    WINDOW_X_FROM_DOOR: int = 40
+    WINDOW_HIT_RADIUS: int = 18
+
     WALL_COLOR: tuple = (72, 56, 44)
     FLOOR_COLOR: tuple = (152, 112, 72)
     STONE_COLOR: tuple = (138, 136, 128)
+
+
+@dataclass(frozen=True)
+class Breakables:
+    """Outdoor props scattered near houses/shops/taverns (game/entities/breakables.py).
+    "barrel" smashes the same way as an interior crate, with the same coin/item odds;
+    "pot" and "bush" are pure decoration, just a satisfying puff with no reward."""
+
+    PER_BUILDING_MIN: int = 1
+    PER_BUILDING_MAX: int = 2
+    SIZE: int = 30
+    HIT_RADIUS: int = 20
+    # Relative pick weight among kinds scattered near a building.
+    KIND_WEIGHTS: tuple = (("barrel", 5), ("pot", 3), ("bush", 3))
 
 
 @dataclass(frozen=True)
@@ -419,6 +455,21 @@ class Affixes:
     THORNS: tuple = (0, 2, 3, 5, 8)  # flat damage reflected to a melee attacker
     DODGE: tuple = (0.0, 0.05, 0.08, 0.12, 0.16)  # chance to take no damage from a hit
     REGEN_STILL: tuple = (0.0, 0.002, 0.003, 0.005, 0.008)  # extra hp/ms regen while standing still
+
+
+@dataclass(frozen=True)
+class Decals:
+    """Blood splats left on the ground by hits and kills (core/decals.py)."""
+
+    LIFE_MS: float = 12_000.0
+    # Oldest decal is dropped once the list grows past this, so a long fight
+    # never leaves an unbounded number of splats to draw.
+    MAX_COUNT: int = 140
+
+    HIT_RADIUS: int = 7
+    KILL_RADIUS: int = 18
+    BOSS_KILL_RADIUS: int = 30
+    PLAYER_HURT_RADIUS: int = 11
 
 
 @dataclass(frozen=True)
