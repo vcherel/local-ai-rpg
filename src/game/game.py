@@ -138,6 +138,11 @@ class Game:
                         elif self.game_renderer.quest_button_rect.collidepoint(event.pos):
                             self.quest_menu.toggle()
 
+                        elif self.dialogue_manager.quest_tracker.handle_event(
+                            event, self.dialogue_manager.quest_system
+                        ):
+                            pass
+
                         elif self.game_renderer.stats_button_rect.collidepoint(event.pos):
                             self.stats_menu.toggle()
 
@@ -497,7 +502,7 @@ class Game:
 
             self.dialogue_manager.draw()
             if not self.active_menu:
-                self.dialogue_manager.notification.draw()
+                self.dialogue_manager.quest_tracker.draw(self.dialogue_manager.quest_system)
                 self.loot_notification.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)

@@ -62,7 +62,8 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/ui/widgets.py`: shared menu/HUD draw primitives (flat square panels, buttons, slots, scaled item icons); all menus and the HUD draw through these for one consistent dark theme
 - `src/ui/game_renderer.py`: `GameRenderer`, draws the world, entities, camera-relative UI
 - `src/ui/conversation_ui.py`: `ConversationUI`, dialogue text box rendering, scrolling, text input
-- `src/ui/notification.py`: `QuestNotification`, `ToastNotification`, on-screen popups
+- `src/ui/notification.py`: `ToastNotification`, on-screen popups
+- `src/ui/quest_tracker.py`: `QuestTracker`, permanent top right HUD widget showing one tracked quest in full plus swap chips for the rest, collapsible; owned by `DialogueManager` (`dialogue_manager.quest_tracker`), replaces the old slide-in "new quest" banner
 - `src/ui/loading_indicator.py`: `LoadingIndicator`, spinner shown while the LLM is generating
 
 ### ui/menus

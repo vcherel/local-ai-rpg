@@ -14,7 +14,7 @@ from llm.llm_request_queue import generate_response_queued, generate_response_st
 from llm.quest_system import QuestSystem
 from ui import widgets
 from ui.conversation_ui import ConversationUI
-from ui.notification import QuestNotification
+from ui.quest_tracker import QuestTracker
 
 if TYPE_CHECKING:
     from game.entities.npcs import NPC
@@ -48,7 +48,7 @@ class DialogueManager:
         self.pending_quest_analysis = False
         self.pending_quest_completion = None
         self.pending_affinity_analysis = False
-        self.notification = QuestNotification(screen)
+        self.quest_tracker = QuestTracker(screen)
         self.shop_requested = False
         self.shop_button_rect: pygame.Rect | None = None
 
@@ -371,7 +371,7 @@ class DialogueManager:
                 self.quest_system.create_quest_from_analysis(npc, quest_info, self._npc_name_generator)
                 quest = npc.quest
                 if quest:
-                    self.notification.show(quest)
+                    self.quest_tracker.notify_new_quest(quest)
                     play_sound("quest_new")
 
     def _execute_affinity_analysis(self, npc: NPC, conversation_text: str, log_path):
