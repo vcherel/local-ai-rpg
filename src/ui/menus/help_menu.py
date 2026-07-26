@@ -10,7 +10,6 @@ CONTROLS = [
     ("Left Click", "Attack"),
     ("E", "Interact, talk, pick up"),
     ("F", "Equip the last picked-up upgrade"),
-    ("M", "Toggle menu buttons"),
     ("I", "Inventory"),
     ("Q", "Quests"),
     ("C", "Character"),
