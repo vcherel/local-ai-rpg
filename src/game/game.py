@@ -420,6 +420,7 @@ class Game:
         self.save_system.update("bosses", world_state["bosses"])
         self.save_system.update("buildings", world_state["buildings"])
         self.save_system.update("breakables", world_state["breakables"])
+        self.save_system.update("daynight_elapsed_ms", world_state["daynight_elapsed_ms"])
 
         self.save_system.save_all()
 
@@ -491,6 +492,8 @@ class Game:
                 )
             else:
                 self.game_renderer.draw_world(self.camera, self.world, self.player)
+                # Ambient day/night tint only applies outdoors; interiors are their own lit space.
+                self.world.daynight.draw(self.screen, self.world.events.blood_night_active)
             get_vignette().draw(self.screen)
             if not self.active_menu:
                 self.game_renderer.draw_ui(

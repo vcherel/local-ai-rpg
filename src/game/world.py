@@ -10,6 +10,7 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
+from core.daynight import DayNightCycle
 from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
@@ -58,6 +59,7 @@ class World:
         self.notify = notify
         self.context = self.save_system.load("context", None)
         self.events = EventSystem(self, notify)
+        self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
 
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
@@ -149,6 +151,7 @@ class World:
             "bosses": [boss.to_dict() for boss in self.bosses],
             "buildings": [building.to_dict() for building in self.buildings],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
+            "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
 
     def blocked(self, x, y, radius, door_open=False) -> bool:
@@ -944,6 +947,7 @@ class World:
         # Particles/floating text/screen fx update once per frame in Game.run(), for both
         # the outdoor and indoor branches, instead of here (this only runs outdoors).
         self._sync_chunks(player)
+        self.daynight.update(dt)
         self.events.update(dt, player, quest_system, npc_name_generator)
 
         # Monsters far beyond their detection range can't react to the player, so skip
@@ -979,6 +983,8 @@ class World:
             respawn_interval = c.World.RESPAWN_INTERVAL_MS
             if self.events.blood_night_active:
                 respawn_interval /= c.Events.BLOOD_NIGHT_RESPAWN_MULT
+            elif self.daynight.is_night:
+                respawn_interval /= c.DayNight.NIGHT_RESPAWN_MULT
             if self.respawn_timer >= respawn_interval:
                 self.respawn_timer = 0.0
                 self._spawn_monster_away_from(player)
