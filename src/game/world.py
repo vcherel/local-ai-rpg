@@ -10,8 +10,12 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
+from core.decals import get_decals
+from core.floating_text import get_floating_text
 from core.particles import get_particles
+from core.screen_fx import get_hitstop
 from game.entities.boss import Boss
+from game.entities.breakables import Breakable, generate_breakables
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.items import AMMO_BUNDLE, Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster, pick_monster_kind
@@ -43,6 +47,7 @@ class World:
         # count toward the monster cap, and get their own update, health bar and rewards.
         self.bosses: List[Boss] = []
         self.buildings: List[Building] = []
+        self.breakables: List[Breakable] = []
         # Arrows in flight; transient like particles, never saved.
         self.projectiles: List[Projectile] = []
         self.respawn_timer = 0.0
@@ -64,6 +69,7 @@ class World:
         else:
             self.buildings = generate_buildings()
             set_active_buildings(self.buildings)
+            self.breakables = generate_breakables(self.buildings)
             self._populate_npcs()
             self.monsters = [
                 self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
@@ -111,6 +117,7 @@ class World:
     def _restore(self, saved_npcs: list):
         """Rebuild items, NPCs, monsters and buildings from a saved game, relinking quest items by id."""
         self.buildings = [Building.from_dict(d) for d in self.save_system.load("buildings", [])]
+        self.breakables = [Breakable.from_dict(d) for d in self.save_system.load("breakables", [])]
         self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
         items_by_id = {item.id: item for item in self.items}
         self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
@@ -141,6 +148,7 @@ class World:
             "monsters": [monster.to_dict() for monster in self.monsters],
             "bosses": [boss.to_dict() for boss in self.bosses],
             "buildings": [building.to_dict() for building in self.buildings],
+            "breakables": [breakable.to_dict() for breakable in self.breakables],
         }
 
     def blocked(self, x, y, radius, door_open=False) -> bool:
@@ -387,6 +395,51 @@ class World:
             player.stats.train("strength", c.Stats.XP_PER_HIT)
             for npc in npc_targets:
                 self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
+            return
+
+        # Nothing living in range: a swing that reaches a barrel/pot/bush smashes it instead.
+        breakable = next(
+            (b for b in self.breakables if b.distance_to_point(pos) < hit_radius + c.Breakables.HIT_RADIUS), None
+        )
+        if breakable is not None:
+            self._break_breakable(player, breakable)
+            return
+
+        window_hit = self._find_window_in_reach(pos, hit_radius)
+        if window_hit is not None:
+            building, idx, window = window_hit
+            self._break_window(building, idx, window)
+
+    def _find_window_in_reach(self, pos, hit_radius):
+        """Nearest unbroken window (on any non-landmark building) a swing reaches, as
+        (building, index, rect), or None."""
+        px, py = pos
+        best = None
+        for building in self.buildings:
+            for idx, window in enumerate(building.window_rects()):
+                if idx in building.broken_windows:
+                    continue
+                dist = math.hypot(px - window.centerx, py - window.centery)
+                if dist < hit_radius + c.Buildings.WINDOW_HIT_RADIUS and (best is None or dist < best[0]):
+                    best = (dist, building, idx, window)
+        return None if best is None else (best[1], best[2], best[3])
+
+    def _break_window(self, building: Building, idx: int, window):
+        """Shatter a window: no loot, just a satisfying crash."""
+        building.broken_windows.add(idx)
+        get_shake().add(c.Combat.WINDOW_SHAKE)
+        play_sound("glass_break")
+        get_particles().spawn_burst(
+            window.centerx,
+            window.centery,
+            (210, 230, 240),
+            count=16,
+            speed=6,
+            life=500,
+            size=3,
+            gravity=0.5,
+            shape="shard",
+        )
 
     def _fire_ranged(self, player: Player, proj_list: List[Projectile], arch: c.WeaponArchetype):
         now = pygame.time.get_ticks()
@@ -513,7 +566,17 @@ class World:
         """
         get_shake().add(c.Combat.CRATE_SHAKE)
         play_sound("crate_break")
-        get_particles().spawn_burst(crate.centerx, crate.centery, (150, 110, 70), count=20, speed=6, life=550, size=5)
+        get_particles().spawn_burst(
+            crate.centerx,
+            crate.centery,
+            (150, 110, 70),
+            count=20,
+            speed=6,
+            life=550,
+            size=5,
+            gravity=0.4,
+            shape="shard",
+        )
 
         coins, loot_item = break_crate()
         player.gain_coins(coins)
@@ -525,6 +588,56 @@ class World:
             loot_item.y = crate.centery + random.uniform(-spread, spread)
             loot_item.start_pop_anim(crate.centerx, crate.centery)
             building.dropped_items.append(loot_item)
+            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
+            color = rarity_color(loot_item.rarity)
+        if self.notify:
+            self.notify(message, color)
+
+    def _break_breakable(self, player: Player, breakable: Breakable):
+        """Smash an outdoor prop. A barrel plays out like a shop crate: juice, coins,
+        and a small chance of a dropped item landing straight in the open world. A
+        pot or bush is pure decoration: a satisfying puff and nothing else, so the
+        world has more to smash without inflating the loot economy. Either way the
+        prop is gone for good, no debris left behind."""
+        self.breakables.remove(breakable)
+
+        if not breakable.loot:
+            get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
+            if breakable.kind == "pot":
+                play_sound("crate_break")
+                get_particles().spawn_burst(
+                    breakable.x,
+                    breakable.y,
+                    (170, 100, 60),
+                    count=10,
+                    speed=5,
+                    life=400,
+                    size=3,
+                    gravity=0.4,
+                    shape="shard",
+                )
+            else:  # bush
+                play_sound("bush_rustle")
+                get_particles().spawn_burst(
+                    breakable.x, breakable.y, (80, 150, 65), count=14, speed=4, life=450, size=4, gravity=0.3
+                )
+            return
+
+        get_shake().add(c.Combat.CRATE_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(
+            breakable.x, breakable.y, (150, 110, 70), count=18, speed=6, life=550, size=5, gravity=0.4, shape="shard"
+        )
+
+        coins, loot_item = break_crate()
+        player.gain_coins(coins)
+        message = f"Barrel smashed: +{coins} coins"
+        color = c.Colors.WHITE
+        if loot_item is not None:
+            loot_item.x = breakable.x + random.uniform(-20, 20)
+            loot_item.y = breakable.y + random.uniform(-20, 20)
+            loot_item.start_pop_anim(breakable.x, breakable.y)
+            self.items.append(loot_item)
             message += f", and a {loot_item.rarity} {loot_item.name} dropped"
             color = rarity_color(loot_item.rarity)
         if self.notify:
@@ -546,10 +659,11 @@ class World:
     ) -> bool:
         """Applies damage to a monster and its kill rewards. Returns True if it died."""
         get_shake().add(shake)
+        self._pop_damage(monster.x, monster.y - monster.kind.size / 2, damage, crit)
         if monster.receive_damage(damage):
             self._kill_monster(monster, monster_list, player, quest_system, indoor)
             return True
-        self._hit_feedback(monster.x, monster.y, crit)
+        self._hit_feedback(monster.x, monster.y, crit, kb_dir)
         if not getattr(monster, "knockback_immune", False):
             self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
         return False
@@ -562,7 +676,11 @@ class World:
             self._on_boss_killed(monster, quest_system)
             monster_list.remove(monster)
             return
-        get_particles().spawn_burst(monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5)
+        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        get_decals().spawn(monster.x, monster.y, radius=c.Decals.KILL_RADIUS)
+        get_particles().spawn_burst(
+            monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5, gravity=0.3
+        )
         quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
         if quest_item is not None:
             if indoor:
@@ -602,6 +720,8 @@ class World:
 
     def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem):
         """A boss dies with extra spectacle and a guaranteed legendary lootbox."""
+        get_hitstop().trigger(c.Combat.HITSTOP_BOSS_MS)
+        get_decals().spawn(boss.x, boss.y, radius=c.Decals.BOSS_KILL_RADIUS)
         get_particles().spawn_burst(boss.x, boss.y, boss.template.aura, count=40, speed=10, life=800, size=7)
         get_shake().add(c.Boss.SLAM_SHAKE)
         quest_system.on_boss_killed(boss)
@@ -624,6 +744,7 @@ class World:
     ) -> bool:
         """Applies damage to an NPC and handles death. Returns True if it died."""
         get_shake().add(shake)
+        self._pop_damage(npc.x, npc.y - c.Entities.NPC_SIZE / 2, damage, crit)
         if npc.receive_damage(damage):
             stolen_item = quest_system.on_npc_killed(npc)
             if stolen_item is not None:
@@ -631,27 +752,43 @@ class World:
             # Drop any quest this NPC was offering so it can't become uncompletable
             quest_system.remove_quest(npc)
             play_sound("monster_death")
-            get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5)
+            get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+            get_decals().spawn(npc.x, npc.y, radius=c.Decals.KILL_RADIUS)
+            get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5, gravity=0.3)
             self.npcs.remove(npc)
             return True
-        self._hit_feedback(npc.x, npc.y, crit)
+        self._hit_feedback(npc.x, npc.y, crit, kb_dir)
         self._knockback(npc, c.Entities.NPC_SIZE / 2, kb_dir, knockback, blocked)
         return False
 
     @staticmethod
-    def _hit_feedback(x, y, crit: bool):
-        """Sound + particle burst for a non-fatal hit; crits read brighter and louder."""
+    def _hit_feedback(x, y, crit: bool, direction=None):
+        """Sound + particle burst for a non-fatal hit; crits read brighter and louder.
+        `direction` (attacker -> target unit vector), if given, sprays the particles as a
+        cone away from the hit instead of a plain omnidirectional poof."""
         play_sound("crit" if crit else "hit")
+        if crit:
+            get_hitstop().trigger(c.Combat.HITSTOP_CRIT_MS)
+        get_decals().spawn(x, y, radius=c.Decals.HIT_RADIUS)
         color = (255, 240, 160) if crit else (255, 180, 180)
-        get_particles().spawn_burst(
-            x,
-            y,
-            color,
-            count=12 if crit else 6,
-            speed=4 if crit else 3,
-            life=350 if crit else 300,
-            size=4 if crit else 3,
-        )
+        count = 12 if crit else 6
+        speed = 4 if crit else 3
+        life = 350 if crit else 300
+        size = 4 if crit else 3
+        if direction:
+            angle = math.atan2(direction[1], direction[0])
+            get_particles().spawn_directional_burst(
+                x, y, angle, spread_deg=80.0, color=color, count=count, speed=speed, life=life, size=size, gravity=0.35
+            )
+        else:
+            get_particles().spawn_burst(x, y, color, count=count, speed=speed, life=life, size=size)
+
+    @staticmethod
+    def _pop_damage(x, y, damage: int, crit: bool):
+        """Floating damage number over a hit; crits pop bigger and gold."""
+        text = f"{damage}!" if crit else str(damage)
+        color = (255, 210, 90) if crit else c.Colors.WHITE
+        get_floating_text().spawn(x, y, text, color, big=crit)
 
     def update_projectiles(
         self,
@@ -769,6 +906,9 @@ class World:
             monster.burn_ticks_remaining -= 1
             monster.burn_next_ms = now + c.Affixes.BURN_INTERVAL_MS
             get_particles().spawn_burst(monster.x, monster.y, (255, 140, 40), count=4, speed=2, life=300, size=3)
+            get_floating_text().spawn(
+                monster.x, monster.y - monster.kind.size / 2, str(monster.burn_damage), (255, 150, 60)
+            )
             if monster.receive_damage(monster.burn_damage):
                 self._kill_monster(monster, monster_list, player, quest_system, indoor=False)
 
@@ -797,7 +937,8 @@ class World:
                 return
 
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
-        get_particles().update(dt)
+        # Particles/floating text/screen fx update once per frame in Game.run(), for both
+        # the outdoor and indoor branches, instead of here (this only runs outdoors).
         self._sync_chunks(player)
         self.events.update(dt, player, quest_system, npc_name_generator)
 

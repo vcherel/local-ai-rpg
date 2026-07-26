@@ -84,6 +84,7 @@ class Building:
         self.name = None  # Only the landmark gets an LLM-generated name
         self.looted = False
         self.broken_crates: set = set()  # indices into interior_layout()["crates"] already smashed
+        self.broken_windows: set = set()  # indices into window_rects() already shattered
         # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
         # persisted: it lives only for the current play session, same as indoor monsters.
         self.dropped_items: List["Item"] = []
@@ -110,6 +111,18 @@ class Building:
     def door_front(self) -> tuple:
         return (self.x, self.rect.bottom + 60)
 
+    def window_rects(self) -> List[pygame.Rect]:
+        """Two windows flanking the door on the front facade, in world coordinates.
+        The landmark has no facade at all, so it gets none."""
+        if not self.has_door:
+            return []
+        w, h = c.Buildings.WINDOW_W, c.Buildings.WINDOW_H
+        y = round(self.rect.bottom - c.Buildings.WINDOW_Y_FROM_BOTTOM)
+        offset = c.Buildings.DOOR_WIDTH / 2 + c.Buildings.WINDOW_X_FROM_DOOR
+        left = pygame.Rect(round(self.x - offset - w), y, w, h)
+        right = pygame.Rect(round(self.x + offset), y, w, h)
+        return [left, right]
+
     def blocks(self, x, y, radius, door_open=False) -> bool:
         r = self.rect
         nearest_x = min(max(x, r.left), r.right)
@@ -131,6 +144,7 @@ class Building:
             "name": self.name,
             "looted": self.looted,
             "broken_crates": sorted(self.broken_crates),
+            "broken_windows": sorted(self.broken_windows),
         }
 
     @classmethod
@@ -140,6 +154,7 @@ class Building:
         building.name = data["name"]
         building.looted = data["looted"]
         building.broken_crates = set(data.get("broken_crates", []))
+        building.broken_windows = set(data.get("broken_windows", []))
         return building
 
     # ------------------------------------------------------------------ interior
@@ -344,6 +359,9 @@ class Building:
         pygame.draw.rect(screen, (45, 32, 26), door)
         pygame.draw.rect(screen, (205, 185, 140), pygame.Rect(srect.centerx - 22, srect.bottom, 44, 10))
 
+        for idx, window in enumerate(self.window_rects()):
+            self._draw_window(screen, camera, window, idx in self.broken_windows)
+
         if self.kind == "shop":
             self._draw_awning(screen, srect)
         elif self.kind == "tavern":
@@ -496,6 +514,22 @@ class Building:
                 bed_screen = to_screen(bed)
                 text = f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
                 draw_label(screen, text, (bed_screen.centerx, bed_screen.top - 18))
+
+    @staticmethod
+    def _draw_window(screen, camera: Camera, window: pygame.Rect, broken: bool):
+        wx, wy = camera.world_to_screen(window.left, window.top)
+        wrect = pygame.Rect(round(wx), round(wy), window.width, window.height)
+        if broken:
+            pygame.draw.rect(screen, (32, 28, 26), wrect)
+            pygame.draw.rect(screen, (70, 50, 35), wrect, 2)
+            pygame.draw.line(screen, (55, 52, 56), wrect.topleft, wrect.center, 1)
+            pygame.draw.line(screen, (55, 52, 56), (wrect.right, wrect.top), wrect.center, 1)
+            return
+        pygame.draw.rect(screen, (70, 50, 35), wrect)
+        pane = wrect.inflate(-4, -4)
+        pygame.draw.rect(screen, (150, 195, 210), pane)
+        pygame.draw.line(screen, (70, 50, 35), (pane.centerx, pane.top), (pane.centerx, pane.bottom), 2)
+        pygame.draw.line(screen, (70, 50, 35), (pane.left, pane.centery), (pane.right, pane.centery), 2)
 
     def _draw_broken_crate(self, screen, rect: pygame.Rect, world_rect: pygame.Rect):
         """A smashed crate: a scatter of splintered planks left on the floor."""

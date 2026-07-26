@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
+from core.decals import get_decals
+from core.floating_text import get_floating_text
 from core.particles import get_particles
 from game.entities.items import draw_shape_with_border, rarity_color
 from ui import widgets
@@ -71,6 +73,12 @@ class GameRenderer:
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
                 building.draw(self.screen, camera)
 
+        get_decals().draw(self.screen, camera)
+
+        for breakable in world.breakables:
+            if self._on_screen(camera, breakable.x, breakable.y):
+                breakable.draw(self.screen, camera)
+
         for npc in world.npcs:
             if self._on_screen(camera, npc.x, npc.y):
                 npc.draw(self.screen, camera)
@@ -91,6 +99,7 @@ class GameRenderer:
             projectile.draw(self.screen, camera)
 
         get_particles().draw(self.screen, camera)
+        get_floating_text().draw(self.screen, camera)
 
         player.draw(self.screen)
 
@@ -101,11 +110,13 @@ class GameRenderer:
         self, camera: Camera, building, player: Player, monsters: List[Monster], projectiles: List[Projectile] = ()
     ):
         building.draw_interior(self.screen, camera, player)
+        get_decals().draw(self.screen, camera)
         for monster in monsters:
             monster.draw(self.screen, camera)
         for projectile in projectiles:
             projectile.draw(self.screen, camera)
         get_particles().draw(self.screen, camera)
+        get_floating_text().draw(self.screen, camera)
         player.draw(self.screen)
 
     def _draw_button(self, rect: pygame.Rect, label: str, mouse_pos):

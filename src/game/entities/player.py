@@ -9,7 +9,10 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
+from core.decals import get_decals
+from core.floating_text import get_floating_text
 from core.particles import get_particles
+from core.screen_fx import get_vignette
 from game.entities.entities import Entity
 from game.entities.stats import Stats
 
@@ -271,8 +274,11 @@ class Player(Entity):
         self.hp -= actual
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
-        get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4)
+        get_decals().spawn(self.x, self.y, radius=c.Decals.PLAYER_HURT_RADIUS)
+        get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4, gravity=0.3)
+        get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, str(actual), (255, 90, 90), big=True)
         get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
+        get_vignette().trigger(c.Combat.PLAYER_HURT_VIGNETTE)
 
         # Thorns reflects flat damage back at a melee attacker, but never lands the kill.
         thorns = self.thorns_damage()
