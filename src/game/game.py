@@ -446,7 +446,9 @@ class Game:
             if self.quit_to_menu:
                 break
 
-            # Skip world simulation and rendering while a menu is open to save computation
+            # Skip world simulation while a menu is open to save computation, but keep
+            # rendering the world every frame so menus show it behind their dim overlay
+            # instead of it going stale (and progressively darker as the overlay restacks).
             if not self.active_menu:
                 dt = self.clock.get_time()
                 # A heavy hit freezes gameplay motion for a few frames without slowing the
@@ -483,13 +485,14 @@ class Game:
                 get_decals().update(dt)
                 get_vignette().update(dt)
 
-                if self.interior is not None:
-                    self.game_renderer.draw_interior(
-                        self.camera, self.interior, self.player, self.indoor_monsters, self.indoor_projectiles
-                    )
-                else:
-                    self.game_renderer.draw_world(self.camera, self.world, self.player)
-                get_vignette().draw(self.screen)
+            if self.interior is not None:
+                self.game_renderer.draw_interior(
+                    self.camera, self.interior, self.player, self.indoor_monsters, self.indoor_projectiles
+                )
+            else:
+                self.game_renderer.draw_world(self.camera, self.world, self.player)
+            get_vignette().draw(self.screen)
+            if not self.active_menu:
                 self.game_renderer.draw_ui(
                     len(self.player.inventory),
                     self.player.coins,
