@@ -25,6 +25,7 @@ from ui.menus.help_menu import HelpMenu
 from ui.menus.inventory_menu import InventoryMenu
 from ui.menus.pause_menu import PauseMenu
 from ui.menus.quest_menu import QuestMenu
+from ui.menus.rumor_menu import RumorMenu
 from ui.menus.shop_menu import ShopMenu
 from ui.menus.stats_menu import StatsMenu
 from ui.notification import ToastNotification
@@ -47,12 +48,13 @@ class Game:
         self.stats_menu = StatsMenu(self.screen)
         self.help_menu = HelpMenu(self.screen)
         self.pause_menu = PauseMenu(self.screen)
+        self.rumor_menu = RumorMenu(self.screen)
         self.loot_notification = ToastNotification(self.screen)
         # id of the last picked-up item flagged as a gear upgrade; F equips it.
         self.pending_upgrade_id = None
 
         self.save_system = save_system
-        self.world = World(self.save_system, self.context_window, self.loot_notification.show)
+        self.world = World(self.save_system, self.context_window, self.loot_notification.show, self.rumor_menu.push)
         self.game_renderer = GameRenderer(self.screen)
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
@@ -104,6 +106,9 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
+            if self.rumor_menu.handle_event(event):
+                continue
 
             if self.context_window.handle_event(event):
                 continue
@@ -458,6 +463,10 @@ class Game:
                 or self.help_menu.active
                 or self.pause_menu.active
             )
+            # A rumour finished generating on a background thread; open it now if the
+            # screen is free, so it never lands on top of another menu.
+            self.rumor_menu.update(self.active_menu)
+            self.active_menu = self.active_menu or self.rumor_menu.active
 
             running = self.handle_input()
             if not running:
@@ -536,6 +545,7 @@ class Game:
             self.help_menu.draw()
             self.pause_menu.draw()
             self.context_window.draw()
+            self.rumor_menu.draw()
 
             if not self.active_menu:
                 fps = self.clock.get_fps()

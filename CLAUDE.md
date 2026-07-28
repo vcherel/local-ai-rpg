@@ -22,7 +22,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 ### game
 - `src/game/game.py`: `Game` class, main loop, input handling, state orchestration
 - `src/game/world.py`: `World` class, world entities (NPCs, monsters, bosses, items), AI context generation, boss spawning (landmark guardian, roaming, quest) and per-frame boss updates; `persist_world` flushes generated state (context, shops, boss/landmark names) to disk the moment a background thread finishes it
-- `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis)
+- `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis); most events announce through the toast callback, rumours instead go to `show_rumor` (the `RumorMenu` panel)
 - `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss types), to_dict/from_dict (de)serialisation
 - `src/game/loot.py`: `open_lootbox` rolls coins/item from a lootbox rarity; `break_crate` rolls the smaller coins/common-item reward from a smashed shop or tavern crate (coins credited straight away, the item left for the caller to drop on the floor)
 
@@ -75,6 +75,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/ui/menus/inventory_menu.py`: `InventoryMenu(BaseMenu)`, item list, equip/unequip
 - `src/ui/menus/shop_menu.py`: `ShopMenu(BaseMenu)`, `_sell_price`, buy/sell UI and pricing (bartering stat and NPC affinity both swing prices)
 - `src/ui/menus/quest_menu.py`: `QuestMenu(BaseMenu)`, active/completed quest list
+- `src/ui/menus/rumor_menu.py`: `RumorMenu(BaseMenu)`, dismissible panel for a whispered rumour; `push` queues text from the generating thread, `update(menu_open)` opens it only when nothing else is on screen, and a short input grace period keeps an in-flight keypress from closing it instantly
 - `src/ui/menus/stats_menu.py`: `StatsMenu(BaseMenu)`, character stats/progression display
 - `src/ui/menus/help_menu.py`: `HelpMenu(BaseMenu)`, controls/help screen
 - `src/ui/menus/game_over.py`: `run_game_over`, death screen
