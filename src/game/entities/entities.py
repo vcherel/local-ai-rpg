@@ -4,6 +4,7 @@ import random
 import pygame
 
 import core.constants as c
+from game.entities.gear import draw_accessory, draw_armor_band, draw_weapon, gear_padding
 
 
 class Entity:
@@ -39,11 +40,12 @@ class Entity:
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
 
-    def start_attack_anim(self):
+    def start_attack_anim(self, hand=None):
+        """`hand` forces which arm swings, so a visible weapon animates in the hand holding it."""
         if not self.attack_in_progress:
             self.attack_in_progress = True
             self.attack_progress = 0.0
-            self.attack_hand = random.choice(["left", "right"])
+            self.attack_hand = hand or random.choice(["left", "right"])
 
     def update_attack_anim(self, dt, speed_mult=1.0):
         if self.attack_in_progress:
@@ -73,8 +75,9 @@ class Entity:
         health_bar_offset=10,
         bar_color=None,
         bar_border_width=2,
+        gear=None,
     ):
-        draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand)
+        draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand, gear)
 
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset
@@ -90,6 +93,7 @@ def draw_human(
     angle: float,
     attack_progress: float = 0.0,
     attack_hand: str = None,
+    gear: dict = None,
 ):
     border_thickness = 2
     arm_radius = size // 3.5
@@ -101,21 +105,23 @@ def draw_human(
 
     # Add padding for rotation (diagonal of the surface)
     padding = int(math.sqrt(base_width**2 + base_height**2) - min(base_width, base_height)) // 2 + 10
+    # A held weapon sticks out well past the body, so it needs room on the sprite surface.
+    if gear:
+        padding += gear_padding(gear, size)
 
     char_surf = pygame.Surface((base_width + padding * 2, base_height + padding * 2), pygame.SRCALPHA)
 
     x_offset = extra_space + padding
     y_offset = padding
 
-    pygame.draw.circle(
-        char_surf,
-        c.Colors.BLACK,
-        (x_offset + size // 2 + border_thickness, y_offset + size // 2 + border_thickness),
-        size // 2 + border_thickness,
-    )
-    pygame.draw.circle(
-        char_surf, color, (x_offset + size // 2 + border_thickness, y_offset + size // 2 + border_thickness), size // 2
-    )
+    body_center = (x_offset + size // 2 + border_thickness, y_offset + size // 2 + border_thickness)
+    pygame.draw.circle(char_surf, c.Colors.BLACK, body_center, size // 2 + border_thickness)
+    pygame.draw.circle(char_surf, color, body_center, size // 2)
+
+    if gear and gear.get("armor"):
+        draw_armor_band(char_surf, body_center, size, gear["armor"]["color"], gear["armor"]["outline"])
+    if gear and gear.get("accessory"):
+        draw_accessory(char_surf, body_center, size, gear["accessory"]["color"], gear["accessory"]["outline"])
 
     arm_y = y_offset + (size + border_thickness * 2) // 3.5
     distance_arm = 10
@@ -137,6 +143,14 @@ def draw_human(
         right_arm_x -= int(attack_progress * 15)
         right_arm_y -= int(attack_progress * 15)
     draw_arm(right_arm_x, right_arm_y)
+
+    # Weapons sit on top of the hand holding them: ranged left, melee right.
+    if gear and gear.get("ranged"):
+        swing = attack_progress if attack_hand == "left" else 0.0
+        draw_weapon(char_surf, (left_arm_x, left_arm_y), gear["ranged"], size, "left", swing)
+    if gear and gear.get("melee"):
+        swing = attack_progress if attack_hand == "right" else 0.0
+        draw_weapon(char_surf, (right_arm_x, right_arm_y), gear["melee"], size, "right", swing)
 
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))

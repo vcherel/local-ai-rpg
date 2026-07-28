@@ -15,6 +15,7 @@ from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_vignette
 from game.entities.entities import Entity
+from game.entities.items import rarity_color
 from game.entities.stats import Stats
 
 if TYPE_CHECKING:
@@ -27,6 +28,11 @@ EQUIP_SLOT_ATTRS = {
     "armor": "equipped_armor_id",
     "accessory": "equipped_accessory_id",
 }
+
+
+def _item_outline(item) -> tuple:
+    """Border colour for gear drawn on the character: rarity colour, black for common."""
+    return c.Colors.BLACK if item.rarity == "common" else rarity_color(item.rarity)
 
 
 def _equip_slot(item) -> str | None:
@@ -332,6 +338,25 @@ class Player(Entity):
         self.save_system.update("death_debuff_until", self.death_debuff_until)
         return loss
 
+    def gear(self) -> dict:
+        """What the equipped items look like on the character, for draw_human: a weapon
+        per hand (shape from its archetype), an armour ring, an accessory gem. Colours
+        come from the item itself, borders from its rarity."""
+        gear = {}
+        for slot in ("melee_weapon", "ranged_weapon"):
+            item = self.equipped_item(slot)
+            if item is not None:
+                gear[slot.split("_")[0]] = {
+                    "kind": c.weapon_archetype(item.name).name,
+                    "color": item.color,
+                    "outline": _item_outline(item),
+                }
+        for slot in ("armor", "accessory"):
+            item = self.equipped_item(slot)
+            if item is not None:
+                gear[slot] = {"color": item.color, "outline": _item_outline(item)}
+        return gear
+
     def draw(self, screen):
         super().draw(
             screen,
@@ -347,4 +372,5 @@ class Player(Entity):
             health_bar_offset=360,
             bar_color=c.Colors.GREEN,
             bar_border_width=4,
+            gear=self.gear(),
         )

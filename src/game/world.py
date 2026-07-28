@@ -362,7 +362,7 @@ class World:
         player.attack_ready_ms = now + arch.cooldown_ms
         player.attack_swing_mult = arch.swing_mult
 
-        player.start_attack_anim()
+        player.start_attack_anim("right")
         play_sound("attack")
 
         reach = c.Player.ATTACK_REACH * arch.reach_mult
@@ -467,7 +467,7 @@ class World:
 
         player.attack_ready_ms = now + arch.cooldown_ms
         player.attack_swing_mult = arch.swing_mult
-        player.start_attack_anim()
+        player.start_attack_anim("left")
         play_sound("shoot")
 
         base_damage = (
