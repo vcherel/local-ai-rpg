@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 
 class World:
-    def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify):
+    def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify, show_rumor):
         # Regenerated on the fly as the player explores; see _sync_chunks.
         self.floor_details = []
         self._loaded_chunks = set()
@@ -58,7 +58,7 @@ class World:
         self.context_window = context_window
         self.notify = notify
         self.context = self.save_system.load("context", None)
-        self.events = EventSystem(self, notify)
+        self.events = EventSystem(self, notify, show_rumor)
         self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
 
         saved_npcs = self.save_system.load("npcs", None)

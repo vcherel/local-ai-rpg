@@ -23,9 +23,12 @@ class EventSystem:
     """Rolls random world events on a cooldown: wandering merchants, treasure, blood nights,
     rumors and village crises. Owned by World, which supplies the state each event mutates."""
 
-    def __init__(self, world: World, notify: Callable[[str, tuple], None]):
+    def __init__(self, world: World, notify: Callable[[str, tuple], None], show_rumor: Callable[[str], None]):
         self.world = world
         self.notify = notify
+        # Rumours are full sentences, unreadable in a passing toast: they get their own
+        # dismissible panel instead.
+        self.show_rumor = show_rumor
         self.cooldown = random.uniform(*c.Events.INTERVAL_RANGE_MS)
 
         self.wandering_merchant: Optional[NPC] = None
@@ -192,14 +195,14 @@ class EventSystem:
     def _generate_rumor(self):
         text = self._generate_lore_line("Generate a short rumor a villager might whisper, for flavor only.")
         if text:
-            self.notify(f"Rumor: {text}", c.Colors.CYAN)
+            self.show_rumor(text)
 
     def _generate_prophetic_rumor(self, player: Player):
         text = self._generate_lore_line(
             "Generate a short rumor claiming a treasure is hidden somewhere in this world, like a "
             "villager's gossip, without giving exact directions."
         )
-        self.notify(f"Rumor: {text}" if text else "A villager's rumor mentions a hidden treasure...", c.Colors.CYAN)
+        self.show_rumor(text or "A villager's rumor mentions a treasure hidden somewhere in this world...")
         time.sleep(random.uniform(*c.Events.PROPHECY_DELAY_RANGE_S))
         self._spawn_treasure(player, "The rumor was true: treasure glints somewhere out there")
 
