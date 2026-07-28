@@ -328,7 +328,7 @@ class World:
 @dataclass(frozen=True)
 class Events:
     # A random world event is rolled on this cadence; each roll picks one enabled kind.
-    INTERVAL_RANGE_MS: tuple = (60_000, 120_000)
+    INTERVAL_RANGE_MS: tuple = (180_000, 360_000)
 
     # Relative pick weights among the event kinds currently enabled.
     WEIGHT_MERCHANT: int = 3
