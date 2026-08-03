@@ -453,6 +453,66 @@ class Breakables:
 
 
 @dataclass(frozen=True)
+class PointsOfInterest:
+    """Wilderness landmarks scattered across the map, away from town (game/entities/poi.py).
+    "ruins" and "camp" are smashable loot caches, better odds and rarity than a plain
+    outdoor barrel since they take more effort to find; "shrine" is pure discovery
+    flavor, no loot at all.
+    """
+
+    COUNT: int = 16
+    MIN_DIST_FROM_BUILDING: int = 400
+    MIN_DIST_FROM_OTHER: int = 500
+    MIN_DIST_FROM_CENTER: int = 900
+    SIZE: int = 46
+    HIT_RADIUS: int = 34
+    # Relative pick weight among kinds scattered across the wilderness.
+    KIND_WEIGHTS: tuple = (("ruins", 4), ("camp", 3), ("shrine", 3))
+
+    # A shrine shows its flavor line the first time the player gets this close.
+    DISCOVER_DISTANCE: int = 160
+    SHRINE_MESSAGES: tuple = (
+        "An old shrine, worn smooth by countless hands.",
+        "Faded offerings lie at the foot of this shrine.",
+        "The carvings on this shrine predate any living memory.",
+        "Someone has left a wilted flower at this shrine.",
+    )
+
+    CACHE_COIN_MIN: int = 8
+    CACHE_COIN_MAX: int = 22
+    CACHE_ITEM_CHANCE: float = 0.5
+
+
+@dataclass(frozen=True)
+class Wildlife:
+    """Non-hostile critters that wander the wilderness for atmosphere (game/entities/critter.py).
+    Session-only, like particles or projectiles: never saved, just respawned near the
+    player as the world loads or as they roam. Can't be fought; they just skitter off
+    if the player gets too close.
+    """
+
+    KINDS: tuple = ("rabbit", "deer", "fox")
+    KIND_WEIGHTS: tuple = (5, 2, 3)
+    COLORS = {"rabbit": (200, 190, 170), "deer": (150, 110, 70), "fox": (195, 100, 55)}
+    SIZES = {"rabbit": 14, "deer": 22, "fox": 16}
+
+    COUNT: int = 25
+    RESPAWN_INTERVAL_MS: int = 800
+    SPAWN_MIN_DISTANCE: int = 500
+    SPAWN_MAX_DISTANCE: int = 1000
+    DESPAWN_DISTANCE: int = 1500
+
+    WANDER_SPEED: float = 1.0
+    WANDER_RADIUS: int = 200
+    IDLE_MIN_MS: int = 1500
+    IDLE_MAX_MS: int = 5000
+
+    # Skitters away once the player closes to this distance, faster than its normal wander.
+    FLEE_DISTANCE: int = 90
+    FLEE_SPEED_MULT: float = 2.6
+
+
+@dataclass(frozen=True)
 class LootBox:
     # Chance a slain monster drops a lootbox.
     DROP_CHANCE: float = 0.2

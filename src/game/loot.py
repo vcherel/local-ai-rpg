@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 import core.constants as c
-from game.entities.items import Item, rarity_tier, roll_bonus
+from game.entities.items import Item, rarity_tier, roll_bonus, roll_rarity
 
 WEAPON_LOOT_NAMES = ["Rusty Dagger", "Notched Axe", "Old Bow", "Wooden Club", "Bent Spear"]
 ARMOR_LOOT_NAMES = ["Worn Shield", "Leather Vest", "Battered Helmet", "Chainmail Scraps", "Tattered Cloak"]
@@ -75,5 +75,19 @@ def break_crate() -> tuple[int, Item | None]:
     item = None
     if random.random() < c.Buildings.CRATE_ITEM_CHANCE:
         item = _roll_loot_item(0, 0, "common", (5, 10))
+
+    return coins, item
+
+
+def open_poi_cache() -> tuple[int, Item | None]:
+    """Contents of a wilderness point-of-interest cache (ruins or camp): better coins,
+    a better chance of an item, and the item's rarity is rolled properly instead of
+    staying pinned to common, since these take more effort to find than a house's crate.
+    """
+    coins = random.randint(c.PointsOfInterest.CACHE_COIN_MIN, c.PointsOfInterest.CACHE_COIN_MAX)
+
+    item = None
+    if random.random() < c.PointsOfInterest.CACHE_ITEM_CHANCE:
+        item = _roll_loot_item(0, 0, roll_rarity(), (10, 20))
 
     return coins, item

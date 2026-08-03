@@ -22,6 +22,8 @@ class SaveSystem:
         - buildings: Building placement, kind, size, name, looted state, and which
           interior crates/exterior windows are broken (list[dict])
         - breakables: Outdoor barrels/pots/bushes not yet smashed, position and kind (list[dict])
+        - pois: Wilderness points of interest (ruins/camp/shrine), position, kind, looted
+          and discovered state (list[dict])
         - buffs: Active potion buffs, {effect: {"until": wall-clock seconds, "magnitude": float}}
         - daynight_elapsed_ms: Elapsed time within the current day/night cycle (float)
     """

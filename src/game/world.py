@@ -18,12 +18,14 @@ from core.screen_fx import get_hitstop
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
+from game.entities.critter import Critter, pick_critter_kind
 from game.entities.items import AMMO_BUNDLE, Item, rarity_color
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
+from game.entities.poi import PointOfInterest, generate_pois
 from game.entities.projectile import Projectile
 from game.events import EventSystem
-from game.loot import break_crate
+from game.loot import break_crate, open_poi_cache
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:
@@ -49,9 +51,13 @@ class World:
         self.bosses: List[Boss] = []
         self.buildings: List[Building] = []
         self.breakables: List[Breakable] = []
+        self.pois: List[PointOfInterest] = []
+        # Wandering wildlife, purely atmospheric; transient like particles, never saved.
+        self.critters: List[Critter] = []
         # Arrows in flight; transient like particles, never saved.
         self.projectiles: List[Projectile] = []
         self.respawn_timer = 0.0
+        self.critter_respawn_timer = 0.0
         self.boss_roam_timer = 0.0
 
         self.save_system = save_system
@@ -72,10 +78,12 @@ class World:
             self.buildings = generate_buildings()
             set_active_buildings(self.buildings)
             self.breakables = generate_breakables(self.buildings)
+            self.pois = generate_pois(self.buildings)
             self._populate_npcs()
             self.monsters = [
                 self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
             ]
+            self._spawn_camp_guards()
             self._spawn_landmark_boss()
         set_active_buildings(self.buildings)
 
@@ -110,6 +118,17 @@ class World:
                 return x, y
         return x, y
 
+    def _spawn_camp_guards(self):
+        """A camp point of interest doesn't stand undefended: one regular monster spawns
+        just next to it, at world creation only, so there's a small fight before the loot."""
+        for poi in self.pois:
+            if poi.kind != "camp":
+                continue
+            angle = random.uniform(0, 2 * math.pi)
+            x = poi.x + math.cos(angle) * 70
+            y = poi.y + math.sin(angle) * 70
+            self.monsters.append(self._new_monster(x, y))
+
     def _new_monster(self, x, y) -> Monster:
         """Tougher kinds unlock farther from the world center, so wandering out gets more dangerous."""
         center = c.World.WORLD_SIZE // 2
@@ -120,6 +139,7 @@ class World:
         """Rebuild items, NPCs, monsters and buildings from a saved game, relinking quest items by id."""
         self.buildings = [Building.from_dict(d) for d in self.save_system.load("buildings", [])]
         self.breakables = [Breakable.from_dict(d) for d in self.save_system.load("breakables", [])]
+        self.pois = [PointOfInterest.from_dict(d) for d in self.save_system.load("pois", [])]
         self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
         items_by_id = {item.id: item for item in self.items}
         self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
@@ -151,6 +171,7 @@ class World:
             "bosses": [boss.to_dict() for boss in self.bosses],
             "buildings": [building.to_dict() for building in self.buildings],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
+            "pois": [poi.to_dict() for poi in self.pois],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
 
@@ -398,6 +419,19 @@ class World:
                 self._break_crate(player, building, crate)
                 return
 
+        # A swing that reaches an unlooted wilderness ruins pile or camp cache smashes it.
+        poi_hit = next(
+            (
+                p
+                for p in self.pois
+                if p.has_loot and not p.looted and p.distance_to_point(pos) < hit_radius + c.PointsOfInterest.HIT_RADIUS
+            ),
+            None,
+        )
+        if poi_hit is not None:
+            self._break_poi(player, poi_hit)
+            return
+
         # Nothing living in range: a swing that reaches a barrel/pot/bush smashes it instead.
         breakable = next(
             (b for b in self.breakables if b.distance_to_point(pos) < hit_radius + c.Breakables.HIT_RADIUS), None
@@ -590,6 +624,33 @@ class World:
             loot_item.y = crate.centery + random.uniform(-spread, spread)
             loot_item.start_pop_anim(crate.centerx, crate.centery)
             building.dropped_items.append(loot_item)
+            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
+            color = rarity_color(loot_item.rarity)
+        if self.notify:
+            self.notify(message, color)
+
+    def _break_poi(self, player: Player, poi: PointOfInterest):
+        """Smash a wilderness ruins pile or camp cache: same feedback as an outdoor barrel,
+        better odds and rarity since it took more effort to find. Left in place afterwards
+        (not removed like a breakable) so the ruin/camp still reads as a landmark, just
+        picked over."""
+        poi.looted = True
+        get_shake().add(c.Combat.CRATE_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(
+            poi.x, poi.y, (150, 140, 120), count=20, speed=6, life=550, size=5, gravity=0.4, shape="shard"
+        )
+
+        coins, loot_item = open_poi_cache()
+        player.gain_coins(coins)
+        label = "Camp cache" if poi.kind == "camp" else "Ruins searched"
+        message = f"{label}: +{coins} coins"
+        color = c.Colors.WHITE
+        if loot_item is not None:
+            loot_item.x = poi.x + random.uniform(-20, 20)
+            loot_item.y = poi.y + random.uniform(-20, 20)
+            loot_item.start_pop_anim(poi.x, poi.y)
+            self.items.append(loot_item)
             message += f", and a {loot_item.rarity} {loot_item.name} dropped"
             color = rarity_color(loot_item.rarity)
         if self.notify:
@@ -928,12 +989,33 @@ class World:
                 self.monsters.append(self._new_monster(x, y))
                 return
 
+    def _spawn_critter_away_from(self, player: Player):
+        for _ in range(10):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(c.Wildlife.SPAWN_MIN_DISTANCE, c.Wildlife.SPAWN_MAX_DISTANCE)
+            x = player.x + math.cos(angle) * dist
+            y = player.y + math.sin(angle) * dist
+            if not self.blocked(x, y, max(c.Wildlife.SIZES.values()) / 2):
+                self.critters.append(Critter(x, y, pick_critter_kind()))
+                return
+
+    def _check_shrine_discovery(self, player: Player):
+        pos = player.get_pos()
+        for poi in self.pois:
+            if poi.kind != "shrine" or poi.discovered:
+                continue
+            if poi.distance_to_point(pos) < c.PointsOfInterest.DISCOVER_DISTANCE:
+                poi.discovered = True
+                if self.notify:
+                    self.notify(random.choice(c.PointsOfInterest.SHRINE_MESSAGES), c.Colors.WHITE)
+
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of
         # here, so they keep animating even while a menu pauses the rest of this update.
         self._sync_chunks(player)
         self.daynight.update(dt)
         self.events.update(dt, player, quest_system, npc_name_generator)
+        self._check_shrine_discovery(player)
 
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).
@@ -962,6 +1044,16 @@ class World:
 
         for npc in self.npcs:
             npc.update(player, dt, self.blocked)
+
+        for critter in self.critters:
+            critter.update(player, dt, self.blocked)
+        player_pos = player.get_pos()
+        self.critters = [c_ for c_ in self.critters if c_.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE]
+        if len(self.critters) < c.Wildlife.COUNT:
+            self.critter_respawn_timer += dt
+            if self.critter_respawn_timer >= c.Wildlife.RESPAWN_INTERVAL_MS:
+                self.critter_respawn_timer = 0.0
+                self._spawn_critter_away_from(player)
 
         if len(self.monsters) < c.World.NB_MONSTERS:
             self.respawn_timer += dt

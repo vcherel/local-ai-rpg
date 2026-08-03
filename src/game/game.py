@@ -368,6 +368,7 @@ class Game:
         self.save_system.update("bosses", world_state["bosses"])
         self.save_system.update("buildings", world_state["buildings"])
         self.save_system.update("breakables", world_state["breakables"])
+        self.save_system.update("pois", world_state["pois"])
         self.save_system.update("daynight_elapsed_ms", world_state["daynight_elapsed_ms"])
 
         self.save_system.save_all()
