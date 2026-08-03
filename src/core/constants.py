@@ -633,6 +633,17 @@ class Stats:
     XP_PER_TRADE: float = 8.0  # bartering, per shop buy/sell
 
 
+# Display name per Stats.NAMES key, shared by the stats menu and the level-up popup.
+STAT_LABELS: dict[str, str] = {
+    "strength": "Strength",
+    "resistance": "Resistance",
+    "speed": "Speed",
+    "vitality": "Vitality",
+    "bartering": "Bartering",
+    "persuasion": "Persuasion",
+}
+
+
 @dataclass(frozen=True)
 class Affinity:
     # Per-NPC relationship level. Starts neutral; an LLM judges how each closed

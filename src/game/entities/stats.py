@@ -16,6 +16,9 @@ class Stats:
         self.xp = {name: 0.0 for name in c.Stats.NAMES}
         # Live multiplier from the xp-gain accessory; the player refreshes it each frame.
         self.xp_bonus = 1.0
+        # (name, new_level) queued by train(); Game.run() drains it each frame to
+        # trigger the level-up popup, so every train() call site gets it for free.
+        self.pending_levelups: list[tuple[str, int]] = []
         if saved:
             # A save from before a stat was added won't have its key; default it to level 1.
             self.level = {name: saved["level"].get(name, 1) for name in c.Stats.NAMES}
@@ -38,6 +41,7 @@ class Stats:
             self.xp[name] -= self.xp_to_next(name)
             self.level[name] += 1
             gained += 1
+            self.pending_levelups.append((name, self.level[name]))
         return gained
 
     def attack_bonus(self) -> int:

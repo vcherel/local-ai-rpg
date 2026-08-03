@@ -271,6 +271,27 @@ class Game:
                 self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
                 self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
 
+    def _pop_levelups(self):
+        """Drain any stat level-ups queued this frame and pop the gold text/sparkle/chime
+        over the player. Centralised here so every Stats.train() call site gets it for free."""
+        levelups = self.player.stats.pending_levelups
+        if not levelups:
+            return
+        self.player.stats.pending_levelups = []
+        for name, level in levelups:
+            get_floating_text().spawn(
+                self.player.x,
+                self.player.y - c.Player.SIZE / 2,
+                f"{c.STAT_LABELS[name]} up! Lv {level}",
+                c.Colors.ACCENT,
+                big=True,
+                life=1600,
+            )
+            get_particles().spawn_burst(
+                self.player.x, self.player.y, c.Colors.ACCENT, count=18, speed=3.5, life=600, size=5
+            )
+            play_sound("level_up")
+
     def _building_at(self, x, y):
         """The building whose floor (x, y) is standing on, or None. Buildings are kept far
         enough apart (Buildings.MIN_GAP) that at most one can ever contain a given point."""
@@ -389,6 +410,7 @@ class Game:
                 gameplay_dt = get_hitstop().apply(dt)
                 self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked)
                 self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
+                self._pop_levelups()
                 # A building's interior is just its own footprint; re-derive which one (if
                 # any) the player is standing in rather than tracking a separate mode.
                 self.interior = self._building_at(self.player.x, self.player.y)

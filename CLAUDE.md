@@ -20,7 +20,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/rpg_ai/__main__.py`: entry point. Initialises Pygame, LLM queue, save system, then loops from main menu to game
 
 ### game
-- `src/game/game.py`: `Game` class, main loop, input handling, state orchestration
+- `src/game/game.py`: `Game` class, main loop, input handling, state orchestration; `_pop_levelups` drains `player.stats.pending_levelups` each frame and pops the gold floating text/particle burst/chime over the player
 - `src/game/world.py`: `World` class, world entities (NPCs, monsters, bosses, items), AI context generation, boss spawning (landmark guardian, roaming, quest) and per-frame boss updates; `persist_world` flushes generated state (context, shops, boss/landmark names) to disk the moment a background thread finishes it
 - `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, village crisis); most events announce through the toast callback, rumours instead go to `show_rumor` (the `RumorMenu` panel)
 - `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss types), to_dict/from_dict (de)serialisation
@@ -37,7 +37,7 @@ One line per file. Update this when adding, removing, or substantially repurposi
 - `src/game/entities/breakables.py`: `Breakable`, `generate_breakables`, outdoor props scattered near houses/shops/taverns (deterministic per building, weighted by kind): "barrel" smashes once for the same coin/item odds as a shop crate; "pot"/"bush" are pure decoration, no reward. Gone for good once smashed, no debris state (unlike interior crates)
 - `src/game/entities/items.py`: `Item` (weapon/armor/accessory/ammo/potion/misc; ammo and potions stack via `quantity`, misc are sellable "valuables" drawn as a coin), potions (`potion_effect_from_name` reads heal/regen/strength/swiftness/stoneskin out of the name, `potion_magnitude`/`potion_duration` scale it by rarity, `potion_description` writes the tooltip line, drawn as a "flask" coloured by effect), rarity rolling (`roll_rarity`, `rarity_tier`, `rarity_color`), `roll_bonus`, `roll_affixes`/`affix_label` (weapon/armor special effects stored in `Item.affixes`), expanded `ACCESSORY_FLAVORS` (+crit/lifesteal/coinfind/xpgain/pierce) with `ACCESSORY_FLAVOR_LABELS`, `base_value` (sell worth used by shop and inventory tooltip), shape/polygon drawing for item icons, `start_pop_anim` for a dropped item hopping out of its source and settling
 - `src/game/entities/projectile.py`: `Projectile`, a fired arrow or magic bolt travelling in a straight line until it hits or runs out of range (`style`, `color`, `knockback`, `shake`, `hostile` for boss bolts that damage the player, `pierce`/`hit_ids` for the arrow-pierce accessory)
-- `src/game/entities/stats.py`: `Stats` class, use-based character progression (xp, training, derived bonuses like attack/damage reduction/speed)
+- `src/game/entities/stats.py`: `Stats` class, use-based character progression (xp, training, derived bonuses like attack/damage reduction/speed); `train` queues `pending_levelups` on every level gained, drained each frame by `Game._pop_levelups`
 
 ### llm
 - `src/llm/llm_request_queue.py`: `LLMRequestQueue`, serialises all LLM calls onto a worker thread; use `generate_response_queued` / `generate_response_stream_queued`
