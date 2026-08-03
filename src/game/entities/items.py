@@ -40,6 +40,17 @@ ARMOR_KEYWORDS = {
     "gauntlets",
     "greaves",
 }
+POTION_KEYWORDS = {
+    "potion",
+    "elixir",
+    "flask",
+    "draught",
+    "draft",
+    "tonic",
+    "vial",
+    "brew",
+    "philter",
+}
 ACCESSORY_KEYWORDS = {
     "ring",
     "amulet",
@@ -61,6 +72,32 @@ VALUABLE_COLOR = (235, 205, 80)
 
 ACCESSORY_FLAVORS = ("speed", "regen", "luck", "crit", "lifesteal", "coinfind", "xpgain", "pierce")
 
+# Name keyword -> potion effect. First match wins, so the order matters only in that
+# every keyword here is unambiguous; anything unmatched falls back to plain healing.
+POTION_EFFECT_KEYWORDS = (
+    ("heal", "heal"),
+    ("health", "heal"),
+    ("life", "heal"),
+    ("cure", "heal"),
+    ("regen", "regen"),
+    ("renew", "regen"),
+    ("mend", "regen"),
+    ("strength", "strength"),
+    ("might", "strength"),
+    ("rage", "strength"),
+    ("fury", "strength"),
+    ("power", "strength"),
+    ("swift", "swiftness"),
+    ("speed", "swiftness"),
+    ("haste", "swiftness"),
+    ("wind", "swiftness"),
+    ("stone", "stoneskin"),
+    ("iron", "stoneskin"),
+    ("bulwark", "stoneskin"),
+    ("guard", "stoneskin"),
+    ("shield", "stoneskin"),
+)
+
 # How many arrows a single loot roll or shop bundle grants.
 AMMO_BUNDLE = 20
 
@@ -69,6 +106,9 @@ def item_type_from_name(name: str) -> str:
     lower = name.lower()
     if any(kw in lower for kw in AMMO_KEYWORDS):
         return "ammo"
+    # Potions come before weapons/armour so an "Elixir of the Blade" stays a drink.
+    if any(kw in lower for kw in POTION_KEYWORDS):
+        return "potion"
     if any(kw in lower for kw in WEAPON_KEYWORDS):
         return "weapon"
     if any(kw in lower for kw in ARMOR_KEYWORDS):
@@ -166,12 +206,70 @@ ACCESSORY_FLAVOR_LABELS = {
 }
 
 
+# --- potions ------------------------------------------------------------------
+
+POTION_EFFECT_LABELS = {
+    "heal": "healing",
+    "regen": "regeneration",
+    "strength": "strength",
+    "swiftness": "swiftness",
+    "stoneskin": "stoneskin",
+}
+
+_POTION_TABLE = {
+    "heal": c.Potions.HEAL_FRAC,
+    "regen": c.Potions.REGEN_RATE,
+    "strength": c.Potions.STRENGTH_MULT,
+    "swiftness": c.Potions.SWIFTNESS_MULT,
+    "stoneskin": c.Potions.STONESKIN_REDUCTION,
+}
+
+
+def potion_effect_from_name(name: str) -> str:
+    """Which effect a potion's name promises. Anything unrecognised heals."""
+    lower = name.lower()
+    for keyword, effect in POTION_EFFECT_KEYWORDS:
+        if keyword in lower:
+            return effect
+    return "heal"
+
+
+def potion_magnitude(effect: str, rarity: str) -> float:
+    table = _POTION_TABLE.get(effect, c.Potions.HEAL_FRAC)
+    return table[c.Rarity.TIERS.index(rarity_tier(rarity))]
+
+
+def potion_duration(rarity: str) -> float:
+    """Buff lifetime in seconds. Meaningless for the instant heal."""
+    return c.Potions.DURATION_S[c.Rarity.TIERS.index(rarity_tier(rarity))]
+
+
+def potion_description(item: "Item") -> str:
+    """One line describing what drinking this potion does, for tooltips and shop rows."""
+    effect = item.potion_effect or "heal"
+    magnitude = potion_magnitude(effect, item.rarity)
+    seconds = round(potion_duration(item.rarity))
+    if effect == "heal":
+        return f"Restores {round(magnitude * 100)}% of max HP"
+    if effect == "regen":
+        return f"Regenerates {round(magnitude * 1000, 1)} HP/s for {seconds}s"
+    if effect == "strength":
+        return f"+{round((magnitude - 1) * 100)}% damage for {seconds}s"
+    if effect == "swiftness":
+        return f"+{round((magnitude - 1) * 100)}% move speed for {seconds}s"
+    if effect == "stoneskin":
+        return f"+{int(magnitude)} armor for {seconds}s"
+    return POTION_EFFECT_LABELS.get(effect, effect)
+
+
 def base_value(item: "Item") -> int:
     """Base sell/worth value before shop multipliers, used by the shop and inventory tooltip."""
     if item.item_type in ("weapon", "armor", "accessory"):
         base = max(5, item.bonus * 10)
     elif item.item_type == "ammo":
         base = 2
+    elif item.item_type == "potion":
+        base = c.Potions.BASE_VALUE
     else:  # misc valuables are worth selling in their own right
         base = 20
     return round(base * rarity_tier(item.rarity).price_mult)
@@ -188,6 +286,7 @@ class Item:
         rarity: str = None,
         accessory_flavor: str = None,
         quantity: int = 1,
+        potion_effect: str = None,
     ):
         self.id = uuid.uuid4().hex
         self.x = x
@@ -198,7 +297,8 @@ class Item:
         self.bonus = bonus
         self.rarity = rarity or roll_rarity()
         self.accessory_flavor = accessory_flavor
-        # Only ammo stacks today; every other item keeps quantity 1.
+        self.potion_effect = potion_effect
+        # Ammo and potions stack; every other item keeps quantity 1.
         self.quantity = quantity
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
@@ -217,6 +317,11 @@ class Item:
         elif item_type == "ammo":
             self.color = AMMO_COLOR
             self.shape = "arrow"
+        elif item_type == "potion":
+            if self.potion_effect is None:
+                self.potion_effect = potion_effect_from_name(name)
+            self.color = c.Potions.COLORS[self.potion_effect]
+            self.shape = "flask"
         else:  # misc: a valuable to sell, drawn as a coin so it reads clearly
             self.color = VALUABLE_COLOR
             self.shape = "coin"
@@ -247,6 +352,7 @@ class Item:
             "bonus": self.bonus,
             "rarity": self.rarity,
             "accessory_flavor": self.accessory_flavor,
+            "potion_effect": self.potion_effect,
             "quantity": self.quantity,
             "affixes": self.affixes,
             "color": list(self.color),
@@ -265,6 +371,7 @@ class Item:
             data["rarity"],
             data.get("accessory_flavor"),
             data.get("quantity", 1),
+            data.get("potion_effect"),
         )
         item.id = data["id"]
         item.angle = data["angle"]
@@ -375,6 +482,27 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width, bo
         ]
         pygame.draw.polygon(surface, color, fletch)
         pygame.draw.polygon(surface, border_color, fletch, 1)
+    elif shape == "flask":
+        # Round-bottomed bottle: `color` is the liquid, the glass and cork are fixed.
+        glass = (226, 234, 240)
+        body_r = size * 0.6
+        body_c = (int(cx), int(cy + size * 0.28))
+        neck_w = max(3, size * 0.36)
+        neck = pygame.Rect(int(cx - neck_w / 2), int(cy - size * 0.85), int(neck_w), int(size * 0.8))
+        pygame.draw.rect(surface, border_color, neck.inflate(border_width * 2, 0))
+        pygame.draw.rect(surface, glass, neck)
+        pygame.draw.circle(surface, border_color, body_c, int(body_r + border_width))
+        pygame.draw.circle(surface, color, body_c, int(body_r))
+        # Glint on the glass, so a filled bottle doesn't read as a plain ball.
+        pygame.draw.circle(
+            surface,
+            glass,
+            (int(cx - body_r * 0.35), int(body_c[1] - body_r * 0.35)),
+            max(1, int(size * 0.13)),
+        )
+        cork = pygame.Rect(int(cx - neck_w * 0.85), int(cy - size * 1.1), int(neck_w * 1.7), max(3, int(size * 0.3)))
+        pygame.draw.rect(surface, (168, 122, 74), cork)
+        pygame.draw.rect(surface, border_color, cork, max(1, border_width - 1))
     elif shape == "coin":
         pygame.draw.circle(surface, border_color, center, size + border_width)
         pygame.draw.circle(surface, color, center, size)

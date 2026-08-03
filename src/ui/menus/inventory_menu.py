@@ -11,6 +11,7 @@ from game.entities.items import (
     affix_label,
     base_value,
     draw_shape_with_border,
+    potion_description,
     rarity_color,
 )
 from ui import widgets
@@ -57,7 +58,14 @@ class InventoryMenu(BaseMenu):
         item_dict = {}
         for item in player.inventory:
             # Effects and flavour distinguish otherwise-identical items, so they don't merge in the grid.
-            key = (item.name, item.rarity, item.bonus, item.accessory_flavor, tuple(sorted(item.affixes.items())))
+            key = (
+                item.name,
+                item.rarity,
+                item.bonus,
+                item.accessory_flavor,
+                item.potion_effect,
+                tuple(sorted(item.affixes.items())),
+            )
             if key not in item_dict:
                 item_dict[key] = {"count": 0, "item": item}
             item_dict[key]["count"] += item.quantity
@@ -143,7 +151,11 @@ class InventoryMenu(BaseMenu):
             rel_x, rel_y = event.pos[0] - menu_x, event.pos[1] - menu_y
             slot = self._slot_at(rel_x, rel_y, len(items_list))
             if slot is not None:
-                player.toggle_equip(items_list[slot]["item"])
+                item = items_list[slot]["item"]
+                if item.item_type == "potion":
+                    player.use_potion(item)
+                else:
+                    player.toggle_equip(item)
                 return True
             equip_type = self._equip_at(rel_x, rel_y)
             if equip_type is not None:
@@ -198,7 +210,7 @@ class InventoryMenu(BaseMenu):
         if tooltip_item is not None:
             self._draw_tooltip(surface, tooltip_item, rel_x, rel_y, tooltip_item.id in equipped_ids)
 
-        self.draw_hint(surface, "Click an item to equip or unequip. Scroll for more. ESC or I to close")
+        self.draw_hint(surface, "Click to equip, unequip or drink. Scroll for more. ESC or I to close")
         self.blit_panel(surface)
 
     def _draw_paperdoll(self, surface, player: Player):
@@ -303,17 +315,23 @@ class InventoryMenu(BaseMenu):
             text = f"{item.name}  (+{item.bonus} {flavor})"
         elif item.item_type == "ammo":
             text = f"{item.name}  (x{item.quantity})"
+        elif item.item_type == "potion":
+            text = f"{item.name}  (x{item.quantity})"
         elif item.item_type == "misc":
             text = f"{item.name}  (valuable, sells for ~{base_value(item)}g)"
         else:
             text = item.name
         if is_equipped:
             text += "  [equipped, click to unequip]"
+        elif item.item_type == "potion":
+            text += "  [click to drink]"
         elif item.item_type in ("weapon", "armor", "accessory"):
             text += "  [click to equip]"
 
         # Main line in the rarity colour, then one muted line per rolled effect.
         lines = [(c.Fonts.text.render(text, True, rarity_color(item.rarity)))]
+        if item.item_type == "potion":
+            lines.append(c.Fonts.small.render(potion_description(item), True, c.Colors.ACCENT))
         for affix, magnitude in item.affixes.items():
             lines.append(c.Fonts.small.render(affix_label(affix, magnitude), True, c.Colors.ACCENT))
 

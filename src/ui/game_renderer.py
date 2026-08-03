@@ -9,7 +9,7 @@ import core.constants as c
 from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
-from game.entities.items import draw_shape_with_border, rarity_color
+from game.entities.items import POTION_EFFECT_LABELS, draw_shape_with_border, rarity_color
 from ui import widgets
 from ui.loading_indicator import LoadingIndicator
 
@@ -24,10 +24,8 @@ _EQUIP_HUD_SLOTS = (
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.items import Item
-    from game.entities.monsters import Monster
     from game.entities.npcs import NPC
     from game.entities.player import Player
-    from game.entities.projectile import Projectile
     from game.world import World
 
 
@@ -37,6 +35,12 @@ class GameRenderer:
     HUD_PANEL_RECT = pygame.Rect(8, 8, 300, 170)
     HUD_ICON_SIZE = 40
     HUD_ICON_GAP = 8
+
+    # Potion quickbar, centred just above the player's health bar (drawn by Player.draw
+    # at ORIGIN_Y + SIZE/2 + its health_bar_offset).
+    QUICK_SLOT_SIZE = 52
+    QUICK_SLOT_GAP = 8
+    QUICK_BAR_BOTTOM = c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + 360 - 12
 
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
@@ -68,7 +72,10 @@ class GameRenderer:
     def _on_screen(camera: Camera, x, y, margin=60):
         return abs(x - camera.x) <= c.Screen.ORIGIN_X + margin and abs(y - camera.y) <= c.Screen.ORIGIN_Y + margin
 
-    def draw_world(self, camera: Camera, world: World, player: Player):
+    def draw_world(self, camera: Camera, world: World, player: Player, interior=None):
+        """`interior` is the building (if any) the player is currently standing inside; that
+        one building draws as a roofless cutaway instead of its normal solid block, while
+        everything else, indoors or out, keeps drawing in this same pass around it."""
         self.screen.fill(c.Colors.GREEN)
 
         for x, y, kind in world.floor_details:
@@ -82,7 +89,7 @@ class GameRenderer:
 
         for building in world.buildings:
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
-                building.draw(self.screen, camera)
+                building.draw(self.screen, camera, player, player_inside=building is interior)
 
         get_decals().draw(self.screen, camera)
 
@@ -116,19 +123,6 @@ class GameRenderer:
 
         self.draw_offscreen_indicators(camera, world.items, world.npcs, player, world.bosses)
         self.draw_boss_bar(world, player)
-
-    def draw_interior(
-        self, camera: Camera, building, player: Player, monsters: List[Monster], projectiles: List[Projectile] = ()
-    ):
-        building.draw_interior(self.screen, camera, player)
-        get_decals().draw(self.screen, camera)
-        for monster in monsters:
-            monster.draw(self.screen, camera)
-        for projectile in projectiles:
-            projectile.draw(self.screen, camera)
-        get_particles().draw(self.screen, camera)
-        get_floating_text().draw(self.screen, camera)
-        player.draw(self.screen)
 
     def _draw_icon(self, kind: str, center: tuple, size: int, color: tuple):
         """A small flat glyph for a HUD icon button. `size` is roughly the icon's radius."""
@@ -209,6 +203,7 @@ class GameRenderer:
         self._draw_stat_chip(x, stats_y, "scroll", nb_quests)
 
         self._draw_equipped(player, top=stats_y + 30)
+        self._draw_potion_bar(player)
 
         self.loading_indicator.update()
         if active_task_count > 0:
@@ -219,6 +214,63 @@ class GameRenderer:
 
         if self.show_llm_tasks:
             self._draw_llm_task_panel(llm_tasks)
+
+    def _quick_slot_rects(self) -> List[pygame.Rect]:
+        step = self.QUICK_SLOT_SIZE + self.QUICK_SLOT_GAP
+        count = c.Potions.QUICK_SLOTS
+        total = count * self.QUICK_SLOT_SIZE + (count - 1) * self.QUICK_SLOT_GAP
+        left = c.Screen.ORIGIN_X - total // 2
+        top = self.QUICK_BAR_BOTTOM - self.QUICK_SLOT_SIZE
+        return [pygame.Rect(left + i * step, top, self.QUICK_SLOT_SIZE, self.QUICK_SLOT_SIZE) for i in range(count)]
+
+    def _draw_potion_bar(self, player: Player):
+        """The potion quickbar above the health bar: one slot per number key, with the
+        live buff chips floating just over it."""
+        potions = player.quick_potions()
+        rects = self._quick_slot_rects()
+
+        for i, rect in enumerate(rects):
+            item = potions[i] if i < len(potions) else None
+            border = rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER
+            widgets.draw_slot(self.screen, rect, border_color=border)
+
+            if item is not None:
+                widgets.draw_item_scaled(self.screen, item, rect.centerx + 2, rect.centery - 3, 32)
+                if item.quantity > 1:
+                    count = c.Fonts.small.render(f"x{item.quantity}", True, c.Colors.WHITE)
+                    self.screen.blit(count, (rect.right - count.get_width() - 4, rect.bottom - count.get_height() - 2))
+            else:
+                draw_shape_with_border(self.screen, "flask", rect.center, 14, (60, 60, 70), 2, (84, 84, 98))
+
+            key_label = c.Fonts.small.render(str(i + 1), True, c.Colors.MUTED)
+            self.screen.blit(key_label, (rect.x + 4, rect.y + 2))
+
+        self._draw_buff_chips(player, bottom=rects[0].top - 6)
+
+    def _draw_buff_chips(self, player: Player, bottom: int):
+        buffs = player.active_buffs()
+        if not buffs:
+            return
+
+        pad = 8
+        gap = 6
+        dot_space = 16
+        labels = []
+        for effect, remaining, _magnitude in buffs:
+            text = f"{POTION_EFFECT_LABELS.get(effect, effect)} {int(remaining) + 1}s"
+            labels.append((effect, c.Fonts.small.render(text, True, c.Colors.WHITE)))
+
+        widths = [label.get_width() + pad * 2 + dot_space for _, label in labels]
+        height = labels[0][1].get_height() + 8
+        x = c.Screen.ORIGIN_X - (sum(widths) + gap * (len(widths) - 1)) // 2
+        y = bottom - height
+
+        for (effect, label), width in zip(labels, widths):
+            rect = pygame.Rect(x, y, width, height)
+            widgets.draw_panel(self.screen, rect)
+            pygame.draw.circle(self.screen, c.Potions.COLORS[effect], (rect.x + pad + 4, rect.centery), 5)
+            self.screen.blit(label, (rect.x + pad + dot_space, rect.centery - label.get_height() // 2))
+            x += width + gap
 
     def _draw_equipped(self, player: Player, top: int):
         """A mini paper-doll on the HUD: one captioned slot per equip type."""

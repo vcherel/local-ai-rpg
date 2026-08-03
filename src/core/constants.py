@@ -390,10 +390,12 @@ class Buildings:
     NB_TAVERNS: int = 2
 
     # (width range, height range) per kind. The landmark ruin has no door and no interior.
+    # A house/shop/tavern's footprint is also its interior room now (no separate coordinate
+    # space), so these are sized to hold a walkable room with furniture, not just a facade.
     SIZES = {
-        "house": ((170, 230), (140, 200)),
-        "shop": ((190, 230), (150, 180)),
-        "tavern": ((260, 310), (200, 240)),
+        "house": ((320, 380), (280, 340)),
+        "shop": ((340, 380), (280, 320)),
+        "tavern": ((420, 480), (340, 400)),
         "landmark": ((280, 330), (240, 290)),
     }
     ROOF_COLORS = {
@@ -411,10 +413,9 @@ class Buildings:
     # The entry trigger straddles the front wall, extending this far on each side of it.
     DOOR_DEPTH: int = 35
 
-    # Interior room dimensions; each interior is its own small coordinate space.
-    ROOM_W: int = 1100
-    ROOM_H: int = 700
-    ROOM_WALL: int = 25
+    # Thickness of the wall shell drawn/collided around a building's footprint; the
+    # walkable floor is the footprint inset by this on every side.
+    WALL_THICKNESS: int = 16
 
     TAVERN_SLEEP_COST: int = 15
     INTERACT_DISTANCE: int = 120
@@ -457,8 +458,55 @@ class LootBox:
     DROP_CHANCE: float = 0.2
     COIN_MIN: int = 3
     COIN_MAX: int = 12
-    # Chance the box also contains a weapon or armor piece, on top of coins.
-    ITEM_CHANCE: float = 0.35
+    # Chance the box also contains an item on top of coins, indexed by rarity tier
+    # (common..legendary), so a legendary box is far less likely to be coins only.
+    ITEM_CHANCE_BY_TIER: tuple = (0.35, 0.45, 0.60, 0.80, 1.0)
+    # Item type roll weights (weapon, armor, accessory, ammo, potion), indexed by rarity
+    # tier. Common stays an even split; higher tiers skew hard toward gear so a legendary
+    # box is unlikely to hand back "just" a stack of arrows or a potion.
+    TYPE_WEIGHTS_BY_TIER: tuple = (
+        (1, 1, 1, 1, 1),
+        (2, 2, 2, 1, 1),
+        (3, 3, 3, 1, 1),
+        (4, 4, 4, 1, 1),
+        (5, 5, 5, 1, 1),
+    )
+
+
+@dataclass(frozen=True)
+class Potions:
+    """Drinkable consumables (item_type "potion"). Every table is indexed by rarity
+    tier (common..legendary), so a legendary flask of the same name is simply stronger.
+
+    "heal" restores hp on the spot; the other four start a timed buff held on the
+    player (`Player.buffs`) and read back by the matching multiplier helpers.
+    """
+
+    EFFECTS: tuple = ("heal", "regen", "strength", "swiftness", "stoneskin")
+
+    HEAL_FRAC: tuple = (0.25, 0.40, 0.55, 0.70, 0.90)  # fraction of max hp restored at once
+    REGEN_RATE: tuple = (0.0025, 0.0035, 0.0045, 0.006, 0.008)  # extra hp/ms while active
+    STRENGTH_MULT: tuple = (1.15, 1.25, 1.40, 1.60, 1.90)  # damage dealt multiplier
+    SWIFTNESS_MULT: tuple = (1.12, 1.20, 1.30, 1.45, 1.60)  # move speed multiplier
+    STONESKIN_REDUCTION: tuple = (2, 4, 6, 9, 13)  # flat damage reduction on top of armour
+
+    # How long a buff lasts, in seconds. Unused by "heal", which is instant.
+    DURATION_S: tuple = (12.0, 15.0, 18.0, 22.0, 26.0)
+
+    # Worth before the rarity multiplier, used by items.base_value for shop pricing.
+    BASE_VALUE: int = 15
+
+    # Liquid colour per effect, tinting the flask icon so a potion reads at a glance.
+    COLORS = {
+        "heal": (214, 62, 72),
+        "regen": (92, 208, 118),
+        "strength": (232, 132, 46),
+        "swiftness": (88, 198, 234),
+        "stoneskin": (172, 172, 188),
+    }
+
+    # Potions the player can drink straight from the HUD with the number keys.
+    QUICK_SLOTS: int = 4
 
 
 @dataclass(frozen=True)

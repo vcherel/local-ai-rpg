@@ -288,10 +288,16 @@ class QuestSystem:
                 rtype = "accessory"
             rarity = roll_rarity(self._reward_weights(npc))
             rbonus = roll_bonus(rtype, rarity)
-            reward_item = Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity)
+            # A single flask is a thin reward for a whole quest, so potions come in a handful.
+            quantity = random.randint(2, 3) if rtype == "potion" else 1
+            reward_item = Item(
+                self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity, quantity=quantity
+            )
             reward_item.picked_up = True
-            self.items.append(reward_item)
-            self.player.inventory.append(reward_item)
+            # Potions merge into a stack the player already carries; only a genuinely new
+            # entry belongs in the master item list its id resolves through on reload.
+            if self.player.add_item(reward_item) is reward_item:
+                self.items.append(reward_item)
 
         quest.is_completed = True
 

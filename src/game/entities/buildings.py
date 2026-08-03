@@ -123,15 +123,39 @@ class Building:
         right = pygame.Rect(round(self.x + offset), y, w, h)
         return [left, right]
 
-    def blocks(self, x, y, radius, door_open=False) -> bool:
+    def _wall_segments(self) -> List[pygame.Rect]:
+        """The building's solid shell as a few thin rects, with a permanent door-sized
+        gap cut from the front wall. The landmark ruin has no door, so its whole
+        footprint stays one solid block."""
         r = self.rect
-        nearest_x = min(max(x, r.left), r.right)
-        nearest_y = min(max(y, r.top), r.bottom)
-        if math.hypot(x - nearest_x, y - nearest_y) >= radius:
-            return False
-        if door_open and self.has_door and self.door_zone().collidepoint(x, y):
-            return False
-        return True
+        if not self.has_door:
+            return [r]
+        wall = c.Buildings.WALL_THICKNESS
+        door_left = round(self.x - c.Buildings.DOOR_WIDTH / 2)
+        door_right = round(self.x + c.Buildings.DOOR_WIDTH / 2)
+        return [
+            pygame.Rect(r.left, r.top, r.width, wall),  # back wall
+            pygame.Rect(r.left, r.top, wall, r.height),  # left wall
+            pygame.Rect(r.right - wall, r.top, wall, r.height),  # right wall
+            pygame.Rect(r.left, r.bottom - wall, door_left - r.left, wall),  # front, left of door
+            pygame.Rect(door_right, r.bottom - wall, r.right - door_right, wall),  # front, right of door
+        ]
+
+    def blocks(self, x, y, radius) -> bool:
+        """True if a point (with this radius) overlaps the wall shell (the door gap is
+        always walkable) or a piece of furniture inside the room."""
+        for seg in self._wall_segments():
+            nearest_x = min(max(x, seg.left), seg.right)
+            nearest_y = min(max(y, seg.top), seg.bottom)
+            if math.hypot(x - nearest_x, y - nearest_y) < radius:
+                return True
+        if self.has_door and self.interior_rect().collidepoint(x, y):
+            for rect, _kind in self.interior_layout()["solids"]:
+                nearest_x = min(max(x, rect.left), rect.right)
+                nearest_y = min(max(y, rect.top), rect.bottom)
+                if math.hypot(x - nearest_x, y - nearest_y) < radius:
+                    return True
+        return False
 
     def to_dict(self) -> dict:
         return {
@@ -159,43 +183,14 @@ class Building:
 
     # ------------------------------------------------------------------ interior
 
-    def interior_floor(self) -> pygame.Rect:
-        wall = c.Buildings.ROOM_WALL
-        return pygame.Rect(wall, wall, c.Buildings.ROOM_W - wall * 2, c.Buildings.ROOM_H - wall * 2)
+    def interior_rect(self) -> pygame.Rect:
+        """The walkable floor, in world coordinates: the footprint inset by the wall shell."""
+        wall = c.Buildings.WALL_THICKNESS
+        return self.rect.inflate(-wall * 2, -wall * 2)
 
-    def interior_exit_zone(self) -> pygame.Rect:
-        # The trigger must start above the floor-bottom collision line, otherwise the player
-        # is stopped by the wall before ever reaching it. It reaches up into the room and
-        # down through the doorway so walking to the door leaves the building.
-        floor = self.interior_floor()
-        return pygame.Rect(
-            round(c.Buildings.ROOM_W / 2 - c.Buildings.DOOR_WIDTH / 2),
-            floor.bottom - 35,
-            c.Buildings.DOOR_WIDTH,
-            c.Buildings.ROOM_WALL + 70,
-        )
-
-    def interior_entry_pos(self) -> tuple:
-        # Well above the exit zone so entering does not instantly trigger an exit.
-        return (c.Buildings.ROOM_W / 2, self.interior_floor().bottom - 100)
-
-    def interior_door_pos(self) -> tuple:
-        # Just inside the doorway: a chasing monster appears at the door and then runs
-        # up after the player, rather than popping in higher up in the room.
-        return (c.Buildings.ROOM_W / 2, self.interior_floor().bottom - 30)
-
-    def interior_blocked(self, x, y, radius, door_open=True) -> bool:
-        if self.interior_exit_zone().collidepoint(x, y):
-            return False
-        floor = self.interior_floor()
-        if x - radius < floor.left or x + radius > floor.right or y - radius < floor.top or y + radius > floor.bottom:
-            return True
-        for rect, _kind in self.interior_layout()["solids"]:
-            nearest_x = min(max(x, rect.left), rect.right)
-            nearest_y = min(max(y, rect.top), rect.bottom)
-            if math.hypot(x - nearest_x, y - nearest_y) < radius:
-                return True
-        return False
+    def contains_point(self, x, y) -> bool:
+        """True once (x, y) has stepped past the wall onto this building's floor."""
+        return self.has_door and self.interior_rect().collidepoint(x, y)
 
     def interior_layout(self) -> dict:
         """Furniture for this building's single room, deterministic from the building id."""
@@ -203,21 +198,22 @@ class Building:
             return self._layout
 
         rng = random.Random(self.id)
-        floor = self.interior_floor()
+        floor = self.interior_rect()
         solids: list = []
         beds: List[pygame.Rect] = []
         crates: List[pygame.Rect] = []
         chest = None
 
         # Keep a corridor from the door to the middle of the room clear of furniture.
+        corridor_w = c.Buildings.DOOR_WIDTH + 40
         door_path = pygame.Rect(
-            round(c.Buildings.ROOM_W / 2) - 90, round(c.Buildings.ROOM_H / 2), 180, round(c.Buildings.ROOM_H / 2)
+            round(floor.centerx - corridor_w / 2), floor.centery, corridor_w, floor.bottom - floor.centery
         )
 
         def fits(rect: pygame.Rect) -> bool:
             if not floor.contains(rect) or rect.colliderect(door_path):
                 return False
-            return all(not rect.colliderect(other.inflate(70, 70)) for other, _ in solids)
+            return all(not rect.colliderect(other.inflate(40, 40)) for other, _ in solids)
 
         def try_place(w, h) -> Optional[pygame.Rect]:
             for _ in range(50):
@@ -233,27 +229,27 @@ class Building:
 
         if self.kind == "house":
             bed_left = rng.random() < 0.5
-            bed_x = floor.left + 30 if bed_left else floor.right - 140
-            solids.append((pygame.Rect(bed_x, floor.top + 20, 110, 170), "bed"))
-            solids.append((pygame.Rect(round(c.Buildings.ROOM_W / 2) - 90, floor.top + 8, 180, 34), "shelf"))
-            chest_x = floor.right - 90 if bed_left else floor.left + 34
-            chest = pygame.Rect(chest_x, floor.bottom - 100, 56, 44)
+            bed_x = floor.left + 20 if bed_left else floor.right - 90
+            solids.append((pygame.Rect(bed_x, floor.top + 15, 70, 100), "bed"))
+            solids.append((pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf"))
+            chest_x = floor.right - 55 if bed_left else floor.left + 20
+            chest = pygame.Rect(chest_x, floor.bottom - 70, 40, 32)
             solids.append((chest, "chest"))
-            table = try_place(130, 95)
+            table = try_place(80, 60)
             if table:
                 solids.append((table, "table"))
-                for chair_x in (table.left - 46, table.right + 12):
-                    chair = pygame.Rect(chair_x, table.centery - 17, 34, 34)
+                for chair_x in (table.left - 30, table.right + 8):
+                    chair = pygame.Rect(chair_x, table.centery - 13, 26, 26)
                     if floor.contains(chair) and not chair.colliderect(door_path):
                         solids.append((chair, "chair"))
 
         elif self.kind == "shop":
-            counter = pygame.Rect(round(c.Buildings.ROOM_W / 2) - 160, floor.top + 150, 320, 48)
+            counter = pygame.Rect(round(floor.centerx - 85), floor.top + 90, 170, 32)
             solids.append((counter, "counter"))
-            solids.append((pygame.Rect(floor.left + 40, floor.top + 8, 190, 34), "shelf"))
-            solids.append((pygame.Rect(floor.right - 230, floor.top + 8, 190, 34), "shelf"))
+            solids.append((pygame.Rect(floor.left + 25, floor.top + 6, 100, 22), "shelf"))
+            solids.append((pygame.Rect(floor.right - 125, floor.top + 6, 100, 22), "shelf"))
             for _ in range(3):
-                crate = try_place(58, 58)
+                crate = try_place(40, 40)
                 if crate:
                     # Always placed (so positions stay deterministic across saves); broken
                     # ones are dropped from the collision set below but keep their index.
@@ -262,27 +258,27 @@ class Building:
 
         elif self.kind == "tavern":
             nb_beds = rng.randint(3, 4)
-            bed_w, bed_h = 95, 150
+            bed_w, bed_h = 60, 95
             span = floor.width - 80 - bed_w
             for i in range(nb_beds):
-                bed = pygame.Rect(floor.left + 40 + round(span * i / (nb_beds - 1)), floor.top + 20, bed_w, bed_h)
+                bed = pygame.Rect(floor.left + 40 + round(span * i / (nb_beds - 1)), floor.top + 15, bed_w, bed_h)
                 solids.append((bed, "bed"))
                 beds.append(bed)
-            solids.append((pygame.Rect(floor.right - 280, floor.bottom - 120, 240, 48), "counter"))
+            solids.append((pygame.Rect(floor.right - 190, floor.bottom - 80, 170, 32), "counter"))
             for _ in range(2):
-                table = try_place(110, 85)
+                table = try_place(80, 60)
                 if table:
                     solids.append((table, "table"))
             for _ in range(2):
-                crate = try_place(58, 58)
+                crate = try_place(40, 40)
                 if crate:
                     # Same deal as the shop: always placed for deterministic indices, dropped
                     # from the collision set once broken (see the broken-crate filter below).
                     solids.append((crate, "crate"))
                     crates.append(crate)
 
-        rug = pygame.Rect(0, 0, 190, 120)
-        rug.center = (round(c.Buildings.ROOM_W / 2), round(c.Buildings.ROOM_H / 2) - 40)
+        rug = pygame.Rect(0, 0, 130, 80)
+        rug.center = (round(floor.centerx), round(floor.centery - 25))
 
         # Smashed crates no longer block movement, but stay in `crates` so their debris
         # still draws and their index keeps matching the saved broken set.
@@ -335,9 +331,18 @@ class Building:
 
     # ------------------------------------------------------------------ drawing
 
-    def draw(self, screen: pygame.Surface, camera: Camera):
+    def draw(
+        self, screen: pygame.Surface, camera: Camera, player: Optional[Player] = None, player_inside: bool = False
+    ):
+        """`player_inside` swaps this one building from its normal solid-roof look to a
+        cutaway (no roof, floor and furniture visible) so the player can be seen standing
+        in it while the rest of the map keeps drawing around it, same camera, no cut."""
         if self.kind == "landmark":
             self._draw_ruin(screen, camera)
+            return
+
+        if player_inside:
+            self._draw_interior(screen, camera, player)
             return
 
         r = self.rect
@@ -456,33 +461,32 @@ class Building:
         if self.name:
             draw_label(screen, self.name, (cx, cy + self.h / 2 + 30))
 
-    def draw_interior(self, screen: pygame.Surface, camera: Camera, player: Player):
-        screen.fill((24, 20, 17))
-        ox, oy = camera.world_to_screen(0, 0)
+    def _draw_interior(self, screen: pygame.Surface, camera: Camera, player: Player):
+        """Cutaway view of this one building: wall shell, floor and furniture drawn at its
+        real world position, roof omitted so the player (drawn by the caller afterwards) and
+        anything else on the floor stay visible. Everything outside the footprint is drawn
+        by the normal outdoor pass around this, same frame, same camera."""
 
         def to_screen(rect: pygame.Rect) -> pygame.Rect:
-            return rect.move(ox, oy)
+            tl = camera.world_to_screen(rect.left, rect.top)
+            return pygame.Rect(tl[0], tl[1], rect.width, rect.height)
 
-        room = pygame.Rect(0, 0, c.Buildings.ROOM_W, c.Buildings.ROOM_H)
-        floor = self.interior_floor()
-        pygame.draw.rect(screen, c.Buildings.WALL_COLOR, to_screen(room))
+        floor = self.interior_rect()
+        pygame.draw.rect(screen, c.Buildings.WALL_COLOR, to_screen(self.rect))
         floor_screen = to_screen(floor)
         pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, floor_screen)
         plank = tuple(round(v * 0.88) for v in c.Buildings.FLOOR_COLOR)
-        for x in range(floor.left + 70, floor.right, 70):
-            pygame.draw.line(screen, plank, (ox + x, floor_screen.top), (ox + x, floor_screen.bottom - 1), 2)
+        for x in range(floor.left + 50, floor.right, 50):
+            wx, _ = camera.world_to_screen(x, floor.top)
+            pygame.draw.line(screen, plank, (wx, floor_screen.top), (wx, floor_screen.bottom - 1), 2)
 
-        # Exit doorway through the bottom wall: a floor-coloured gap in the dark wall.
-        door = pygame.Rect(
-            round(c.Buildings.ROOM_W / 2 - c.Buildings.DOOR_WIDTH / 2),
-            floor.bottom,
-            c.Buildings.DOOR_WIDTH,
-            c.Buildings.ROOM_WALL,
-        )
-        door_screen = to_screen(door)
-        pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, door_screen)
-        pygame.draw.rect(screen, (45, 32, 26), door_screen, 3)
-        draw_label(screen, "Exit", (door_screen.centerx, door_screen.bottom + 16))
+        # Doorway through the front wall: a floor-coloured gap, matching the collision gap.
+        wall = c.Buildings.WALL_THICKNESS
+        door = pygame.Rect(round(self.x - c.Buildings.DOOR_WIDTH / 2), floor.bottom, c.Buildings.DOOR_WIDTH, wall)
+        pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, to_screen(door))
+
+        for idx, window in enumerate(self.window_rects()):
+            self._draw_window(screen, camera, window, idx in self.broken_windows)
 
         layout = self.interior_layout()
         rug_screen = to_screen(layout["rug"])
