@@ -124,6 +124,7 @@ class ShopMenu(BaseMenu):
             self.world_items.append(item)
         self.player.add_coins(-price)
         self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
+        self.merchant.affinity = min(c.Affinity.MAX, self.merchant.affinity + c.Affinity.TRADE_BONUS)
 
     def _sell(self, index: int):
         item = self.player.inventory[index]
@@ -139,6 +140,7 @@ class ShopMenu(BaseMenu):
                 self.world_items.remove(item)
         self.player.add_coins(price)
         self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
+        self.merchant.affinity = min(c.Affinity.MAX, self.merchant.affinity + c.Affinity.TRADE_BONUS)
 
     def draw(self):
         if not self.active:
