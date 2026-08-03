@@ -39,18 +39,16 @@ class StatsMenu(BaseMenu):
 
         stats = player.stats
         rows = [
-            ("Strength", "strength", f"+{stats.attack_bonus()} attack damage"),
-            ("Resistance", "resistance", f"-{stats.damage_reduction()} damage taken"),
-            ("Speed", "speed", f"+{round((stats.speed_multiplier() - 1) * 100)}% move speed"),
-            ("Vitality", "vitality", f"{stats.max_hp()} max HP"),
+            ("strength", f"+{stats.attack_bonus()} attack damage"),
+            ("resistance", f"-{stats.damage_reduction()} damage taken"),
+            ("speed", f"+{round((stats.speed_multiplier() - 1) * 100)}% move speed"),
+            ("vitality", f"{stats.max_hp()} max HP"),
             (
-                "Bartering",
                 "bartering",
                 f"buy {round((1 - stats.buy_multiplier()) * 100)}% cheaper, "
                 f"sell {round((stats.sell_multiplier() - 1) * 100)}% higher",
             ),
             (
-                "Persuasion",
                 "persuasion",
                 f"+{round(stats.quest_reward_weights()[4] - c.Rarity.QUEST_REWARD_WEIGHTS[4])}pt "
                 "legendary quest reward odds, NPCs more receptive",
@@ -59,8 +57,8 @@ class StatsMenu(BaseMenu):
 
         bar_w = self.width - self.padding * 2
         y = self.content_top
-        for label, key, effect in rows:
-            name_surf = c.Fonts.heading.render(label, True, c.Colors.WHITE)
+        for key, effect in rows:
+            name_surf = c.Fonts.heading.render(c.STAT_LABELS[key], True, c.Colors.WHITE)
             surface.blit(name_surf, (self.padding, y))
 
             level_surf = c.Fonts.heading.render(f"Lv {stats.level[key]}", True, c.Colors.ACCENT)
