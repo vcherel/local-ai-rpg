@@ -9,9 +9,9 @@ import pygame
 import core.constants as c
 from core import dialogue_log
 from core.audio import play_sound
-from core.utils import ConversationHistory, parse_response_affinity_analysis
+from core.utils import ConversationHistory
 from game.entities.items import potion_description
-from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
+from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem
 from ui import widgets
 from ui.conversation_ui import ConversationUI
@@ -55,7 +55,6 @@ class DialogueManager:
 
         self.pending_quest_analysis = False
         self.pending_quest_completion = None
-        self.pending_affinity_analysis = False
         self.quest_tracker = QuestTracker(screen)
         self.shop_requested = False
         self.shop_button_rect: pygame.Rect | None = None
@@ -188,7 +187,6 @@ class DialogueManager:
         self.conversation.clear()
         self.ui.reset()
         self.pending_quest_analysis = False
-        self.pending_affinity_analysis = False
 
         initial_prompt = "Player: Hi!\nNPC:"
         self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
@@ -287,7 +285,6 @@ class DialogueManager:
 
         if not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
             self.pending_quest_analysis = True
-        self.pending_affinity_analysis = True
 
         self._execute_pending_actions(log_path)
 
@@ -321,13 +318,6 @@ class DialogueManager:
                 target=self._execute_quest_analysis, args=(npc, conversation_text, log_path), daemon=True
             ).start()
             self.pending_quest_analysis = False
-
-        # Affinity analysis last, independent of quest state
-        if self.pending_affinity_analysis:
-            threading.Thread(
-                target=self._execute_affinity_analysis, args=(npc, conversation_text, log_path), daemon=True
-            ).start()
-            self.pending_affinity_analysis = False
 
     def draw(self):
         if not self.active:
@@ -381,24 +371,6 @@ class DialogueManager:
                 if quest:
                     self.quest_tracker.notify_new_quest(quest)
                     play_sound("quest_new")
-
-    def _execute_affinity_analysis(self, npc: NPC, conversation_text: str, log_path):
-        if not conversation_text:
-            return
-
-        system_prompt = (
-            "You judge how a conversation in an RPG changed an NPC's opinion of the player. "
-            "Reply ONLY with a single integer from -10 to 10: how much the NPC's affinity for the player "
-            "should change. Negative if the player was rude, threatening, or dismissive; positive if kind, "
-            "helpful, or friendly; 0 for neutral small talk. No other text."
-        )
-        prompt = f"Conversation:\n{conversation_text}\nReply with only the integer."
-        response = generate_response_queued(prompt, system_prompt, "Affinity analyze")
-        delta = parse_response_affinity_analysis(response)
-
-        if delta:
-            npc.affinity = max(c.Affinity.MIN, min(c.Affinity.MAX, npc.affinity + delta))
-            dialogue_log.append_section(log_path, "Affinity analysis", f"Delta: {delta:+d} (now {npc.affinity:.0f})")
 
     def _execute_quest_completion(self, npc: NPC, last_msg, log_path):
         if last_msg and npc.quest:

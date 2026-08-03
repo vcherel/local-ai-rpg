@@ -300,6 +300,7 @@ class QuestSystem:
                 self.items.append(reward_item)
 
         quest.is_completed = True
+        npc.affinity = min(c.Affinity.MAX, npc.affinity + c.Affinity.QUEST_COMPLETE_BONUS)
 
         if quest in self.active_quests:
             self.active_quests.remove(quest)

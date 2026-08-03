@@ -706,14 +706,16 @@ STAT_LABELS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class Affinity:
-    # Per-NPC relationship level. Starts neutral; an LLM judges how each closed
-    # conversation should move it, independent of the global player Stats.
+    # Per-NPC relationship level. Starts neutral, moves from concrete player
+    # actions toward that NPC rather than an LLM judgment of conversation tone.
     START: float = 50.0
     MIN: float = 0.0
     MAX: float = 100.0
 
-    # Bounds how much a single conversation's LLM judgment can move affinity.
-    MAX_DELTA_PER_CONVERSATION: int = 10
+    # Affinity gained from completing this NPC's quest, and from each trade at
+    # a merchant's shop.
+    QUEST_COMPLETE_BONUS: float = 15.0
+    TRADE_BONUS: float = 1.0
 
     # Quest reward weight shifted from "rare" to "legendary" per point of affinity
     # above START, capped like persuasion's shift.
