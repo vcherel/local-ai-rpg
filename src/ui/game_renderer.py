@@ -97,6 +97,14 @@ class GameRenderer:
             if self._on_screen(camera, breakable.x, breakable.y):
                 breakable.draw(self.screen, camera)
 
+        for poi in world.pois:
+            if self._on_screen(camera, poi.x, poi.y):
+                poi.draw(self.screen, camera)
+
+        for critter in world.critters:
+            if self._on_screen(camera, critter.x, critter.y):
+                critter.draw(self.screen, camera)
+
         for npc in world.npcs:
             if self._on_screen(camera, npc.x, npc.y):
                 npc.draw(self.screen, camera)
