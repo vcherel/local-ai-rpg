@@ -67,7 +67,11 @@ def parse_shop_inventory(response: str) -> list:
         for item in items:
             if not isinstance(item, dict) or not item.get("name"):
                 continue
-            item_type = str(item.get("item_type", "misc"))
+            item_type = str(item.get("item_type", "")).strip().lower()
+            # An invented type ("consumable", "drink") is dropped so the shop falls back
+            # to reading the type out of the item's name instead.
+            if item_type not in ("weapon", "armor", "accessory", "ammo", "potion", "misc"):
+                item_type = ""
             rarity = str(item.get("rarity", "")).strip().lower()
             if rarity not in (tier.name for tier in c.Rarity.TIERS):
                 rarity = ""

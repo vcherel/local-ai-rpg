@@ -15,7 +15,7 @@ from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_vignette
 from game.entities.entities import Entity
-from game.entities.items import rarity_color
+from game.entities.items import POTION_EFFECT_LABELS, potion_duration, potion_magnitude, rarity_color
 from game.entities.stats import Stats
 
 if TYPE_CHECKING:
@@ -85,6 +85,14 @@ class Player(Entity):
         # quitting to the main menu or relaunching, rather than being a free reset.
         self.death_debuff_until = save_system.load("death_debuff_until", 0.0)
 
+        # Potion buffs: {effect: {"until": wall-clock seconds, "magnitude": float}}.
+        # Wall-clock for the same reason as above, so quitting doesn't bank buff time.
+        self.buffs = {
+            effect: data
+            for effect, data in save_system.load("buffs", {}).items()
+            if data.get("until", 0.0) > time.time()
+        }
+
     def to_dict(self) -> dict:
         return {"x": self.x, "y": self.y, "hp": self.hp}
 
@@ -128,10 +136,10 @@ class Player(Entity):
             step_y = dy * speed * move_factor
             # Move one axis at a time so a wall on one axis lets the player slide along it.
             radius = c.Player.SIZE / 2
-            if blocked is not None and blocked(self.x + step_x, self.y, radius, True):
+            if blocked is not None and blocked(self.x + step_x, self.y, radius):
                 step_x = 0
             self.x += step_x
-            if blocked is not None and blocked(self.x, self.y + step_y, radius, True):
+            if blocked is not None and blocked(self.x, self.y + step_y, radius):
                 step_y = 0
             self.y += step_y
 
@@ -156,14 +164,33 @@ class Player(Entity):
             self.hp = min(self.hp + regen * dt, self.max_hp)
 
     def add_item(self, item):
-        """Add an item to the inventory, merging ammo into an existing stack of the same name."""
+        """Add an item to the inventory, merging a stackable (ammo, potion) into a matching
+        stack. Potions only merge with the same rarity, since rarity is what makes one
+        healing potion stronger than another."""
+        existing = None
         if item.item_type == "ammo":
             existing = next((i for i in self.inventory if i.item_type == "ammo" and i.name == item.name), None)
-            if existing is not None:
-                existing.quantity += item.quantity
-                return existing
+        elif item.item_type == "potion":
+            existing = next(
+                (
+                    i
+                    for i in self.inventory
+                    if i.item_type == "potion"
+                    and i.name == item.name
+                    and i.rarity == item.rarity
+                    and i.potion_effect == item.potion_effect
+                ),
+                None,
+            )
+        if existing is not None:
+            existing.quantity += item.quantity
+            return existing
         self.inventory.append(item)
         return item
+
+    def quick_potions(self) -> list:
+        """The potions bound to the HUD number keys, in inventory order."""
+        return [item for item in self.inventory if item.item_type == "potion"][: c.Potions.QUICK_SLOTS]
 
     def equipped_ids(self) -> dict:
         return {
@@ -272,11 +299,65 @@ class Player(Entity):
     def heal(self, amount: float):
         self.hp = min(self.hp + amount, self.max_hp)
 
+    # --- potions and buffs -----------------------------------------------------
+
+    def use_potion(self, item) -> str | None:
+        """Drink one potion off the stack. Returns a short label of what it did, or None
+        if it would be wasted (a heal at full hp), leaving the potion untouched."""
+        if item.item_type != "potion" or item.quantity <= 0:
+            return None
+
+        effect = item.potion_effect or "heal"
+        magnitude = potion_magnitude(effect, item.rarity)
+
+        if effect == "heal":
+            healed = min(self.max_hp - self.hp, self.max_hp * magnitude)
+            if healed <= 0:
+                return None
+            self.heal(healed)
+            label = f"+{round(healed)} HP"
+        else:
+            duration = potion_duration(item.rarity)
+            self.apply_buff(effect, magnitude, duration)
+            label = f"{POTION_EFFECT_LABELS[effect].capitalize()} {round(duration)}s"
+
+        item.quantity -= 1
+        if item.quantity <= 0 and item in self.inventory:
+            self.inventory.remove(item)
+
+        play_sound("potion_drink")
+        get_particles().spawn_burst(self.x, self.y, item.color, count=14, speed=3, life=450, size=4, gravity=0.25)
+        get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, label, item.color)
+        return label
+
+    def apply_buff(self, effect: str, magnitude: float, duration_s: float):
+        """Start or refresh a timed buff. Drinking a second potion of the same effect
+        restarts the clock and keeps the stronger magnitude instead of stacking both."""
+        current = self.buffs.get(effect)
+        if current is not None and current["until"] > time.time():
+            magnitude = max(magnitude, current["magnitude"])
+        self.buffs[effect] = {"until": time.time() + duration_s, "magnitude": magnitude}
+        self.save_system.update("buffs", self.buffs)
+
+    def buff_magnitude(self, effect: str, default: float = 0.0) -> float:
+        data = self.buffs.get(effect)
+        if data is None or data["until"] <= time.time():
+            return default
+        return data["magnitude"]
+
+    def active_buffs(self) -> list:
+        """(effect, seconds left, magnitude) for every live buff, soonest to expire first."""
+        now = time.time()
+        live = [(e, d["until"] - now, d["magnitude"]) for e, d in self.buffs.items() if d["until"] > now]
+        return sorted(live, key=lambda buff: buff[1])
+
     def speed_multiplier(self) -> float:
-        return self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
+        base = self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
+        return base * self.buff_magnitude("swiftness", 1.0)
 
     def regen_rate(self) -> float:
-        return self.stats.regen_rate() + self.accessory_bonus("regen") * c.Stats.ACCESSORY_REGEN_PER_BONUS
+        accessory = self.accessory_bonus("regen") * c.Stats.ACCESSORY_REGEN_PER_BONUS
+        return self.stats.regen_rate() + accessory + self.buff_magnitude("regen")
 
     def buy_multiplier(self) -> float:
         luck = self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS
@@ -301,7 +382,7 @@ class Player(Entity):
         self.stats.train("vitality", c.Stats.XP_PER_DAMAGE_TAKEN * 0.5)
         self.max_hp = self.stats.max_hp()
 
-        reduction = self.armor_bonus() + self.stats.damage_reduction()
+        reduction = self.armor_bonus() + self.stats.damage_reduction() + int(self.buff_magnitude("stoneskin"))
         actual = max(damage - reduction, 1)
         self.hp -= actual
         self.last_damage_ms = pygame.time.get_ticks()
@@ -327,13 +408,17 @@ class Player(Entity):
         return time.time() < self.death_debuff_until
 
     def damage_multiplier(self) -> float:
-        return c.Death.DEBUFF_DAMAGE_MULT if self.is_shaken() else 1.0
+        weakness = c.Death.DEBUFF_DAMAGE_MULT if self.is_shaken() else 1.0
+        return weakness * self.buff_magnitude("strength", 1.0)
 
     def apply_death_penalty(self) -> int:
         """Dock a share of coins and start the post-respawn weakness timer. Returns the
         number of coins lost, for the game-over screen to report."""
         loss = int(self.coins * c.Death.COIN_LOSS_PCT)
         self.add_coins(-loss)
+        # Whatever was coursing through the player's veins died with them.
+        self.buffs = {}
+        self.save_system.update("buffs", self.buffs)
         self.death_debuff_until = time.time() + c.Death.DEBUFF_DURATION_S
         self.save_system.update("death_debuff_until", self.death_debuff_until)
         return loss

@@ -68,20 +68,10 @@ class Game:
         # returns to the main menu (game state is saved on the way out).
         self.quit_to_menu = False
 
-        # When inside a building the player moves in that building's interior
-        # coordinate space; the world simulation pauses until they step back out.
+        # The building the player is currently standing inside, or None outdoors. Recomputed
+        # every frame from the player's position; a building's interior is just its own
+        # footprint in world space, so there is no separate coordinate space or mode switch.
         self.interior = None
-        self._interior_return_pos = None
-        # Monsters that were actively chasing the player through the door; they keep
-        # following inside instead of being left behind in the outdoor world.
-        self.indoor_monsters = []
-        # Arrows fired while indoors live in interior coordinate space, separate from
-        # the outdoor world's projectile list.
-        self.indoor_projectiles = []
-        # Chasers that were too far to already be at the door: (monster, arrival_tick_ms).
-        # They step into the interior once enough time has passed to cover the distance,
-        # so a distant pursuer arrives a moment later instead of teleporting in at once.
-        self.pending_indoor = []
 
         self._restore_player_state()
 
@@ -163,39 +153,11 @@ class Game:
                         elif self.game_renderer.loading_indicator.rect.collidepoint(event.pos):
                             self.game_renderer.show_llm_tasks = not self.game_renderer.show_llm_tasks
 
-                        elif self.interior is None:
-                            self.world.handle_attack(
-                                self.player, self.dialogue_manager.quest_system, blocked=self.world.blocked
-                            )
-
                         else:
-                            self.world.handle_attack(
-                                self.player,
-                                self.dialogue_manager.quest_system,
-                                monsters=self.indoor_monsters,
-                                projectiles=self.indoor_projectiles,
-                                blocked=self.interior.interior_blocked,
-                                interior=self.interior,
-                            )
+                            self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
                     elif event.button == 3:  # Right click: ranged weapon
-                        if self.interior is None:
-                            self.world.handle_attack(
-                                self.player,
-                                self.dialogue_manager.quest_system,
-                                blocked=self.world.blocked,
-                                ranged=True,
-                            )
-                        else:
-                            self.world.handle_attack(
-                                self.player,
-                                self.dialogue_manager.quest_system,
-                                monsters=self.indoor_monsters,
-                                projectiles=self.indoor_projectiles,
-                                blocked=self.interior.interior_blocked,
-                                interior=self.interior,
-                                ranged=True,
-                            )
+                        self.world.handle_attack(self.player, self.dialogue_manager.quest_system, ranged=True)
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
@@ -206,6 +168,9 @@ class Game:
 
                     elif event.key == pygame.K_f:
                         self._equip_pending_upgrade()
+
+                    elif pygame.K_1 <= event.key <= pygame.K_1 + c.Potions.QUICK_SLOTS - 1:
+                        self._drink_quick_potion(event.key - pygame.K_1)
 
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()
@@ -243,7 +208,7 @@ class Game:
 
         message = f"{label}: +{coins} coins"
         if loot_item is not None:
-            # Ammo merges into an existing stack; only a genuinely new entry joins the master list.
+            # A stackable merges into an existing stack; only a genuinely new entry joins the master list.
             if self.player.add_item(loot_item) is loot_item:
                 self.world.items.append(loot_item)
             message += f" and a {loot_item.rarity} {loot_item.name}!"
@@ -274,6 +239,18 @@ class Game:
         self.player.equip(item)
         self.loot_notification.show(f"Equipped {item.name}", rarity_color(item.rarity))
 
+    def _drink_quick_potion(self, slot: int):
+        """Drink the potion bound to a HUD number key, if that slot holds one."""
+        potions = self.player.quick_potions()
+        if slot >= len(potions):
+            return
+        potion = potions[slot]
+        result = self.player.use_potion(potion)
+        if result is None:
+            self.loot_notification.show("Already at full health", c.Colors.MUTED)
+        else:
+            self.loot_notification.show(f"{potion.name}: {result}", potion.color)
+
     def _interact_with_world(self):
         item: Item = self.world.pickup_item(self.player)
         if item is not None:
@@ -281,7 +258,7 @@ class Game:
             if item.item_type == "lootbox":
                 self._open_lootbox(item)
             else:
-                # If ammo merges into a stack, drop the now-orphaned world item.
+                # If it merges into a stack (ammo, potions), drop the now-orphaned world item.
                 if self.player.add_item(item) is not item and item in self.world.items:
                     self.world.items.remove(item)
                 play_sound("pickup")
@@ -294,74 +271,13 @@ class Game:
                 self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
                 self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
 
-    def _enter_building(self, building):
-        self._interior_return_pos = building.door_front()
-
-        # Only monsters actually chasing the player (attracted, i.e. within detection
-        # range) follow inside; ones merely in view but idle are not drawn in. Each
-        # enters after the time it would take to run from where it was to the door, so a
-        # nearby chaser steps in almost at once while a distant one arrives moments later
-        # instead of every pursuer teleporting into the room together.
-        chase_range = c.World.DETECTION_RANGE + c.Player.SIZE // 2
-        now = pygame.time.get_ticks()
-        self.indoor_monsters = []
-        self.pending_indoor = []
-        entry_x, entry_y = building.interior_door_pos()
-        for monster in list(self.world.monsters):
-            dist = monster.distance_to_point((self.player.x, self.player.y))
-            if dist >= chase_range:
-                continue
-            self.world.monsters.remove(monster)
-            travel_ms = dist / (monster.kind.speed * c.TARGET_FPS) * 1000.0
-            if travel_ms <= 0:
-                monster.x = entry_x + monster.target_offset[0]
-                monster.y = entry_y + monster.target_offset[1]
-                self.indoor_monsters.append(monster)
-            else:
-                self.pending_indoor.append((monster, now + travel_ms))
-
-        self.interior = building
-        self.player.x, self.player.y = building.interior_entry_pos()
-
-    def _update_pending_indoor(self):
-        """Move chasers whose travel time has elapsed from the pending queue into the room."""
-        if not self.pending_indoor:
-            return
-        now = pygame.time.get_ticks()
-        entry_x, entry_y = self.interior.interior_door_pos()
-        still_waiting = []
-        for monster, arrival in self.pending_indoor:
-            if now >= arrival:
-                monster.x = entry_x + monster.target_offset[0]
-                monster.y = entry_y + monster.target_offset[1]
-                self.indoor_monsters.append(monster)
-            else:
-                still_waiting.append((monster, arrival))
-        self.pending_indoor = still_waiting
-
-    def _check_building_entry(self):
+    def _building_at(self, x, y):
+        """The building whose floor (x, y) is standing on, or None. Buildings are kept far
+        enough apart (Buildings.MIN_GAP) that at most one can ever contain a given point."""
         for building in self.world.buildings:
-            zone = building.door_zone()
-            if zone is not None and zone.collidepoint(self.player.x, self.player.y):
-                self._enter_building(building)
-                return
-
-    def _check_interior_exit(self):
-        if self.interior.interior_exit_zone().collidepoint(self.player.x, self.player.y):
-            door_x, door_y = self._interior_return_pos
-            # Chasers already inside, plus any that were still en route, spill back out
-            # at the door the player steps through.
-            returning = self.indoor_monsters + [monster for monster, _arrival in self.pending_indoor]
-            for monster in returning:
-                monster.x = door_x + monster.target_offset[0]
-                monster.y = door_y + monster.target_offset[1]
-                self.world.monsters.append(monster)
-            self.indoor_monsters = []
-            self.pending_indoor = []
-            self.indoor_projectiles = []
-
-            self.player.x, self.player.y = self._interior_return_pos
-            self.interior = None
+            if building.contains_point(x, y):
+                return building
+        return None
 
     def _interior_interact(self):
         item = self.interior.pickup_dropped_item(self.player.x, self.player.y)
@@ -418,29 +334,16 @@ class Game:
 
     def save_data(self):
         # NPC names persist themselves as they're generated/consumed; nothing to do here.
-        # The player's live position is in interior space while inside a building;
-        # persist the spot they will step back out to instead.
-        player_state = self.player.to_dict()
-        if self.interior is not None:
-            player_state["x"], player_state["y"] = self._interior_return_pos
-        self.save_system.update("player", player_state)
+        # Building interiors are just world space now, so the player's and monsters'
+        # positions are always plain world coordinates, indoors or out.
+        self.save_system.update("player", self.player.to_dict())
         self.player.save_stats()
         self.save_system.update("inventory", [item.id for item in self.player.inventory])
 
         world_state = self.world.serialize()
-        monsters = world_state["monsters"]
-        if self.interior is not None:
-            # Indoor pursuers live in the building's interior coordinate space, not the
-            # outdoor world; save them at the door they'd step back out to instead.
-            door_x, door_y = self._interior_return_pos
-            indoor = self.indoor_monsters + [monster for monster, _arrival in self.pending_indoor]
-            for monster in indoor:
-                monster_state = monster.to_dict()
-                monster_state["x"], monster_state["y"] = door_x, door_y
-                monsters.append(monster_state)
         self.save_system.update("items", world_state["items"])
         self.save_system.update("npcs", world_state["npcs"])
-        self.save_system.update("monsters", monsters)
+        self.save_system.update("monsters", world_state["monsters"])
         self.save_system.update("bosses", world_state["bosses"])
         self.save_system.update("buildings", world_state["buildings"])
         self.save_system.update("breakables", world_state["breakables"])
@@ -484,44 +387,20 @@ class Game:
                 # camera shake/particles/damage numbers below, so the impact reads as a
                 # freeze-frame rather than the whole game stuttering.
                 gameplay_dt = get_hitstop().apply(dt)
-                if self.interior is not None:
-                    self.player.move(self.camera.get_pos(), gameplay_dt, self.interior.interior_blocked)
-                    self._update_pending_indoor()
-                    for monster in self.indoor_monsters:
-                        monster.move(self.player, gameplay_dt, self.interior.interior_blocked)
-                    self.world.update_projectiles(
-                        self.indoor_projectiles,
-                        self.indoor_monsters,
-                        self.player,
-                        self.dialogue_manager.quest_system,
-                        gameplay_dt,
-                        self.interior.interior_blocked,
-                        indoor=True,
-                    )
-                    self._check_interior_exit()
-                else:
-                    self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked)
-                    self.world.update(
-                        self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator
-                    )
-                    self._check_building_entry()
+                self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked)
+                self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
+                # A building's interior is just its own footprint; re-derive which one (if
+                # any) the player is standing in rather than tracking a separate mode.
+                self.interior = self._building_at(self.player.x, self.player.y)
                 self.update_camera()
                 get_shake().update(dt)
-                # Runs here rather than inside World.update so both the outdoor and
-                # indoor branches keep particles/damage numbers animating.
                 get_particles().update(dt)
                 get_floating_text().update(dt)
                 get_decals().update(dt)
                 get_vignette().update(dt)
 
-            if self.interior is not None:
-                self.game_renderer.draw_interior(
-                    self.camera, self.interior, self.player, self.indoor_monsters, self.indoor_projectiles
-                )
-            else:
-                self.game_renderer.draw_world(self.camera, self.world, self.player)
-                # Ambient day/night tint only applies outdoors; interiors are their own lit space.
-                self.world.daynight.draw(self.screen, self.world.events.blood_night_active)
+            self.game_renderer.draw_world(self.camera, self.world, self.player, self.interior)
+            self.world.daynight.draw(self.screen, self.world.events.blood_night_active)
             get_vignette().draw(self.screen)
             if not self.active_menu:
                 self.game_renderer.draw_ui(
@@ -564,11 +443,7 @@ class Game:
                 coins_lost = self.player.apply_death_penalty()
                 self.player.x = c.World.WORLD_SIZE // 2
                 self.player.y = c.World.WORLD_SIZE // 2
-                if self.interior is not None:
-                    self.indoor_monsters = []
-                    self.pending_indoor = []
-                    self.indoor_projectiles = []
-                    self.interior = None
+                self.interior = None
                 self.save_data()
                 run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S)
                 return

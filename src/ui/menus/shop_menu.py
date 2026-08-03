@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 import pygame
 
 import core.constants as c
-from game.entities.items import ACCESSORY_FLAVOR_LABELS, base_value, rarity_color
+from game.entities.items import ACCESSORY_FLAVOR_LABELS, base_value, potion_description, rarity_color
 from ui import widgets
 from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
@@ -119,7 +119,7 @@ class ShopMenu(BaseMenu):
         self.merchant.shop_items.pop(index)
         del self.merchant.shop_prices[item.id]
         item.picked_up = True
-        # Ammo merges into an existing stack; only a new entry joins the master world list.
+        # A stackable merges into an existing stack; only a new entry joins the master world list.
         if self.player.add_item(item) is item:
             self.world_items.append(item)
         self.player.add_coins(-price)
@@ -128,10 +128,15 @@ class ShopMenu(BaseMenu):
     def _sell(self, index: int):
         item = self.player.inventory[index]
         price = self._sell_price(item)
-        self.player.unequip_if_equipped(item)
-        self.player.inventory.pop(index)
-        if item in self.world_items:
-            self.world_items.remove(item)
+        # A stack sells one unit per click, so parting with a spare arrow or potion
+        # doesn't hand the merchant the whole stack for a single item's price.
+        if item.quantity > 1:
+            item.quantity -= 1
+        else:
+            self.player.unequip_if_equipped(item)
+            self.player.inventory.pop(index)
+            if item in self.world_items:
+                self.world_items.remove(item)
         self.player.add_coins(price)
         self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
 
@@ -212,6 +217,9 @@ class ShopMenu(BaseMenu):
             if item.affixes:
                 stat += f"  +{len(item.affixes)} fx"
             stat_surf = c.Fonts.small.render(stat, True, c.Colors.MUTED)
+            surface.blit(stat_surf, (r.x + 58, r.y + 30))
+        elif item.item_type == "potion":
+            stat_surf = c.Fonts.small.render(potion_description(item), True, c.Colors.MUTED)
             surface.blit(stat_surf, (r.x + 58, r.y + 30))
         elif item.item_type == "misc":
             stat_surf = c.Fonts.small.render("valuable", True, c.Colors.MUTED)

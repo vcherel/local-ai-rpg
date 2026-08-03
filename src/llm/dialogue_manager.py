@@ -10,6 +10,7 @@ import core.constants as c
 from core import dialogue_log
 from core.audio import play_sound
 from core.utils import ConversationHistory, parse_response_affinity_analysis
+from game.entities.items import potion_description
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 from llm.quest_system import QuestSystem
 from ui import widgets
@@ -22,6 +23,13 @@ if TYPE_CHECKING:
     from llm.name_generator import NPCNameGenerator
 
 END_MARKER = "[END]"
+
+
+def _ware_effect(item) -> str:
+    """How a shop item is described to the merchant's LLM prompt: what it actually does."""
+    if item.item_type == "potion":
+        return potion_description(item).lower()
+    return f"+{item.bonus} bonus"
 
 
 def _trim_partial_marker(text: str) -> str:
@@ -72,7 +80,7 @@ class DialogueManager:
             )
             if npc.shop_ready and npc.shop_items:
                 wares = ", ".join(
-                    f"{item.name} ({item.rarity} {item.item_type}, +{item.bonus} bonus)"
+                    f"{item.name} ({item.rarity} {item.item_type}, {_ware_effect(item)})"
                     f" for {npc.shop_prices[item.id]} coins"
                     for item in npc.shop_items
                 )

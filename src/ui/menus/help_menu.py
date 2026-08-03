@@ -11,6 +11,7 @@ CONTROLS = [
     ("Right Click", "Fire equipped bow/staff"),
     ("E", "Interact, talk, pick up"),
     ("F", "Equip the last picked-up upgrade"),
+    ("1 - 4", "Drink the potion in that quickbar slot"),
     ("I", "Inventory"),
     ("Q", "Quests"),
     ("C", "Character"),
