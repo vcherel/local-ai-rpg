@@ -812,6 +812,8 @@ class Fonts:
     small: pygame.font.Font
     medium: pygame.font.Font
     button: pygame.font.Font
+    badge: pygame.font.Font
+    badge_small: pygame.font.Font
 
     @staticmethod
     def load() -> "Fonts":
@@ -823,4 +825,8 @@ class Fonts:
             small=pygame.font.SysFont("dejavusans", 16),
             medium=pygame.font.SysFont("dejavusans", 22),
             button=pygame.font.SysFont("dejavusans", 20, bold=True),
+            # NPC head markers (quest "!", thief "?", merchant "$"): the default pygame
+            # font, not dejavusans, kept as-is from before these were cached.
+            badge=pygame.font.Font(None, 45),
+            badge_small=pygame.font.Font(None, 40),
         )
