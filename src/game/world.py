@@ -498,10 +498,16 @@ class World:
         ) * player.damage_multiplier()
         damage = max(1, int(round(base_damage * arch.damage_mult)))
         # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
-        crit = random.random() < arch.crit_chance + player.crit_bonus(ranged=True)
+        # Rampage forces every Nth shot to crit and amplifies it further.
+        rampage = player.rampage_trigger(ranged=True)
+        crit = rampage or random.random() < arch.crit_chance + player.crit_bonus(ranged=True)
         if crit:
             damage = max(1, int(round(damage * c.Combat.CRIT_MULT)))
-        shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
+        if rampage:
+            damage = max(1, int(round(damage * c.Affixes.RAMPAGE_BONUS_MULT)))
+        crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
+        rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
+        shake = arch.shake + crit_shake + rampage_shake
         if arch.name == "staff":
             proj = Projectile(
                 player.x,
@@ -525,12 +531,17 @@ class World:
         proj.pierce = player.pierce_count()
         proj_list.append(proj)
 
-    def _roll_hit(self, base_damage: float, arch: c.WeaponArchetype, crit_bonus: float = 0.0) -> tuple[int, bool]:
-        """Apply the weapon's damage multiplier and roll for a crit (weapon + affix chance)."""
+    def _roll_hit(
+        self, base_damage: float, arch: c.WeaponArchetype, crit_bonus: float = 0.0, rampage: bool = False
+    ) -> tuple[int, bool]:
+        """Apply the weapon's damage multiplier and roll for a crit (weapon + affix chance).
+        Rampage forces the crit and amplifies it further on top."""
         damage = base_damage * arch.damage_mult
-        crit = random.random() < arch.crit_chance + crit_bonus
+        crit = rampage or random.random() < arch.crit_chance + crit_bonus
         if crit:
             damage *= c.Combat.CRIT_MULT
+        if rampage:
+            damage *= c.Affixes.RAMPAGE_BONUS_MULT
         return max(1, int(round(damage))), crit
 
     @staticmethod
@@ -556,8 +567,11 @@ class World:
         target.y += step_y
 
     def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, blocked):
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
-        shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
+        rampage = player.rampage_trigger(ranged=False)
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(), rampage=rampage)
+        crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
+        rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
+        shake = arch.shake + crit_shake + rampage_shake
         kb_dir = self._dir_from(player.x, player.y, monster.x, monster.y)
         died = self._resolve_monster_hit(
             monster,
@@ -572,6 +586,7 @@ class World:
             blocked=blocked,
         )
         self._apply_on_hit_effects(monster, monster_list, damage, player, quest_system, died)
+        self._apply_chainstrike(monster, monster_list, damage, player, quest_system, blocked, ranged=False)
 
     def _strike_npc(self, npc, base_damage, arch, player, quest_system, blocked):
         damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
@@ -734,6 +749,10 @@ class World:
         """Death rewards and cleanup for a slain monster, shared by hits and burn ticks."""
         player.stats.train("vitality", c.Stats.XP_PER_KILL)
         play_sound("monster_death")
+        # Bloodlust: any kill with a weapon carrying it refreshes the damage buff.
+        bloodlust = player.bloodlust_mult()
+        if bloodlust > 1.0:
+            player.apply_buff("bloodlust", bloodlust, c.Affixes.BLOODLUST_DURATION_S)
         if isinstance(monster, Boss):
             self._on_boss_killed(monster, quest_system)
             monster_list.remove(monster)
@@ -770,6 +789,39 @@ class World:
             get_particles().spawn_burst(monster.x, monster.y, (255, 60, 60), count=10, speed=5, life=400, size=4)
             if monster.receive_damage(monster.hp):
                 self._kill_monster(monster, monster_list, player, quest_system)
+
+    def _apply_chainstrike(self, primary, target_list, damage, player, quest_system, blocked, ranged: bool = False):
+        """Chain Strike: a landed hit also strikes the nearest other target in the same
+        list within range, for a fraction of the primary hit's damage."""
+        frac = player.chainstrike_frac(ranged)
+        if frac <= 0:
+            return
+        chain_target = min(
+            (
+                m
+                for m in target_list
+                if m is not primary and m.distance_to_point((primary.x, primary.y)) < c.Affixes.CHAINSTRIKE_RADIUS
+            ),
+            key=lambda m: m.distance_to_point((primary.x, primary.y)),
+            default=None,
+        )
+        if chain_target is None:
+            return
+        chain_damage = max(1, int(damage * frac))
+        get_particles().spawn_burst(chain_target.x, chain_target.y, (140, 200, 255), count=8, speed=4, life=300, size=3)
+        kb_dir = self._dir_from(primary.x, primary.y, chain_target.x, chain_target.y)
+        died = self._resolve_monster_hit(
+            chain_target,
+            target_list,
+            chain_damage,
+            player,
+            quest_system,
+            shake=0.0,
+            knockback=0.0,
+            kb_dir=kb_dir,
+            blocked=blocked,
+        )
+        self._apply_on_hit_effects(chain_target, target_list, chain_damage, player, quest_system, died, ranged=ranged)
 
     def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem):
         """A boss dies with extra spectacle and a guaranteed legendary lootbox."""
@@ -892,6 +944,9 @@ class World:
                 self._apply_on_hit_effects(
                     hit_monster, monster_list, proj.damage, player, quest_system, died, ranged=True
                 )
+                self._apply_chainstrike(
+                    hit_monster, monster_list, proj.damage, player, quest_system, blocked, ranged=True
+                )
                 self._projectile_after_hit(proj, proj_list, hit_monster)
                 continue
 
@@ -921,6 +976,9 @@ class World:
                     )
                     self._apply_on_hit_effects(
                         hit_boss, self.bosses, proj.damage, player, quest_system, died, ranged=True
+                    )
+                    self._apply_chainstrike(
+                        hit_boss, self.bosses, proj.damage, player, quest_system, blocked, ranged=True
                     )
                     self._projectile_after_hit(proj, proj_list, hit_boss)
                     continue

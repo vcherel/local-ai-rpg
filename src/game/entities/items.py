@@ -71,6 +71,11 @@ AMMO_COLOR = (180, 140, 90)
 VALUABLE_COLOR = (235, 205, 80)
 
 ACCESSORY_FLAVORS = ("speed", "regen", "luck", "crit", "lifesteal", "coinfind", "xpgain", "pierce")
+# Legendary-only accessory flavor: a chance to combine coin find and xp gain into one
+# relic instead of picking a single flavor, its own signature effect like the weapon/
+# armour legendary pools.
+LEGENDARY_ACCESSORY_FLAVORS = ("avarice",)
+LEGENDARY_ACCESSORY_FLAVOR_CHANCE = 0.4
 
 # Name keyword -> potion effect. First match wins, so the order matters only in that
 # every keyword here is unambiguous; anything unmatched falls back to plain healing.
@@ -118,6 +123,15 @@ def item_type_from_name(name: str) -> str:
     return "misc"
 
 
+def roll_accessory_flavor(rarity: str) -> str:
+    """Which single effect an accessory grants. A legendary has a real chance at the
+    exclusive "avarice" flavor instead of the usual pool, on top of already rolling the
+    biggest bonus range for its slot."""
+    if rarity == "legendary" and random.random() < LEGENDARY_ACCESSORY_FLAVOR_CHANCE:
+        return random.choice(LEGENDARY_ACCESSORY_FLAVORS)
+    return random.choice(ACCESSORY_FLAVORS)
+
+
 def rarity_tier(rarity: str) -> c.RarityTier:
     for tier in c.Rarity.TIERS:
         if tier.name == rarity:
@@ -158,20 +172,45 @@ _AFFIX_TABLE = {
 }
 
 
+# Legendary-only affixes: a single fixed magnitude each, since they never roll at any
+# other tier and so need no rarity-indexed table.
+_LEGENDARY_AFFIX_TABLE = {
+    "rampage": c.Affixes.RAMPAGE_BONUS_MULT,
+    "bloodlust": c.Affixes.BLOODLUST_DAMAGE_MULT,
+    "chainstrike": c.Affixes.CHAINSTRIKE_DAMAGE_FRAC,
+    "guardian_ward": c.Affixes.GUARDIAN_WARD_HP_FRAC,
+    "retribution": c.Affixes.RETRIBUTION_REFLECT_FRAC,
+}
+
+
 def roll_affixes(item_type: str, rarity: str) -> dict:
-    """Roll a weapon's or armour's special effects: {affix_id: magnitude}. Other types get none."""
+    """Roll a weapon's or armour's special effects: {affix_id: magnitude}. Other types get none.
+
+    A legendary item guarantees exactly one signature effect from the tier-exclusive
+    legendary pool (a build-defining mechanic, not just a bigger number), then fills any
+    remaining affix slots from the normal shared pool as usual.
+    """
     if item_type == "weapon":
-        pool = c.Affixes.WEAPON_POOL
+        pool, legendary_pool = c.Affixes.WEAPON_POOL, c.Affixes.WEAPON_LEGENDARY_POOL
     elif item_type == "armor":
-        pool = c.Affixes.ARMOR_POOL
+        pool, legendary_pool = c.Affixes.ARMOR_POOL, c.Affixes.ARMOR_LEGENDARY_POOL
     else:
         return {}
     tier_index = c.Rarity.TIERS.index(rarity_tier(rarity))
     count = min(c.Affixes.COUNT_BY_TIER[tier_index], len(pool))
     if count <= 0:
         return {}
-    chosen = random.sample(pool, count)
-    return {affix: _AFFIX_TABLE[affix][tier_index] for affix in chosen}
+
+    affixes = {}
+    if rarity == "legendary" and legendary_pool:
+        signature = random.choice(legendary_pool)
+        affixes[signature] = _LEGENDARY_AFFIX_TABLE[signature]
+        count -= 1
+
+    if count > 0:
+        chosen = random.sample(pool, min(count, len(pool)))
+        affixes.update({affix: _AFFIX_TABLE[affix][tier_index] for affix in chosen})
+    return affixes
 
 
 # Human-readable one-liners for each affix, given its rolled magnitude.
@@ -190,6 +229,16 @@ def affix_label(affix: str, magnitude) -> str:
         return f"+{round(magnitude * 100)}% dodge"
     if affix == "regen_still":
         return "Regen while still"
+    if affix == "rampage":
+        return f"Every {c.Affixes.RAMPAGE_EVERY_N_HITS}th attack is a guaranteed, amplified crit"
+    if affix == "bloodlust":
+        return f"Kills grant +{round((magnitude - 1) * 100)}% damage for {round(c.Affixes.BLOODLUST_DURATION_S)}s"
+    if affix == "chainstrike":
+        return f"Hits also strike a nearby foe for {round(magnitude * 100)}% damage"
+    if affix == "guardian_ward":
+        return f"A lethal hit instead leaves you at {round(magnitude * 100)}% hp, briefly invulnerable"
+    if affix == "retribution":
+        return f"Reflects {round(magnitude * 100)}% of damage taken"
     return affix
 
 
@@ -203,6 +252,7 @@ ACCESSORY_FLAVOR_LABELS = {
     "coinfind": "coin find",
     "xpgain": "xp gain",
     "pierce": "arrow pierce",
+    "avarice": "avarice (coin find + xp)",
 }
 
 
@@ -214,6 +264,7 @@ POTION_EFFECT_LABELS = {
     "strength": "strength",
     "swiftness": "swiftness",
     "stoneskin": "stoneskin",
+    "bloodlust": "bloodlust",  # shares the buff-chip HUD with potion buffs (Player.buffs)
 }
 
 _POTION_TABLE = {
@@ -308,7 +359,7 @@ class Item:
             self.shape = "shield"
         elif item_type == "accessory":
             if self.accessory_flavor is None:
-                self.accessory_flavor = random.choice(ACCESSORY_FLAVORS)
+                self.accessory_flavor = roll_accessory_flavor(self.rarity)
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ACCESSORY_COLOR)
             self.shape = "gem"
         elif item_type == "lootbox":

@@ -85,6 +85,14 @@ class Player(Entity):
         # quitting to the main menu or relaunching, rather than being a free reset.
         self.death_debuff_until = save_system.load("death_debuff_until", 0.0)
 
+        # Guardian's Ward (legendary armour affix): wall-clock cooldown, persisted for the
+        # same reason as the death debuff, so quitting can't reset the proc early.
+        self.guardian_ward_cooldown_until = save_system.load("guardian_ward_cooldown_until", 0.0)
+        self.guardian_ward_invuln_until = 0.0
+
+        # Rampage (legendary weapon affix): landed-hit counter per weapon slot, session-only.
+        self._rampage_streak = {"melee_weapon": 0, "ranged_weapon": 0}
+
         # Potion buffs: {effect: {"until": wall-clock seconds, "magnitude": float}}.
         # Wall-clock for the same reason as above, so quitting doesn't bank buff time.
         self.buffs = {
@@ -249,7 +257,12 @@ class Player(Entity):
 
     def accessory_bonus(self, flavor: str) -> int:
         item = self.equipped_item("accessory")
-        if item and item.accessory_flavor == flavor:
+        if not item:
+            return 0
+        if item.accessory_flavor == flavor:
+            return item.bonus
+        # "avarice" (legendary-only) grants both coin find and xp gain from one relic.
+        if item.accessory_flavor == "avarice" and flavor in ("coinfind", "xpgain"):
             return item.bonus
         return 0
 
@@ -286,6 +299,32 @@ class Player(Entity):
 
     def regen_still_bonus(self) -> float:
         return self._armor_affix("regen_still")
+
+    def rampage_trigger(self, ranged: bool = False) -> bool:
+        """Counts a landed melee hit / fired shot toward Rampage; True on the Nth that
+        should land as a guaranteed, amplified crit."""
+        if not self._weapon_affix("rampage", ranged):
+            return False
+        slot = "ranged_weapon" if ranged else "melee_weapon"
+        self._rampage_streak[slot] += 1
+        if self._rampage_streak[slot] >= c.Affixes.RAMPAGE_EVERY_N_HITS:
+            self._rampage_streak[slot] = 0
+            return True
+        return False
+
+    def bloodlust_mult(self) -> float:
+        """Bloodlust's on-kill damage buff magnitude, from whichever equipped weapon (if
+        any) carries it."""
+        return max(self._weapon_affix("bloodlust", False), self._weapon_affix("bloodlust", True))
+
+    def chainstrike_frac(self, ranged: bool = False) -> float:
+        return self._weapon_affix("chainstrike", ranged)
+
+    def guardian_ward_threshold(self) -> float:
+        return self._armor_affix("guardian_ward")
+
+    def retribution_frac(self) -> float:
+        return self._armor_affix("retribution")
 
     def coin_find_mult(self) -> float:
         return 1.0 + self.accessory_bonus("coinfind") * c.Stats.ACCESSORY_COINFIND_PER_BONUS
@@ -372,6 +411,12 @@ class Player(Entity):
         self.save_system.update("coins", self.coins)
 
     def receive_damage(self, damage, source=None):
+        now = time.time()
+        # Guardian's Ward: while its brief invulnerability window is up, nothing lands.
+        if now < self.guardian_ward_invuln_until:
+            get_particles().spawn_burst(self.x, self.y, (255, 215, 120), count=6, speed=3, life=250, size=3)
+            return
+
         # Armour's dodge affix can shrug a hit off entirely.
         if self.dodge_chance() and random.random() < self.dodge_chance():
             get_particles().spawn_burst(self.x, self.y, c.Colors.WHITE, count=5, speed=3, life=250, size=3)
@@ -384,12 +429,36 @@ class Player(Entity):
 
         reduction = self.armor_bonus() + self.stats.damage_reduction() + int(self.buff_magnitude("stoneskin"))
         actual = max(damage - reduction, 1)
-        self.hp -= actual
+        old_hp = self.hp
+
+        # Guardian's Ward: a hit that would drop hp to/below its floor instead clamps hp
+        # there and opens the invulnerability window, then goes on cooldown.
+        ward_threshold = self.guardian_ward_threshold()
+        warded = (
+            ward_threshold > 0
+            and now >= self.guardian_ward_cooldown_until
+            and old_hp - actual <= self.max_hp * ward_threshold
+        )
+        if warded:
+            self.hp = round(self.max_hp * ward_threshold)
+            self.guardian_ward_invuln_until = now + c.Affixes.GUARDIAN_WARD_INVULN_S
+            self.guardian_ward_cooldown_until = now + c.Affixes.GUARDIAN_WARD_COOLDOWN_S
+            self.save_system.update("guardian_ward_cooldown_until", self.guardian_ward_cooldown_until)
+        else:
+            self.hp -= actual
+        actual = old_hp - self.hp  # the real hp lost, for the floating number
+
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
         get_decals().spawn(self.x, self.y, radius=c.Decals.PLAYER_HURT_RADIUS)
         get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4, gravity=0.3)
-        get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, str(actual), (255, 90, 90), big=True)
+        if warded:
+            get_particles().spawn_burst(
+                self.x, self.y, (255, 215, 120), count=22, speed=6, life=600, size=5, gravity=0.2
+            )
+            get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, "Guardian's Ward!", (255, 215, 120), big=True)
+        else:
+            get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, str(actual), (255, 90, 90), big=True)
         get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
         get_vignette().trigger(c.Combat.PLAYER_HURT_VIGNETTE)
 
@@ -398,6 +467,14 @@ class Player(Entity):
         if source is not None and thorns > 0 and getattr(source, "hp", 0) > 0:
             source.hp = max(1, source.hp - thorns)
             get_particles().spawn_burst(source.x, source.y, (220, 220, 120), count=6, speed=3, life=300, size=3)
+
+        # Retribution reflects a fraction of the raw incoming damage, so a hard-hitting
+        # attacker takes a hard-hitting reflection back; still stops short of the kill.
+        retribution = self.retribution_frac()
+        if source is not None and retribution > 0 and getattr(source, "hp", 0) > 0:
+            reflect = max(1, int(damage * retribution))
+            source.hp = max(1, source.hp - reflect)
+            get_particles().spawn_burst(source.x, source.y, (255, 90, 40), count=8, speed=4, life=350, size=3)
 
     def gain_coins(self, amount: int):
         """Add coins from loot, boosted by the coin-find accessory."""
@@ -409,7 +486,7 @@ class Player(Entity):
 
     def damage_multiplier(self) -> float:
         weakness = c.Death.DEBUFF_DAMAGE_MULT if self.is_shaken() else 1.0
-        return weakness * self.buff_magnitude("strength", 1.0)
+        return weakness * self.buff_magnitude("strength", 1.0) * self.buff_magnitude("bloodlust", 1.0)
 
     def apply_death_penalty(self) -> int:
         """Dock a share of coins and start the post-respawn weakness timer. Returns the
