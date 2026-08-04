@@ -178,10 +178,12 @@ class ShopMenu(BaseMenu):
                 can_afford = self.player.coins >= price
                 self._draw_row(surface, bx, pw, i, item, price, self.hovered_buy == i, (100, 255, 100), can_afford)
 
+        equipped_ids = set(self.player.equipped_ids().values())
         sell_items = list(self.player.inventory)
         for i, item in enumerate(sell_items):
             price = self._sell_price(item)
-            self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80))
+            equipped = item.id in equipped_ids
+            self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80), equipped=equipped)
 
         self.draw_hint(surface, "Click an item to buy or sell. ESC or B to close")
         self.blit_panel(surface)
@@ -197,19 +199,26 @@ class ShopMenu(BaseMenu):
         hovered: bool,
         price_color: tuple,
         enabled: bool = True,
+        equipped: bool = False,
     ):
         r = self._row_rect(panel_x, index)
-        rarity_border = rarity_color(item.rarity) if item.rarity != "common" else None
-        widgets.draw_slot(surface, r, hovered=hovered, border_color=rarity_border)
+        border_color = c.Colors.ACCENT if equipped else (rarity_color(item.rarity) if item.rarity != "common" else None)
+        widgets.draw_slot(surface, r, hovered=hovered, border_color=border_color, border_w=3 if equipped else 2)
 
         icon_x = r.x + 30
         icon_y = r.centery
         widgets.draw_item_scaled(surface, item, icon_x, icon_y, 34)
 
+        if equipped:
+            pygame.draw.circle(surface, c.Colors.ACCENT, (r.x + 10, r.y + 10), 5)
+
         name_color = rarity_color(item.rarity) if enabled else c.Colors.MUTED
         name = f"{item.name} x{item.quantity}" if item.quantity > 1 else item.name
         name_surf = c.Fonts.text.render(name, True, name_color)
         surface.blit(name_surf, (r.x + 58, r.y + 8))
+        if equipped:
+            tag = c.Fonts.small.render("equipped", True, c.Colors.ACCENT)
+            surface.blit(tag, (r.right - tag.get_width() - 8, r.y + 8))
 
         if item.bonus > 0 and item.item_type in ("weapon", "armor", "accessory"):
             label = {"weapon": "atk", "armor": "def"}.get(
