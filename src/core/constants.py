@@ -598,6 +598,37 @@ class Affixes:
     DODGE: tuple = (0.0, 0.05, 0.08, 0.12, 0.16)  # chance to take no damage from a hit
     REGEN_STILL: tuple = (0.0, 0.002, 0.003, 0.005, 0.008)  # extra hp/ms regen while standing still
 
+    # Legendary signature effects: build-defining, not just bigger numbers. Every
+    # legendary weapon/armour guarantees exactly one of these on top of its normal
+    # affix rolls (roll_affixes in items.py), so a legendary always feels distinct
+    # from an epic instead of just having one more line of the same pool.
+    WEAPON_LEGENDARY_POOL: tuple = ("rampage", "bloodlust", "chainstrike")
+    ARMOR_LEGENDARY_POOL: tuple = ("guardian_ward", "retribution")
+
+    # Rampage: every Nth landed hit (melee) or shot fired (ranged) is a guaranteed,
+    # amplified crit.
+    RAMPAGE_EVERY_N_HITS: int = 4
+    RAMPAGE_BONUS_MULT: float = 1.75  # extra multiplier stacked on top of the normal crit
+
+    # Bloodlust: killing anything with this weapon buffs damage for a while, refreshed
+    # (not stacked) by the next kill.
+    BLOODLUST_DAMAGE_MULT: float = 1.3
+    BLOODLUST_DURATION_S: float = 8.0
+
+    # Chain Strike: a landed hit also strikes the nearest other enemy within range.
+    CHAINSTRIKE_DAMAGE_FRAC: float = 0.6
+    CHAINSTRIKE_RADIUS: float = 220.0
+
+    # Guardian's Ward: a lethal-looking hit instead clamps hp at this fraction of max and
+    # grants a brief window of total invulnerability, on an internal cooldown.
+    GUARDIAN_WARD_HP_FRAC: float = 0.2
+    GUARDIAN_WARD_INVULN_S: float = 2.0
+    GUARDIAN_WARD_COOLDOWN_S: float = 45.0
+
+    # Retribution: reflects a fraction of incoming damage back at a melee attacker
+    # (before armour reduction), unlike flat Thorns this scales with how hard the hit was.
+    RETRIBUTION_REFLECT_FRAC: float = 0.2
+
 
 @dataclass(frozen=True)
 class Decals:
@@ -632,10 +663,14 @@ class Rarity:
         RarityTier("uncommon", (96, 200, 96), 27, (3, 4), (2, 2), (3, 4), 1.5),
         RarityTier("rare", (90, 150, 255), 14, (5, 7), (3, 3), (5, 7), 2.5),
         RarityTier("epic", (190, 105, 240), 7, (8, 10), (4, 5), (8, 10), 4.0),
-        RarityTier("legendary", (255, 150, 40), 2, (11, 14), (6, 7), (11, 14), 6.0),
+        # Weight kept low on purpose: a legendary should feel like an event, not a
+        # regular find. Its power comes from a signature effect (Affixes) rather than
+        # from showing up often.
+        RarityTier("legendary", (255, 150, 40), 0.5, (11, 14), (6, 7), (11, 14), 6.0),
     )
-    # Quest rewards skip the low tiers so completing a quest always feels worth it.
-    QUEST_REWARD_WEIGHTS: tuple = (0, 0, 60, 30, 10)
+    # Quest rewards skip the low tiers so completing a quest always feels worth it, but
+    # legendary still stays a rare highlight rather than the default quest payout.
+    QUEST_REWARD_WEIGHTS: tuple = (0, 0, 60, 30, 3)
 
 
 @dataclass(frozen=True)
@@ -662,10 +697,11 @@ class Stats:
     VITALITY_REGEN_PER_LEVEL: float = 0.0005
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
 
-    # Quest reward weight shifted from "rare" to "legendary" per level above 1, capped
-    # so "rare" never drops below a quarter of its base weight.
-    PERSUASION_WEIGHT_SHIFT_PER_LEVEL: float = 2.0
-    PERSUASION_MAX_WEIGHT_SHIFT: float = 45.0
+    # Quest reward weight shifted from "rare" to "legendary" per level above 1, capped so
+    # even a maxed-out persuasion character still sees a legendary reward well under a
+    # fifth of the time, rather than persuasion alone trivialising legendary drop odds.
+    PERSUASION_WEIGHT_SHIFT_PER_LEVEL: float = 0.8
+    PERSUASION_MAX_WEIGHT_SHIFT: float = 10.0
 
     # Effect per point of an equipped accessory's bonus, on top of trained stats.
     ACCESSORY_SPEED_PER_BONUS: float = 0.01  # +1% move speed per bonus point
