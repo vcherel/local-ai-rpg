@@ -385,28 +385,22 @@ class World:
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
 
         if self.bosses:
-            boss_targets = [b for b in self.bosses if b.distance_to_point(pos) < hit_radius + b.kind.size // 2]
+            boss_targets = self._targets_in_reach(self.bosses, pos, hit_radius, lambda b: b.kind.size, arch.cleave)
             if boss_targets:
-                if not arch.cleave:
-                    boss_targets = [min(boss_targets, key=lambda b: b.distance_to_point(pos))]
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
                 for boss in boss_targets:
                     self._strike_monster(boss, self.bosses, base_damage, arch, player, quest_system, blocked)
                 return
 
-        monster_targets = [m for m in self.monsters if m.distance_to_point(pos) < hit_radius + m.kind.size // 2]
+        monster_targets = self._targets_in_reach(self.monsters, pos, hit_radius, lambda m: m.kind.size, arch.cleave)
         if monster_targets:
-            if not arch.cleave:
-                monster_targets = [min(monster_targets, key=lambda m: m.distance_to_point(pos))]
             player.stats.train("strength", c.Stats.XP_PER_HIT)
             for monster in monster_targets:
                 self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
             return
 
-        npc_targets = [n for n in self.npcs if n.distance_to_point(pos) < hit_radius + c.Entities.NPC_SIZE // 2]
+        npc_targets = self._targets_in_reach(self.npcs, pos, hit_radius, lambda n: c.Entities.NPC_SIZE, arch.cleave)
         if npc_targets:
-            if not arch.cleave:
-                npc_targets = [min(npc_targets, key=lambda n: n.distance_to_point(pos))]
             player.stats.train("strength", c.Stats.XP_PER_HIT)
             for npc in npc_targets:
                 self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
@@ -444,6 +438,15 @@ class World:
         if window_hit is not None:
             building, idx, window = window_hit
             self._break_window(building, idx, window)
+
+    @staticmethod
+    def _targets_in_reach(entities, pos, hit_radius, size_of, cleave: bool) -> list:
+        """Entities within a swing's reach: every one in range if the weapon cleaves,
+        otherwise just the nearest."""
+        targets = [e for e in entities if e.distance_to_point(pos) < hit_radius + size_of(e) // 2]
+        if not targets or cleave:
+            return targets
+        return [min(targets, key=lambda e: e.distance_to_point(pos))]
 
     def _find_window_in_reach(self, pos, hit_radius):
         """Nearest unbroken window (on any non-landmark building) a swing reaches, as
@@ -496,15 +499,10 @@ class World:
         base_damage = (
             c.Player.ATTACK_DAMAGE + player.weapon_bonus(ranged=True) + player.stats.attack_bonus()
         ) * player.damage_multiplier()
-        damage = max(1, int(round(base_damage * arch.damage_mult)))
         # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
         # Rampage forces every Nth shot to crit and amplifies it further.
         rampage = player.rampage_trigger(ranged=True)
-        crit = rampage or random.random() < arch.crit_chance + player.crit_bonus(ranged=True)
-        if crit:
-            damage = max(1, int(round(damage * c.Combat.CRIT_MULT)))
-        if rampage:
-            damage = max(1, int(round(damage * c.Affixes.RAMPAGE_BONUS_MULT)))
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(ranged=True), rampage=rampage)
         crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
         rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
         shake = arch.shake + crit_shake + rampage_shake
@@ -607,6 +605,28 @@ class World:
             blocked=blocked,
         )
 
+    @staticmethod
+    def _break_effects(x, y, color, count):
+        """Shared shake, crash sound and shard burst for a smashed crate/cache/barrel."""
+        get_shake().add(c.Combat.CRATE_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(x, y, color, count=count, speed=6, life=550, size=5, gravity=0.4, shape="shard")
+
+    def _break_loot(self, player: Player, x, y, coins, loot_item, label: str, place_item):
+        """Credit coins, pop any dropped item out near (x, y) via `place_item`, and toast the result."""
+        player.gain_coins(coins)
+        message = f"{label}: +{coins} coins"
+        color = c.Colors.WHITE
+        if loot_item is not None:
+            loot_item.x = x + random.uniform(-20, 20)
+            loot_item.y = y + random.uniform(-20, 20)
+            loot_item.start_pop_anim(x, y)
+            place_item(loot_item)
+            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
+            color = rarity_color(loot_item.rarity)
+        if self.notify:
+            self.notify(message, color)
+
     def _break_crate(self, player: Player, building: Building, crate):
         """Smash a shop or tavern crate: juice, a few coins, and a small chance of a dropped item.
 
@@ -615,34 +635,11 @@ class World:
         straight away; an item (if any) pops out onto the floor for the player to walk
         over and collect, rather than jumping straight into the inventory.
         """
-        get_shake().add(c.Combat.CRATE_SHAKE)
-        play_sound("crate_break")
-        get_particles().spawn_burst(
-            crate.centerx,
-            crate.centery,
-            (150, 110, 70),
-            count=20,
-            speed=6,
-            life=550,
-            size=5,
-            gravity=0.4,
-            shape="shard",
-        )
-
+        self._break_effects(crate.centerx, crate.centery, (150, 110, 70), 20)
         coins, loot_item = break_crate()
-        player.gain_coins(coins)
-        message = f"Crate smashed: +{coins} coins"
-        color = c.Colors.WHITE
-        if loot_item is not None:
-            spread = crate.width / 2
-            loot_item.x = crate.centerx + random.uniform(-spread, spread)
-            loot_item.y = crate.centery + random.uniform(-spread, spread)
-            loot_item.start_pop_anim(crate.centerx, crate.centery)
-            building.dropped_items.append(loot_item)
-            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
-            color = rarity_color(loot_item.rarity)
-        if self.notify:
-            self.notify(message, color)
+        self._break_loot(
+            player, crate.centerx, crate.centery, coins, loot_item, "Crate smashed", building.dropped_items.append
+        )
 
     def _break_poi(self, player: Player, poi: PointOfInterest):
         """Smash a wilderness ruins pile or camp cache: same feedback as an outdoor barrel,
@@ -650,26 +647,10 @@ class World:
         (not removed like a breakable) so the ruin/camp still reads as a landmark, just
         picked over."""
         poi.looted = True
-        get_shake().add(c.Combat.CRATE_SHAKE)
-        play_sound("crate_break")
-        get_particles().spawn_burst(
-            poi.x, poi.y, (150, 140, 120), count=20, speed=6, life=550, size=5, gravity=0.4, shape="shard"
-        )
-
+        self._break_effects(poi.x, poi.y, (150, 140, 120), 20)
         coins, loot_item = open_poi_cache()
-        player.gain_coins(coins)
         label = "Camp cache" if poi.kind == "camp" else "Ruins searched"
-        message = f"{label}: +{coins} coins"
-        color = c.Colors.WHITE
-        if loot_item is not None:
-            loot_item.x = poi.x + random.uniform(-20, 20)
-            loot_item.y = poi.y + random.uniform(-20, 20)
-            loot_item.start_pop_anim(poi.x, poi.y)
-            self.items.append(loot_item)
-            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
-            color = rarity_color(loot_item.rarity)
-        if self.notify:
-            self.notify(message, color)
+        self._break_loot(player, poi.x, poi.y, coins, loot_item, label, self.items.append)
 
     def _break_breakable(self, player: Player, breakable: Breakable):
         """Smash an outdoor prop. A barrel plays out like a shop crate: juice, coins,
@@ -701,25 +682,9 @@ class World:
                 )
             return
 
-        get_shake().add(c.Combat.CRATE_SHAKE)
-        play_sound("crate_break")
-        get_particles().spawn_burst(
-            breakable.x, breakable.y, (150, 110, 70), count=18, speed=6, life=550, size=5, gravity=0.4, shape="shard"
-        )
-
+        self._break_effects(breakable.x, breakable.y, (150, 110, 70), 18)
         coins, loot_item = break_crate()
-        player.gain_coins(coins)
-        message = f"Barrel smashed: +{coins} coins"
-        color = c.Colors.WHITE
-        if loot_item is not None:
-            loot_item.x = breakable.x + random.uniform(-20, 20)
-            loot_item.y = breakable.y + random.uniform(-20, 20)
-            loot_item.start_pop_anim(breakable.x, breakable.y)
-            self.items.append(loot_item)
-            message += f", and a {loot_item.rarity} {loot_item.name} dropped"
-            color = rarity_color(loot_item.rarity)
-        if self.notify:
-            self.notify(message, color)
+        self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
 
     def _resolve_monster_hit(
         self,

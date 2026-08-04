@@ -361,15 +361,8 @@ class Game:
         self.player.save_stats()
         self.save_system.update("inventory", [item.id for item in self.player.inventory])
 
-        world_state = self.world.serialize()
-        self.save_system.update("items", world_state["items"])
-        self.save_system.update("npcs", world_state["npcs"])
-        self.save_system.update("monsters", world_state["monsters"])
-        self.save_system.update("bosses", world_state["bosses"])
-        self.save_system.update("buildings", world_state["buildings"])
-        self.save_system.update("breakables", world_state["breakables"])
-        self.save_system.update("pois", world_state["pois"])
-        self.save_system.update("daynight_elapsed_ms", world_state["daynight_elapsed_ms"])
+        for key, value in self.world.serialize().items():
+            self.save_system.update(key, value)
 
         self.save_system.save_all()
 

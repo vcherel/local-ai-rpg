@@ -105,11 +105,10 @@ class NPC(Entity):
         return npc
 
     def set_shop(self, shop_data: list):
-        from game.entities.items import Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
+        from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 
         self.shop_items.clear()
         self.shop_prices.clear()
-        from game.entities.items import AMMO_BUNDLE
 
         for entry in shop_data:
             item_type = entry.get("item_type") or item_type_from_name(entry["name"])
@@ -166,6 +165,17 @@ class NPC(Entity):
                 self.wander_target = None
                 self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
 
+    def _badge(self) -> Optional[tuple]:
+        """(font, symbol, color) for the marker floating over this NPC's head, or None."""
+        if self.has_active_quest:
+            return c.Fonts.badge, "!", c.Colors.YELLOW
+        if self.is_thief:
+            return c.Fonts.badge, "?", (190, 70, 220)
+        if self.is_merchant:
+            color = (100, 255, 100) if self.shop_ready else (120, 120, 80)
+            return c.Fonts.badge_small, "$", color
+        return None
+
     def draw(self, screen: pygame.Surface, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         super().draw(
@@ -181,20 +191,10 @@ class NPC(Entity):
         )
 
         bob_offset = math.sin(time.time() * 4) * 4
-        if self.has_active_quest:
-            font = pygame.font.Font(None, 45)
-            text = font.render("!", True, c.Colors.YELLOW)
-            text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
-            screen.blit(text, text_rect)
-        elif self.is_thief:
-            font = pygame.font.Font(None, 45)
-            text = font.render("?", True, (190, 70, 220))
-            text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
-            screen.blit(text, text_rect)
-        elif self.is_merchant:
-            font = pygame.font.Font(None, 40)
-            color = (100, 255, 100) if self.shop_ready else (120, 120, 80)
-            text = font.render("$", True, color)
+        badge = self._badge()
+        if badge is not None:
+            font, symbol, color = badge
+            text = font.render(symbol, True, color)
             text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
 
