@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import math
+import random
+
+import core.constants as c
+
+
+class Wander:
+    """Idle-then-stroll movement, shared by NPCs and wildlife.
+
+    Both pick a random spot near an anchor, walk to it sliding along any wall in the way,
+    then idle for a random delay before picking the next one. They differ only in their
+    tuning, where the anchor sits (an NPC's home vs a critter's current position) and how
+    a movement angle maps onto their sprite's facing, so the owner holds one of these and
+    applies the returned angle itself.
+    """
+
+    def __init__(self, speed: float, radius: float, idle_min_ms: float, idle_max_ms: float):
+        self.speed = speed
+        self.radius = radius
+        self.idle_min_ms = idle_min_ms
+        self.idle_max_ms = idle_max_ms
+        self.target = None
+        self.idle_timer = random.uniform(idle_min_ms, idle_max_ms)
+
+    def interrupt(self):
+        """Drop the current target and pick a fresh one on the next step, e.g. once a
+        fleeing critter has settled down somewhere new."""
+        self.target = None
+        self.idle_timer = 0.0
+
+    def _rest(self):
+        self.target = None
+        self.idle_timer = random.uniform(self.idle_min_ms, self.idle_max_ms)
+
+    def step(self, entity, dt, anchor, radius, blocked) -> float | None:
+        """Advance the owner one frame. Returns the angle it actually moved along, or None
+        if it stayed put (idling, arriving, or pinned flat against a wall)."""
+        if self.target is None:
+            self.idle_timer -= dt
+            if self.idle_timer <= 0:
+                angle = random.uniform(0, 2 * math.pi)
+                dist = random.uniform(0, self.radius)
+                self.target = (anchor[0] + math.cos(angle) * dist, anchor[1] + math.sin(angle) * dist)
+            return None
+
+        dx = self.target[0] - entity.x
+        dy = self.target[1] - entity.y
+        step = self.speed * dt * c.TARGET_FPS / 1000.0
+        if math.hypot(dx, dy) <= step:
+            entity.x, entity.y = self.target
+            self._rest()
+            return None
+
+        angle = math.atan2(dy, dx)
+        step_x = math.cos(angle) * step
+        step_y = math.sin(angle) * step
+        # Move one axis at a time so a wall on one axis lets the entity slide along it.
+        if blocked is not None and blocked(entity.x + step_x, entity.y, radius):
+            step_x = 0
+        entity.x += step_x
+        if blocked is not None and blocked(entity.x, entity.y + step_y, radius):
+            step_y = 0
+        entity.y += step_y
+
+        # If a wall swallowed most of the intended step, stop grinding against it and repick.
+        if math.hypot(step_x, step_y) < step * 0.25:
+            self._rest()
+        if not step_x and not step_y:
+            return None
+        return math.atan2(step_y, step_x)
