@@ -711,7 +711,6 @@ class Stats:
     ACCESSORY_LIFESTEAL_PER_BONUS: float = 0.01  # +1% of damage healed per bonus point
     ACCESSORY_COINFIND_PER_BONUS: float = 0.06  # +6% coins from loot per bonus point
     ACCESSORY_XP_PER_BONUS: float = 0.04  # +4% xp from all actions per bonus point
-    # Arrow-pierce accessory: each bonus point lets a projectile pass through one more target.
 
     # Shops buy loot below its worth; bartering raises the fraction toward SELL_CEILING.
     SELL_BASE: float = 0.6
