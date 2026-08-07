@@ -333,6 +333,8 @@ class Player(Entity):
         return 1.0 + self.accessory_bonus("xpgain") * c.Stats.ACCESSORY_XP_PER_BONUS
 
     def pierce_count(self) -> int:
+        """Each point of the pierce accessory's bonus lets a projectile pass through one
+        more target, so the bonus is used raw rather than scaled by a per-point constant."""
         return self.accessory_bonus("pierce")
 
     def heal(self, amount: float):
@@ -446,7 +448,8 @@ class Player(Entity):
             self.save_system.update("guardian_ward_cooldown_until", self.guardian_ward_cooldown_until)
         else:
             self.hp -= actual
-        actual = old_hp - self.hp  # the real hp lost, for the floating number
+        # What the player actually lost, which the ward clamp can make smaller than `actual`.
+        lost = old_hp - self.hp
 
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
@@ -458,7 +461,7 @@ class Player(Entity):
             )
             get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, "Guardian's Ward!", (255, 215, 120), big=True)
         else:
-            get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, str(actual), (255, 90, 90), big=True)
+            get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, str(lost), (255, 90, 90), big=True)
         get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
         get_vignette().trigger(c.Combat.PLAYER_HURT_VIGNETTE)
 

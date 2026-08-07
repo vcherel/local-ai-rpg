@@ -574,29 +574,3 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width, bo
         lid_y = rect.top + rect.height * 0.4
         pygame.draw.line(surface, c.Colors.BLACK, (rect.left, lid_y), (rect.right, lid_y), border_width)
         pygame.draw.circle(surface, c.Colors.BLACK, (cx, int(lid_y)), max(2, size // 8))
-    else:
-        if shape == "triangle":
-            points = get_polygon_points(center, size, 3)
-        elif shape == "pentagon":
-            points = get_polygon_points(center, size, 5)
-        elif shape == "star":
-            points = get_polygon_points(center, size, 10, inner_radius_factor=0.5)
-        else:
-            raise ValueError(f"Unknown shape: {shape}")
-
-        pygame.draw.polygon(surface, color, points)
-        pygame.draw.polygon(surface, border_color, points, border_width)
-
-
-def get_polygon_points(center, size, num_points, inner_radius_factor=None):
-    points = []
-    for i in range(num_points):
-        angle = i * (360 / num_points)
-        if inner_radius_factor and i % 2 == 1:
-            r = size * inner_radius_factor
-        else:
-            r = size
-        x = center[0] + r * math.sin(math.radians(angle))
-        y = center[1] - r * math.cos(math.radians(angle))
-        points.append((x, y))
-    return points

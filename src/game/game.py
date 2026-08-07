@@ -253,23 +253,31 @@ class Game:
 
     def _interact_with_world(self):
         item: Item = self.world.pickup_item(self.player)
-        if item is not None:
-            item.picked_up = True
-            if item.item_type == "lootbox":
-                self._open_lootbox(item)
-            else:
-                # If it merges into a stack (ammo, potions), drop the now-orphaned world item.
-                if self.player.add_item(item) is not item and item in self.world.items:
-                    self.world.items.remove(item)
-                play_sound("pickup")
-                self._offer_upgrade(item)
-            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
-        else:
+        if item is None:
             npc = self.world.talk_npc(self.player)
             if npc is not None:
                 self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
                 self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
                 self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
+            return
+
+        item.picked_up = True
+        if item.item_type == "lootbox":
+            self._open_lootbox(item)
+            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+            return
+
+        # If it merges into a stack (ammo, potions), drop the now-orphaned world item.
+        if self.player.add_item(item) is not item and item in self.world.items:
+            self.world.items.remove(item)
+        self._collect_item(item)
+
+    def _collect_item(self, item: Item):
+        """Feedback shared by every item pickup. The caller has already settled the item
+        into the inventory and the world's master item list."""
+        play_sound("pickup")
+        self._offer_upgrade(item)
+        get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
 
     def _pop_levelups(self):
         """Drain any stat level-ups queued this frame and pop the gold text/sparkle/chime
@@ -322,9 +330,7 @@ class Game:
         # id can still find it after reload; it never renders or drops again.
         if self.player.add_item(item) is item:
             self.world.items.append(item)
-        play_sound("pickup")
-        self._offer_upgrade(item)
-        get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+        self._collect_item(item)
 
     def _open_interior_chest(self):
         from game.entities.items import roll_rarity

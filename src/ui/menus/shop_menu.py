@@ -123,8 +123,7 @@ class ShopMenu(BaseMenu):
         if self.player.add_item(item) is item:
             self.world_items.append(item)
         self.player.add_coins(-price)
-        self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
-        self.merchant.affinity = min(c.Affinity.MAX, self.merchant.affinity + c.Affinity.TRADE_BONUS)
+        self._record_trade()
 
     def _sell(self, index: int):
         item = self.player.inventory[index]
@@ -139,6 +138,10 @@ class ShopMenu(BaseMenu):
             if item in self.world_items:
                 self.world_items.remove(item)
         self.player.add_coins(price)
+        self._record_trade()
+
+    def _record_trade(self):
+        """Every completed buy or sell trains bartering and warms the merchant a little."""
         self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
         self.merchant.affinity = min(c.Affinity.MAX, self.merchant.affinity + c.Affinity.TRADE_BONUS)
 
