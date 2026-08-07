@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from game.entities.wander import Wander
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -28,8 +29,9 @@ class Critter:
         self.y = y
         self.kind = kind
         self.orientation = random.uniform(0, 2 * math.pi)
-        self.wander_target = None
-        self.idle_timer = random.uniform(c.Wildlife.IDLE_MIN_MS, c.Wildlife.IDLE_MAX_MS)
+        self.wander = Wander(
+            c.Wildlife.WANDER_SPEED, c.Wildlife.WANDER_RADIUS, c.Wildlife.IDLE_MIN_MS, c.Wildlife.IDLE_MAX_MS
+        )
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -46,39 +48,12 @@ class Critter:
                 self.y += step_y
             self.orientation = angle
             # Fleeing resets the wander state, so it picks a fresh spot once it settles.
-            self.wander_target = None
-            self.idle_timer = 0.0
+            self.wander.interrupt()
             return
 
-        if self.wander_target is None:
-            self.idle_timer -= dt
-            if self.idle_timer <= 0:
-                angle = random.uniform(0, 2 * math.pi)
-                dist = random.uniform(0, c.Wildlife.WANDER_RADIUS)
-                self.wander_target = (self.x + math.cos(angle) * dist, self.y + math.sin(angle) * dist)
-            return
-
-        dx = self.wander_target[0] - self.x
-        dy = self.wander_target[1] - self.y
-        step = c.Wildlife.WANDER_SPEED * dt * c.TARGET_FPS / 1000.0
-        if math.hypot(dx, dy) <= step:
-            self.x, self.y = self.wander_target
-            self.wander_target = None
-            self.idle_timer = random.uniform(c.Wildlife.IDLE_MIN_MS, c.Wildlife.IDLE_MAX_MS)
-        else:
-            angle = math.atan2(dy, dx)
-            step_x, step_y = math.cos(angle) * step, math.sin(angle) * step
-            if blocked is not None and blocked(self.x + step_x, self.y, radius):
-                step_x = 0
-            self.x += step_x
-            if blocked is not None and blocked(self.x, self.y + step_y, radius):
-                step_y = 0
-            self.y += step_y
-            if step_x or step_y:
-                self.orientation = math.atan2(step_y, step_x)
-            if math.hypot(step_x, step_y) < step * 0.25:
-                self.wander_target = None
-                self.idle_timer = random.uniform(c.Wildlife.IDLE_MIN_MS, c.Wildlife.IDLE_MAX_MS)
+        moved_angle = self.wander.step(self, dt, (self.x, self.y), radius, blocked)
+        if moved_angle is not None:
+            self.orientation = moved_angle
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)

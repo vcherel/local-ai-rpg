@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import random
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -10,6 +9,7 @@ import pygame
 import core.constants as c
 from core.utils import random_color
 from game.entities.entities import Entity
+from game.entities.wander import Wander
 from game.quest import Quest
 
 if TYPE_CHECKING:
@@ -32,8 +32,12 @@ class NPC(Entity):
         self.shop_prices: Dict[str, int] = {}
         self.shop_ready = False
         self.home = (x, y)
-        self.wander_target = None
-        self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
+        self.wander = Wander(
+            c.Entities.NPC_WANDER_SPEED,
+            c.Entities.NPC_WANDER_RADIUS,
+            c.Entities.NPC_IDLE_MIN_MS,
+            c.Entities.NPC_IDLE_MAX_MS,
+        )
         self.affinity = c.Affinity.START
 
     @property
@@ -129,41 +133,11 @@ class NPC(Entity):
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
             return
 
-        if self.wander_target is None:
-            self.idle_timer -= dt
-            if self.idle_timer <= 0:
-                angle = random.uniform(0, 2 * math.pi)
-                radius = random.uniform(0, c.Entities.NPC_WANDER_RADIUS)
-                self.wander_target = (self.home[0] + math.cos(angle) * radius, self.home[1] + math.sin(angle) * radius)
-            return
-
-        dx = self.wander_target[0] - self.x
-        dy = self.wander_target[1] - self.y
-        step = c.Entities.NPC_WANDER_SPEED * dt * c.TARGET_FPS / 1000.0
-        if math.hypot(dx, dy) <= step:
-            self.x, self.y = self.wander_target
-            self.wander_target = None
-            self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
-        else:
-            angle = math.atan2(dy, dx)
-            step_x = math.cos(angle) * step
-            step_y = math.sin(angle) * step
-            radius = c.Entities.NPC_SIZE / 2
-            # Move one axis at a time so a wall on one axis lets the NPC slide along it.
-            if blocked is not None and blocked(self.x + step_x, self.y, radius):
-                step_x = 0
-            self.x += step_x
-            if blocked is not None and blocked(self.x, self.y + step_y, radius):
-                step_y = 0
-            self.y += step_y
-            # Face the way it actually moved, not the way it wanted to: a slider looks along
-            # the wall, and one pinned against a building stops staring straight into it.
-            if step_x or step_y:
-                self.orientation = math.atan2(step_y, step_x) + math.pi / 2
-            # If a wall swallowed most of the intended step, stop grinding against it and repick.
-            if math.hypot(step_x, step_y) < step * 0.25:
-                self.wander_target = None
-                self.idle_timer = random.uniform(c.Entities.NPC_IDLE_MIN_MS, c.Entities.NPC_IDLE_MAX_MS)
+        moved_angle = self.wander.step(self, dt, self.home, c.Entities.NPC_SIZE / 2, blocked)
+        # Face the way it actually moved, not the way it wanted to: a slider looks along
+        # the wall, and one pinned against a building stops staring straight into it.
+        if moved_angle is not None:
+            self.orientation = moved_angle + math.pi / 2
 
     def _badge(self) -> Optional[tuple]:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""
