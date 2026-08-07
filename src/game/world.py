@@ -116,6 +116,8 @@ class World:
             x, y = random.randint(0, c.World.WORLD_SIZE), random.randint(0, c.World.WORLD_SIZE)
             if math.hypot(x - center, y - center) >= min_dist and not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
                 return x, y
+        # Nothing clear in 20 tries: settle for the last roll rather than looping forever.
+        # A monster standing in a wall beats hanging world generation.
         return x, y
 
     def _spawn_camp_guards(self):
@@ -860,19 +862,11 @@ class World:
         color = (255, 210, 90) if crit else c.Colors.WHITE
         get_floating_text().spawn(x, y, text, color, big=crit)
 
-    def update_projectiles(
-        self,
-        proj_list: List[Projectile],
-        monster_list: List[Monster],
-        player: Player,
-        quest_system: QuestSystem,
-        dt,
-        blocked=None,
-    ):
-        for proj in list(proj_list):
-            proj.update(dt, blocked)
+    def update_projectiles(self, player: Player, quest_system: QuestSystem, dt):
+        for proj in list(self.projectiles):
+            proj.update(dt, self.blocked)
             if proj.dead:
-                proj_list.remove(proj)
+                self.projectiles.remove(proj)
                 continue
 
             # A boss's bolts fly past monsters and NPCs and only threaten the player.
@@ -880,99 +874,75 @@ class World:
                 if proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
                     player.receive_damage(proj.damage)
                     get_shake().add(proj.shake)
-                    proj_list.remove(proj)
+                    self.projectiles.remove(proj)
                 continue
 
-            hit_monster = next(
-                (
-                    m
-                    for m in monster_list
-                    if id(m) not in proj.hit_ids
-                    and proj.distance_to_point((m.x, m.y)) < c.Projectile.SIZE + m.kind.size // 2
-                ),
-                None,
-            )
-            if hit_monster is not None:
-                player.stats.train("strength", c.Stats.XP_PER_HIT)
-                kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-                died = self._resolve_monster_hit(
-                    hit_monster,
-                    monster_list,
-                    proj.damage,
-                    player,
-                    quest_system,
-                    shake=proj.shake,
-                    knockback=proj.knockback,
-                    kb_dir=kb_dir,
-                    blocked=blocked,
-                )
-                self._apply_on_hit_effects(
-                    hit_monster, monster_list, proj.damage, player, quest_system, died, ranged=True
-                )
-                self._apply_chainstrike(
-                    hit_monster, monster_list, proj.damage, player, quest_system, blocked, ranged=True
-                )
-                self._projectile_after_hit(proj, proj_list, hit_monster)
+            if self._projectile_hits_monster(proj, self.monsters, player, quest_system):
                 continue
+            if self._projectile_hits_monster(proj, self.bosses, player, quest_system):
+                continue
+            self._projectile_hits_npc(proj, player, quest_system)
 
-            if self.bosses:
-                hit_boss = next(
-                    (
-                        b
-                        for b in self.bosses
-                        if id(b) not in proj.hit_ids
-                        and proj.distance_to_point((b.x, b.y)) < c.Projectile.SIZE + b.kind.size // 2
-                    ),
-                    None,
-                )
-                if hit_boss is not None:
-                    player.stats.train("strength", c.Stats.XP_PER_HIT)
-                    kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-                    died = self._resolve_monster_hit(
-                        hit_boss,
-                        self.bosses,
-                        proj.damage,
-                        player,
-                        quest_system,
-                        shake=proj.shake,
-                        knockback=proj.knockback,
-                        kb_dir=kb_dir,
-                        blocked=blocked,
-                    )
-                    self._apply_on_hit_effects(
-                        hit_boss, self.bosses, proj.damage, player, quest_system, died, ranged=True
-                    )
-                    self._apply_chainstrike(
-                        hit_boss, self.bosses, proj.damage, player, quest_system, blocked, ranged=True
-                    )
-                    self._projectile_after_hit(proj, proj_list, hit_boss)
-                    continue
+    def _projectile_hits_monster(self, proj: Projectile, targets, player: Player, quest_system: QuestSystem) -> bool:
+        """Resolve a projectile against one list of monsters or bosses (both take hits the
+        same way). Returns True if it struck something, pierced onward or not."""
+        target = next(
+            (
+                t
+                for t in targets
+                if id(t) not in proj.hit_ids
+                and proj.distance_to_point((t.x, t.y)) < c.Projectile.SIZE + t.kind.size // 2
+            ),
+            None,
+        )
+        if target is None:
+            return False
 
-            hit_npc = next(
-                (
-                    n
-                    for n in self.npcs
-                    if id(n) not in proj.hit_ids
-                    and proj.distance_to_point((n.x, n.y)) < c.Projectile.SIZE + c.Entities.NPC_SIZE // 2
-                ),
-                None,
-            )
-            if hit_npc is not None:
-                player.stats.train("strength", c.Stats.XP_PER_HIT)
-                kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-                self._resolve_npc_hit(
-                    hit_npc,
-                    proj.damage,
-                    quest_system,
-                    shake=proj.shake,
-                    knockback=proj.knockback,
-                    kb_dir=kb_dir,
-                    blocked=blocked,
-                )
-                frac = player.lifesteal_frac(ranged=True)
-                if frac > 0:
-                    player.heal(proj.damage * frac)
-                self._projectile_after_hit(proj, proj_list, hit_npc)
+        player.stats.train("strength", c.Stats.XP_PER_HIT)
+        kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
+        died = self._resolve_monster_hit(
+            target,
+            targets,
+            proj.damage,
+            player,
+            quest_system,
+            shake=proj.shake,
+            knockback=proj.knockback,
+            kb_dir=kb_dir,
+            blocked=self.blocked,
+        )
+        self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
+        self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
+        self._projectile_after_hit(proj, self.projectiles, target)
+        return True
+
+    def _projectile_hits_npc(self, proj: Projectile, player: Player, quest_system: QuestSystem):
+        npc = next(
+            (
+                n
+                for n in self.npcs
+                if id(n) not in proj.hit_ids
+                and proj.distance_to_point((n.x, n.y)) < c.Projectile.SIZE + c.Entities.NPC_SIZE // 2
+            ),
+            None,
+        )
+        if npc is None:
+            return
+
+        player.stats.train("strength", c.Stats.XP_PER_HIT)
+        self._resolve_npc_hit(
+            npc,
+            proj.damage,
+            quest_system,
+            shake=proj.shake,
+            knockback=proj.knockback,
+            kb_dir=self._dir_from(0, 0, proj.vx, proj.vy),
+            blocked=self.blocked,
+        )
+        frac = player.lifesteal_frac(ranged=True)
+        if frac > 0:
+            player.heal(proj.damage * frac)
+        self._projectile_after_hit(proj, self.projectiles, npc)
 
     def _tick_burns(self, monster_list: List[Monster], player: Player, quest_system: QuestSystem):
         now = pygame.time.get_ticks()
@@ -1063,7 +1033,7 @@ class World:
             self.boss_roam_timer = 0.0
             self._maybe_spawn_roaming_boss(player)
 
-        self.update_projectiles(self.projectiles, self.monsters, player, quest_system, dt, self.blocked)
+        self.update_projectiles(player, quest_system, dt)
 
         for npc in self.npcs:
             npc.update(player, dt, self.blocked)
@@ -1071,7 +1041,9 @@ class World:
         for critter in self.critters:
             critter.update(player, dt, self.blocked)
         player_pos = player.get_pos()
-        self.critters = [c_ for c_ in self.critters if c_.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE]
+        self.critters = [
+            critter for critter in self.critters if critter.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE
+        ]
         if len(self.critters) < c.Wildlife.COUNT:
             self.critter_respawn_timer += dt
             if self.critter_respawn_timer >= c.Wildlife.RESPAWN_INTERVAL_MS:
