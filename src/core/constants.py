@@ -38,6 +38,8 @@ class Death:
     COIN_LOSS_PCT: float = 0.3
     DEBUFF_DURATION_S: float = 60.0
     DEBUFF_DAMAGE_MULT: float = 0.75
+    # How long the death screen holds before the player is put back at world spawn.
+    RESPAWN_DELAY_S: float = 2.5
 
 
 @dataclass(frozen=True)

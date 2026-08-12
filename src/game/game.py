@@ -67,6 +67,8 @@ class Game:
         # Set by the pause menu's "Quit to menu"; breaks the run loop so control
         # returns to the main menu (game state is saved on the way out).
         self.quit_to_menu = False
+        # Set when the window is closed: the process exits instead of returning to the menu.
+        self.quit_app = False
 
         # The building the player is currently standing inside, or None outdoors. Recomputed
         # every frame from the player's position; a building's interior is just its own
@@ -95,6 +97,8 @@ class Game:
     def handle_input(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                # Closing the window ends the whole game, not just this session.
+                self.quit_app = True
                 return False
 
             if self.rumor_menu.handle_event(event):
@@ -355,6 +359,23 @@ class Game:
         self.save_data()
         self.loot_notification.show("Game saved", c.Colors.GREEN)
 
+    def _respawn(self):
+        """Death has a real cost, not just a free full-heal at the same spot: dock coins,
+        weaken the player for a while, and put them back at world spawn so they can't keep
+        swinging at what killed them. The run carries on from there."""
+        coins_lost = self.player.apply_death_penalty()
+        self.player.hp = self.player.max_hp
+        self.player.x = c.World.WORLD_SIZE // 2
+        self.player.y = c.World.WORLD_SIZE // 2
+        # Whatever was in the air when the player died shouldn't greet them at spawn.
+        self.world.projectiles.clear()
+        self.interior = None
+        self.update_camera()
+        self.save_data()
+
+        run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S)
+        self.loot_notification.show(f"You died. -{coins_lost} coins", c.Colors.RED)
+
     def _quit_to_menu(self):
         """Leave the game and return to the main menu; run() saves as it exits."""
         self.quit_to_menu = True
@@ -458,17 +479,7 @@ class Game:
                 last_save_time = current_time
 
             if self.player.hp <= 0:
-                # Death has a real cost, not just a free full-heal at the same spot:
-                # dock coins, weaken the player for a while, and send them back to
-                # world spawn so they can't just keep swinging at what killed them.
-                self.player.hp = self.player.max_hp
-                coins_lost = self.player.apply_death_penalty()
-                self.player.x = c.World.WORLD_SIZE // 2
-                self.player.y = c.World.WORLD_SIZE // 2
-                self.interior = None
-                self.save_data()
-                run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S)
-                return
+                self._respawn()
 
             pygame.display.flip()
 
@@ -479,3 +490,7 @@ class Game:
                 self.clock.tick(60)
 
         self.save_data()
+        # Generation threads can still be queued behind other LLM calls; from here on they
+        # belong to a session that is over and must leave the save file to the next game.
+        self.world.close()
+        self.npc_name_generator.close()

@@ -60,13 +60,16 @@ def main():
     get_audio()
     run_loading_screen(screen, clock)
 
-    save_system = SaveSystem()
-
     while True:
-        if run_main_menu(screen, clock, save_system):
-            game = Game(screen, clock, save_system)
-            game.run()
-        else:
+        choice = run_main_menu(screen, clock)
+        # One SaveSystem per session, never shared with the previous game: its background
+        # threads may still be finishing, and they must not write into this game's state.
+        save_system = SaveSystem()
+        if choice == "new_game":
+            save_system.clear()
+        game = Game(screen, clock, save_system)
+        game.run()
+        if game.quit_app:
             break
 
     pygame.quit()

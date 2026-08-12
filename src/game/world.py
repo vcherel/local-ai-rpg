@@ -73,6 +73,12 @@ class World:
         self._shops_generating = False
         self._landmark_naming = False
 
+        # Set by close() when the player leaves the game. Background generation threads
+        # outlive the session (an LLM call can still be queued behind others), and the
+        # save file is shared with whatever game is started next; without this they would
+        # write a dead world's state over the new game's save.
+        self.closed = False
+
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
             self._restore(saved_npcs)
@@ -155,10 +161,17 @@ class World:
         self.monsters = [Monster.from_dict(d) for d in self.save_system.load("monsters", [])]
         self.bosses = [Boss.from_dict(d) for d in self.save_system.load("bosses", [])]
 
+    def close(self):
+        """Leave the session: background threads still in flight stop writing to the save."""
+        self.closed = True
+        self.notify = None
+
     def persist_world(self):
         """Flush generated world state to disk. Called by the background generation threads
         so finished work (context, shops, boss and landmark names) survives a restart
         instead of being regenerated on the next continue."""
+        if self.closed:
+            return
         try:
             state = self.serialize()
         except RuntimeError:

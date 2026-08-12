@@ -207,11 +207,14 @@ class InventoryMenu(BaseMenu):
             tooltip_item = items_list[self.hovered_slot]["item"]
         elif self.hovered_equip is not None:
             tooltip_item = player.equipped_item(self.hovered_equip)
-        if tooltip_item is not None:
-            self._draw_tooltip(surface, tooltip_item, rel_x, rel_y, tooltip_item.id in equipped_ids)
 
         self.draw_hint(surface, "Click to equip, unequip or drink. Scroll for more. ESC or I to close")
         self.blit_panel(surface)
+
+        # Drawn on the screen after the panel, not onto it: a long tooltip near an edge
+        # would otherwise be clipped at the panel border instead of overhanging it.
+        if tooltip_item is not None:
+            self._draw_tooltip(tooltip_item, mouse_pos, tooltip_item.id in equipped_ids)
 
     def _draw_paperdoll(self, surface, player: Player):
         header = c.Fonts.heading.render("Equipped", True, c.Colors.MUTED)
@@ -305,7 +308,7 @@ class InventoryMenu(BaseMenu):
             text = text[:-1]
         return c.Fonts.small.render(text + "…", True, color)
 
-    def _draw_tooltip(self, surface, item: "Item", rel_x, rel_y, is_equipped):
+    def _draw_tooltip(self, item: "Item", mouse_pos, is_equipped):
         if item.item_type == "weapon" and item.bonus > 0:
             text = f"{item.name}  (+{item.bonus} attack)"
         elif item.item_type == "armor" and item.bonus > 0:
@@ -338,16 +341,21 @@ class InventoryMenu(BaseMenu):
         w = max(line.get_width() for line in lines) + 20
         h = sum(line.get_height() for line in lines) + 12 + 2 * (len(lines) - 1)
 
-        x = rel_x + 16
-        y = rel_y + 16
-        if x + w > self.width - 8:
-            x = rel_x - w - 16
-        if y + h > self.height - 8:
-            y = rel_y - h - 16
+        # Flip to the other side of the cursor when it would run off screen, then clamp,
+        # so a tooltip wider than the space on either side still shows in full.
+        mouse_x, mouse_y = mouse_pos
+        x = mouse_x + 16
+        y = mouse_y + 16
+        if x + w > c.Screen.WIDTH - 8:
+            x = mouse_x - w - 16
+        if y + h > c.Screen.HEIGHT - 8:
+            y = mouse_y - h - 16
+        x = max(8, min(x, c.Screen.WIDTH - w - 8))
+        y = max(8, min(y, c.Screen.HEIGHT - h - 8))
 
         rect = pygame.Rect(x, y, w, h)
-        widgets.draw_panel(surface, rect, fill=(24, 24, 30), border=c.Colors.ACCENT)
+        widgets.draw_panel(self.screen, rect, fill=(24, 24, 30), border=c.Colors.ACCENT)
         line_y = y + 6
         for line in lines:
-            surface.blit(line, (x + 10, line_y))
+            self.screen.blit(line, (x + 10, line_y))
             line_y += line.get_height() + 2

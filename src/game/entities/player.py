@@ -487,6 +487,10 @@ class Player(Entity):
         """True while the post-death weakness from apply_death_penalty is still active."""
         return time.time() < self.death_debuff_until
 
+    def shaken_remaining(self) -> float:
+        """Seconds left on the post-death weakness, for the HUD chip. 0 when not shaken."""
+        return max(0.0, self.death_debuff_until - time.time())
+
     def damage_multiplier(self) -> float:
         weakness = c.Death.DEBUFF_DAMAGE_MULT if self.is_shaken() else 1.0
         return weakness * self.buff_magnitude("strength", 1.0) * self.buff_magnitude("bloodlust", 1.0)

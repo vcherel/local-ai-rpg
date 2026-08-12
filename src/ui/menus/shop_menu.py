@@ -19,6 +19,8 @@ PANEL_GAP = 20
 ROW_HEIGHT = 60
 # Room below the column labels for the first row.
 LABEL_GAP = 30
+# Strip at the bottom of the panel kept clear for the hint line.
+FOOTER_HEIGHT = 46
 
 
 def _affinity_swing(npc: NPC) -> float:
@@ -36,6 +38,10 @@ class ShopMenu(BaseMenu):
         self.world_items: Optional[List[Item]] = None
         self.hovered_buy: Optional[int] = None
         self.hovered_sell: Optional[int] = None
+        # First visible row of each column; a stock or an inventory longer than the panel
+        # is otherwise drawn past its bottom edge with no way to reach it.
+        self.buy_scroll = 0
+        self.sell_scroll = 0
 
     def open(self, merchant: NPC, player: Player, world_items: List[Item]):
         self.merchant = merchant
@@ -45,6 +51,8 @@ class ShopMenu(BaseMenu):
         self.just_active = True
         self.hovered_buy = None
         self.hovered_sell = None
+        self.buy_scroll = 0
+        self.sell_scroll = 0
 
     def close(self):
         self.active = False
@@ -64,9 +72,16 @@ class ShopMenu(BaseMenu):
     def _list_top(self) -> int:
         return self.content_top + LABEL_GAP
 
-    def _row_rect(self, panel_x: int, index: int) -> pygame.Rect:
-        y = self._list_top() + index * ROW_HEIGHT
+    def _row_rect(self, panel_x: int, visible_index: int) -> pygame.Rect:
+        """Rect of the nth row currently on screen, not of the nth item in the list."""
+        y = self._list_top() + visible_index * ROW_HEIGHT
         return pygame.Rect(panel_x, y, self._panel_width(), ROW_HEIGHT - 6)
+
+    def _visible_rows(self) -> int:
+        return max(1, (self.height - self._list_top() - FOOTER_HEIGHT) // ROW_HEIGHT)
+
+    def _max_scroll(self, count: int) -> int:
+        return max(0, count - self._visible_rows())
 
     def _buy_price(self, item: Item) -> int:
         swing = _affinity_swing(self.merchant)
@@ -76,12 +91,18 @@ class ShopMenu(BaseMenu):
         swing = _affinity_swing(self.merchant)
         return max(1, round(base_value(item) * self.player.sell_multiplier() * (1.0 + swing)))
 
-    def _slot_at(self, panel_x: int, count: int, rel_x: int, rel_y: int) -> Optional[int]:
-        for i in range(count):
-            r = self._row_rect(panel_x, i)
-            if r.collidepoint(rel_x, rel_y):
-                return i
+    def _slot_at(self, panel_x: int, count: int, scroll: int, rel_x: int, rel_y: int) -> Optional[int]:
+        """Index in the full list of the row under (rel_x, rel_y), or None."""
+        for i in range(max(0, min(self._visible_rows(), count - scroll))):
+            if self._row_rect(panel_x, i).collidepoint(rel_x, rel_y):
+                return scroll + i
         return None
+
+    def _buy_slot_at(self, rel_x: int, rel_y: int) -> Optional[int]:
+        return self._slot_at(self._buy_panel_x(), len(self.merchant.shop_items), self.buy_scroll, rel_x, rel_y)
+
+    def _sell_slot_at(self, rel_x: int, rel_y: int) -> Optional[int]:
+        return self._slot_at(self._sell_panel_x(), len(self.player.inventory), self.sell_scroll, rel_x, rel_y)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -90,26 +111,44 @@ class ShopMenu(BaseMenu):
         menu_x, menu_y = self.get_centered_position()
 
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
+            if event.key in (pygame.K_b, pygame.K_ESCAPE):
                 self.close()
+            elif event.key == pygame.K_UP:
+                self._scroll(-1, *pygame.mouse.get_pos())
+            elif event.key == pygame.K_DOWN:
+                self._scroll(1, *pygame.mouse.get_pos())
+
+        elif event.type == pygame.MOUSEWHEEL:
+            # MOUSEWHEEL carries no position; the column under the cursor scrolls.
+            self._scroll(-event.y, *pygame.mouse.get_pos())
 
         elif event.type == pygame.MOUSEMOTION:
             rx, ry = event.pos[0] - menu_x, event.pos[1] - menu_y
-            self.hovered_buy = self._slot_at(self._buy_panel_x(), len(self.merchant.shop_items), rx, ry)
-            self.hovered_sell = self._slot_at(self._sell_panel_x(), len(self.player.inventory), rx, ry)
+            self.hovered_buy = self._buy_slot_at(rx, ry)
+            self.hovered_sell = self._sell_slot_at(rx, ry)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             rx, ry = event.pos[0] - menu_x, event.pos[1] - menu_y
-            buy_idx = self._slot_at(self._buy_panel_x(), len(self.merchant.shop_items), rx, ry)
+            buy_idx = self._buy_slot_at(rx, ry)
             if buy_idx is not None:
                 self._buy(buy_idx)
                 return True
-            sell_idx = self._slot_at(self._sell_panel_x(), len(self.player.inventory), rx, ry)
+            sell_idx = self._sell_slot_at(rx, ry)
             if sell_idx is not None:
                 self._sell(sell_idx)
                 return True
 
         return True
+
+    def _scroll(self, rows: int, mouse_x: int, mouse_y: int):
+        """Scroll whichever column the cursor sits over, the sell one by default."""
+        menu_x, _ = self.get_centered_position()
+        if mouse_x - menu_x < self._sell_panel_x():
+            limit = self._max_scroll(len(self.merchant.shop_items))
+            self.buy_scroll = max(0, min(limit, self.buy_scroll + rows))
+        else:
+            limit = self._max_scroll(len(self.player.inventory))
+            self.sell_scroll = max(0, min(limit, self.sell_scroll + rows))
 
     def _buy(self, index: int):
         item = self.merchant.shop_items[index]
@@ -169,27 +208,55 @@ class ShopMenu(BaseMenu):
         sell_label = c.Fonts.heading.render("Sell", True, (235, 180, 90))
         surface.blit(sell_label, (sx, label_y))
 
+        # Buying and selling change the lists under the scroll offsets, so clamp here.
+        buy_items = self.merchant.shop_items
+        sell_items = list(self.player.inventory)
+        self.buy_scroll = min(self.buy_scroll, self._max_scroll(len(buy_items)))
+        self.sell_scroll = min(self.sell_scroll, self._max_scroll(len(sell_items)))
+        visible = self._visible_rows()
+
         if not self.merchant.shop_ready:
             msg = c.Fonts.text.render("Preparing wares...", True, c.Colors.MUTED)
             surface.blit(msg, (bx + 10, self._list_top() + 10))
-        elif not self.merchant.shop_items:
+        elif not buy_items:
             msg = c.Fonts.text.render("Nothing for sale right now.", True, c.Colors.MUTED)
             surface.blit(msg, (bx + 10, self._list_top() + 10))
         else:
-            for i, item in enumerate(self.merchant.shop_items):
+            for row, item in enumerate(buy_items[self.buy_scroll : self.buy_scroll + visible]):
+                index = self.buy_scroll + row
                 price = self._buy_price(item)
                 can_afford = self.player.coins >= price
-                self._draw_row(surface, bx, pw, i, item, price, self.hovered_buy == i, (100, 255, 100), can_afford)
+                self._draw_row(
+                    surface, bx, pw, row, item, price, self.hovered_buy == index, (100, 255, 100), can_afford
+                )
+            self._draw_scrollbar(surface, bx + pw + 4, len(buy_items), self.buy_scroll)
 
         equipped_ids = set(self.player.equipped_ids().values())
-        sell_items = list(self.player.inventory)
-        for i, item in enumerate(sell_items):
+        for row, item in enumerate(sell_items[self.sell_scroll : self.sell_scroll + visible]):
+            index = self.sell_scroll + row
             price = self._sell_price(item)
             equipped = item.id in equipped_ids
-            self._draw_row(surface, sx, pw, i, item, price, self.hovered_sell == i, (255, 180, 80), equipped=equipped)
+            self._draw_row(
+                surface, sx, pw, row, item, price, self.hovered_sell == index, (255, 180, 80), equipped=equipped
+            )
+        self._draw_scrollbar(surface, sx + pw + 4, len(sell_items), self.sell_scroll)
 
-        self.draw_hint(surface, "Click an item to buy or sell. ESC or B to close")
+        self.draw_hint(surface, "Click an item to buy or sell. Scroll for more. ESC or B to close")
         self.blit_panel(surface)
+
+    def _draw_scrollbar(self, surface: pygame.Surface, x: int, count: int, scroll: int):
+        max_scroll = self._max_scroll(count)
+        if max_scroll <= 0:
+            return
+
+        visible = self._visible_rows()
+        track_y = self._list_top()
+        track_h = visible * ROW_HEIGHT - 6
+        pygame.draw.rect(surface, c.Colors.SLOT_BG, (x, track_y, 6, track_h))
+
+        thumb_h = max(24, int(track_h * visible / count))
+        thumb_y = track_y + int((track_h - thumb_h) * (scroll / max_scroll))
+        pygame.draw.rect(surface, c.Colors.ACCENT, (x, thumb_y, 6, thumb_h))
 
     def _draw_row(
         self,
