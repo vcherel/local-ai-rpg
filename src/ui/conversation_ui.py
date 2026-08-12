@@ -17,6 +17,7 @@ class ConversationUI:
     BOX_HEIGHT = 420
     HEADER_HEIGHT = 55
     FOOTER_HEIGHT = 92
+    CLOSE_SIZE = 30
 
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
@@ -63,6 +64,12 @@ class ConversationUI:
             total_height += len(lines) * self.line_height
         return total_height
 
+    def close_button_rect(self) -> pygame.Rect:
+        """The cross in the box's top right corner. Computed, not stored, so it can be
+        hit-tested on a frame the box hasn't drawn yet."""
+        box_y = c.Screen.HEIGHT - self.BOX_HEIGHT - 25
+        return pygame.Rect(c.Screen.WIDTH - 22 - self.CLOSE_SIZE, box_y + 12, self.CLOSE_SIZE, self.CLOSE_SIZE)
+
     def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False):
         box_height = self.BOX_HEIGHT
         box_y = c.Screen.HEIGHT - box_height - 25
@@ -73,12 +80,26 @@ class ConversationUI:
         name_surface = c.Fonts.title.render(npc_name, True, c.Colors.YELLOW)
         self.screen.blit(name_surface, (25, box_y + 10))
 
+        self._draw_close_button()
         self._draw_messages(self.screen, box_y, npc_name, history.messages)
 
         if ended:
             self._draw_ended_notice(self.screen, box_y, box_height)
         else:
             self._draw_input_box(self.screen, box_y, box_height)
+
+    def _draw_close_button(self):
+        rect = self.close_button_rect()
+        hovered = rect.collidepoint(pygame.mouse.get_pos())
+        widgets.draw_button(self.screen, rect, "", c.Fonts.button, hovered=hovered)
+        color = c.Colors.ACCENT if hovered else c.Colors.WHITE
+        inset = 9
+        pygame.draw.line(
+            self.screen, color, (rect.left + inset, rect.top + inset), (rect.right - inset, rect.bottom - inset), 2
+        )
+        pygame.draw.line(
+            self.screen, color, (rect.right - inset, rect.top + inset), (rect.left + inset, rect.bottom - inset), 2
+        )
 
     def _draw_messages(self, screen: pygame.Surface, box_y: int, npc_name: str, messages: list):
         message_area_y = box_y + self.HEADER_HEIGHT

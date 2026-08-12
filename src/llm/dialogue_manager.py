@@ -241,6 +241,10 @@ class DialogueManager:
             return True
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.ui.close_button_rect().collidepoint(event.pos):
+                self.close()
+                npc_name_generator.start_generation()
+                return True
             if (
                 self.current_npc
                 and self.current_npc.is_merchant
@@ -389,8 +393,9 @@ class DialogueManager:
             box_height = self.ui.BOX_HEIGHT
             box_y = c.Screen.HEIGHT - box_height - 25
             btn_w, btn_h = 130, 30
-            btn_x = c.Screen.WIDTH - 40 - btn_w
-            btn_y = box_y + 10
+            # Left of the close cross in the same corner, not under it.
+            btn_x = self.ui.close_button_rect().left - 12 - btn_w
+            btn_y = box_y + 12
             self.shop_button_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
 
             mouse = pygame.mouse.get_pos()

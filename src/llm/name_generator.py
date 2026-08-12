@@ -21,13 +21,19 @@ class NPCNameGenerator:
         # made: used_names avoids duplicates, name_buffer skips regenerating ready names.
         self.used_names: List[str] = list(save_system.load("used_names", []))
         self.ready_names: List[str] = list(save_system.load("name_buffer", []))
+        # Set by close() when the player leaves the game: the save file is shared with
+        # whatever game starts next, so a name still being generated must not write to it.
+        self.closed = False
 
         self.start_generation()
+
+    def close(self):
+        self.closed = True
 
     def start_generation(self):
         """Ensure one name is being prepared ahead of the next NPC that needs one."""
         with self.cond:
-            if self.is_generating or self.ready_names:
+            if self.closed or self.is_generating or self.ready_names:
                 return
             self.is_generating = True
 
@@ -36,6 +42,8 @@ class NPCNameGenerator:
     def _generate_name_background(self):
         context = None
         while context is None:
+            if self.closed:
+                return
             context = self.save_system.load("context", None)
             if context is None:
                 time.sleep(0.1)  # avoid busy waiting
@@ -78,6 +86,8 @@ class NPCNameGenerator:
 
     def persist(self):
         """Write the buffered and used names to the save so a restart reuses them."""
+        if self.closed:
+            return
         with self.cond:
             self.save_system.update("name_buffer", list(self.ready_names))
             self.save_system.update("used_names", list(self.used_names))

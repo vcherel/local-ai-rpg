@@ -173,12 +173,13 @@ class GameRenderer:
             label = c.Fonts.small.render("$", True, color)
             self.screen.blit(label, label.get_rect(center=center))
 
-    def _draw_dock_button(self, rect: pygame.Rect, icon: str, tooltip: str, mouse_pos):
+    def _draw_dock_button(self, rect: pygame.Rect, icon: str, mouse_pos) -> bool:
+        """Draw one dock icon. Returns whether it's hovered, so the caller can draw its
+        tooltip last: it hangs below the row, over the stat chips drawn after the loop."""
         hover = rect.collidepoint(mouse_pos)
         widgets.draw_button(self.screen, rect, "", c.Fonts.button, hovered=hover)
         self._draw_icon(icon, rect.center, rect.width * 0.32, c.Colors.WHITE)
-        if hover:
-            self._draw_tooltip(rect, tooltip)
+        return hover
 
     def _draw_tooltip(self, anchor: pygame.Rect, text: str):
         label = c.Fonts.small.render(text, True, c.Colors.WHITE)
@@ -201,8 +202,10 @@ class GameRenderer:
         mouse_pos = pygame.mouse.get_pos()
 
         widgets.draw_panel(self.screen, self.HUD_PANEL_RECT)
+        hovered_dock = None
         for rect, icon, tooltip in self.dock_buttons:
-            self._draw_dock_button(rect, icon, tooltip, mouse_pos)
+            if self._draw_dock_button(rect, icon, mouse_pos):
+                hovered_dock = (rect, tooltip)
 
         stats_y = self.inv_button_rect.bottom + 10
         x = self.HUD_PANEL_RECT.x + 10
@@ -212,6 +215,10 @@ class GameRenderer:
 
         self._draw_equipped(player, top=stats_y + 30)
         self._draw_potion_bar(player)
+
+        # Last, so the panel's own contents can't cover it.
+        if hovered_dock is not None:
+            self._draw_tooltip(*hovered_dock)
 
         self.loading_indicator.update()
         if active_task_count > 0:
@@ -256,27 +263,33 @@ class GameRenderer:
         self._draw_buff_chips(player, bottom=rects[0].top - 6)
 
     def _draw_buff_chips(self, player: Player, bottom: int):
-        buffs = player.active_buffs()
-        if not buffs:
+        # (dot colour, rendered label) per chip: the potion buffs, then the post-death
+        # weakness, which is a timed effect like the rest and shouldn't be invisible.
+        chips = []
+        for effect, remaining, _magnitude in player.active_buffs():
+            text = f"{POTION_EFFECT_LABELS.get(effect, effect)} {int(remaining) + 1}s"
+            chips.append((c.Potions.COLORS[effect], c.Fonts.small.render(text, True, c.Colors.WHITE)))
+
+        shaken = player.shaken_remaining()
+        if shaken > 0:
+            text = f"Shaken {int(shaken) + 1}s"
+            chips.append((c.Colors.RED, c.Fonts.small.render(text, True, c.Colors.WHITE)))
+
+        if not chips:
             return
 
         pad = 8
         gap = 6
         dot_space = 16
-        labels = []
-        for effect, remaining, _magnitude in buffs:
-            text = f"{POTION_EFFECT_LABELS.get(effect, effect)} {int(remaining) + 1}s"
-            labels.append((effect, c.Fonts.small.render(text, True, c.Colors.WHITE)))
-
-        widths = [label.get_width() + pad * 2 + dot_space for _, label in labels]
-        height = labels[0][1].get_height() + 8
+        widths = [label.get_width() + pad * 2 + dot_space for _, label in chips]
+        height = chips[0][1].get_height() + 8
         x = c.Screen.ORIGIN_X - (sum(widths) + gap * (len(widths) - 1)) // 2
         y = bottom - height
 
-        for (effect, label), width in zip(labels, widths):
+        for (color, label), width in zip(chips, widths):
             rect = pygame.Rect(x, y, width, height)
             widgets.draw_panel(self.screen, rect)
-            pygame.draw.circle(self.screen, c.Potions.COLORS[effect], (rect.x + pad + 4, rect.centery), 5)
+            pygame.draw.circle(self.screen, color, (rect.x + pad + 4, rect.centery), 5)
             self.screen.blit(label, (rect.x + pad + dot_space, rect.centery - label.get_height() // 2))
             x += width + gap
 

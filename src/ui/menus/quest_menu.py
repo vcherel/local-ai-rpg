@@ -109,49 +109,63 @@ class QuestMenu(BaseMenu):
 
                 card_rect = pygame.Rect(self.padding, card_y, self.card_width, self.card_height)
                 widgets.draw_slot(menu_surface, card_rect, hovered=visible_index == self.hovered_quest_index)
-
-                text_x = self.padding + 15
-                text_y = card_y + 10
-
-                npc_text = c.Fonts.heading.render(quest.npc_name, True, c.Colors.YELLOW)
-                menu_surface.blit(npc_text, (text_x, text_y))
-
-                desc_y = text_y + 40
-                max_width = self.card_width - 30
-                wrapped_lines = widgets.wrap_text(quest.description, c.Fonts.text, max_width)
-
-                for line in wrapped_lines[:2]:  # Show max 2 lines
-                    desc_surface = c.Fonts.text.render(line, True, c.Colors.WHITE)
-                    menu_surface.blit(desc_surface, (text_x, desc_y))
-                    desc_y += 22
-
-                bottom_y = card_y + self.card_height - 50
-                if quest.quest_type == "kill_mob":
-                    item_text = f"Kill: {quest.target_monster_kind} ({quest.kills_done}/{quest.kill_count})"
-                elif quest.quest_type == "loot_mob":
-                    item_text = f"Loot: {quest.item_name} from a {quest.target_monster_kind}"
-                elif quest.quest_type == "recover_stolen":
-                    item_text = f"Recover: {quest.item_name} from {quest.thief_npc_name}"
-                elif quest.quest_type == "slay_boss":
-                    item_text = f"Slay: {quest.boss_name}" if quest.boss_name else "Slay: the boss"
-                else:
-                    item_text = f"Fetch: {quest.item_name}"
-                item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)
-                menu_surface.blit(item_surface, (text_x, bottom_y))
-
-                if quest.reward_item_name:
-                    reward_text = f"Reward: {quest.reward_item_name}"
-                    reward_color = c.Colors.YELLOW
-                else:
-                    reward_text = "Reward: coins"
-                    reward_color = c.Colors.WHITE
-                reward_surface = c.Fonts.button.render(reward_text, True, reward_color)
-                menu_surface.blit(reward_surface, (text_x, bottom_y + 22))
+                self._draw_card(menu_surface, quest, card_y)
 
             if quest_count > self.max_visible_quests:
                 self._draw_scroll_indicator(menu_surface, quest_count)
 
         self.screen.blit(menu_surface, (menu_x, menu_y))
+
+    def _objective_text(self, quest) -> str:
+        if quest.quest_type == "kill_mob":
+            return f"Kill: {quest.target_monster_kind} ({quest.kills_done}/{quest.kill_count})"
+        if quest.quest_type == "loot_mob":
+            return f"Loot: {quest.item_name} from a {quest.target_monster_kind}"
+        if quest.quest_type == "recover_stolen":
+            return f"Recover: {quest.item_name} from {quest.thief_npc_name}"
+        if quest.quest_type == "slay_boss":
+            return f"Slay: {quest.boss_name}" if quest.boss_name else "Slay: the boss"
+        return f"Fetch: {quest.item_name}"
+
+    def _draw_card(self, surface, quest, card_y: int):
+        """Name, description, objective and reward stacked in that order. The objective and
+        reward sit at the bottom of the card and the description takes whatever room is
+        left above them, so a long one is trimmed instead of running into them."""
+        text_x = self.padding + 15
+        max_width = self.card_width - 30
+        line_height = 22
+
+        npc_surface = c.Fonts.heading.render(quest.npc_name, True, c.Colors.YELLOW)
+        surface.blit(npc_surface, (text_x, card_y + 10))
+
+        objective_surface = c.Fonts.button.render(self._objective_text(quest), True, c.Colors.WHITE)
+        if quest.reward_item_name:
+            reward_surface = c.Fonts.button.render(f"Reward: {quest.reward_item_name}", True, c.Colors.YELLOW)
+        else:
+            reward_surface = c.Fonts.button.render("Reward: coins", True, c.Colors.WHITE)
+
+        block_height = objective_surface.get_height() + reward_surface.get_height() + 4
+        block_y = card_y + self.card_height - 10 - block_height
+
+        desc_y = card_y + 10 + npc_surface.get_height() + 6
+        max_lines = max(1, (block_y - 4 - desc_y) // line_height)
+        lines = widgets.wrap_text(quest.description, c.Fonts.text, max_width)
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            lines[-1] = self._ellipsize(lines[-1], max_width)
+
+        for line in lines:
+            surface.blit(c.Fonts.text.render(line, True, c.Colors.WHITE), (text_x, desc_y))
+            desc_y += line_height
+
+        surface.blit(objective_surface, (text_x, block_y))
+        surface.blit(reward_surface, (text_x, block_y + objective_surface.get_height() + 4))
+
+    def _ellipsize(self, text: str, max_width: int) -> str:
+        """Mark a truncated last line, dropping characters until the ellipsis fits."""
+        while text and c.Fonts.text.size(text + "...")[0] > max_width:
+            text = text[:-1]
+        return text.rstrip() + "..."
 
     def _draw_scroll_indicator(self, surface, quest_count):
         indicator_x = self.width - 12

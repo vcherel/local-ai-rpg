@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
 
 import pygame
 
 import core.constants as c
 from ui import widgets
 
-if TYPE_CHECKING:
-    from core.save import SaveSystem
-
 
 class MainMenu:
-    def __init__(self, screen, save_system):
+    def __init__(self, screen):
         self.screen: pygame.Surface = screen
-        self.save_system: SaveSystem = save_system
         self.active = True
 
         self.button_width = 300
@@ -32,10 +27,10 @@ class MainMenu:
 
     def handle_click(self, pos):
         if self.new_game_button.collidepoint(pos):
-            self.save_system.clear()
             self.active = False
             return "new_game"
         elif self.continue_button.collidepoint(pos):
+            self.active = False
             return "continue"
         return None
 
@@ -69,8 +64,9 @@ class MainMenu:
         self.draw_button(self.continue_button, "Continue", mouse_pos, pressed)
 
 
-def run_main_menu(screen, clock, save_system):
-    main_menu = MainMenu(screen, save_system)
+def run_main_menu(screen, clock) -> str:
+    """Blocking title screen. Returns the chosen action: "new_game" or "continue"."""
+    main_menu = MainMenu(screen)
 
     while main_menu.active:
         for event in pygame.event.get():
@@ -80,11 +76,12 @@ def run_main_menu(screen, clock, save_system):
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
-                    if main_menu.handle_click(event.pos):
-                        return True
+                    choice = main_menu.handle_click(event.pos)
+                    if choice:
+                        return choice
 
         main_menu.draw()
         pygame.display.flip()
         clock.tick(60)
 
-    return True
+    return "continue"
