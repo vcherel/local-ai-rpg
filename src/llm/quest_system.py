@@ -138,6 +138,7 @@ class QuestSystem:
                 item_name="",
                 quest_type="slay_boss",
                 target_monster_kind=boss.quest_tag,
+                boss_name=boss.display_name,
                 kill_count=1,
                 reward_item_name=reward_item_name,
             )

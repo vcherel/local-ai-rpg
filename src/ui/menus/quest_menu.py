@@ -132,6 +132,8 @@ class QuestMenu(BaseMenu):
                     item_text = f"Loot: {quest.item_name} from a {quest.target_monster_kind}"
                 elif quest.quest_type == "recover_stolen":
                     item_text = f"Recover: {quest.item_name} from {quest.thief_npc_name}"
+                elif quest.quest_type == "slay_boss":
+                    item_text = f"Slay: {quest.boss_name}" if quest.boss_name else "Slay: the boss"
                 else:
                     item_text = f"Fetch: {quest.item_name}"
                 item_surface = c.Fonts.button.render(item_text, True, c.Colors.WHITE)

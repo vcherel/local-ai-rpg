@@ -22,6 +22,10 @@ class Quest:
     # "slay_boss" (defeat the boss whose quest_tag equals target_monster_kind).
     quest_type: str = "fetch"
     target_monster_kind: str = ""
+    # Display name of a slay_boss target. target_monster_kind stays the internal spawn
+    # tag that links quest to boss; this is what the UI shows, refreshed once the boss's
+    # name comes back from the LLM.
+    boss_name: str = ""
     kill_count: int = 0
     kills_done: int = 0
     thief_npc_name: str = ""
@@ -37,6 +41,7 @@ class Quest:
             "reward_item_name": self.reward_item_name,
             "quest_type": self.quest_type,
             "target_monster_kind": self.target_monster_kind,
+            "boss_name": self.boss_name,
             "kill_count": self.kill_count,
             "kills_done": self.kills_done,
             "thief_npc_name": self.thief_npc_name,
@@ -54,6 +59,7 @@ class Quest:
             reward_item_name=data["reward_item_name"],
             quest_type=data.get("quest_type", "fetch"),
             target_monster_kind=data.get("target_monster_kind", ""),
+            boss_name=data.get("boss_name", ""),
             kill_count=data.get("kill_count", 0),
             kills_done=data.get("kills_done", 0),
             thief_npc_name=data.get("thief_npc_name", ""),
