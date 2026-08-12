@@ -20,7 +20,7 @@ def _progress_line(quest: "Quest") -> str:
     if quest.quest_type == "recover_stolen":
         return f"Recover {quest.item_name} from {quest.thief_npc_name}"
     if quest.quest_type == "slay_boss":
-        return f"Slay the {quest.target_monster_kind}"
+        return f"Slay {quest.boss_name}" if quest.boss_name else "Slay the boss"
     return f"Fetch: {quest.item_name}"
 
 
