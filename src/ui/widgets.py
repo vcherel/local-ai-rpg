@@ -78,17 +78,25 @@ def draw_slot(
 
 def wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
     """Greedy word-wrap: break `text` into lines that each fit within `max_width` px of `font`."""
-    words = text.split()
     lines = []
     current_line = []
-    for word in words:
+    for word in text.split():
         candidate = " ".join(current_line + [word])
         if font.size(candidate)[0] <= max_width:
             current_line.append(word)
-        else:
-            if current_line:
-                lines.append(" ".join(current_line))
-            current_line = [word]
+            continue
+        if current_line:
+            lines.append(" ".join(current_line))
+            current_line = []
+        # A single word too long for a line (an unspaced run from the LLM) would otherwise
+        # be laid down as one line running off the panel, so break it on characters.
+        while font.size(word)[0] > max_width:
+            cut = len(word) - 1
+            while cut > 1 and font.size(word[:cut])[0] > max_width:
+                cut -= 1
+            lines.append(word[:cut])
+            word = word[cut:]
+        current_line = [word]
     if current_line:
         lines.append(" ".join(current_line))
     return lines

@@ -798,6 +798,9 @@ class Hyperparameters:
     GPU_LAYERS: int = -1
     CONTEXT_SIZE: int = 8192
     MAX_TOKENS: int = 200
+    # NPC replies are asked to be one short sentence; capping them keeps a rambling
+    # answer from outgrowing the dialogue box and from stalling the queue for everyone.
+    DIALOGUE_MAX_TOKENS: int = 120
     TEMPERATURE: float = 0.8
     REPETITION_PENALTY: float = 1.2
 

@@ -111,12 +111,16 @@ class LLMRequestQueue:
             raise Exception(f"LLM error: {result}")
         return result
 
-    def generate_response_stream(self, prompt: str, system_prompt: str, category: str):
+    def generate_response_stream(
+        self, prompt: str, system_prompt: str, category: str, max_tokens: int = None, stop: list = None
+    ):
         result_queue = Queue()
         stream_queue = Queue()
 
         def request_func():
-            for partial in generate_response_stream_internal(prompt, system_prompt, category):
+            for partial in generate_response_stream_internal(
+                prompt, system_prompt, category, max_tokens=max_tokens, stop=stop
+            ):
                 stream_queue.put(("chunk", partial))
             stream_queue.put(("done", None))
             return None
@@ -172,8 +176,8 @@ def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=Fa
     return get_llm_queue().generate_response(prompt, system_prompt, log, max_tokens=max_tokens, raw=raw)
 
 
-def generate_response_stream_queued(prompt, system_prompt, log):
-    yield from get_llm_queue().generate_response_stream(prompt, system_prompt, log)
+def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None, stop=None):
+    yield from get_llm_queue().generate_response_stream(prompt, system_prompt, log, max_tokens=max_tokens, stop=stop)
 
 
 def generate_response_internal(prompt, system_prompt, category, max_tokens=None, raw=False):
@@ -217,31 +221,39 @@ def generate_response_internal(prompt, system_prompt, category, max_tokens=None,
     return generated_text
 
 
-def generate_response_stream_internal(prompt, system_prompt, category):
+def generate_response_stream_internal(prompt, system_prompt, category, max_tokens=None, stop=None):
     # See generate_response_internal: skip reset() to reuse the cached prefix.
+    max_tokens = max_tokens or c.Hyperparameters.MAX_TOKENS
     start = time.monotonic()
     stream = llm(
         prompt=_format_prompt(prompt, system_prompt),
-        max_tokens=c.Hyperparameters.MAX_TOKENS,
+        max_tokens=max_tokens,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
         stream=True,
-        stop=["<|im_end|>", "<|im_start|>"],
+        stop=["<|im_end|>", "<|im_start|>"] + list(stop or []),
     )
 
     accumulated_text = ""
-    started = False
     usage = {}
     for output in stream:
         new_token = output.get("choices", [{}])[0].get("text", "")
         usage = output.get("usage", usage)
 
-        if new_token:
-            started = True
-        if started and new_token == "\n":
-            break
+        # Skip the blank line the model sometimes opens with, so the first real token
+        # isn't preceded by whitespace that the newline cut below would trip on.
+        if not accumulated_text.strip() and not new_token.strip():
+            continue
 
         accumulated_text += new_token
+        # Everything past the first line break is the model carrying on past its reply,
+        # often writing the player's next turn. Cut it here rather than trusting the
+        # tokenizer to hand us a token that is exactly "\n".
+        if "\n" in accumulated_text:
+            accumulated_text = accumulated_text.split("\n", 1)[0]
+            yield _strip_unsupported_glyphs(accumulated_text).translate(CHAR_FILTER)
+            break
+
         yield _strip_unsupported_glyphs(accumulated_text).translate(CHAR_FILTER)
 
     duration = time.monotonic() - start
@@ -253,7 +265,7 @@ def generate_response_stream_internal(prompt, system_prompt, category):
         response=accumulated_text.translate(CHAR_FILTER),
         duration=duration,
         model_path=llm.model_path,
-        max_tokens=c.Hyperparameters.MAX_TOKENS,
+        max_tokens=max_tokens,
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
         streaming=True,
