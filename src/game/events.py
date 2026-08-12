@@ -127,7 +127,7 @@ class EventSystem:
         self.wandering_merchant = npc
         self.merchant_timer = c.Events.MERCHANT_DURATION_MS
         self.notify("A traveling merchant has set up camp nearby", c.Colors.MERCHANT)
-        threading.Thread(target=self.world.generate_merchant_shop, args=(npc,), daemon=True).start()
+        self.world.start_shop_generation()
 
     def _tick_merchant(self, dt):
         if self.wandering_merchant is None:
