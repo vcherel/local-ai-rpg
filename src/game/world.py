@@ -67,13 +67,20 @@ class World:
         self.events = EventSystem(self, notify, show_rumor)
         self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
 
+        # Generation guards: a merchant with no shop yet, or an unnamed landmark, would
+        # otherwise be picked up again by every path that checks, queueing a duplicate
+        # call while the first one is still in flight.
+        self._shops_generating = False
+        self._landmark_naming = False
+
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
             self._restore(saved_npcs)
+            # Fills in quests saved before boss names were tracked, and quests whose boss
+            # was still unnamed when the game was last closed.
+            self.sync_quest_boss_names()
             if self.context:
-                for npc in self.npcs:
-                    if npc.is_merchant and not npc.shop_ready:
-                        threading.Thread(target=self.generate_merchant_shop, args=(npc,), daemon=True).start()
+                self.start_shop_generation()
         else:
             self.buildings = generate_buildings()
             set_active_buildings(self.buildings)
@@ -233,27 +240,29 @@ class World:
 
         self.persist_world()
 
-        for npc in self.npcs:
-            if npc.is_merchant:
-                threading.Thread(target=self.generate_merchant_shop, args=(npc,), daemon=True).start()
+        self.start_shop_generation()
         for boss in self.bosses:
             threading.Thread(target=self._generate_boss_identity, args=(boss, None), daemon=True).start()
         self._start_landmark_naming()
 
     def _start_landmark_naming(self):
         landmark = next((b for b in self.buildings if b.kind == "landmark"), None)
-        if landmark is None or landmark.name:
+        if landmark is None or landmark.name or self._landmark_naming:
             return
+        self._landmark_naming = True
         threading.Thread(target=self._generate_landmark_name, args=(landmark,), daemon=True).start()
 
     def _generate_landmark_name(self, landmark: Building):
         system_prompt = "You name landmarks for an RPG world. Reply with the name only, no quotes, no punctuation."
         prompt = f"{self.context}\nGive a short name, 2 to 4 words, for the ancient ruined landmark of this world."
-        name = generate_response_queued(prompt, system_prompt, "Landmark naming") or ""
-        name = name.strip().strip('"').strip(".")
-        if name:
-            landmark.name = " ".join(name.split()[:5])
-            self.persist_world()
+        try:
+            name = generate_response_queued(prompt, system_prompt, "Landmark naming") or ""
+            name = name.strip().strip('"').strip(".")
+            if name:
+                landmark.name = " ".join(name.split()[:5])
+                self.persist_world()
+        finally:
+            self._landmark_naming = False
 
     # ------------------------------------------------------------------ bosses
 
@@ -299,9 +308,26 @@ class World:
         prompt = f"World: {self.context}\nName {boss.template.flavor}. 2 to 5 words."
         text = generate_response_queued(prompt, system_prompt, "Boss naming") or ""
         boss.set_identity(text)
+        self.sync_quest_boss_names()
         self.persist_world()
         if announce and self.notify:
             self.notify(announce.format(name=boss.name), c.Colors.BOSS_BAR)
+
+    def sync_quest_boss_names(self):
+        """Copy each boss's display name onto the slay_boss quest hunting it.
+
+        The quest links to its boss by `target_monster_kind` holding the internal spawn
+        tag ("quest_boss_1234"), which is never fit to show; naming happens later on a
+        background thread, so the quest picks the real name up from here.
+        """
+        by_tag = {boss.quest_tag: boss for boss in self.bosses if boss.quest_tag}
+        for npc in self.npcs:
+            quest = npc.quest
+            if quest is None or quest.quest_type != "slay_boss":
+                continue
+            boss = by_tag.get(quest.target_monster_kind)
+            if boss is not None:
+                quest.boss_name = boss.display_name
 
     def _maybe_spawn_roaming_boss(self, player: Player):
         if len(self.bosses) >= c.Boss.MAX_ACTIVE:
@@ -320,23 +346,36 @@ class World:
                 self.spawn_boss(x, y, announce="A roaming terror, {name}, prowls the wilds")
                 return
 
-    def generate_merchant_shop(self, merchant: NPC):
-        from llm.merchant_system import generate_shop_inventory
+    def start_shop_generation(self):
+        """Stock every merchant still waiting for one, in a single background call."""
+        merchants = [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready]
+        if not merchants or not self.context or self._shops_generating:
+            return
+        self._shops_generating = True
+        threading.Thread(target=self._generate_merchant_shops, args=(merchants,), daemon=True).start()
 
-        shop_data = generate_shop_inventory(self.context)
-        if not shop_data:
-            shop_data = generate_shop_inventory(self.context)
-        # Guaranteed regardless of what the LLM comes up with, so ranged combat
-        # doesn't depend entirely on loot RNG for its ammo, nor healing on finding a flask.
-        shop_data += [
+    def _generate_merchant_shops(self, merchants: list):
+        from llm.merchant_system import generate_shop_inventories
+
+        try:
+            stocks = generate_shop_inventories(self.context, len(merchants))
+            for merchant, stock in zip(merchants, stocks):
+                merchant.set_shop(stock + self._shop_staples())
+        finally:
+            self._shops_generating = False
+        self.persist_world()
+        # A merchant that showed up mid-batch (the wandering merchant event) was skipped
+        # by the guard, so give it its own pass now that this one is done.
+        self.start_shop_generation()
+
+    @staticmethod
+    def _shop_staples() -> list:
+        """Stocked in every shop regardless of what the LLM comes up with, so ranged combat
+        doesn't depend entirely on loot RNG for its ammo, nor healing on finding a flask."""
+        return [
             {"name": "Arrows", "item_type": "ammo", "rarity": "common", "price": 30, "quantity": AMMO_BUNDLE}
             for _ in range(2)
-        ]
-        shop_data += [
-            {"name": "Healing Potion", "item_type": "potion", "rarity": "common", "price": 18} for _ in range(2)
-        ]
-        merchant.set_shop(shop_data)
-        self.persist_world()
+        ] + [{"name": "Healing Potion", "item_type": "potion", "rarity": "common", "price": 18} for _ in range(2)]
 
     def talk_npc(self, player: Player):
         if self.context is None:

@@ -47,6 +47,33 @@ def _roll_loot_item(x, y, rarity: str, ammo_range: tuple[int, int]) -> Item:
     return Item(x, y, name, item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
 
 
+# Asking price before the rarity multiplier, per item type, matching the 5 to 80 range
+# the LLM is asked for so a fallback shop doesn't price differently from a generated one.
+SHOP_BASE_PRICES = {"weapon": 30, "armor": 28, "accessory": 25, "ammo": 25, "potion": 15, "misc": 20}
+
+
+def roll_shop_stock(count: int) -> list[dict]:
+    """Roll a merchant's stock locally, used when the LLM's list for that shop is unusable.
+
+    Returns entries in the shape NPC.set_shop expects, so a fallback shop is stocked with
+    the same item tables the world drops as loot instead of leaving the merchant empty.
+    """
+    stock = []
+    for _ in range(count):
+        item = _roll_loot_item(0, 0, roll_rarity(), (10, 20))
+        base = SHOP_BASE_PRICES.get(item.item_type, 20)
+        stock.append(
+            {
+                "name": item.name,
+                "item_type": item.item_type,
+                "rarity": item.rarity,
+                "price": round(base * random.uniform(0.7, 1.3)),
+                "quantity": item.quantity,
+            }
+        )
+    return stock
+
+
 def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
     """Roll a lootbox's contents: coins plus a chance at a weapon, armor, accessory, ammo or potion.
 

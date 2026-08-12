@@ -50,43 +50,50 @@ class ConversationHistory:
         return conversation_text
 
 
-def parse_shop_inventory(response: str) -> list:
-    try:
-        response = response.strip()
-        # Strip markdown code fences
-        response = re.sub(r"```(?:json)?\s*|\s*```", "", response).strip()
-        match = re.search(r"\[.*\]", response, re.DOTALL)
-        if not match:
-            return []
-        json_str = match.group(0)
-        # Fix common small-model JSON deviations
-        json_str = re.sub(r":\s*True\b", ": true", json_str)
-        json_str = re.sub(r":\s*False\b", ": false", json_str)
-        items = json.loads(json_str)
-        result = []
-        for item in items:
-            if not isinstance(item, dict) or not item.get("name"):
-                continue
-            item_type = str(item.get("item_type", "")).strip().lower()
-            # An invented type ("consumable", "drink") is dropped so the shop falls back
-            # to reading the type out of the item's name instead.
-            if item_type not in ("weapon", "armor", "accessory", "ammo", "potion", "misc"):
-                item_type = ""
-            rarity = str(item.get("rarity", "")).strip().lower()
-            if rarity not in (tier.name for tier in c.Rarity.TIERS):
-                rarity = ""
-            result.append(
-                {
-                    "name": str(item["name"]),
-                    "item_type": item_type,
-                    "rarity": rarity,
-                    "price": max(1, int(item.get("price", 10))),
-                }
-            )
-        return result
-    except Exception as e:
-        print(f"Failed to parse shop inventory: {e}, response: {response}")
-        return []
+def parse_shop_inventories(response: str, shop_count: int) -> list:
+    """Read the compact stock list of every shop out of one response.
+
+    Each line is `shop|name|type|rarity|price`, one item per line, the leading number
+    saying which shop it belongs to. A line that doesn't fit is skipped rather than
+    failing the whole batch, so one malformed row costs one item, not a second call.
+    Returns one list of item entries per shop, in shop order (some may be empty).
+    """
+    stocks = [[] for _ in range(shop_count)]
+    # Strip markdown code fences and any stray bullet/numbering the model adds.
+    response = re.sub(r"```(?:\w+)?\s*|\s*```", "", response or "").strip()
+
+    for line in response.splitlines():
+        fields = [field.strip() for field in line.strip().strip("|").split("|")]
+        if len(fields) != 5:
+            continue
+        shop_field, name, item_type, rarity, price_field = fields
+        shop_match = re.search(r"\d+", shop_field)
+        if not shop_match or not name:
+            continue
+        index = int(shop_match.group(0)) - 1
+        if not 0 <= index < shop_count:
+            continue
+
+        item_type = item_type.lower()
+        # An invented type ("consumable", "drink") is dropped so the shop falls back
+        # to reading the type out of the item's name instead.
+        if item_type not in ("weapon", "armor", "accessory", "ammo", "potion", "misc"):
+            item_type = ""
+        rarity = rarity.lower()
+        if rarity not in (tier.name for tier in c.Rarity.TIERS):
+            rarity = ""
+        price_match = re.search(r"\d+", price_field)
+
+        stocks[index].append(
+            {
+                "name": name.strip('"').strip("*"),
+                "item_type": item_type,
+                "rarity": rarity,
+                "price": max(1, int(price_match.group(0))) if price_match else 10,
+            }
+        )
+
+    return stocks
 
 
 def parse_response_quest_analysis(response):
