@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,26 @@ if TYPE_CHECKING:
 
 END_MARKER = "[END]"
 
+# The model is asked for "[END]" but writes it however it likes: bare END, on its own
+# line, bolded, parenthesised, "[end of conversation]". Bracketed forms match in any
+# case; a bare END must be uppercase so an NPC saying "we must end this" isn't a goodbye.
+END_RE = re.compile(
+    # [END], (end of conversation), **[END]**, in any case
+    r"(?i:[\*\s]*[\[\(]\s*end\b[^\]\)]*[\]\)]?[\*\s]*)"
+    # A bare END, uppercase and closing the reply: an all-caps word mid-sentence
+    # ("I will END this curse") is emphasis, not a goodbye.
+    r"|(?<=[.!?…\"'\)\n])\s*\*{0,2}\bEND\b\*{0,2}[\s.]*$"
+)
+
+# Sentence enders used to trim a reply that ran into the token cap mid-sentence.
+SENTENCE_END_RE = re.compile(r"[.!?…]['\"]?(?=\s|$)")
+
+# Stops handed to llama for dialogue: a reply is one turn, so the moment the model
+# starts writing the player's turn for them, generation is done. A newline is not a stop
+# here on purpose: the model sometimes opens with one, which would cut the reply to
+# nothing. The stream itself drops everything past the first line break instead.
+DIALOGUE_STOPS = ["Player:", "player:"]
+
 
 def _ware_effect(item) -> str:
     """How a shop item is described to the merchant's LLM prompt: what it actually does."""
@@ -39,6 +60,20 @@ def _trim_partial_marker(text: str) -> str:
         if upper.endswith(END_MARKER[:length]):
             return text[:-length]
     return text
+
+
+def _trim_to_sentence(text: str) -> str:
+    """Cut a reply back to its last finished sentence.
+
+    A reply that hits the token cap stops mid-word; showing half a sentence reads worse
+    than showing one sentence less. Text with no sentence break at all is left alone
+    rather than blanked.
+    """
+    text = text.strip()
+    if not text or text[-1] in ".!?…\"'":
+        return text
+    ends = list(SENTENCE_END_RE.finditer(text))
+    return text[: ends[-1].end()].strip() if ends else text
 
 
 class DialogueManager:
@@ -189,11 +224,21 @@ class DialogueManager:
         self.pending_quest_analysis = False
 
         initial_prompt = "Player: Hi!\nNPC:"
-        self.generator = generate_response_stream_queued(initial_prompt, self.system_prompt, "First message")
+        self.generator = generate_response_stream_queued(
+            initial_prompt,
+            self.system_prompt,
+            "First message",
+            max_tokens=c.Hyperparameters.DIALOGUE_MAX_TOKENS,
+            stop=DIALOGUE_STOPS,
+        )
 
     def handle_event(self, event, npc_name_generator: NPCNameGenerator):
         if not self.active:
             return False
+
+        if event.type == pygame.MOUSEWHEEL:
+            self.handle_scroll(event.y)
+            return True
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if (
@@ -241,15 +286,15 @@ class DialogueManager:
     def handle_scroll(self, direction: int):
         if not self.active:
             return
-        self.ui.handle_key_scroll(direction, self.conversation, self.current_npc.name)
+        self.ui.scroll(direction, self.conversation, self.current_npc.name)
 
     def update(self):
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
-                marker_pos = partial.upper().find(END_MARKER)
-                if marker_pos != -1:
-                    stripped = partial[:marker_pos].rstrip()
+                match = END_RE.search(partial)
+                if match:
+                    stripped = partial[: match.start()].rstrip()
                     # The model sometimes tags [END] on the opening greeting, or right
                     # after asking the player a question, both premature. Drop the tag
                     # but keep the conversation open in those cases.
@@ -263,15 +308,29 @@ class DialogueManager:
                 self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
+                was_first_message = self._is_first_message
                 self._is_first_message = False
 
-                last_msg = self.conversation.get_last_message()
+                content = self.conversation.get_last_message()["content"]
 
                 # The model sometimes prefixes its reply with a speaker label; drop it
-                if ":" in last_msg["content"]:
-                    cleaned_content = last_msg["content"].split(":", 1)[-1].strip()
+                if ":" in content:
+                    cleaned_content = content.split(":", 1)[-1].strip()
                     if len(cleaned_content) <= 25:
-                        self.conversation.update_last_assistant_message(cleaned_content)
+                        content = cleaned_content
+
+                # Second pass on the finished text: catches an end marker that only
+                # became recognisable once the reply was complete, and trims a reply the
+                # token cap cut off mid-sentence.
+                match = END_RE.search(content)
+                if match:
+                    content = content[: match.start()].rstrip()
+                    if not was_first_message and not content.endswith("?"):
+                        self.conversation_ended = True
+                content = _trim_to_sentence(content)
+
+                self.conversation.update_last_assistant_message(content)
+                self.ui.auto_scroll(self.conversation, self.current_npc.name)
 
     def close(self):
         if not self.active:
@@ -327,7 +386,7 @@ class DialogueManager:
         self.ui.draw(self.current_npc.name, self.conversation, self.conversation_ended)
 
         if self.current_npc.is_merchant and self.generator is None:
-            box_height = 300
+            box_height = self.ui.BOX_HEIGHT
             box_y = c.Screen.HEIGHT - box_height - 25
             btn_w, btn_h = 130, 30
             btn_x = c.Screen.WIDTH - 40 - btn_w
@@ -358,7 +417,11 @@ class DialogueManager:
         conversation_text = self.conversation.format_for_prompt()
 
         self.generator = generate_response_stream_queued(
-            conversation_text + "\nNPC:", self.system_prompt, "Continuing conversation"
+            conversation_text + "\nNPC:",
+            self.system_prompt,
+            "Continuing conversation",
+            max_tokens=c.Hyperparameters.DIALOGUE_MAX_TOKENS,
+            stop=DIALOGUE_STOPS,
         )
 
     def _execute_quest_analysis(self, npc: NPC, conversation_text: str, log_path):

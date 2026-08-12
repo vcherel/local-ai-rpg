@@ -12,11 +12,17 @@ if TYPE_CHECKING:
 
 
 class ConversationUI:
+    # Box layout: the name header takes the top 55px, the bottom 92px hold the input box
+    # and the strip the "more below" hint sits in, and the rest is the message area.
+    BOX_HEIGHT = 420
+    HEADER_HEIGHT = 55
+    FOOTER_HEIGHT = 92
+
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
 
         self.scroll_offset = 0
-        self.max_visible_height = 170
+        self.max_visible_height = self.BOX_HEIGHT - self.HEADER_HEIGHT - self.FOOTER_HEIGHT
         self.line_height = 26
 
         self.user_input = ""
@@ -32,22 +38,22 @@ class ConversationUI:
             self.user_input += event.unicode
         return None
 
-    def handle_key_scroll(self, direction: int, history: ConversationHistory, npc_name: str):
+    def scroll(self, direction: int, history: ConversationHistory, npc_name: str):
+        """Move the view by one line. Positive direction scrolls up, towards older text."""
         scroll_amount = -self.line_height * direction
-        total_height = self._calculate_total_height(history.messages, npc_name)
-        max_scroll = max(0, total_height - self.max_visible_height)
+        max_scroll = self._max_scroll(history, npc_name)
         self.scroll_offset = max(0, min(self.scroll_offset + scroll_amount, max_scroll))
 
     def auto_scroll(self, history: ConversationHistory, npc_name: str):
-        total_height = self._calculate_total_height(history.messages, npc_name)
-        if total_height > self.max_visible_height:
-            self.scroll_offset = total_height - self.max_visible_height
-        else:
-            self.scroll_offset = 0
+        self.scroll_offset = self._max_scroll(history, npc_name)
 
     def reset(self):
         self.user_input = ""
         self.scroll_offset = 0
+
+    def _max_scroll(self, history: ConversationHistory, npc_name: str) -> int:
+        total_height = self._calculate_total_height(history.messages, npc_name)
+        return max(0, total_height - self.max_visible_height)
 
     def _calculate_total_height(self, messages: list, npc_name: str) -> int:
         total_height = 0
@@ -58,7 +64,7 @@ class ConversationUI:
         return total_height
 
     def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False):
-        box_height = 300
+        box_height = self.BOX_HEIGHT
         box_y = c.Screen.HEIGHT - box_height - 25
 
         pygame.draw.rect(self.screen, c.Colors.MENU_BACKGROUND, (10, box_y, c.Screen.WIDTH - 20, box_height))
@@ -75,7 +81,7 @@ class ConversationUI:
             self._draw_input_box(self.screen, box_y, box_height)
 
     def _draw_messages(self, screen: pygame.Surface, box_y: int, npc_name: str, messages: list):
-        message_area_y = box_y + 55
+        message_area_y = box_y + self.HEADER_HEIGHT
         clip_rect = pygame.Rect(20, message_area_y, c.Screen.WIDTH - 40, self.max_visible_height)
         screen.set_clip(clip_rect)
 
@@ -98,10 +104,16 @@ class ConversationUI:
 
         screen.set_clip(None)
 
-        if total_height > self.max_visible_height and self.scroll_offset < total_height - self.max_visible_height:
-            scroll_text = "↑ Scroll to see more"
-            scroll_surface = c.Fonts.text.render(scroll_text, True, c.Colors.YELLOW)
-            screen.blit(scroll_surface, (c.Screen.WIDTH - 250, message_area_y - 35))
+        # Hints for both directions: scrolled down to the newest line, the earlier text is
+        # still up there with nothing on screen saying so.
+        max_scroll = max(0, total_height - self.max_visible_height)
+        if self.scroll_offset > 0:
+            hint = c.Fonts.text.render("^ earlier (up arrow / wheel)", True, c.Colors.YELLOW)
+            # Stops short of the right edge: a merchant's Shop button sits in that corner.
+            screen.blit(hint, (c.Screen.WIDTH - 200 - hint.get_width(), message_area_y - 30))
+        if self.scroll_offset < max_scroll:
+            hint = c.Fonts.text.render("v more (down arrow / wheel)", True, c.Colors.YELLOW)
+            screen.blit(hint, (c.Screen.WIDTH - 30 - hint.get_width(), message_area_y + self.max_visible_height + 2))
 
     def _draw_input_box(self, screen: pygame.Surface, box_y: int, box_height: int):
         input_y = box_y + box_height - 60
