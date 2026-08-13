@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class GameRenderer:
     # Everything below sits inside one permanent panel in the top left corner:
     # a row of icon buttons, then coin/item/quest counters, then equipped gear.
-    HUD_PANEL_RECT = pygame.Rect(8, 8, 300, 170)
+    HUD_PANEL_RECT = pygame.Rect(8, 8, 370, 170)
     HUD_ICON_SIZE = 40
     HUD_ICON_GAP = 8
 
@@ -256,6 +256,7 @@ class GameRenderer:
 
         self._draw_equipped(player, top=stats_y + 30)
         self._draw_potion_bar(player)
+        self._draw_guard_bar(player)
 
         # Last, so the panel's own contents can't cover it.
         if hovered_dock is not None:
@@ -302,6 +303,27 @@ class GameRenderer:
             self.screen.blit(key_label, (rect.x + 4, rect.y + 2))
 
         self._draw_buff_chips(player, bottom=rects[0].top - 6)
+
+    def _draw_guard_bar(self, player: Player):
+        """The shield's guard, drawn just under the health bar and only while a shield is
+        carried. It brightens while the block is up and turns red once the guard breaks,
+        so the player can see what holding block is costing them."""
+        if not player.has_shield():
+            return
+        width, height = 400, 10
+        rect = pygame.Rect(0, 0, width, height)
+        rect.midtop = (c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + 360 + 30 + 6)
+
+        broken = player.guard_broken()
+        fill = (200, 70, 60) if broken else ((150, 210, 255) if player.blocking else (90, 130, 175))
+        pygame.draw.rect(self.screen, c.Colors.SLOT_BG, rect)
+        ratio = max(0.0, player.guard / c.Shield.GUARD_MAX)
+        pygame.draw.rect(self.screen, fill, (rect.x, rect.y, round(rect.width * ratio), rect.height))
+        pygame.draw.rect(self.screen, c.Colors.SLOT_BORDER, rect, 2)
+
+        if broken:
+            label = c.Fonts.small.render("Guard broken", True, (255, 150, 140))
+            self.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 2))
 
     def _draw_buff_chips(self, player: Player, bottom: int):
         # (dot colour, rendered label) per chip: the potion buffs, then the post-death

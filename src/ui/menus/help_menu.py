@@ -9,6 +9,7 @@ CONTROLS = [
     ("Shift", "Run"),
     ("Left Click", "Attack with melee weapon"),
     ("Right Click", "Fire equipped bow/staff"),
+    ("Space", "Hold to raise your shield and block"),
     ("E", "Interact, talk, pick up, rest at a camp"),
     ("B", "Trade with a merchant you are next to"),
     ("F", "Equip the last picked-up upgrade"),

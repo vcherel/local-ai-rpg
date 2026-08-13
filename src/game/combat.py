@@ -17,6 +17,7 @@ from game.entities.boss import Boss
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
+from game.entities.entities import Entity
 from game.entities.items import Item, rarity_color, rarity_tier
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
@@ -97,8 +98,19 @@ class WorldCombat:
                 self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
             return
 
-        # Wildlife is struck before villagers, so hunting a rabbit in a crowd doesn't start
-        # a brawl, and after monsters, so a fox never soaks a swing meant for a wolf.
+        # A villager already swinging at the player counts as a monster for targeting: they
+        # come before wildlife, so a rabbit can't soak the blow meant for the mob.
+        angry = [npc for npc in self.npcs if npc.hostile]
+        angry_targets = in_reach(angry, lambda n: c.Entities.NPC_SIZE)
+        if angry_targets:
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            for npc in angry_targets:
+                self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
+            return
+
+        # Wildlife is struck before peaceful villagers, so hunting a rabbit in a crowd
+        # doesn't start a brawl, and after monsters, so a fox never soaks a swing meant
+        # for a wolf.
         critter_targets = in_reach(self.critters, lambda cr: cr.hit_radius * 2)
         if critter_targets:
             player.stats.train("strength", c.Stats.XP_PER_HIT)
@@ -113,14 +125,21 @@ class WorldCombat:
                 self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
             return
 
-        # A swing that reaches a shop/tavern crate smashes it instead.
+        # Nothing living in range: the swing goes into the scenery. Props take the weapon's
+        # damage rather than breaking on contact, so a heavy hammer clears a barrel in one
+        # blow and a dagger has to work at it.
+        prop_damage = max(1, int(round(base_damage * arch.damage_mult)))
+
         for building in self.buildings_around(*pos):
-            crate = building.break_crate_at(pos, hit_radius)
-            if crate is not None:
-                self._break_crate(player, building, crate)
+            hit = building.damage_crate_at(pos, hit_radius, prop_damage)
+            if hit is not None:
+                crate, destroyed = hit
+                if destroyed:
+                    self._break_crate(player, building, crate)
+                else:
+                    self._prop_chip(crate.centerx, crate.centery, (150, 110, 70), "crate_break")
                 return
 
-        # A swing that reaches an unlooted wilderness ruins pile or camp cache smashes it.
         poi_hit = next(
             (
                 p
@@ -130,21 +149,20 @@ class WorldCombat:
             None,
         )
         if poi_hit is not None:
-            self._break_poi(player, poi_hit)
+            self._hit_poi(player, poi_hit, prop_damage)
             return
 
-        # Nothing living in range: a swing that reaches a barrel/pot/bush smashes it instead.
         breakable = next(
             (b for b in self.breakables if b.distance_to_point(pos) < hit_radius + c.Breakables.HIT_RADIUS), None
         )
         if breakable is not None:
-            self._break_breakable(player, breakable)
+            self._hit_breakable(player, breakable, prop_damage)
             return
 
         window_hit = self._find_window_in_reach(pos, hit_radius)
         if window_hit is not None:
             building, idx, window = window_hit
-            self._break_window(building, idx, window)
+            self._hit_window(building, idx, window, prop_damage)
 
     @staticmethod
     def _targets_in_reach(
@@ -176,6 +194,24 @@ class WorldCombat:
                 if dist < hit_radius + c.Buildings.WINDOW_HIT_RADIUS and (best is None or dist < best[0]):
                     best = (dist, building, idx, window)
         return None if best is None else (best[1], best[2], best[3])
+
+    @staticmethod
+    def _prop_chip(x, y, color, sound: str = "hit"):
+        """A blow that damaged a prop without finishing it: a small puff and a knock, so
+        hitting something breakable always reads as progress even when it holds."""
+        get_shake().add(c.Combat.DECOR_BREAK_SHAKE * 0.5)
+        play_sound(sound)
+        get_particles().spawn_burst(x, y, color, count=5, speed=4, life=280, size=3, gravity=0.4, shape="shard")
+
+    def _hit_window(self, building: Building, idx: int, window, damage: int):
+        """Crack a window, and shatter it once it has taken enough."""
+        remaining = building.window_hp.get(idx, c.Buildings.WINDOW_HP) - damage
+        if remaining > 0:
+            building.window_hp[idx] = remaining
+            self._prop_chip(window.centerx, window.centery, (210, 230, 240), "glass_break")
+            return
+        building.window_hp.pop(idx, None)
+        self._break_window(building, idx, window)
 
     def _break_window(self, building: Building, idx: int, window):
         """Shatter a window: no loot, just a satisfying crash."""
@@ -370,7 +406,7 @@ class WorldCombat:
         """Smash a shop or tavern crate: juice, a few coins, and a small chance of a dropped item.
 
         The crate has already been removed from the interior's collision set by
-        break_crate_at; here we handle the feedback and the loot. Coins are credited
+        damage_crate_at; here we handle the feedback and the loot. Coins are credited
         straight away; an item (if any) pops out onto the floor for the player to walk
         over and collect, rather than jumping straight into the inventory.
         """
@@ -380,23 +416,44 @@ class WorldCombat:
             player, crate.centerx, crate.centery, coins, loot_item, "Crate smashed", building.dropped_items.append
         )
 
+    def _hit_poi(self, player: Player, poi: PointOfInterest, damage: int):
+        """Work at a ruins pile or a camp cache. It takes several blows to force one open,
+        which is why the guard check comes first: nobody chips away at a strongbox with
+        three bandits still standing over it."""
+        if poi.kind == "camp" and not self.camp_is_clear(poi):
+            if self.notify:
+                self.notify("The camp is still guarded", c.Colors.MUTED)
+            return
+        poi.cache_hp -= damage
+        if poi.cache_hp > 0:
+            self._prop_chip(poi.x, poi.y, (150, 140, 120), "crate_break")
+            return
+        self._break_poi(player, poi)
+
     def _break_poi(self, player: Player, poi: PointOfInterest):
         """Smash a wilderness ruins pile or bandit camp cache: same feedback as an outdoor
         barrel, better odds and rarity since it took more effort to find. Left in place
         afterwards (not removed like a breakable) so the ruin/camp still reads as a landmark,
         just picked over.
 
-        A bandit camp's cache stays shut while its owners are still on their feet: the loot
-        is the reward for clearing the camp, not for running past it."""
-        if poi.kind == "camp" and not self.camp_is_clear(poi):
-            if self.notify:
-                self.notify("The camp is still guarded", c.Colors.MUTED)
-            return
+        A bandit camp's cache stays shut while its owners are still on their feet, which
+        `_hit_poi` checks before any blow lands on it: the loot is the reward for clearing
+        the camp, not for running past it."""
         poi.looted = True
         self._break_effects(poi.x, poi.y, (150, 140, 120), 20)
         coins, loot_item = open_poi_cache()
         label = "Camp cache" if poi.kind == "camp" else "Ruins searched"
         self._break_loot(player, poi.x, poi.y, coins, loot_item, label, self.items.append)
+
+    def _hit_breakable(self, player: Player, breakable: Breakable, damage: int):
+        """Take a swing at an outdoor prop. A bush goes down in one, a barrel takes a
+        beating; either way the reward only comes when it finally gives."""
+        breakable.hp -= damage
+        if breakable.hp > 0:
+            color = (80, 150, 65) if breakable.kind == "bush" else (150, 110, 70)
+            self._prop_chip(breakable.x, breakable.y, color, "bush_rustle" if breakable.kind == "bush" else "hit")
+            return
+        self._break_breakable(player, breakable)
 
     def _break_breakable(self, player: Player, breakable: Breakable):
         """Smash an outdoor prop. A barrel plays out like a shop crate: juice, coins,
@@ -600,7 +657,14 @@ class WorldCombat:
         kb_dir=None,
         blocked=None,
     ) -> bool:
-        """Applies damage to an NPC and handles death. Returns True if it died."""
+        """Applies damage to an NPC and handles death. Returns True if it died.
+
+        Striking anyone is what turns their village on the player, so it happens here:
+        every path that lands a blow on an NPC (swing, arrow, cleave) goes through this."""
+        for provoked in self.provoke_village(npc):
+            # Nobody hands in a task to someone they are trying to kill; drop it rather
+            # than leave an uncompletable quest in the log.
+            quest_system.remove_quest(provoked)
         get_shake().add(shake)
         self._pop_damage(npc.x, npc.y - c.Entities.NPC_SIZE / 2, damage, crit)
         if npc.receive_damage(damage):
@@ -647,6 +711,40 @@ class WorldCombat:
         color = (255, 210, 90) if crit else c.Colors.WHITE
         get_floating_text().spawn(x, y, text, color, big=crit)
 
+    def fire_monster_shots(self, player: Player, damage_mult: float = 1.0):
+        """Let every ranged monster in range loose an arrow at the player.
+
+        Kept here rather than on `Monster` because the shot is the world's, not the
+        monster's: it goes in the same `projectiles` list the player's arrows do, and
+        it is stopped by the same walls. A shot is aimed where the player stands now,
+        so sidestepping it is a real answer."""
+        now = pygame.time.get_ticks()
+        for monster in self.monsters:
+            if not monster.kind.ranged or now < monster.next_shot_ms:
+                continue
+            dx, dy = player.x - monster.x, player.y - monster.y
+            if math.hypot(dx, dy) > monster.kind.attack_range:
+                continue
+            monster.next_shot_ms = now + monster.kind.shot_cooldown_ms
+            # Monster.start_attack_anim takes a distance and resolves a melee hit from it;
+            # a shot wants the animation only, so it goes to the plain Entity one.
+            Entity.start_attack_anim(monster)
+            play_sound("shoot")
+            style, color = ("bolt", BOLT_COLOR) if monster.kind.name == "Hexer" else ("arrow", ARROW_COLOR)
+            self.projectiles.append(
+                Projectile(
+                    monster.x,
+                    monster.y,
+                    # Projectile angles are measured from straight up, clockwise.
+                    math.atan2(dx, -dy),
+                    round(monster.kind.damage * damage_mult),
+                    style=style,
+                    color=color,
+                    shake=c.Combat.PLAYER_HURT_SHAKE,
+                    hostile=True,
+                )
+            )
+
     def update_projectiles(self, player: Player, quest_system: QuestSystem, dt):
         for proj in list(self.projectiles):
             proj.update(dt, self.blocked)
@@ -657,7 +755,9 @@ class WorldCombat:
             # A boss's bolts fly past monsters and NPCs and only threaten the player.
             if proj.hostile:
                 if proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
-                    player.receive_damage(proj.damage)
+                    # Passed as the source so a raised shield can catch it: an arrow is
+                    # blocked by where it came from, like any other blow.
+                    player.receive_damage(proj.damage, source=proj)
                     get_shake().add(proj.shake)
                     self.projectiles.remove(proj)
                 continue

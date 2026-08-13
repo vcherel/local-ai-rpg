@@ -94,6 +94,9 @@ class World(WorldCombat, WorldStreaming):
         self.critters: List[Critter] = []
         # Arrows in flight; transient like particles, never saved.
         self.projectiles: List[Projectile] = []
+        # When each camp's fire will serve the player again, by POI id (wall-clock seconds,
+        # so quitting to the menu can't reset a fire the player just used).
+        self.camp_rest_cooldowns: dict = {}
         self.respawn_timer = 0.0
         self.critter_respawn_timer = 0.0
         self.boss_roam_timer = 0.0
@@ -122,6 +125,10 @@ class World(WorldCombat, WorldStreaming):
         # save file is shared with whatever game is started next; without this they would
         # write a dead world's state over the new game's save.
         self.closed = False
+
+        self.camp_rest_cooldowns = {
+            poi_id: until for poi_id, until in self.save_system.load("camp_rest", {}).items() if until > time.time()
+        }
 
         saved_pois = self.save_system.load("pois", {})
         # Saves written before the world became endless hold a plain list of POIs placed
@@ -273,7 +280,8 @@ class World(WorldCombat, WorldStreaming):
 
     def camp_in_reach(self, player: Player) -> PointOfInterest | None:
         """The campfire the player could rest at right now: near enough, still burning, and
-        with nothing hostile around it."""
+        with nothing hostile around it. A fire still on its cooldown is offered anyway, so
+        the prompt can say why nothing happens rather than silently vanishing."""
         pos = player.get_pos()
         camps = [
             poi
@@ -284,16 +292,61 @@ class World(WorldCombat, WorldStreaming):
         ]
         return min(camps, key=lambda poi: poi.distance_to_point(pos), default=None)
 
+    def camp_rest_ready_in(self, poi: PointOfInterest) -> float:
+        """Seconds until this fire will serve the player again; 0 when it's ready now."""
+        return max(0.0, self.camp_rest_cooldowns.get(poi.id, 0.0) - time.time())
+
     def rest_at_camp(self, player: Player, poi: PointOfInterest):
-        """Sit at a camp's fire: back to full health, and the post-death weakness shaken off.
-        Free, and it can't be done with anything hostile nearby, which is what stops it
-        being a heal button in the middle of a fight."""
-        player.heal(player.max_hp)
+        """Sit at a camp's fire: some health back, and the post-death weakness shaken off.
+
+        Not a full heal and not repeatable: this particular fire goes cold on the player for
+        REST_COOLDOWN_S afterwards. Otherwise any cleared camp is a health button to stand
+        next to, and the walk back to town for a bed or a potion stops meaning anything.
+        """
+        remaining = self.camp_rest_ready_in(poi)
+        if remaining > 0:
+            if self.notify:
+                self.notify(f"This fire has burned low. Usable again in {int(remaining) + 1}s", c.Colors.MUTED)
+            return
+        self.camp_rest_cooldowns[poi.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
+        player.heal(player.max_hp * c.PointsOfInterest.REST_HEAL_FRAC)
         player.clear_death_debuff()
         play_sound("rest")
         get_particles().spawn_burst(poi.x + 40, poi.y + 12, (255, 170, 60), count=18, speed=3, life=700, size=4)
         if self.notify:
-            self.notify("You rest at the fire. Wounds closed, nerves steadied.", (255, 190, 110))
+            self.notify("You rest at the fire. Some wounds close, nerves steadied.", (255, 190, 110))
+
+    def provoke_village(self, npc: NPC) -> List[NPC]:
+        """Turn a settlement on the player after one of its people is struck, returning
+        everyone who just went hostile (so the caller can strike their quests off).
+
+        Everyone whose home village this is drops what they were doing and comes for the
+        player, their goodwill gone and any quest they were offering with it. Violence in
+        town is a decision, not a stray click: the whole place remembers it, and nothing
+        here ever calms them back down.
+        """
+        village = self.village_at(npc.x, npc.y)
+        if village is None:
+            # A camper or a wandering merchant out in the wilds has no village behind them.
+            crowd = [npc]
+        else:
+            crowd = [other for other in self.npcs if village.contains_point(other.x, other.y)]
+
+        newly_hostile = [other for other in crowd if not other.hostile]
+        if not newly_hostile:
+            return newly_hostile
+        for other in newly_hostile:
+            other.hostile = True
+            other.affinity = c.Affinity.MIN
+        if self.notify:
+            name = village.name if village is not None and village.name else "The locals"
+            self.notify(f"{name} turns on you!", c.Colors.RED)
+        return newly_hostile
+
+    def night_damage_mult(self) -> float:
+        """How much harder everything hits right now. A property of the hour, not of the
+        monster, so anything that damages the player reads it from here."""
+        return c.DayNight.NIGHT_DAMAGE_MULT if self.daynight.is_night else 1.0
 
     def _new_monster(self, x, y, danger_bonus: int = 0) -> Monster:
         """Tougher kinds unlock farther from the world center, so wandering out gets more
@@ -373,6 +426,7 @@ class World(WorldCombat, WorldStreaming):
             "villages": [village.to_dict() for village in self.villages],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
             "pois": self._poi_state_snapshot(),
+            "camp_rest": {poi_id: until for poi_id, until in self.camp_rest_cooldowns.items() if until > time.time()},
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
@@ -463,17 +517,20 @@ class World(WorldCombat, WorldStreaming):
                 return building
         return None
 
-    def chase_waypoint(self, monster: Monster, player: Player):
-        """Where a chasing monster should head next, or None to walk straight at the player.
+    def chase_waypoint(self, chaser, player: Player, radius: float):
+        """Where a chaser should head next, or None to walk straight at the player.
 
         Buildings are the only obstacles and each has a single door, so a chase across a wall
         never needs a real pathfinder: aim for the door of whichever building separates the
         two, and walk round any other building standing in the way rather than into it.
+
+        Takes any entity with an x/y and its own radius, since an angry villager has to find
+        its way round a house exactly like a wolf does.
         """
+        monster = chaser
         monster_building = self.building_at(monster.x, monster.y)
         player_building = self.building_at(player.x, player.y)
         start = (monster.x, monster.y)
-        radius = monster.kind.size / 2
 
         if monster_building is player_building:
             if monster_building is not None:
@@ -620,7 +677,8 @@ class World(WorldCombat, WorldStreaming):
         center = c.World.WORLD_SIZE // 2
         if math.hypot(player.x - center, player.y - center) < c.Boss.ROAM_MIN_DISTANCE:
             return
-        if random.random() > c.Boss.ROAM_CHANCE:
+        chance = c.Boss.ROAM_CHANCE * (c.DayNight.NIGHT_BOSS_ROAM_MULT if self.daynight.is_night else 1.0)
+        if random.random() > chance:
             return
         for _ in range(10):
             angle = random.uniform(0, 2 * math.pi)
@@ -714,7 +772,9 @@ class World(WorldCombat, WorldStreaming):
             # Monsters wander into settlements, but none of them starts life in one: a
             # village should read as the safe ground between stretches of wilderness.
             if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2) and self.village_at(x, y) is None:
-                self.monsters.append(self._new_monster(x, y))
+                # What crawls out after dark is what lives much deeper in the wilds.
+                bonus = c.DayNight.NIGHT_DANGER_BONUS if self.daynight.is_night else 0
+                self.monsters.append(self._new_monster(x, y, danger_bonus=bonus))
                 return
 
     def _spawn_critter_away_from(self, player: Player):
@@ -801,19 +861,28 @@ class World(WorldCombat, WorldStreaming):
         self._check_poi_discovery(player)
         self._check_village_discovery(player)
 
+        player_pos = player.get_pos()
+
+        # After dark everything hits harder and notices sooner, whenever it spawned: night
+        # is a state of the world, not a property of the monsters standing in it.
+        damage_mult = self.night_damage_mult()
+        detection = c.World.DETECTION_RANGE * (c.DayNight.NIGHT_DETECTION_MULT if self.daynight.is_night else 1.0)
+
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).
-        update_radius = c.World.DETECTION_RANGE + c.Player.SIZE
+        update_radius = detection + c.Player.SIZE
         for monster in self.monsters:
             if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
-                monster.move(player, dt, self.blocked, self.chase_waypoint(monster, player))
+                waypoint = self.chase_waypoint(monster, player, monster.kind.size / 2)
+                monster.move(player, dt, self.blocked, waypoint, damage_mult, detection)
+        self.fire_monster_shots(player, damage_mult)
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         # Camp guards are the exception: they hold a place rather than roam, and their camp
         # would look abandoned while its chunk is still loaded. They leave with the chunk
         # instead (see WorldStreaming._unload_chunk).
         self.monsters = [
-            m for m in self.monsters if m.camp_id or m.distance_to_point(player.get_pos()) <= c.World.DESPAWN_DISTANCE
+            m for m in self.monsters if m.camp_id or m.distance_to_point(player_pos) <= c.World.DESPAWN_DISTANCE
         ]
 
         # Burn (weapon affix) ticks over time and can finish a wounded target off.
@@ -832,11 +901,14 @@ class World(WorldCombat, WorldStreaming):
         self.update_projectiles(player, quest_system, dt)
 
         for npc in self.npcs:
-            npc.update(player, dt, self.blocked)
+            # Only an angry villager actually closing on the player needs a route round
+            # the houses; everyone else is wandering and steers for itself.
+            chasing = npc.hostile and npc.distance_to_point(player_pos) <= c.Entities.NPC_HOSTILE_RANGE
+            waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
+            npc.update(player, dt, self.blocked, waypoint)
 
         for critter in self.critters:
             critter.update(player, dt, self.blocked)
-        player_pos = player.get_pos()
         self.critters = [
             critter for critter in self.critters if critter.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE
         ]

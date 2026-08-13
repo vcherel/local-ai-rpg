@@ -28,18 +28,19 @@ WEAPON_KEYWORDS = {
 }
 AMMO_KEYWORDS = {"arrow", "bolt"}
 ARMOR_KEYWORDS = {
-    "shield",
     "armor",
     "vest",
     "helmet",
     "mail",
     "plate",
     "cloak",
-    "buckler",
     "breastplate",
     "gauntlets",
     "greaves",
 }
+# Shields live in their own offhand slot and are raised to block, so they are their own
+# item type rather than a second kind of body armour.
+SHIELD_KEYWORDS = {"shield", "buckler", "targe", "aegis", "pavise"}
 POTION_KEYWORDS = {
     "potion",
     "elixir",
@@ -116,6 +117,10 @@ def item_type_from_name(name: str) -> str:
         return "potion"
     if any(kw in lower for kw in WEAPON_KEYWORDS):
         return "weapon"
+    # Shields before armour: a "Shield of the Bear" is something you hold, not something
+    # you wear, and it goes in the offhand slot rather than the armour one.
+    if any(kw in lower for kw in SHIELD_KEYWORDS):
+        return "shield"
     if any(kw in lower for kw in ARMOR_KEYWORDS):
         return "armor"
     if any(kw in lower for kw in ACCESSORY_KEYWORDS):
@@ -153,7 +158,9 @@ def roll_bonus(item_type: str, rarity: str) -> int:
     tier = rarity_tier(rarity)
     if item_type == "weapon":
         return random.randint(*tier.weapon_bonus)
-    if item_type == "armor":
+    # A shield's bonus does double duty: flat damage reduction like armour, and how much
+    # of a frontal blow it turns away when raised (Player.block_fraction).
+    if item_type in ("armor", "shield"):
         return random.randint(*tier.armor_bonus)
     if item_type == "accessory":
         return random.randint(*tier.accessory_bonus)
@@ -315,7 +322,7 @@ def potion_description(item: "Item") -> str:
 
 def base_value(item: "Item") -> int:
     """Base sell/worth value before shop multipliers, used by the shop and inventory tooltip."""
-    if item.item_type in ("weapon", "armor", "accessory"):
+    if item.item_type in ("weapon", "armor", "shield", "accessory"):
         base = max(5, item.bonus * 10)
     elif item.item_type == "ammo":
         base = 2
@@ -354,7 +361,7 @@ class Item:
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
             self.shape = "sword"
-        elif item_type == "armor":
+        elif item_type in ("armor", "shield"):
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ARMOR_COLOR)
             self.shape = "shield"
         elif item_type == "accessory":

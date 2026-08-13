@@ -120,7 +120,8 @@ class Boss(Monster):
 
         if dist <= c.Boss.AGGRO_RANGE:
             # Monster.move handles the chase and the basic melee swing.
-            self.move(player, dt, world.blocked, world.chase_waypoint(self, player))
+            waypoint = world.chase_waypoint(self, player, self.kind.size / 2)
+            self.move(player, dt, world.blocked, waypoint, world.night_damage_mult(), c.Boss.AGGRO_RANGE)
             self.ability_cd -= dt
             if self.ability_cd <= 0 and self.slam_windup <= 0:
                 self._use_ability(world, player)
@@ -172,7 +173,9 @@ class Boss(Monster):
             damage = c.Boss.SLAM_DAMAGE
             if self.enraged:
                 damage = int(round(damage * c.Boss.ENRAGE_DAMAGE_MULT))
-            player.receive_damage(damage)
+            # Sourced on the boss so a raised shield can take the edge off a slam the
+            # player saw coming and turned to face.
+            player.receive_damage(damage, source=self)
 
     def _cast_volley(self, world: World, player: Player):
         play_sound("shoot")

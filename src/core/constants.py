@@ -24,7 +24,7 @@ class Player:
     # and positioning rather than by backing off for two seconds. A regen potion is
     # deliberately exempt from the delay, it's what you drink when you're already hurt.
     REGEN_RATE: float = 0.00025
-    REGEN_DELAY_MS: int = 8000
+    REGEN_DELAY_MS: int = 12000
     SIZE: int = 30
 
     SPEED: int = 5
@@ -41,13 +41,45 @@ class Player:
 @dataclass(frozen=True)
 class Death:
     """Dying doesn't reload the save at the same spot with full HP for free: it costs
-    coins and leaves the player weakened for a while after respawning at world spawn."""
+    coins and leaves the player weakened for a while after respawning at world spawn.
 
-    COIN_LOSS_PCT: float = 0.3
-    DEBUFF_DURATION_S: float = 60.0
-    DEBUFF_DAMAGE_MULT: float = 0.75
+    The weakness is meant to reshape the next few minutes rather than tickle them: a
+    third of the run's coins gone, and three minutes of hitting softer, moving slower
+    and carrying less health. A fire or an inn bed is what shakes it off early."""
+
+    COIN_LOSS_PCT: float = 0.45
+    DEBUFF_DURATION_S: float = 180.0
+    DEBUFF_DAMAGE_MULT: float = 0.6
+    DEBUFF_SPEED_MULT: float = 0.85
+    DEBUFF_MAX_HP_MULT: float = 0.8
     # How long the death screen holds before the player is put back at world spawn.
     RESPAWN_DELAY_S: float = 2.5
+
+
+@dataclass(frozen=True)
+class Shield:
+    """The offhand shield and the guard it holds (game/entities/player.py).
+
+    A shield is worn in its own slot and raised by holding the block key. Raised, it eats
+    a share of any hit coming from the front and drains the guard meter by what it stopped;
+    run the meter out and the guard breaks, leaving the player wide open for a moment. So a
+    shield rewards blocking the blow you saw coming, not standing behind it forever.
+    """
+
+    BLOCK_BASE: float = 0.45  # fraction of a frontal hit stopped by a plain shield
+    BLOCK_PER_BONUS: float = 0.03  # ...plus this per point of the shield's bonus
+    BLOCK_MAX: float = 0.85
+    # Only hits arriving within this cone of the player's facing are blocked at all.
+    ARC_DEG: float = 150.0
+    SPEED_MULT: float = 0.55  # movement while the shield is up
+
+    GUARD_MAX: float = 60.0
+    GUARD_REGEN_PER_S: float = 12.0
+    # Guard only comes back once the shield has been down (or unhit) this long.
+    GUARD_REGEN_DELAY_MS: int = 1200
+    # Running the guard out breaks it: no blocking at all until this passes.
+    GUARD_BREAK_MS: int = 2500
+    GUARD_BREAK_SHAKE: float = 12.0
 
 
 @dataclass(frozen=True)
@@ -165,16 +197,52 @@ class MonsterKind:
     min_distance: int
     # Relative pick weight among kinds unlocked at a given distance; higher means more common.
     weight: int
+    # Ranged kinds shoot instead of swinging: `attack_range` is how far they can shoot from,
+    # `keep_distance` the range they try to hold, backing off when the player closes in, and
+    # `shot_cooldown_ms` how often they loose one. A melee kind leaves all three alone.
+    ranged: bool = False
+    keep_distance: int = 0
+    shot_cooldown_ms: int = 0
 
 
 # Ordered weakest to strongest, scaling up with distance from the world center so wandering
 # further gets more dangerous. Mobs hit harder and reach the player, but the tougher kinds
 # stay spaced out from the world center so there's room to explore before they show up.
+# The archer and the hexer are what stop a fight being won by walking backwards: they hold
+# their distance and shoot, so closing on them is the only answer.
 MONSTER_KINDS: tuple[MonsterKind, ...] = (
-    MonsterKind("Slime", (90, 190, 90), 22, 10, 3, 10, 5, min_distance=0, weight=10),
-    MonsterKind("Wolf", (140, 140, 140), 26, 20, 5, 10, 8, min_distance=1400, weight=6),
-    MonsterKind("Bandit", (150, 40, 40), 28, 35, 4, 12, 12, min_distance=2800, weight=4),
-    MonsterKind("Troll", (60, 90, 55), 34, 60, 3, 14, 18, min_distance=4200, weight=2),
+    MonsterKind("Slime", (90, 190, 90), 22, 16, 3, 10, 8, min_distance=0, weight=10),
+    MonsterKind("Wolf", (140, 140, 140), 26, 32, 5, 10, 13, min_distance=1400, weight=6),
+    MonsterKind(
+        "Archer",
+        (168, 122, 62),
+        26,
+        26,
+        4,
+        420,
+        11,
+        min_distance=1800,
+        weight=4,
+        ranged=True,
+        keep_distance=260,
+        shot_cooldown_ms=1900,
+    ),
+    MonsterKind("Bandit", (150, 40, 40), 28, 55, 4, 12, 19, min_distance=2800, weight=4),
+    MonsterKind("Troll", (60, 90, 55), 34, 95, 3, 14, 29, min_distance=4200, weight=2),
+    MonsterKind(
+        "Hexer",
+        (128, 78, 188),
+        28,
+        48,
+        3,
+        480,
+        17,
+        min_distance=4600,
+        weight=2,
+        ranged=True,
+        keep_distance=320,
+        shot_cooldown_ms=2400,
+    ),
 )
 
 MONSTER_MAX_SIZE: int = max(kind.size for kind in MONSTER_KINDS)
@@ -296,7 +364,6 @@ class Boss:
 class Entities:
     NPC_SIZE: int = 30
     ITEM_SIZE: int = 25
-    NPC_HP: int = 30
     # NPCs wander around their spawn point: walk to a random spot within
     # NPC_WANDER_RADIUS, then idle for a random duration before moving again.
     NPC_WANDER_SPEED: float = 1.5
@@ -305,6 +372,18 @@ class Entities:
     NPC_IDLE_MAX_MS: int = 7000
     # NPCs stop wandering and face the player when he gets this close.
     NPC_WANDER_PAUSE_DISTANCE: int = 120
+    # Hit a villager and the settlement turns on you: they drop what they were doing and
+    # come at you with whatever is to hand. Slower and weaker than a bandit one on one,
+    # dangerous because a village holds a dozen of them.
+    NPC_HP: int = 45
+    NPC_HOSTILE_SPEED: float = 3.4
+    NPC_ATTACK_RANGE: int = 34
+    NPC_DAMAGE: int = 9
+    NPC_ATTACK_COOLDOWN_MS: int = 900
+    # Angry villagers are not a hunting party: outrun them by this much and they go back
+    # to their houses. Still hostile, still waiting, just no longer following you across
+    # the world in a column of eighteen.
+    NPC_HOSTILE_RANGE: int = 1100
     SWING_SPEED: float = 0.007
     # How long an entity flashes white after being hit (ms).
     FLASH_MS: int = 150
@@ -322,14 +401,16 @@ class Entities:
 @dataclass(frozen=True)
 class World:
     WORLD_SIZE: int = 5000
-    DETECTION_RANGE = 500
+    # How far a monster notices the player and gives chase. Deliberately wider than the
+    # screen's half-width: the wilderness should come at you rather than be walked past.
+    DETECTION_RANGE = 700
 
     # How many people a settlement holds follows from its buildings (Villages), not from a
     # world-wide count: the world is endless, so there is no total to fix.
-    NB_MONSTERS: int = 100
+    NB_MONSTERS: int = 120
 
     # Slain monsters are replenished over time so the world never empties out.
-    RESPAWN_INTERVAL_MS: int = 3000
+    RESPAWN_INTERVAL_MS: int = 2200
     # New monsters spawn at least this far from the player so they never pop into view.
     # The screen's half-diagonal is ~1006px, so anything under that can appear on camera.
     SPAWN_MIN_DISTANCE: int = 1100
@@ -422,9 +503,15 @@ class DayNight:
     BLOOD_NIGHT_COLOR: tuple = (80, 0, 10)
     BLOOD_NIGHT_ALPHA: int = 130
 
-    # Monsters respawn a bit faster after dark, on top of (not stacked with) the
-    # blood night multiplier.
-    NIGHT_RESPAWN_MULT: float = 1.5
+    # After dark the wilds turn on the player: more of them, hitting harder, noticing
+    # from farther off, rolled as if the ground itself were deeper into the wilds, and
+    # far likelier to turn up something with a name. Night is meant to be waited out at
+    # a fire or inside a village, not walked through.
+    NIGHT_RESPAWN_MULT: float = 2.2
+    NIGHT_DAMAGE_MULT: float = 1.35
+    NIGHT_DETECTION_MULT: float = 1.4
+    NIGHT_DANGER_BONUS: int = 1500
+    NIGHT_BOSS_ROAM_MULT: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -463,6 +550,10 @@ class Buildings:
     TAVERN_SLEEP_COST: int = 15
     INTERACT_DISTANCE: int = 120
 
+    # Nothing breaks in one tap: a crate takes a few blows, each one splintering it a
+    # little further, and only the last one spills what's inside.
+    CRATE_HP: int = 22
+    WINDOW_HP: int = 10
     # Smashing a shop crate always yields a few coins and sometimes a common item.
     CRATE_COIN_MIN: int = 1
     CRATE_COIN_MAX: int = 6
@@ -493,6 +584,9 @@ class Breakables:
     HIT_RADIUS: int = 20
     # Relative pick weight among kinds scattered near a building.
     KIND_WEIGHTS: tuple = (("barrel", 5), ("pot", 3), ("bush", 3))
+    # How much punishment each kind takes before it gives. A bush is cleared in a swipe,
+    # a barrel has to be worked at; the props are scenery you fight through, not confetti.
+    HP = {"barrel": 20, "pot": 8, "bush": 5}
 
 
 @dataclass(frozen=True)
@@ -613,6 +707,8 @@ class PointsOfInterest:
         "Someone has left a wilted flower at this shrine.",
     )
 
+    # A cache is stone and iron banding, not a barrel: it takes real work to open.
+    CACHE_HP: int = 45
     CACHE_COIN_MIN: int = 8
     CACHE_COIN_MAX: int = 22
     CACHE_ITEM_CHANCE: float = 0.5
@@ -631,6 +727,11 @@ class PointsOfInterest:
     # leave a camp permanently locked.
     CAMP_CLEAR_RADIUS: int = 340
     REST_DISTANCE: int = 130
+    # A fire patches you up, it doesn't make you new: part of your health back, and that
+    # particular fire won't serve you again for a while. Otherwise every cleared camp is
+    # a health button you can stand next to and spam.
+    REST_HEAL_FRAC: float = 0.6
+    REST_COOLDOWN_S: float = 300.0
     # A camper trades out of their pack: stock rolled locally, no LLM call in the wilds.
     CAMPER_STOCK_SIZE: int = 5
     # How far a camper's directions look for something the player hasn't walked to yet.

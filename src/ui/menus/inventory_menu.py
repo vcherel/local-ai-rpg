@@ -304,6 +304,9 @@ class InventoryMenu(BaseMenu):
             text = f"{item.name}  (+{item.bonus} attack)"
         elif item.item_type == "armor" and item.bonus > 0:
             text = f"{item.name}  (+{item.bonus} defense)"
+        elif item.item_type == "shield":
+            block = round(min(c.Shield.BLOCK_MAX, c.Shield.BLOCK_BASE + item.bonus * c.Shield.BLOCK_PER_BONUS) * 100)
+            text = f"{item.name}  (+{item.bonus} defense, blocks {block}% held up)"
         elif item.item_type == "accessory" and item.bonus > 0:
             flavor = ACCESSORY_FLAVOR_LABELS.get(item.accessory_flavor, item.accessory_flavor)
             text = f"{item.name}  (+{item.bonus} {flavor})"
@@ -319,7 +322,7 @@ class InventoryMenu(BaseMenu):
             text += "  [equipped, click to unequip]"
         elif item.item_type == "potion":
             text += "  [click to drink]"
-        elif item.item_type in ("weapon", "armor", "accessory"):
+        elif item.item_type in ("weapon", "armor", "shield", "accessory"):
             text += "  [click to equip]"
 
         # Main line in the rarity colour, then one muted line per rolled effect.

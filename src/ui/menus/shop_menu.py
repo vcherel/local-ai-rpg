@@ -290,8 +290,8 @@ class ShopMenu(BaseMenu):
             tag = c.Fonts.small.render("equipped", True, c.Colors.ACCENT)
             surface.blit(tag, (r.right - tag.get_width() - 8, r.y + 8))
 
-        if item.bonus > 0 and item.item_type in ("weapon", "armor", "accessory"):
-            label = {"weapon": "atk", "armor": "def"}.get(
+        if item.bonus > 0 and item.item_type in ("weapon", "armor", "shield", "accessory"):
+            label = {"weapon": "atk", "armor": "def", "shield": "block"}.get(
                 item.item_type, ACCESSORY_FLAVOR_LABELS.get(item.accessory_flavor, item.accessory_flavor)
             )
             stat = f"+{item.bonus} {label}"

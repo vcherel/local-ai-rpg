@@ -25,9 +25,14 @@ if TYPE_CHECKING:
 EQUIP_SLOT_ATTRS = {
     "melee_weapon": "equipped_melee_weapon_id",
     "ranged_weapon": "equipped_ranged_weapon_id",
+    "offhand": "equipped_offhand_id",
     "armor": "equipped_armor_id",
     "accessory": "equipped_accessory_id",
 }
+
+# Held down to raise the shield. A hold rather than a toggle, so blocking is something
+# you do for the blow you saw coming instead of a stance you leave switched on.
+BLOCK_KEYS = (pygame.K_SPACE,)
 
 
 def _item_outline(item) -> tuple:
@@ -41,6 +46,8 @@ def _equip_slot(item) -> str | None:
     carried and equipped at the same time instead of fighting over one slot."""
     if item.item_type == "weapon":
         return "ranged_weapon" if c.weapon_archetype(item.name).ranged else "melee_weapon"
+    if item.item_type == "shield":
+        return "offhand"
     if item.item_type in ("armor", "accessory"):
         return item.item_type
     return None
@@ -72,8 +79,16 @@ class Player(Entity):
         # weapon in practice, since ranged combat had no separate slot to get stuck in.
         if equipped.get("weapon") and self.equipped_melee_weapon_id is None:
             self.equipped_melee_weapon_id = equipped["weapon"]
+        self.equipped_offhand_id = equipped.get("offhand")
         self.equipped_armor_id = equipped.get("armor")
         self.equipped_accessory_id = equipped.get("accessory")
+
+        # Shield state, all session-only: whether the shield is up this frame, how much
+        # guard is left to absorb hits with, and the moment a broken guard comes back.
+        self.blocking = False
+        self.guard = c.Shield.GUARD_MAX
+        self.guard_broken_until_ms = 0
+        self.last_guard_use_ms = 0
 
         saved = save_system.load("player", None)
         if saved:
@@ -117,9 +132,13 @@ class Player(Entity):
     def move(self, camera_pos, dt, blocked=None):
         keys = pygame.key.get_pressed()
 
-        running = bool(keys[pygame.K_LSHIFT])
+        self._update_guard(keys, dt)
+
+        running = bool(keys[pygame.K_LSHIFT]) and not self.blocking
         base_speed = c.Player.RUN_SPEED if running else c.Player.SPEED
         actual_speed = base_speed * self.speed_multiplier()
+        if self.blocking:
+            actual_speed *= c.Shield.SPEED_MULT
 
         forward = keys[pygame.K_z] or keys[pygame.K_w]
         moving = forward or keys[pygame.K_s]
@@ -165,7 +184,8 @@ class Player(Entity):
         # Keep the xp-gain accessory's multiplier live for every stat.train call this frame.
         self.stats.xp_bonus = self.xp_gain_mult()
 
-        self.max_hp = self.stats.max_hp()
+        self.max_hp = self.effective_max_hp()
+        self.hp = min(self.hp, self.max_hp)
         if self.hp < self.max_hp:
             # A regen potion works the moment it's drunk, that's what it's for. Everything
             # passive (vitality, accessory, the regen-while-still armour affix) stays shut
@@ -175,6 +195,74 @@ class Player(Entity):
             if pygame.time.get_ticks() - self.last_damage_ms >= c.Player.REGEN_DELAY_MS:
                 regen += self.passive_regen_rate() + (0.0 if moving else self.regen_still_bonus())
             self.hp = min(self.hp + regen * dt, self.max_hp)
+
+    # --- shield and guard ------------------------------------------------------
+
+    def has_shield(self) -> bool:
+        return self.equipped_item("offhand") is not None
+
+    def guard_broken(self) -> bool:
+        return pygame.time.get_ticks() < self.guard_broken_until_ms
+
+    def block_fraction(self) -> float:
+        """Share of a frontal blow the equipped shield turns away, from its bonus."""
+        shield = self.equipped_item("offhand")
+        if shield is None:
+            return 0.0
+        return min(c.Shield.BLOCK_MAX, c.Shield.BLOCK_BASE + shield.bonus * c.Shield.BLOCK_PER_BONUS)
+
+    def _update_guard(self, keys, dt):
+        """Raise or lower the shield from the held key, and trickle the guard meter back
+        once it has been left alone long enough. A broken guard stays down until its
+        timer runs out, which is the window the player pays for holding block too long."""
+        now = pygame.time.get_ticks()
+        wants_block = any(keys[key] for key in BLOCK_KEYS)
+        self.blocking = wants_block and self.has_shield() and not self.guard_broken()
+        if self.blocking:
+            self.last_guard_use_ms = now
+            return
+        if now - self.last_guard_use_ms >= c.Shield.GUARD_REGEN_DELAY_MS:
+            self.guard = min(c.Shield.GUARD_MAX, self.guard + c.Shield.GUARD_REGEN_PER_S * dt / 1000.0)
+
+    def _blocks_hit(self, source) -> bool:
+        """True when a raised shield actually covers this blow: it has to come from within
+        the shield's arc of where the player is facing. A hit with no known origin (a burn,
+        a trap) is never blocked, and neither is one taken from behind."""
+        if not self.blocking or source is None:
+            return False
+        sx, sy = getattr(source, "x", None), getattr(source, "y", None)
+        if sx is None or sy is None:
+            return False
+        # `orientation` is measured from straight up, clockwise: the forward vector is
+        # (sin, -cos), the same one Player.get_pos projects a swing along.
+        facing = math.atan2(-math.cos(self.orientation), math.sin(self.orientation))
+        incoming = math.atan2(sy - self.y, sx - self.x)
+        delta = abs((incoming - facing + math.pi) % (2 * math.pi) - math.pi)
+        return delta <= math.radians(c.Shield.ARC_DEG) / 2
+
+    def _absorb_with_shield(self, damage: float, source) -> float:
+        """Run an incoming hit past the raised shield, returning what still gets through.
+
+        What the shield stops is taken out of the guard meter; a hit that empties it breaks
+        the guard, and that hit lands in full. So a big blow can be eaten once but not twice.
+        """
+        if not self._blocks_hit(source):
+            return damage
+        self.last_guard_use_ms = pygame.time.get_ticks()
+        absorbed = damage * self.block_fraction()
+        if absorbed >= self.guard:
+            self.guard = 0.0
+            self.guard_broken_until_ms = pygame.time.get_ticks() + c.Shield.GUARD_BREAK_MS
+            self.blocking = False
+            play_sound("crate_break")
+            get_shake().add(c.Shield.GUARD_BREAK_SHAKE)
+            get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, "Guard broken!", (255, 150, 60), big=True)
+            return damage
+        self.guard -= absorbed
+        play_sound("hit")
+        get_particles().spawn_burst(self.x, self.y, (200, 220, 255), count=8, speed=4, life=300, size=3)
+        get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, "Blocked", (160, 210, 255))
+        return damage - absorbed
 
     def add_item(self, item):
         """Add an item to the inventory, merging a stackable (ammo, potion) into a matching
@@ -209,6 +297,7 @@ class Player(Entity):
         return {
             "melee_weapon": self.equipped_melee_weapon_id,
             "ranged_weapon": self.equipped_ranged_weapon_id,
+            "offhand": self.equipped_offhand_id,
             "armor": self.equipped_armor_id,
             "accessory": self.equipped_accessory_id,
         }
@@ -257,8 +346,11 @@ class Player(Entity):
         return item.bonus if item else 0
 
     def armor_bonus(self) -> int:
-        item = self.equipped_item("armor")
-        return item.bonus if item else 0
+        """Flat damage reduction from what's worn and what's carried: a shield protects
+        a little even slung on the arm, and a lot more when it's actually raised."""
+        worn = self.equipped_item("armor")
+        shield = self.equipped_item("offhand")
+        return (worn.bonus if worn else 0) + (shield.bonus if shield else 0)
 
     def accessory_bonus(self, flavor: str) -> int:
         item = self.equipped_item("accessory")
@@ -399,7 +491,14 @@ class Player(Entity):
 
     def speed_multiplier(self) -> float:
         base = self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
-        return base * self.buff_magnitude("swiftness", 1.0)
+        weakness = c.Death.DEBUFF_SPEED_MULT if self.is_shaken() else 1.0
+        return base * weakness * self.buff_magnitude("swiftness", 1.0)
+
+    def effective_max_hp(self) -> int:
+        """Max health as it stands right now: what vitality has earned, cut back while the
+        post-death weakness lasts. Dying takes something off you until you shake it off."""
+        base = self.stats.max_hp()
+        return round(base * c.Death.DEBUFF_MAX_HP_MULT) if self.is_shaken() else base
 
     def passive_regen_rate(self) -> float:
         """Regen from vitality and gear, the part held back by the out-of-combat delay.
@@ -431,10 +530,13 @@ class Player(Entity):
             get_particles().spawn_burst(self.x, self.y, c.Colors.WHITE, count=5, speed=3, life=250, size=3)
             return
 
+        # A raised shield eats its share of a frontal blow before anything else looks at it.
+        damage = self._absorb_with_shield(damage, source)
+
         # Taking hits trains resistance and, more slowly, vitality.
         self.stats.train("resistance", c.Stats.XP_PER_DAMAGE_TAKEN)
         self.stats.train("vitality", c.Stats.XP_PER_DAMAGE_TAKEN * 0.5)
-        self.max_hp = self.stats.max_hp()
+        self.max_hp = self.effective_max_hp()
 
         reduction = self.armor_bonus() + self.stats.damage_reduction() + int(self.buff_magnitude("stoneskin"))
         actual = max(damage - reduction, 1)
@@ -515,6 +617,9 @@ class Player(Entity):
         self.save_system.update("buffs", self.buffs)
         self.death_debuff_until = time.time() + c.Death.DEBUFF_DURATION_S
         self.save_system.update("death_debuff_until", self.death_debuff_until)
+        self.max_hp = self.effective_max_hp()
+        self.guard = c.Shield.GUARD_MAX
+        self.guard_broken_until_ms = 0
         return loss
 
     def gear(self) -> dict:
@@ -534,6 +639,15 @@ class Player(Entity):
             item = self.equipped_item(slot)
             if item is not None:
                 gear[slot] = {"color": item.color, "outline": _item_outline(item)}
+        shield = self.equipped_item("offhand")
+        if shield is not None:
+            gear["offhand"] = {
+                "color": shield.color,
+                "outline": _item_outline(shield),
+                # Raised, it swings across the front of the body, which is the only
+                # readout the player gets that the block is actually up.
+                "raised": self.blocking,
+            }
         return gear
 
     def draw(self, screen):

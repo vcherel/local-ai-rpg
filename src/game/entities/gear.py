@@ -39,6 +39,8 @@ def weapon_length(kind: str, size: int) -> float:
 def gear_padding(gear: dict, size: int) -> int:
     """Extra room the sprite surface needs so a held weapon isn't clipped."""
     lengths = [weapon_length(gear[slot]["kind"], size) for slot in ("melee", "ranged") if gear.get(slot)]
+    if gear.get("offhand"):
+        lengths.append(size * 0.9)
     return int(max(lengths, default=0)) + 6
 
 
@@ -173,6 +175,31 @@ def draw_weapon(surface, hand_pos, spec: dict, size: int, hand: str, attack_prog
             else:
                 pygame.draw.lines(surface, outline, False, points, 6)
                 pygame.draw.lines(surface, color, False, points, 3)
+
+
+def draw_shield(surface, hand_pos, body_center, spec: dict, size: int):
+    """Draw the offhand shield: carried out at the arm's side while it's down, swung
+    across the front of the body while it's raised, which is how the player reads that
+    the block is actually up."""
+    raised = spec.get("raised")
+    width, height = size * 0.62, size * 0.78
+    if raised:
+        cx = (hand_pos[0] + body_center[0]) / 2
+        cy = body_center[1] - size * 0.5
+    else:
+        cx, cy = hand_pos[0], hand_pos[1] + size * 0.1
+        width, height = width * 0.85, height * 0.85
+
+    face = [
+        (cx - width / 2, cy - height / 2),
+        (cx + width / 2, cy - height / 2),
+        (cx + width / 2, cy + height * 0.1),
+        (cx, cy + height / 2),
+        (cx - width / 2, cy + height * 0.1),
+    ]
+    pygame.draw.polygon(surface, spec["color"], face)
+    pygame.draw.polygon(surface, spec["outline"], face, 2)
+    pygame.draw.circle(surface, spec["outline"], (int(cx), int(cy - height * 0.1)), max(2, int(size * 0.09)), 2)
 
 
 def draw_armor_band(surface, center, size: int, color, outline):
