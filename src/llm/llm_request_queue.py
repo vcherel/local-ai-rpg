@@ -1,8 +1,9 @@
+import itertools
 import queue
 import re
 import threading
 import time
-from queue import Queue
+from queue import PriorityQueue, Queue
 
 from llama_cpp import Llama
 
@@ -19,6 +20,17 @@ UNSUPPORTED_GLYPH_RE = re.compile("[^\t\n\r\x20-\x7e -ɏ‐-―‘-‟…]")
 
 ENGLISH_ONLY_REMINDER = "Respond only in English, using standard Latin letters and punctuation."
 
+# The player is waiting on the screen for these, so they go to the front of the queue.
+# Everything else (naming, shop stock, world context, quest analysis) happens in the
+# background and can wait: what it must not do is hold up the next line of dialogue.
+INTERACTIVE_CATEGORIES = frozenset({"First message", "Continuing conversation"})
+PRIORITY_INTERACTIVE = 0
+PRIORITY_BACKGROUND = 1
+
+
+def _priority_of(category: str) -> int:
+    return PRIORITY_INTERACTIVE if category in INTERACTIVE_CATEGORIES else PRIORITY_BACKGROUND
+
 
 def _strip_unsupported_glyphs(text: str) -> str:
     return UNSUPPORTED_GLYPH_RE.sub("", text)
@@ -33,13 +45,16 @@ def _format_prompt(prompt: str, system_prompt: str) -> str:
 
 class LLMRequestQueue:
     def __init__(self):
-        self.request_queue = Queue()
+        # Priority queue, not FIFO: one model serves the whole game, so a background job
+        # queued the moment a conversation closes (quest analysis) would otherwise make the
+        # next NPC's first line wait for it. Ties break on arrival order.
+        self.request_queue = PriorityQueue()
+        self._sequence = itertools.count()
         self.worker_thread = None
         self.running = False
         self.lock = threading.Lock()
 
-        # task_id -> {category, state ("queued"/"running"), start (monotonic)}.
-        # Insertion order is FIFO, so the running task (oldest) always sorts first.
+        # task_id -> {category, priority, state ("queued"/"running"), start (monotonic)}.
         self.tasks = {}
         self._next_task_id = 0
 
@@ -50,26 +65,34 @@ class LLMRequestQueue:
             self.worker_thread.start()
 
     def get_active_tasks(self):
-        """Snapshot of in-flight tasks: category, state, and elapsed seconds."""
+        """Snapshot of in-flight tasks: category, state, and elapsed seconds, in the order
+        they will be served (the running one first, then by priority)."""
         now = time.monotonic()
         with self.lock:
-            return [
-                {"category": t["category"], "state": t["state"], "elapsed": now - t["start"]}
-                for t in self.tasks.values()
-            ]
+            tasks = list(self.tasks.values())
+        tasks.sort(key=lambda t: (t["state"] != "running", t["priority"]))
+        return [{"category": t["category"], "state": t["state"], "elapsed": now - t["start"]} for t in tasks]
 
     def _register_task(self, category):
         with self.lock:
             task_id = self._next_task_id
             self._next_task_id += 1
-            self.tasks[task_id] = {"category": category, "state": "queued", "start": time.monotonic()}
+            self.tasks[task_id] = {
+                "category": category,
+                "priority": _priority_of(category),
+                "state": "queued",
+                "start": time.monotonic(),
+            }
         return task_id
+
+    def _submit(self, request: dict, category: str):
+        self.request_queue.put((_priority_of(category), next(self._sequence), request))
 
     def _process_queue(self):
         while self.running:
             try:
                 # Get next request with timeout to allow checking self.running
-                request = self.request_queue.get(timeout=0.1)
+                _, _, request = self.request_queue.get(timeout=0.1)
 
                 task_id = request["task_id"]
                 with self.lock:
@@ -100,7 +123,7 @@ class LLMRequestQueue:
             return generate_response_internal(prompt, system_prompt, category, max_tokens=max_tokens, raw=raw)
 
         task_id = self._register_task(category)
-        self.request_queue.put({"func": request_func, "result_queue": result_queue, "task_id": task_id})
+        self._submit({"func": request_func, "result_queue": result_queue, "task_id": task_id}, category)
 
         status, result = result_queue.get()
         if status == "error":
@@ -122,7 +145,7 @@ class LLMRequestQueue:
             return None
 
         task_id = self._register_task(category)
-        self.request_queue.put({"func": request_func, "result_queue": result_queue, "task_id": task_id})
+        self._submit({"func": request_func, "result_queue": result_queue, "task_id": task_id}, category)
 
         # Yield empty string immediately so UI doesn't block
         yield ""

@@ -364,6 +364,10 @@ class World:
     # world, and generation threads finish in bursts; the periodic autosave catches the rest.
     PERSIST_MIN_INTERVAL_S: float = 5.0
 
+    # How many rings World.free_spot_near searches before giving up. Each ring is one body
+    # diameter farther out, so this covers a building's whole footprint and then some.
+    FREE_SPOT_MAX_RINGS: int = 24
+
 
 @dataclass(frozen=True)
 class Events:
@@ -646,6 +650,10 @@ class Wildlife:
     KIND_WEIGHTS: tuple = (5, 2, 3)
     COLORS = {"rabbit": (200, 190, 170), "deer": (150, 110, 70), "fox": (195, 100, 55)}
     SIZES = {"rabbit": 14, "deer": 26, "fox": 16}
+    # Hit radius as a multiple of the size, since none of these are drawn as a circle of
+    # `size` across: the small ones are ellipses about 1.3 sizes long, and the deer is a
+    # whole standing animal running from its tail at -0.72 to its muzzle at 1.1.
+    HIT_RADIUS_MULT = {"rabbit": 0.7, "deer": 1.0, "fox": 0.7}
 
     COUNT: int = 25
     RESPAWN_INTERVAL_MS: int = 800
