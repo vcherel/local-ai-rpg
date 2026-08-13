@@ -38,6 +38,9 @@ class Monster(Entity):
         # roaming population cap, and its death is recorded on the camp itself.
         self.camp_id = ""
         self.camp_leader = False
+        # Ranged kinds only: the earliest tick this one may loose its next shot. World
+        # fires it (WorldCombat.fire_monster_shots), since the arrow belongs to the world.
+        self.next_shot_ms = 0
 
     def apply_burn(self, damage: int):
         """(Re)ignite this monster: refresh the tick count and take the stronger burn."""
@@ -82,13 +85,21 @@ class Monster(Entity):
                 return angle
         return target_angle
 
-    def move(self, player: Player, dt, blocked=None, waypoint=None):
+    def move(self, player: Player, dt, blocked=None, waypoint=None, damage_mult: float = 1.0, detection=None):
         """Chase the player, or `waypoint` when one is given: a door the monster has to walk
         through first because the player is on the other side of a wall (see World.chase_waypoint).
-        The attack swing always keys off the real distance to the player, waypoint or not."""
+        The attack swing always keys off the real distance to the player, waypoint or not.
+
+        `damage_mult` and `detection` come from the world rather than the monster, because
+        both are properties of the moment: everything hits harder and notices sooner at
+        night, and a monster that spawned at noon is no gentler for it once the sun is down.
+
+        A ranged kind never closes: it walks into its firing range, backs off if the player
+        gets inside `keep_distance`, and leaves the shooting itself to the world."""
         dx = player.x + self.target_offset[0] - self.x
         dy = player.y + self.target_offset[1] - self.y
         dist = math.hypot(dx, dy)
+        senses = c.World.DETECTION_RANGE if detection is None else detection
 
         if waypoint is not None:
             target_angle = math.atan2(waypoint[1] - self.y, waypoint[0] - self.x)
@@ -96,11 +107,13 @@ class Monster(Entity):
             target_angle = math.atan2(dy, dx)
         self.orientation = target_angle
 
-        if self.kind.attack_range < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:
+        aware = dist < senses + c.Player.SIZE // 2
+        retreating = self.kind.ranged and dist < self.kind.keep_distance
+        if aware and (retreating or self.kind.attack_range < dist):
             move_factor = dt * c.TARGET_FPS / 1000.0
             speed = self.kind.speed * move_factor
             radius = self.kind.size / 2
-            angle = self._steer(target_angle, blocked, radius, speed)
+            angle = self._steer(target_angle + (math.pi if retreating else 0.0), blocked, radius, speed)
             step_x = math.cos(angle) * speed
             step_y = math.sin(angle) * speed
             # Move one axis at a time so a wall on one axis lets the monster slide along it.
@@ -111,10 +124,10 @@ class Monster(Entity):
                 step_y = 0
             self.y += step_y
 
-        if dist < self.kind.attack_range * 10:
+        if not self.kind.ranged and dist < self.kind.attack_range * 10:
             hit = self.start_attack_anim(dist)
             if hit:
-                player.receive_damage(self.kind.damage, source=self)
+                player.receive_damage(round(self.kind.damage * damage_mult), source=self)
 
         # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
         self.orientation += math.pi / 2

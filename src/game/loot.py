@@ -6,7 +6,11 @@ import core.constants as c
 from game.entities.items import Item, rarity_tier, roll_bonus, roll_rarity
 
 WEAPON_LOOT_NAMES = ["Rusty Dagger", "Notched Axe", "Old Bow", "Wooden Club", "Bent Spear"]
-ARMOR_LOOT_NAMES = ["Worn Shield", "Leather Vest", "Battered Helmet", "Chainmail Scraps", "Tattered Cloak"]
+ARMOR_LOOT_NAMES = ["Leather Vest", "Battered Helmet", "Chainmail Scraps", "Tattered Cloak", "Padded Jerkin"]
+SHIELD_LOOT_NAMES = ["Worn Shield", "Oak Buckler", "Banded Targe", "Dented Kite Shield", "Iron Pavise"]
+# Share of armour rolls that come up as an offhand shield instead of body armour, so a
+# shield is a normal find rather than something the player has to go shopping for.
+SHIELD_SHARE = 0.35
 ACCESSORY_LOOT_NAMES = ["Tarnished Ring", "Cracked Amulet", "Old Talisman", "Faded Pendant", "Bent Brooch"]
 AMMO_LOOT_NAME = "Arrows"
 # One name per potion effect; items.potion_effect_from_name reads the effect back out.
@@ -41,15 +45,22 @@ def _roll_loot_item(x, y, rarity: str, ammo_range: tuple[int, int]) -> Item:
     elif item_type == "potion":
         name = random.choices(POTION_LOOT_NAMES, POTION_LOOT_WEIGHTS)[0]
     else:
+        if item_type == "armor" and random.random() < SHIELD_SHARE:
+            item_type = "shield"
         name = random.choice(
-            {"weapon": WEAPON_LOOT_NAMES, "armor": ARMOR_LOOT_NAMES, "accessory": ACCESSORY_LOOT_NAMES}[item_type]
+            {
+                "weapon": WEAPON_LOOT_NAMES,
+                "armor": ARMOR_LOOT_NAMES,
+                "shield": SHIELD_LOOT_NAMES,
+                "accessory": ACCESSORY_LOOT_NAMES,
+            }[item_type]
         )
     return Item(x, y, name, item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
 
 
 # Asking price before the rarity multiplier, per item type, matching the 5 to 80 range
 # the LLM is asked for so a fallback shop doesn't price differently from a generated one.
-SHOP_BASE_PRICES = {"weapon": 30, "armor": 28, "accessory": 25, "ammo": 25, "potion": 15, "misc": 20}
+SHOP_BASE_PRICES = {"weapon": 30, "armor": 28, "shield": 30, "accessory": 25, "ammo": 25, "potion": 15, "misc": 20}
 
 
 def roll_shop_stock(count: int) -> list[dict]:

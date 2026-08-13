@@ -333,12 +333,19 @@ class Game:
 
         camp = self.world.camp_in_reach(self.player)
         if camp is not None:
-            offer(Interaction("camp", camp, "E: rest at the fire", camp.x + 40, camp.y), reach_of(camp.x, camp.y))
+            cooling = self.world.camp_rest_ready_in(camp)
+            label = f"E: fire burned low ({int(cooling) + 1}s)" if cooling > 0 else "E: rest at the fire"
+            offer(Interaction("camp", camp, label, camp.x + 40, camp.y), reach_of(camp.x, camp.y))
 
         npc = self.world.npc_in_reach(self.player)
-        # A merchant still waiting on its stock, or a world whose context hasn't generated
-        # yet, can't be talked to: no prompt for something the key wouldn't do.
-        if npc is not None and self.world.context is not None and not (npc.is_merchant and not npc.shop_ready):
+        # A merchant still waiting on its stock, someone who has turned on the player, or a
+        # world whose context hasn't generated yet: no prompt for something the key wouldn't do.
+        if (
+            npc is not None
+            and npc.can_talk
+            and self.world.context is not None
+            and not (npc.is_merchant and not npc.shop_ready)
+        ):
             label = f"E: talk to {npc.name}" if npc.name else "E: talk"
             hint = "B: trade" if npc.is_merchant else ""
             offer(Interaction("npc", npc, label, npc.x, npc.y - c.Entities.NPC_SIZE, hint), reach_of(npc.x, npc.y))
@@ -364,7 +371,7 @@ class Game:
             self.world.rest_at_camp(self.player, interaction.target)
 
     def _talk_to(self, npc):
-        if self.world.context is None or (npc.is_merchant and not npc.shop_ready):
+        if self.world.context is None or not npc.can_talk or (npc.is_merchant and not npc.shop_ready):
             return
         self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
         self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
@@ -373,7 +380,7 @@ class Game:
     def _trade_nearby(self):
         """Open a merchant's shop straight from the world, skipping the conversation."""
         npc = self.world.npc_in_reach(self.player)
-        if npc is None or not npc.is_merchant or not npc.shop_ready:
+        if npc is None or not npc.is_merchant or not npc.shop_ready or not npc.can_talk:
             return
         self.shop_menu.open(npc, self.player, self.world.items)
 
@@ -431,13 +438,17 @@ class Game:
         self._award_loot(roll_rarity(), "Chest")
 
     def _sleep_in_bed(self):
-        if self.player.hp >= self.player.max_hp:
+        # A paid bed is the one full night's rest in the game: unlike a campfire it heals
+        # everything and shakes off the post-death weakness, which is what the coins buy.
+        if self.player.hp >= self.player.max_hp and not self.player.is_shaken():
             self.loot_notification.show("You are already fully rested", c.Colors.WHITE)
             return
         if self.player.coins < c.Buildings.TAVERN_SLEEP_COST:
             self.loot_notification.show("Not enough coins to rest here", c.Colors.RED)
             return
         self.player.add_coins(-c.Buildings.TAVERN_SLEEP_COST)
+        self.player.clear_death_debuff()
+        self.player.max_hp = self.player.effective_max_hp()
         self.player.hp = self.player.max_hp
         self.loot_notification.show("You rest and recover fully", c.Colors.GREEN)
         play_sound("quest_complete")

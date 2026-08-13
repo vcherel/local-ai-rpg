@@ -53,6 +53,17 @@ class NPC(Entity):
             c.Entities.NPC_IDLE_MAX_MS,
         )
         self.affinity = c.Affinity.START
+        # Turned on the player, along with the rest of their village (World.provoke_village).
+        # A hostile villager stops wandering, stops trading and comes at the player with
+        # whatever is to hand; nothing calms them down again.
+        self.hostile = False
+        self.attack_ready_ms = 0
+
+    @property
+    def can_talk(self) -> bool:
+        """False once this NPC has turned on the player: no conversation, no shop, no
+        quest hand-in from someone trying to kill you."""
+        return not self.hostile
 
     @property
     def has_active_quest(self):
@@ -79,6 +90,7 @@ class NPC(Entity):
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
             "is_thief": self.is_thief,
+            "hostile": self.hostile,
             "affinity": self.affinity,
             "shop_ready": self.shop_ready,
             "home": list(self.home),
@@ -96,6 +108,7 @@ class NPC(Entity):
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
         npc.is_thief = data.get("is_thief", False)
+        npc.hostile = data.get("hostile", False)
         npc.affinity = data.get("affinity", c.Affinity.START)
         npc.shop_ready = data["shop_ready"]
         npc.home = tuple(data["home"])
@@ -124,7 +137,17 @@ class NPC(Entity):
         if self.name is None:
             self.name = npc_name_generator.get_name()
 
-    def update(self, player: Player, dt, blocked=None):
+    def update(self, player: Player, dt, blocked=None, waypoint=None):
+        if self.hostile and self.distance_to_point(player.get_pos()) <= c.Entities.NPC_HOSTILE_RANGE:
+            self._hunt(player, dt, blocked, waypoint)
+            return
+        if self.hostile:
+            # Given up the chase for now: back towards home, still furious.
+            moved_angle = self.wander.step(self, dt, self.home, c.Entities.NPC_SIZE / 2, blocked)
+            if moved_angle is not None:
+                self.orientation = moved_angle + math.pi / 2
+            return
+
         if self.distance_to_point(player.get_pos()) < c.Entities.NPC_WANDER_PAUSE_DISTANCE:
             # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
@@ -136,8 +159,38 @@ class NPC(Entity):
         if moved_angle is not None:
             self.orientation = moved_angle + math.pi / 2
 
+    def _hunt(self, player: Player, dt, blocked=None, waypoint=None):
+        """Chase the player down and swing on them. Deliberately simpler than a monster's
+        chase: villagers are farmers with sticks, not hunters. They walk at the player
+        (round a wall when the world hands them a waypoint) and hit whatever is in reach."""
+        dist = self.distance_to_point(player.get_pos())
+        target = waypoint if waypoint is not None else (player.x, player.y)
+        angle = math.atan2(target[1] - self.y, target[0] - self.x)
+        self.orientation = angle + math.pi / 2
+
+        if dist > c.Entities.NPC_ATTACK_RANGE:
+            radius = c.Entities.NPC_SIZE / 2
+            speed = c.Entities.NPC_HOSTILE_SPEED * dt * c.TARGET_FPS / 1000.0
+            step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
+            if blocked is not None and blocked(self.x + step_x, self.y, radius):
+                step_x = 0
+            self.x += step_x
+            if blocked is not None and blocked(self.x, self.y + step_y, radius):
+                step_y = 0
+            self.y += step_y
+
+        now = pygame.time.get_ticks()
+        if dist <= c.Entities.NPC_ATTACK_RANGE + c.Player.SIZE // 2 and now >= self.attack_ready_ms:
+            self.attack_ready_ms = now + c.Entities.NPC_ATTACK_COOLDOWN_MS
+            self.start_attack_anim()
+            player.receive_damage(c.Entities.NPC_DAMAGE, source=self)
+
+        self.update_attack_anim(dt)
+
     def _badge(self) -> Optional[tuple]:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""
+        if self.hostile:
+            return c.Fonts.badge, "!", c.Colors.RED
         if self.has_active_quest:
             return c.Fonts.badge, "!", c.Colors.YELLOW
         if self.is_thief:

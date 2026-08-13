@@ -4,7 +4,7 @@ import random
 import pygame
 
 import core.constants as c
-from game.entities.gear import draw_accessory, draw_armor_band, draw_weapon, gear_padding
+from game.entities.gear import draw_accessory, draw_armor_band, draw_shield, draw_weapon, gear_padding
 
 
 class Entity:
@@ -143,6 +143,10 @@ def draw_human(
         right_arm_x -= int(attack_progress * 15)
         right_arm_y -= int(attack_progress * 15)
     draw_arm(right_arm_x, right_arm_y)
+
+    # The shield hangs off the left arm, under whatever that hand is also holding.
+    if gear and gear.get("offhand"):
+        draw_shield(char_surf, (left_arm_x, left_arm_y), body_center, gear["offhand"], size)
 
     # Weapons sit on top of the hand holding them: ranged left, melee right.
     if gear and gear.get("ranged"):

@@ -57,6 +57,11 @@ class Building:
         self.looted = False
         self.broken_crates: set = set()  # indices into interior_layout()["crates"] already smashed
         self.broken_windows: set = set()  # indices into window_rects() already shattered
+        # Damage taken by a crate/window still standing, by index. Session-only, like the
+        # loot on the floor: what a save has to remember is what finally broke, not how
+        # far along the player got with the rest.
+        self.crate_hp: dict = {}
+        self.window_hp: dict = {}
         # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
         # persisted: it lives only for the current play session, same as indoor monsters.
         self.dropped_items: List["Item"] = []
@@ -260,8 +265,13 @@ class Building:
         self._layout = {"solids": solids, "beds": beds, "crates": crates, "chest": chest, "rug": rug}
         return self._layout
 
-    def break_crate_at(self, pos, hit_radius) -> Optional[pygame.Rect]:
-        """Smash the nearest intact crate (shop or tavern) a swing reaches. Returns its rect, or None if none near."""
+    def damage_crate_at(self, pos, hit_radius, damage: int) -> Optional[tuple]:
+        """Land a blow on the nearest intact crate (shop or tavern) a swing reaches.
+
+        Returns (rect, destroyed) for the crate that was hit, or None if the swing reached
+        no crate at all. A crate takes several blows before it gives; only the one that
+        finishes it reports `destroyed`, and only then does it stop blocking movement.
+        """
         layout = self.interior_layout()
         px, py = pos
         best = None
@@ -274,12 +284,18 @@ class Building:
         if best is None:
             return None
         idx, _dist, crate = best
+
+        remaining = self.crate_hp.get(idx, c.Buildings.CRATE_HP) - damage
+        if remaining > 0:
+            self.crate_hp[idx] = remaining
+            return crate, False
+        self.crate_hp.pop(idx, None)
         self.broken_crates.add(idx)
         # Drop it from the cached collision set so the player can walk through the wreckage now.
         self._layout["solids"] = [
             (rect, kind) for rect, kind in self._layout["solids"] if not (kind == "crate" and rect == crate)
         ]
-        return crate
+        return crate, True
 
     # ------------------------------------------------------------------ drawing
 

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 EQUIP_SLOTS = (
     ("melee_weapon", "Melee", "sword"),
     ("ranged_weapon", "Ranged", "sword"),
+    ("offhand", "Shield", "shield"),
     ("armor", "Armor", "shield"),
     ("accessory", "Accessory", "gem"),
 )

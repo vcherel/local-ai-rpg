@@ -19,10 +19,13 @@ class Breakable:
     shop crates it carries no broken/debris state; once smashed it's simply gone for
     the rest of the session."""
 
-    def __init__(self, x, y, kind="barrel"):
+    def __init__(self, x, y, kind="barrel", hp=None):
         self.x = x
         self.y = y
         self.kind = kind
+        # What it takes to break: persisted, so a barrel worked half-way down stays that
+        # way across a save rather than healing itself while the player is in a menu.
+        self.hp = c.Breakables.HP[kind] if hp is None else hp
 
     @property
     def loot(self) -> bool:
@@ -32,11 +35,11 @@ class Breakable:
         return math.hypot(self.x - point[0], self.y - point[1])
 
     def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "kind": self.kind}
+        return {"x": self.x, "y": self.y, "kind": self.kind, "hp": self.hp}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Breakable":
-        return cls(data["x"], data["y"], data.get("kind", "barrel"))
+        return cls(data["x"], data["y"], data.get("kind", "barrel"), data.get("hp"))
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)

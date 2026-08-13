@@ -44,6 +44,10 @@ class PointOfInterest:
         # same whether the player found five of them or five hundred.
         self.guards_alive: int | None = None
         self.leader_alive = False
+        # How much more the cache has to take before it gives. Session-only on purpose:
+        # a POI is rebuilt from its chunk seed every time the chunk loads, and half a
+        # strongbox's worth of dents is not worth a line in the save.
+        self.cache_hp = c.PointsOfInterest.CACHE_HP
 
     @property
     def variant(self) -> str:
