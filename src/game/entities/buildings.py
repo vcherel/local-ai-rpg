@@ -13,7 +13,6 @@ from core.utils import random_coordinates
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.items import Item
-    from game.entities.player import Player
 
 # The world's buildings, registered so systems without a World reference
 # (e.g. quest item placement) can avoid dropping things inside a footprint.
@@ -309,31 +308,9 @@ class Building:
         ]
         return crate
 
-    def pickup_dropped_item(self, x, y) -> Optional["Item"]:
-        """Nearest dropped item within reach of (x, y), if any."""
-        reach = c.Buildings.INTERACT_DISTANCE
-        for item in self.dropped_items:
-            if math.hypot(x - item.x, y - item.y) <= reach:
-                return item
-        return None
-
-    def interactable_at(self, x, y) -> Optional[tuple]:
-        """Return ("chest", rect) or ("bed", rect) within reach of (x, y), else None."""
-        layout = self.interior_layout()
-        chest = layout["chest"]
-        reach = c.Buildings.INTERACT_DISTANCE
-        if chest and not self.looted and math.hypot(x - chest.centerx, y - chest.centery) <= reach:
-            return ("chest", chest)
-        for bed in layout["beds"]:
-            if math.hypot(x - bed.centerx, y - bed.centery) <= reach:
-                return ("bed", bed)
-        return None
-
     # ------------------------------------------------------------------ drawing
 
-    def draw(
-        self, screen: pygame.Surface, camera: Camera, player: Optional[Player] = None, player_inside: bool = False
-    ):
+    def draw(self, screen: pygame.Surface, camera: Camera, player_inside: bool = False):
         """`player_inside` swaps this one building from its normal solid-roof look to a
         cutaway (no roof, floor and furniture visible) so the player can be seen standing
         in it while the rest of the map keeps drawing around it, same camera, no cut."""
@@ -342,7 +319,7 @@ class Building:
             return
 
         if player_inside:
-            self._draw_interior(screen, camera, player)
+            self._draw_interior(screen, camera)
             return
 
         r = self.rect
@@ -461,7 +438,7 @@ class Building:
         if self.name:
             draw_label(screen, self.name, (cx, cy + self.h / 2 + 30))
 
-    def _draw_interior(self, screen: pygame.Surface, camera: Camera, player: Player):
+    def _draw_interior(self, screen: pygame.Surface, camera: Camera):
         """Cutaway view of this one building: wall shell, floor and furniture drawn at its
         real world position, roof omitted so the player (drawn by the caller afterwards) and
         anything else on the floor stay visible. Everything outside the footprint is drawn
@@ -501,23 +478,11 @@ class Building:
                 world_rect = layout["crates"][idx]
                 self._draw_broken_crate(screen, to_screen(world_rect), world_rect)
 
+        # Interaction prompts (pick up, open, sleep) are not drawn here: the game draws a
+        # single prompt for the one thing the key would act on, so a room full of beds
+        # can't stack labels over each other.
         for item in self.dropped_items:
             item.draw(screen, camera)
-            if math.hypot(player.x - item.x, player.y - item.y) <= c.Buildings.INTERACT_DISTANCE:
-                ix, iy = camera.world_to_screen(item.x, item.y)
-                draw_label(screen, f"E: pick up {item.name}", (ix, iy - 26))
-
-        chest = layout["chest"]
-        if chest and not self.looted:
-            reach = math.hypot(player.x - chest.centerx, player.y - chest.centery) <= c.Buildings.INTERACT_DISTANCE
-            if reach:
-                chest_screen = to_screen(chest)
-                draw_label(screen, "E: open chest", (chest_screen.centerx, chest_screen.top - 18))
-        for bed in layout["beds"]:
-            if math.hypot(player.x - bed.centerx, player.y - bed.centery) <= c.Buildings.INTERACT_DISTANCE:
-                bed_screen = to_screen(bed)
-                text = f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
-                draw_label(screen, text, (bed_screen.centerx, bed_screen.top - 18))
 
     @staticmethod
     def _draw_window(screen, camera: Camera, window: pygame.Rect, broken: bool):

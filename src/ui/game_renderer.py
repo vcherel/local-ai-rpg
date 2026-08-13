@@ -23,8 +23,6 @@ _EQUIP_HUD_SLOTS = (
 
 if TYPE_CHECKING:
     from core.camera import Camera
-    from game.entities.items import Item
-    from game.entities.npcs import NPC
     from game.entities.player import Player
     from game.world import World
 
@@ -72,10 +70,23 @@ class GameRenderer:
     def _on_screen(camera: Camera, x, y, margin=60):
         return abs(x - camera.x) <= c.Screen.ORIGIN_X + margin and abs(y - camera.y) <= c.Screen.ORIGIN_Y + margin
 
-    def draw_world(self, camera: Camera, world: World, player: Player, interior=None):
+    @staticmethod
+    def _hidden_indoors(world: World, x, y, interior) -> bool:
+        """True when (x, y) stands on a building's floor that isn't the one the player is in.
+        That building still has its roof on, so whatever is inside it must not be drawn over
+        the top of it."""
+        building = world.building_at(x, y)
+        return building is not None and building is not interior
+
+    def draw_world(
+        self, camera: Camera, world: World, player: Player, interior=None, interaction=None, quest_target=None
+    ):
         """`interior` is the building (if any) the player is currently standing inside; that
         one building draws as a roofless cutaway instead of its normal solid block, while
-        everything else, indoors or out, keeps drawing in this same pass around it."""
+        everything else, indoors or out, keeps drawing in this same pass around it.
+        `interaction` is what the interact key would act on right now (Game.current_interaction),
+        drawn as the one prompt on screen; `quest_target` is where the tracked quest points,
+        the only thing that still gets an offscreen arrow."""
         self.screen.fill(c.Colors.GREEN)
 
         for x, y, kind in world.floor_details:
@@ -89,7 +100,7 @@ class GameRenderer:
 
         for building in world.buildings:
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
-                building.draw(self.screen, camera, player, player_inside=building is interior)
+                building.draw(self.screen, camera, player_inside=building is interior)
 
         get_decals().draw(self.screen, camera)
 
@@ -101,24 +112,27 @@ class GameRenderer:
             if self._on_screen(camera, poi.x, poi.y):
                 poi.draw(self.screen, camera)
 
+        def visible(x, y, margin=60) -> bool:
+            return self._on_screen(camera, x, y, margin) and not self._hidden_indoors(world, x, y, interior)
+
         for critter in world.critters:
-            if self._on_screen(camera, critter.x, critter.y):
+            if visible(critter.x, critter.y):
                 critter.draw(self.screen, camera)
 
         for npc in world.npcs:
-            if self._on_screen(camera, npc.x, npc.y):
+            if visible(npc.x, npc.y):
                 npc.draw(self.screen, camera)
 
         for monster in world.monsters:
-            if self._on_screen(camera, monster.x, monster.y):
+            if visible(monster.x, monster.y):
                 monster.draw(self.screen, camera)
 
         for boss in world.bosses:
-            if self._on_screen(camera, boss.x, boss.y, margin=boss.kind.size + c.Boss.SLAM_RADIUS):
+            if visible(boss.x, boss.y, margin=boss.kind.size + c.Boss.SLAM_RADIUS):
                 boss.draw(self.screen, camera)
 
         for item in (i for i in world.items if not i.picked_up):
-            if self._on_screen(camera, item.x, item.y):
+            if visible(item.x, item.y):
                 item.draw(self.screen, camera)
 
         for projectile in world.projectiles:
@@ -129,8 +143,33 @@ class GameRenderer:
 
         player.draw(self.screen)
 
-        self.draw_offscreen_indicators(camera, world.items, world.npcs, player, world.bosses)
+        if interaction is not None:
+            self._draw_interaction_prompt(camera, interaction)
+        self.draw_offscreen_indicators(camera, quest_target)
         self.draw_boss_bar(world, player)
+
+    def _draw_interaction_prompt(self, camera: Camera, interaction):
+        """The one prompt on screen, floating over whatever the interact key would act on.
+        A merchant also gets its trade key on a second line underneath."""
+        x, y = camera.world_to_screen(interaction.x, interaction.y)
+        y -= 30
+        bob = math.sin(pygame.time.get_ticks() / 260.0) * 3
+
+        label = c.Fonts.small.render(interaction.label, True, c.Colors.WHITE)
+        lines = [(label, c.Colors.WHITE)]
+        if interaction.hint:
+            lines.append((c.Fonts.small.render(interaction.hint, True, c.Colors.ACCENT), c.Colors.ACCENT))
+
+        width = max(surface.get_width() for surface, _ in lines) + 16
+        height = sum(surface.get_height() for surface, _ in lines) + 6 * len(lines)
+        box = pygame.Rect(0, 0, width, height)
+        box.midbottom = (round(x), round(y + bob))
+        widgets.draw_panel(self.screen, box)
+
+        line_y = box.y + 3
+        for surface, _color in lines:
+            self.screen.blit(surface, (box.centerx - surface.get_width() // 2, line_y))
+            line_y += surface.get_height() + 6
 
     def _draw_icon(self, kind: str, center: tuple, size: int, color: tuple):
         """A small flat glyph for a HUD icon button. `size` is roughly the icon's radius."""
@@ -361,7 +400,13 @@ class GameRenderer:
         name_surface = c.Fonts.button.render(label, True, c.Colors.WHITE)
         self.screen.blit(name_surface, ((c.Screen.WIDTH - name_surface.get_width()) // 2, y - 26))
 
-    def draw_offscreen_indicators(self, camera: Camera, items: List[Item], npcs: List[NPC], player: Player, bosses=()):
+    def draw_offscreen_indicators(self, camera: Camera, target, color=c.Colors.YELLOW):
+        """One arrow, for the tracked quest's target and nothing else. Pointing at every
+        dropped item and every boss on the map turned the screen edge into noise; loot is
+        found by looking at it now (Item.draw's ground glow), not by following an arrow."""
+        if target is None:
+            return
+
         margin = 30
         arrow_size = 32
 
@@ -404,17 +449,7 @@ class GameRenderer:
             pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
             self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
 
-        for item in items:
-            if not item.picked_up:
-                draw_arrow(item.x, item.y, item.color)
-
-        for npc in npcs:
-            if npc.has_active_quest and npc.quest.item in player.inventory:
-                draw_arrow(npc.x, npc.y, c.Colors.YELLOW)
-
-        # Bosses are always worth pointing to, wherever they are.
-        for boss in bosses:
-            draw_arrow(boss.x, boss.y, c.Colors.BOSS_BAR_ENRAGED)
+        draw_arrow(target[0], target[1], color)
 
     def draw_fps(self, fps):
         fps_text = c.Fonts.small.render(f"FPS: {int(fps)}", True, c.Colors.MENU_BACKGROUND)

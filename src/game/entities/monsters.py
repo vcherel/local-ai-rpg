@@ -57,22 +57,32 @@ class Monster(Entity):
     _STEER_OFFSETS_DEG = (0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150)
 
     def _steer(self, target_angle, blocked, radius, speed):
+        """Pick the least deflected heading that stays clear a few steps ahead. Probing at
+        a lookahead distance rather than one step makes a monster commit to going around a
+        wall while it still has room, instead of grinding into it until it happens to slide free."""
         if blocked is None:
             return target_angle
+        probe = max(speed * c.World.STEER_LOOKAHEAD, radius + c.World.STEER_MIN_PROBE)
         for offset_deg in self._STEER_OFFSETS_DEG:
             angle = target_angle + math.radians(offset_deg)
-            nx = self.x + math.cos(angle) * speed
-            ny = self.y + math.sin(angle) * speed
+            nx = self.x + math.cos(angle) * probe
+            ny = self.y + math.sin(angle) * probe
             if not blocked(nx, ny, radius):
                 return angle
         return target_angle
 
-    def move(self, player: Player, dt, blocked=None):
+    def move(self, player: Player, dt, blocked=None, waypoint=None):
+        """Chase the player, or `waypoint` when one is given: a door the monster has to walk
+        through first because the player is on the other side of a wall (see World.chase_waypoint).
+        The attack swing always keys off the real distance to the player, waypoint or not."""
         dx = player.x + self.target_offset[0] - self.x
         dy = player.y + self.target_offset[1] - self.y
         dist = math.hypot(dx, dy)
 
-        target_angle = math.atan2(dy, dx)
+        if waypoint is not None:
+            target_angle = math.atan2(waypoint[1] - self.y, waypoint[0] - self.x)
+        else:
+            target_angle = math.atan2(dy, dx)
         self.orientation = target_angle
 
         if self.kind.attack_range < dist < c.World.DETECTION_RANGE + c.Player.SIZE // 2:

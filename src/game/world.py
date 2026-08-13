@@ -22,7 +22,7 @@ from game.entities.critter import Critter, pick_critter_kind
 from game.entities.items import AMMO_BUNDLE, Item, rarity_color
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
-from game.entities.poi import PointOfInterest, generate_pois
+from game.entities.poi import PointOfInterest, pois_for_chunk
 from game.entities.projectile import Projectile
 from game.events import EventSystem
 from game.loot import break_crate, open_poi_cache
@@ -51,7 +51,14 @@ class World:
         self.bosses: List[Boss] = []
         self.buildings: List[Building] = []
         self.breakables: List[Breakable] = []
+        # Only the POIs of the chunks currently loaded around the player; see _load_chunk.
         self.pois: List[PointOfInterest] = []
+        # What the player did to a POI (looted, discovered), by POI id. Everything else
+        # about a POI comes back from its chunk seed, so this is all that needs saving.
+        self.poi_state: dict = {}
+        # Chunks whose camp already got its guard this session, so walking in and out of
+        # a camp's chunk doesn't stack up monsters around it.
+        self._guarded_chunks: set = set()
         # Wandering wildlife, purely atmospheric; transient like particles, never saved.
         self.critters: List[Critter] = []
         # Arrows in flight; transient like particles, never saved.
@@ -79,6 +86,11 @@ class World:
         # write a dead world's state over the new game's save.
         self.closed = False
 
+        saved_pois = self.save_system.load("pois", {})
+        # Saves written before the world became endless hold a plain list of POIs placed
+        # inside the old fixed box; those positions mean nothing now, so they're dropped.
+        self.poi_state = saved_pois if isinstance(saved_pois, dict) else {}
+
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
             self._restore(saved_npcs)
@@ -91,12 +103,10 @@ class World:
             self.buildings = generate_buildings()
             set_active_buildings(self.buildings)
             self.breakables = generate_breakables(self.buildings)
-            self.pois = generate_pois(self.buildings)
             self._populate_npcs()
             self.monsters = [
                 self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
             ]
-            self._spawn_camp_guards()
             self._spawn_landmark_boss()
         set_active_buildings(self.buildings)
 
@@ -133,16 +143,17 @@ class World:
         # A monster standing in a wall beats hanging world generation.
         return x, y
 
-    def _spawn_camp_guards(self):
-        """A camp point of interest doesn't stand undefended: one regular monster spawns
-        just next to it, at world creation only, so there's a small fight before the loot."""
-        for poi in self.pois:
-            if poi.kind != "camp":
-                continue
-            angle = random.uniform(0, 2 * math.pi)
-            x = poi.x + math.cos(angle) * 70
-            y = poi.y + math.sin(angle) * 70
-            self.monsters.append(self._new_monster(x, y))
+    def _spawn_camp_guard(self, poi: PointOfInterest):
+        """A camp doesn't stand undefended: one regular monster posted next to it, so there's
+        a small fight before the loot. Once per camp per session, and never for a camp that
+        has already been cleared out."""
+        if poi.kind != "camp" or poi.looted or poi.id in self._guarded_chunks:
+            return
+        self._guarded_chunks.add(poi.id)
+        angle = random.uniform(0, 2 * math.pi)
+        x = poi.x + math.cos(angle) * 70
+        y = poi.y + math.sin(angle) * 70
+        self.monsters.append(self._new_monster(x, y))
 
     def _new_monster(self, x, y) -> Monster:
         """Tougher kinds unlock farther from the world center, so wandering out gets more dangerous."""
@@ -154,7 +165,6 @@ class World:
         """Rebuild items, NPCs, monsters and buildings from a saved game, relinking quest items by id."""
         self.buildings = [Building.from_dict(d) for d in self.save_system.load("buildings", [])]
         self.breakables = [Breakable.from_dict(d) for d in self.save_system.load("breakables", [])]
-        self.pois = [PointOfInterest.from_dict(d) for d in self.save_system.load("pois", [])]
         self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
         items_by_id = {item.id: item for item in self.items}
         self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
@@ -183,6 +193,15 @@ class World:
         self.save_system.update("context", self.context)
         self.save_system.save_all()
 
+    def _poi_state_snapshot(self) -> dict:
+        """Everything the player has changed about a POI, loaded chunks included: the rest
+        of a POI is regenerated from its chunk seed and never needs saving."""
+        snapshot = dict(self.poi_state)
+        for poi in self.pois:
+            if poi.touched:
+                snapshot[poi.id] = poi.state()
+        return snapshot
+
     def serialize(self) -> dict:
         # A wandering merchant is a transient event; drop it rather than saving it as permanent.
         npcs = [npc for npc in self.npcs if npc is not self.events.wandering_merchant]
@@ -193,19 +212,114 @@ class World:
             "bosses": [boss.to_dict() for boss in self.bosses],
             "buildings": [building.to_dict() for building in self.buildings],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
-            "pois": [poi.to_dict() for poi in self.pois],
+            "pois": self._poi_state_snapshot(),
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
 
     def blocked(self, x, y, radius) -> bool:
         return any(building.blocks(x, y, radius) for building in self.buildings)
 
+    def building_at(self, x, y) -> Building | None:
+        """The building whose floor (x, y) stands on, or None. Buildings are kept far enough
+        apart (Buildings.MIN_GAP) that at most one can contain a given point."""
+        for building in self.buildings:
+            if building.contains_point(x, y):
+                return building
+        return None
+
+    def chase_waypoint(self, monster: Monster, player: Player):
+        """Where a chasing monster should head next, or None to walk straight at the player.
+
+        Buildings are the only obstacles and each has a single door, so a chase across a wall
+        never needs a real pathfinder: aim for the door of whichever building separates the
+        two, and walk round any other building standing in the way rather than into it.
+        """
+        monster_building = self.building_at(monster.x, monster.y)
+        player_building = self.building_at(player.x, player.y)
+        start = (monster.x, monster.y)
+        radius = monster.kind.size / 2
+
+        if monster_building is player_building:
+            if monster_building is not None:
+                # Same room: nothing between them but furniture, which steering handles.
+                return None
+            # Both outdoors: straight at the player, round anything standing in the way.
+            goal = (player.x, player.y)
+        elif monster_building is not None:
+            # Indoors with the player elsewhere: out through the door first, and no detour
+            # around the building the monster is standing in.
+            return self._door_goal(monster_building, monster, radius, leaving=True)
+        else:
+            goal = self._door_goal(player_building, monster, radius, leaving=False)
+
+        return self._detour_corner(start, goal, radius) or goal
+
+    @staticmethod
+    def _door_goal(building: Building, monster: Monster, radius: float, leaving: bool):
+        """The point to walk to next to get through `building`'s door, in or out. A monster
+        lines up with the doorway from the outside first, then steps across the threshold,
+        so it goes through the gap instead of shouldering the wall next to it."""
+        door_front = building.door_front()
+        inside = (building.x, building.interior_rect().bottom - 20)
+        fits = radius < c.Buildings.DOOR_WIDTH / 2 - 4
+        aligned = abs(monster.x - building.x) < c.Buildings.DOOR_WIDTH / 2 - radius
+        if leaving:
+            return door_front if aligned else inside
+        # Too broad for the doorway (the stone colossus): it waits on the doorstep rather
+        # than shoving itself into a wall it can never pass. Still round the far side of the
+        # building, and the door is on the front: only step in from the front half.
+        if not fits or not aligned or monster.y < building.rect.centery:
+            return door_front
+        return inside
+
+    def _detour_corner(self, start, goal, radius: float):
+        """The corner to head for when a building sits between `start` and `goal`, or None
+        when the way is clear.
+
+        The way past a rectangle runs through at most two of its corners, so both ways round
+        are costed in full and the first corner of the shorter one is returned. Costing the
+        whole detour, rather than just picking the nearest corner, is what stops a monster
+        oscillating between the near corner behind it and the far corner it should round.
+        """
+        for building in self.buildings:
+            margin = radius + 8
+            rect = building.rect.inflate(margin * 2, margin * 2)
+            # A goal inside the shell is that building's own doorway; walking round the
+            # building would be walking away from the door.
+            if rect.collidepoint(goal):
+                continue
+            # Tested against a hair-smaller rect so a leg running along an edge, corner to
+            # corner, doesn't count as cutting through the building.
+            inner = rect.inflate(-2, -2)
+            if not inner.clipline(start, goal):
+                continue
+
+            corners = [rect.topleft, rect.topright, rect.bottomright, rect.bottomleft]
+            best = None
+            for i, first in enumerate(corners):
+                if inner.clipline(start, first):
+                    continue
+                for last in (first, corners[(i + 1) % 4], corners[(i - 1) % 4]):
+                    if last is not first and inner.clipline(first, last):
+                        continue
+                    if inner.clipline(last, goal):
+                        continue
+                    cost = math.dist(start, first) + math.dist(first, last) + math.dist(last, goal)
+                    if best is None or cost < best[0]:
+                        # Aim at the next corner along once this one is effectively reached.
+                        target = first if math.dist(start, first) > radius + 6 else last
+                        best = (cost, target)
+            if best is not None:
+                return best[1]
+        return None
+
     def _chunk_of(self, x, y) -> tuple[int, int]:
         size = c.World.CHUNK_SIZE
         return int(x // size), int(y // size)
 
     def _load_chunk(self, chunk: tuple[int, int]):
-        """Deterministically generate a chunk's floor details, so revisiting it looks the same."""
+        """Deterministically generate a chunk's floor details and points of interest, so
+        revisiting it looks the same and walking outward never runs out of things to find."""
         cx, cy = chunk
         size = c.World.CHUNK_SIZE
         rng = random.Random(f"{cx},{cy}")
@@ -213,10 +327,22 @@ class World:
             x = cx * size + rng.uniform(0, size)
             y = cy * size + rng.uniform(0, size)
             self.floor_details.append((x, y, rng.choice(["stone", "flower"])))
+
+        for poi in pois_for_chunk(cx, cy, self.buildings):
+            state = self.poi_state.get(poi.id)
+            if state:
+                poi.apply_state(state)
+            self.pois.append(poi)
+            self._spawn_camp_guard(poi)
+
         self._loaded_chunks.add(chunk)
 
     def _unload_chunk(self, chunk: tuple[int, int]):
         self.floor_details = [d for d in self.floor_details if self._chunk_of(d[0], d[1]) != chunk]
+        for poi in self.pois:
+            if self._chunk_of(poi.x, poi.y) == chunk and poi.touched:
+                self.poi_state[poi.id] = poi.state()
+        self.pois = [p for p in self.pois if self._chunk_of(p.x, p.y) != chunk]
         self._loaded_chunks.discard(chunk)
 
     def _sync_chunks(self, player: Player):
@@ -390,16 +516,38 @@ class World:
             for _ in range(2)
         ] + [{"name": "Healing Potion", "item_type": "potion", "rarity": "common", "price": 18} for _ in range(2)]
 
-    def talk_npc(self, player: Player):
-        if self.context is None:
-            return
+    def quest_target(self, quest, player: Player):
+        """Where the tracked quest points right now, as (x, y), or None when it has no fixed
+        place to go (killing any wolf, looting a drop). Once the objective is in hand it
+        points back at the NPC waiting for it.
+        """
+        if quest is None:
+            return None
 
+        giver = next((npc for npc in self.npcs if npc.quest is quest), None)
+        ready_to_hand_in = (quest.item is not None and quest.item in player.inventory) or (
+            quest.quest_type == "kill_mob" and quest.kills_done >= quest.kill_count
+        )
+        if ready_to_hand_in:
+            return (giver.x, giver.y) if giver else None
+
+        if quest.quest_type == "fetch" and quest.item is not None and not quest.item.picked_up:
+            return (quest.item.x, quest.item.y)
+        if quest.quest_type == "slay_boss":
+            boss = next((b for b in self.bosses if b.quest_tag == quest.target_monster_kind), None)
+            return (boss.x, boss.y) if boss else None
+        if quest.quest_type == "recover_stolen":
+            thief = next((npc for npc in self.npcs if npc.name == quest.thief_npc_name), None)
+            return (thief.x, thief.y) if thief else None
+        return None
+
+    def npc_in_reach(self, player: Player) -> NPC | None:
+        """The NPC the player is close enough to interact with, nearest first. Shared by the
+        on-screen prompt, the talk key and the trade key so they can't disagree."""
         pos = player.get_pos(c.Player.INTERACTION_DISTANCE)
-        for npc in self.npcs:
-            if npc.distance_to_point(pos) < c.Player.INTERACTION_DISTANCE + c.Entities.NPC_SIZE // 2:
-                if npc.is_merchant and not npc.shop_ready:
-                    return None
-                return npc
+        reach = c.Player.INTERACTION_DISTANCE + c.Entities.NPC_SIZE // 2
+        in_reach = [npc for npc in self.npcs if npc.distance_to_point(pos) < reach]
+        return min(in_reach, key=lambda npc: npc.distance_to_point(pos), default=None)
 
     def handle_attack(self, player: Player, quest_system: QuestSystem, ranged: bool = False):
         """The weapon's archetype (constants.weapon_archetype) drives reach, damage, cadence,
@@ -1019,10 +1167,13 @@ class World:
         else:
             proj_list.remove(proj)
 
-    def pickup_item(self, player: Player):
-        for item in self.items:
-            if not item.picked_up and item.distance_to_point(player.get_pos()) < c.Player.INTERACTION_DISTANCE:
-                return item
+    def item_in_reach(self, player: Player) -> Item | None:
+        """The loot the player can pick up right now, nearest first."""
+        pos = player.get_pos()
+        in_reach = [
+            item for item in self.items if not item.picked_up and item.distance_to_point(pos) < c.Player.PICKUP_DISTANCE
+        ]
+        return min(in_reach, key=lambda item: item.distance_to_point(pos), default=None)
 
     def _spawn_monster_away_from(self, player: Player):
         for _ in range(10):
@@ -1067,7 +1218,7 @@ class World:
         update_radius = c.World.DETECTION_RANGE + c.Player.SIZE
         for monster in self.monsters:
             if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
-                monster.move(player, dt, self.blocked)
+                monster.move(player, dt, self.blocked, self.chase_waypoint(monster, player))
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         self.monsters = [m for m in self.monsters if m.distance_to_point(player.get_pos()) <= c.World.DESPAWN_DISTANCE]

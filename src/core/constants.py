@@ -26,6 +26,9 @@ class Player:
     RUN_SPEED: int = 7
 
     INTERACTION_DISTANCE: int = 30
+    # Loot is picked up from a bit farther out than an NPC is talked to: the prompt over a
+    # dropped item should show while walking past it, not only when standing on it.
+    PICKUP_DISTANCE: int = 70
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
@@ -297,6 +300,12 @@ class Entities:
     # A dropped item pops from its source (a smashed crate, say) and settles into place.
     DROP_POP_MS: int = 400
     DROP_POP_HEIGHT: float = 26.0
+    # Loot lying on the ground bobs over a pulsing halo in its rarity colour, so it can be
+    # spotted from across the screen instead of blending into the grass.
+    LOOT_BOB_HEIGHT: float = 3.0
+    LOOT_GLOW_RADIUS: int = 9
+    LOOT_GLOW_ALPHA_MIN: int = 40
+    LOOT_GLOW_ALPHA_SWING: int = 45
 
 
 @dataclass(frozen=True)
@@ -317,6 +326,13 @@ class World:
     DESPAWN_DISTANCE: int = 3000
     # Monsters placed at world creation start at least this far from the player spawn point.
     INITIAL_SPAWN_MIN_DISTANCE: int = 1200
+
+    # Obstacle avoidance: a monster probes this many steps ahead (never less than
+    # STEER_MIN_PROBE past its own radius) so it turns away from a wall early instead
+    # of pressing into it, and heads for a door once within DOOR_APPROACH_DISTANCE of it.
+    STEER_LOOKAHEAD: float = 12.0
+    STEER_MIN_PROBE: int = 26
+    DOOR_APPROACH_DISTANCE: int = 90
 
     # Floor details stream in per chunk as the player explores, so the world has no edge.
     CHUNK_SIZE: int = 1000
@@ -462,9 +478,13 @@ class PointsOfInterest:
     flavor, no loot at all.
     """
 
-    COUNT: int = 16
+    # Points of interest stream in per chunk like the floor details, so the wilderness
+    # keeps offering something to find however far out the player walks. At most one per
+    # chunk, kept CHUNK_MARGIN away from the chunk's edges, which is what spaces
+    # neighbouring chunks' landmarks apart without any cross-chunk bookkeeping.
+    PER_CHUNK_CHANCE: float = 0.55
+    CHUNK_MARGIN: int = 260
     MIN_DIST_FROM_BUILDING: int = 400
-    MIN_DIST_FROM_OTHER: int = 500
     MIN_DIST_FROM_CENTER: int = 900
     SIZE: int = 46
     HIT_RADIUS: int = 34
