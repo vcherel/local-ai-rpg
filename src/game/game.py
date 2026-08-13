@@ -12,7 +12,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_hitstop, get_vignette
-from game.entities.items import rarity_color
+from game.entities.items import rarity_color, roll_rarity
 from game.entities.player import Player
 from game.loot import open_lootbox
 from game.world import World
@@ -399,10 +399,6 @@ class Game:
             )
             play_sound("level_up")
 
-    def _building_at(self, x, y):
-        """The building whose floor (x, y) is standing on, or None."""
-        return self.world.building_at(x, y)
-
     def _pickup_dropped_item(self, item: Item):
         self.interior.dropped_items.remove(item)
         item.picked_up = True
@@ -413,8 +409,6 @@ class Game:
         self._collect_item(item)
 
     def _open_interior_chest(self):
-        from game.entities.items import roll_rarity
-
         self.interior.looted = True
         self._award_loot(roll_rarity(), "Chest")
 
@@ -511,7 +505,7 @@ class Game:
                 self._pop_levelups()
                 # A building's interior is just its own footprint; re-derive which one (if
                 # any) the player is standing in rather than tracking a separate mode.
-                self.interior = self._building_at(self.player.x, self.player.y)
+                self.interior = self.world.building_at(self.player.x, self.player.y)
                 self.interaction = self.current_interaction()
                 self.update_camera()
                 get_shake().update(dt)

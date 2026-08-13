@@ -6,13 +6,26 @@ A 2D open-world RPG where **all AI runs locally on your machine**. No internet r
 
 ## Features
 
+**AI**
 - AI-generated conversations with any NPC, with an affinity system that tracks how each NPC feels about you and shifts dialogue tone, quest rewards, and shop prices
-- Dynamic quest system: fetch, kill, loot drop, and recover stolen item quests, all generated from conversation
-- Loot system with rarity tiers, random drops, and lootboxes
-- Shops: buy and sell items directly from NPCs, with bartering and persuasion stats affecting prices
-- Random world events: wandering merchants, treasure, rumors, blood nights, village crises
-- Open world exploration with enemies and melee combat
-- Sound effects and visual hit feedback
+- Dynamic quest system: fetch, kill, loot drop, recover stolen item, and slay boss quests, all generated from conversation
+- The world's lore, its settlement and landmark names, its bosses and its shop stock are all written by the model at run time
+
+**World**
+- Endless world: points of interest, villages and terrain stream in per chunk as you walk, so there is no edge to hit
+- Villages of houses, shops and taverns you can walk inside, with breakable crates, windows, barrels and chests
+- Wilderness landmarks: ruins to loot, shrines to find, bandit camps to clear and traveller camps to trade at and rest by
+- Day/night cycle, random world events (wandering merchants, treasure, rumors, blood nights, village crises) and a minimap that only remembers ground you have actually walked
+
+**Combat and progression**
+- Melee and ranged combat side by side: weapon families (dagger, sword, axe, hammer, spear, staff, bow) each with their own reach, cadence and weight, plus arrows, crits, knockback and cleave
+- Named multi-phase bosses with telegraphed abilities and an enrage phase
+- Loot with rarity tiers, rolled affixes (lifesteal, burn, thorns, execute and legendary-only signature effects), potions and timed buffs
+- Use-based character progression: the stats you lean on are the ones that level
+- Huntable wildlife, shops to buy and sell in, and a death penalty you recover from rather than reload around
+
+**Technical**
+- Sound effects and visual hit feedback (hit-stop, screen shake, blood decals, floating damage)
 - Save and continue your game
 - Runs on GTX 1650 and up
 

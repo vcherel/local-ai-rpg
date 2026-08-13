@@ -180,23 +180,15 @@ class Player(Entity):
         """Add an item to the inventory, merging a stackable (ammo, potion) into a matching
         stack. Both only merge with the same rarity: rarity is what makes one healing potion
         stronger than another, and what makes a legendary quiver worth more than a common
-        one. Merging across rarities silently threw the better item away."""
+        one. Merging across rarities silently threw the better item away. A potion also has
+        to promise the same effect, since the name alone doesn't always settle that."""
         existing = None
-        if item.item_type == "ammo":
+        if item.item_type in ("ammo", "potion"):
             existing = next(
                 (
                     i
                     for i in self.inventory
-                    if i.item_type == "ammo" and i.name == item.name and i.rarity == item.rarity
-                ),
-                None,
-            )
-        elif item.item_type == "potion":
-            existing = next(
-                (
-                    i
-                    for i in self.inventory
-                    if i.item_type == "potion"
+                    if i.item_type == item.item_type
                     and i.name == item.name
                     and i.rarity == item.rarity
                     and i.potion_effect == item.potion_effect
@@ -448,14 +440,12 @@ class Player(Entity):
         actual = max(damage - reduction, 1)
         old_hp = self.hp
 
-        # Guardian's Ward: a hit that would drop hp to/below its floor instead clamps hp
-        # there and opens the invulnerability window, then goes on cooldown.
+        # Guardian's Ward: a hit that would actually kill instead leaves hp at the affix's
+        # floor and opens the invulnerability window, then goes on cooldown. Only a lethal
+        # hit, as the affix promises: triggering on any hit that merely dropped the player
+        # below the floor made it a passive health floor and could even hand back hp.
         ward_threshold = self.guardian_ward_threshold()
-        warded = (
-            ward_threshold > 0
-            and now >= self.guardian_ward_cooldown_until
-            and old_hp - actual <= self.max_hp * ward_threshold
-        )
+        warded = ward_threshold > 0 and now >= self.guardian_ward_cooldown_until and old_hp - actual <= 0
         if warded:
             self.hp = round(self.max_hp * ward_threshold)
             self.guardian_ward_invuln_until = now + c.Affixes.GUARDIAN_WARD_INVULN_S

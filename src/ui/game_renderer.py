@@ -14,14 +14,6 @@ from ui import widgets
 from ui.loading_indicator import LoadingIndicator
 from ui.minimap import Minimap
 
-# HUD equipment strip: (slot key, caption, ghost glyph shown when empty).
-_EQUIP_HUD_SLOTS = (
-    ("melee_weapon", "Melee", "sword"),
-    ("ranged_weapon", "Ranged", "sword"),
-    ("armor", "Armor", "shield"),
-    ("accessory", "Accessory", "gem"),
-)
-
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.player import Player
@@ -347,7 +339,7 @@ class GameRenderer:
         slot = 46
         step = 70
         left = self.HUD_PANEL_RECT.x + 10
-        for i, (item_type, caption, glyph) in enumerate(_EQUIP_HUD_SLOTS):
+        for i, (item_type, caption, glyph) in enumerate(widgets.EQUIP_SLOTS):
             item = player.equipped_item(item_type)
             rect = pygame.Rect(left + i * step, top, slot, slot)
 
@@ -417,49 +409,41 @@ class GameRenderer:
         if target is None:
             return
 
+        screen_x, screen_y = camera.world_to_screen(target[0], target[1])
+        if 0 <= screen_x <= c.Screen.WIDTH and 0 <= screen_y <= c.Screen.HEIGHT:
+            return
+
         margin = 30
         arrow_size = 32
+        center_x = c.Screen.WIDTH // 2
+        center_y = c.Screen.HEIGHT // 2
+        dx = screen_x - center_x
+        dy = screen_y - center_y
+        distance = math.hypot(dx, dy)
+        if distance == 0:
+            return
 
-        def draw_arrow(target_x, target_y, color):
-            screen_x, screen_y = camera.world_to_screen(target_x, target_y)
-            if 0 <= screen_x <= c.Screen.WIDTH and 0 <= screen_y <= c.Screen.HEIGHT:
-                return
+        dx /= distance
+        dy /= distance
+        arrow_x = max(margin, min(center_x + dx * (center_x - margin), c.Screen.WIDTH - margin))
+        arrow_y = max(margin, min(center_y + dy * (center_y - margin), c.Screen.HEIGHT - margin))
 
-            center_x = c.Screen.WIDTH // 2
-            center_y = c.Screen.HEIGHT // 2
-            dx = screen_x - center_x
-            dy = screen_y - center_y
-            distance = math.hypot(dx, dy)
-            if distance == 0:
-                return
+        angle = math.atan2(dy, dx)
+        arrow_points = [(arrow_size, 0), (-arrow_size // 2, -arrow_size // 2), (-arrow_size // 2, arrow_size // 2)]
+        # Drawn onto its own surface, in that surface's coordinates, so the polygon can be
+        # blitted with an alpha the screen's own draw calls wouldn't give it.
+        local_points = [
+            (
+                px * math.cos(angle) - py * math.sin(angle) + arrow_size * 1.5,
+                px * math.sin(angle) + py * math.cos(angle) + arrow_size * 1.5,
+            )
+            for px, py in arrow_points
+        ]
 
-            dx /= distance
-            dy /= distance
-            arrow_x = center_x + dx * (c.Screen.WIDTH // 2 - margin)
-            arrow_y = center_y + dy * (c.Screen.HEIGHT // 2 - margin)
-            arrow_x = max(margin, min(arrow_x, c.Screen.WIDTH - margin))
-            arrow_y = max(margin, min(arrow_y, c.Screen.HEIGHT - margin))
-
-            angle = math.atan2(dy, dx)
-            arrow_points = [(arrow_size, 0), (-arrow_size // 2, -arrow_size // 2), (-arrow_size // 2, arrow_size // 2)]
-
-            rotated_points = []
-            for px, py in arrow_points:
-                rx = px * math.cos(angle) - py * math.sin(angle)
-                ry = px * math.sin(angle) + py * math.cos(angle)
-                rotated_points.append((arrow_x + rx, arrow_y + ry))
-
-            arrow_surface = pygame.Surface((arrow_size * 3, arrow_size * 3), pygame.SRCALPHA)
-            local_points = [
-                (p[0] - arrow_x + arrow_size * 1.5, p[1] - arrow_y + arrow_size * 1.5) for p in rotated_points
-            ]
-
-            arrow_color = (*color, 120)
-            pygame.draw.polygon(arrow_surface, arrow_color, local_points)
-            pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
-            self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
-
-        draw_arrow(target[0], target[1], color)
+        arrow_surface = pygame.Surface((arrow_size * 3, arrow_size * 3), pygame.SRCALPHA)
+        pygame.draw.polygon(arrow_surface, (*color, 120), local_points)
+        pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
+        self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
 
     def draw_fps(self, fps):
         fps_text = c.Fonts.small.render(f"FPS: {int(fps)}", True, c.Colors.MENU_BACKGROUND)

@@ -44,6 +44,25 @@ def log_call(
         "completion_tokens": completion_tokens,
         "tokens_per_second": round(completion_tokens / duration, 2) if completion_tokens and duration > 0 else None,
     }
+    _append(entry)
+
+
+def log_parse_failure(category: str, response: str, error: str):
+    """Record a response the game couldn't make sense of, alongside the call that produced
+    it. Model output that fails to parse is a quality signal like any other, and the game
+    swallows it by design (a malformed quest is dropped, not crashed on), so without this
+    line it leaves no trace at all."""
+    _append(
+        {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "category": category,
+            "parse_failure": error,
+            "response": response,
+        }
+    )
+
+
+def _append(entry: dict):
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with _lock, open(LOG_PATH, "a") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")

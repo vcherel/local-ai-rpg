@@ -25,10 +25,10 @@ class EventSystem:
 
     def __init__(self, world: World, notify: Callable[[str, tuple], None], show_rumor: Callable[[str], None]):
         self.world = world
-        self.notify = notify
+        self._notify = notify
         # Rumours are full sentences, unreadable in a passing toast: they get their own
         # dismissible panel instead.
-        self.show_rumor = show_rumor
+        self._show_rumor = show_rumor
         self.cooldown = random.uniform(*c.Events.INTERVAL_RANGE_MS)
 
         self.wandering_merchant: Optional[NPC] = None
@@ -38,6 +38,18 @@ class EventSystem:
     @property
     def blood_night_active(self) -> bool:
         return self.blood_night_timer > 0
+
+    def notify(self, message: str, color: tuple):
+        """Toast, unless the session is over. An event that waits on the LLM (every presage
+        does) can finish long after the player has quit to the menu, and the toast widget it
+        was handed belongs to that dead game, not to whatever is on screen now."""
+        if not self.world.closed:
+            self._notify(message, color)
+
+    def show_rumor(self, text: str):
+        """Same guard as notify: a rumour generated after the session ended has nowhere to go."""
+        if not self.world.closed:
+            self._show_rumor(text)
 
     def update(self, dt, player: Player, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         self._tick_merchant(dt)

@@ -44,6 +44,8 @@ class Boss(Monster):
 
     `quest_tag` links a boss spawned by a slay_boss quest back to that quest; None otherwise."""
 
+    knockback_immune = True
+
     def __init__(self, x, y, template: c.BossKind = c.BOSS_KINDS[0], quest_tag: str | None = None):
         super().__init__(x, y, _kind_from_boss(template))
         self.template = template
@@ -51,7 +53,6 @@ class Boss(Monster):
         # Display identity, filled in by the LLM after spawn; a plain fallback until then.
         self.name = template.archetype.capitalize()
         self.title = ""
-        self.knockback_immune = True
 
         self.enraged = False
         self.ability_cd = random.uniform(*c.Boss.ABILITY_COOLDOWN_RANGE_MS)
