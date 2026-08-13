@@ -91,6 +91,7 @@ class WorldStreaming:
         # would be the one thing that accumulated forever as the player found more camps.
         if dropped:
             self.monsters = [m for m in self.monsters if m.camp_id not in dropped]
+            self.critters = [cr for cr in self.critters if cr.camp_id not in dropped]
         self._loaded_chunks.discard(chunk)
 
     def _sync_chunks(self, player: Player):

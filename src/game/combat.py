@@ -98,6 +98,15 @@ class WorldCombat:
                 self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
             return
 
+        # An animal already biting the player is hit before anything peaceful, for the same
+        # reason a monster is: a rabbit standing behind the dog must not soak the blow.
+        biting = in_reach([cr for cr in self.critters if cr.hostile], lambda cr: cr.hit_radius * 2)
+        if biting:
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            for critter in biting:
+                self._strike_critter(critter, base_damage, arch, player)
+            return
+
         # A villager already swinging at the player counts as a monster for targeting: they
         # come before wildlife, so a rabbit can't soak the blow meant for the mob.
         angry = [npc for npc in self.npcs if npc.hostile]
@@ -354,8 +363,10 @@ class WorldCombat:
         )
 
     def _strike_critter(self, critter: Critter, base_damage, arch, player: Player):
-        """Wildlife takes hits like anything else, but never fights back: a survivor just
-        bolts. No quest system involvement, no loot table, nothing to burn or chain into."""
+        """Wildlife takes hits like anything else. What a survivor does about it is its own
+        temperament's business: a rabbit bolts, a boar turns round, a pack all turns round
+        at once (`World.aggro_pack`). No quest system involvement, no loot table, nothing to
+        burn or chain into."""
         damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
         get_shake().add(arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0))
         self._pop_damage(critter.x, critter.y - critter.size / 2, damage, crit)
@@ -366,16 +377,17 @@ class WorldCombat:
         self._hit_feedback(critter.x, critter.y, crit, kb_dir)
         self._knockback(critter, critter.size / 2, kb_dir, arch.knockback, self.blocked)
         critter.startle()
+        self.aggro_pack(critter)
 
     def _kill_critter(self, critter: Critter, player: Player, direction=None):
         """A hunted animal leaves a pelt worth selling, and nothing else: critters are
         session-only, so the drop is the only trace of it that reaches the save."""
         play_sound("monster_death")
         get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
-        self._spill_blood(critter.x, critter.y, c.Wildlife.COLORS[critter.kind], direction)
+        self._spill_blood(critter.x, critter.y, critter.kind.color, direction)
         player.stats.train("vitality", c.Stats.XP_PER_KILL * 0.5)
-        if random.random() < c.Wildlife.DROP_CHANCE[critter.kind]:
-            drop = Item(critter.x, critter.y, c.Wildlife.DROP_NAMES[critter.kind], "misc", rarity="common")
+        if critter.kind.drop_name and random.random() < critter.kind.drop_chance:
+            drop = Item(critter.x, critter.y, critter.kind.drop_name, "misc", rarity="common")
             drop.start_pop_anim(critter.x, critter.y - critter.size)
             self.items.append(drop)
         self.critters.remove(critter)
@@ -828,6 +840,7 @@ class WorldCombat:
             self._hit_feedback(critter.x, critter.y, False, kb_dir)
             self._knockback(critter, critter.size / 2, kb_dir, proj.knockback, self.blocked)
             critter.startle()
+            self.aggro_pack(critter)
         self._projectile_after_hit(proj, critter)
         return True
 

@@ -231,6 +231,17 @@ class World(WorldCombat, WorldStreaming):
             guard.camp_leader = leader
             self.monsters.append(guard)
 
+        # Camp dogs come and go with the garrison rather than being counted with it: they
+        # are wildlife, so they can't hold a camp open, but a camp with bandits still in it
+        # has its dogs. Once the garrison is dead the kennel stays empty.
+        if not poi.guards_remaining:
+            return
+        for _ in range(random.Random(f"dogs{poi.id}").randint(*c.Wildlife.CAMP_DOGS)):
+            angle = random.uniform(0, 2 * math.pi)
+            x = poi.x + math.cos(angle) * spread
+            y = poi.y + math.sin(angle) * spread
+            self.critters.append(Critter(x, y, c.CRITTER_KINDS_BY_NAME["dog"], home=(x, y), camp_id=poi.id))
+
     def on_guard_killed(self, monster: Monster):
         """Strike a fallen bandit off its camp's roll, which is what decides whether the cache
         opens and how many stand there when the chunk next loads."""
@@ -273,9 +284,9 @@ class World(WorldCombat, WorldStreaming):
         near the fire right now, so a wandering wolf still stops the player resting mid-fight."""
         if poi.variant == "bandit" and not poi.guards_defeated:
             return False
+        threats = self.monsters + self.bosses + [cr for cr in self.critters if cr.hostile]
         return not any(
-            entity.distance_to_point((poi.x, poi.y)) < c.PointsOfInterest.CAMP_CLEAR_RADIUS
-            for entity in self.monsters + self.bosses
+            entity.distance_to_point((poi.x, poi.y)) < c.PointsOfInterest.CAMP_CLEAR_RADIUS for entity in threats
         )
 
     def camp_in_reach(self, player: Player) -> PointOfInterest | None:
@@ -338,6 +349,13 @@ class World(WorldCombat, WorldStreaming):
         for other in newly_hostile:
             other.hostile = True
             other.affinity = c.Affinity.MIN
+        # The dogs go with their people. A settlement turning on the player turns everything
+        # it keeps on the player, and a dog is faster than a villager.
+        if village is not None:
+            key = f"{village.chunk[0]}:{village.chunk[1]}"
+            for dog in self.critters:
+                if dog.village_key == key:
+                    dog.aggro()
         if self.notify:
             name = village.name if village is not None and village.name else "The locals"
             self.notify(f"{name} turns on you!", c.Colors.RED)
@@ -774,18 +792,76 @@ class World(WorldCombat, WorldStreaming):
             if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2) and self.village_at(x, y) is None:
                 # What crawls out after dark is what lives much deeper in the wilds.
                 bonus = c.DayNight.NIGHT_DANGER_BONUS if self.daynight.is_night else 0
-                self.monsters.append(self._new_monster(x, y, danger_bonus=bonus))
+                # A pack kind (wolves, goblins) is rolled once and then stood up as a group,
+                # so the wilds hold a few real fights rather than a scatter of single mobs.
+                leader = self._new_monster(x, y, danger_bonus=bonus)
+                self.monsters.append(leader)
+                for _ in range(random.randint(*leader.kind.group) - 1):
+                    spread = c.World.PACK_SPREAD
+                    mate_x, mate_y = x + random.uniform(-spread, spread), y + random.uniform(-spread, spread)
+                    if not self.blocked(mate_x, mate_y, leader.kind.size / 2):
+                        self.monsters.append(Monster(mate_x, mate_y, leader.kind))
                 return
 
     def _spawn_critter_away_from(self, player: Player):
+        """Put one animal, or one herd/pack, on the ground out of sight of the player. Which
+        species turns up is a question of how far out this is, the same rule monsters follow:
+        rabbits and deer near town, wild dogs and bears deep in the wilds."""
+        center = c.World.WORLD_SIZE // 2
         for _ in range(10):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(c.Wildlife.SPAWN_MIN_DISTANCE, c.Wildlife.SPAWN_MAX_DISTANCE)
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
-            if not self.blocked(x, y, max(c.Wildlife.SIZES.values()) / 2):
-                self.critters.append(Critter(x, y, pick_critter_kind()))
-                return
+            kind = pick_critter_kind(math.hypot(x - center, y - center))
+            if self.blocked(x, y, kind.size / 2):
+                continue
+            for _ in range(random.randint(*kind.group)):
+                spread = c.Wildlife.GROUP_SPREAD
+                mate_x = x + random.uniform(-spread, spread)
+                mate_y = y + random.uniform(-spread, spread)
+                if not self.blocked(mate_x, mate_y, kind.size / 2):
+                    self.critters.append(Critter(mate_x, mate_y, kind))
+            return
+
+    def _ensure_village_dogs(self, player: Player):
+        """Stand a village's dogs back up when the player is near it. They are wildlife, not
+        villagers: session-only, rebuilt from the village rather than saved, the same trick a
+        bandit camp's garrison uses. How many a settlement keeps is fixed by its chunk, so
+        the same village always has the same pack."""
+        for village in self.villages:
+            if village.distance_to_point(player.get_pos()) > c.Wildlife.DESPAWN_DISTANCE:
+                continue
+            key = f"{village.chunk[0]}:{village.chunk[1]}"
+            wanted = random.Random(f"dogs{key}").randint(*c.Wildlife.VILLAGE_DOGS)
+            living = [cr for cr in self.critters if cr.village_key == key]
+            hostile = any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y))
+            for _ in range(wanted - len(living)):
+                angle = random.uniform(0, 2 * math.pi)
+                distance = random.uniform(village.radius * 0.15, village.radius * 0.5)
+                x, y = self.free_spot_near(
+                    village.x + math.cos(angle) * distance,
+                    village.y + math.sin(angle) * distance,
+                    c.CRITTER_KINDS_BY_NAME["dog"].size / 2,
+                )
+                dog = Critter(x, y, c.CRITTER_KINDS_BY_NAME["dog"], home=(x, y), village_key=key)
+                # A village that has already turned on the player doesn't hand back a
+                # friendly dog just because this one was stood up afterwards.
+                dog.hostile = hostile
+                self.critters.append(dog)
+
+    def aggro_pack(self, critter: Critter):
+        """Bring an animal's own kind in with it. Attacking one wild dog brings the pack,
+        and hitting one village dog sets every dog in that village on the player, which is
+        what stops a pack animal being killed one at a time in front of its family."""
+        critter.aggro()
+        for other in self.critters:
+            if other is critter or other.hostile:
+                continue
+            near = other.distance_to_point((critter.x, critter.y)) < c.Wildlife.PACK_AGGRO_RADIUS
+            same_pack = other.kind is critter.kind and near
+            if same_pack or (critter.village_key and other.village_key == critter.village_key):
+                other.aggro()
 
     def _check_poi_discovery(self, player: Player):
         """The one-time line a landmark gives up the first time the player walks to it: a
@@ -908,7 +984,12 @@ class World(WorldCombat, WorldStreaming):
             npc.update(player, dt, self.blocked, waypoint)
 
         for critter in self.critters:
-            critter.update(player, dt, self.blocked)
+            # Only an animal actually coming for the player needs a route round the houses;
+            # everything else is wandering or running and steers for itself.
+            chasing = critter.hostile and critter.distance_to_point(player_pos) <= critter.kind.detection
+            waypoint = self.chase_waypoint(critter, player, critter.size / 2) if chasing else None
+            critter.update(player, dt, self.blocked, damage_mult, waypoint)
+        self._ensure_village_dogs(player)
         self.critters = [
             critter for critter in self.critters if critter.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE
         ]
