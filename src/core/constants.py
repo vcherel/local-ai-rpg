@@ -360,6 +360,10 @@ class World:
     # ...and stay loaded until this much farther away, to avoid load/unload thrashing at the edge.
     CHUNK_KEEP_RADIUS: int = 3
 
+    # Shortest gap between two World.persist_world writes. Every write serialises the whole
+    # world, and generation threads finish in bursts; the periodic autosave catches the rest.
+    PERSIST_MIN_INTERVAL_S: float = 5.0
+
 
 @dataclass(frozen=True)
 class Events:
@@ -699,8 +703,6 @@ class Potions:
     "heal" restores hp on the spot; the other four start a timed buff held on the
     player (`Player.buffs`) and read back by the matching multiplier helpers.
     """
-
-    EFFECTS: tuple = ("heal", "regen", "strength", "swiftness", "stoneskin")
 
     HEAL_FRAC: tuple = (0.25, 0.40, 0.55, 0.70, 0.90)  # fraction of max hp restored at once
     REGEN_RATE: tuple = (0.0025, 0.0035, 0.0045, 0.006, 0.008)  # extra hp/ms while active

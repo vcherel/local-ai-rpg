@@ -49,10 +49,6 @@ class LLMRequestQueue:
             self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
             self.worker_thread.start()
 
-    def get_active_task_count(self):
-        with self.lock:
-            return len(self.tasks)
-
     def get_active_tasks(self):
         """Snapshot of in-flight tasks: category, state, and elapsed seconds."""
         now = time.monotonic()
@@ -162,10 +158,6 @@ def get_llm_queue():
                 llm_queue = LLMRequestQueue()
                 llm_queue.start()
     return llm_queue
-
-
-def get_llm_task_count():
-    return get_llm_queue().get_active_task_count()
 
 
 def get_llm_tasks():

@@ -22,15 +22,6 @@ if TYPE_CHECKING:
     from game.entities.player import Player
 
 
-# The equip slots shown in the paper-doll, with the ghost glyph drawn when empty. Melee
-# and ranged are separate slots so a sword and a bow can be carried and equipped at once.
-EQUIP_SLOTS = (
-    ("melee_weapon", "Melee", "sword"),
-    ("ranged_weapon", "Ranged", "sword"),
-    ("armor", "Armor", "shield"),
-    ("accessory", "Accessory", "gem"),
-)
-
 RARE_GLOW = {"rare", "epic", "legendary"}
 
 
@@ -95,7 +86,7 @@ class InventoryMenu(BaseMenu):
         gap_x = 20
         gap_y = 22
         cols = 2
-        rows = math.ceil(len(EQUIP_SLOTS) / cols)
+        rows = math.ceil(len(widgets.EQUIP_SLOTS) / cols)
         block_h = label_h + slot
 
         grid_w = cols * slot + (cols - 1) * gap_x
@@ -106,7 +97,7 @@ class InventoryMenu(BaseMenu):
         start_x = self.padding + (self.paperdoll_width - grid_w) // 2
 
         rects = []
-        for i, (item_type, label, glyph) in enumerate(EQUIP_SLOTS):
+        for i, (item_type, label, glyph) in enumerate(widgets.EQUIP_SLOTS):
             col, row = i % cols, i // cols
             x = start_x + col * (slot + gap_x)
             y = start_y + row * (block_h + gap_y)

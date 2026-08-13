@@ -4,6 +4,7 @@ import random
 import re
 
 import core.constants as c
+from core import llm_log
 
 
 def random_color():
@@ -140,7 +141,9 @@ def parse_response_quest_analysis(response):
         return result_dict
 
     except Exception as e:
-        print(f"Failed to parse quest analysis: {e}, response: {response}\n")
+        # Deliberately broad: the model can fail this in any number of ways, and a bad
+        # quest analysis has to end as "no quest", never as a crash mid-conversation.
+        llm_log.log_parse_failure("Conversation analyze", response, f"{type(e).__name__}: {e}")
 
     return _empty_quest_analysis()
 

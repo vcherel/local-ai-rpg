@@ -9,14 +9,28 @@ import pygame
 import core.constants as c
 from core.utils import random_color
 from game.entities.entities import Entity
+from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 from game.entities.wander import Wander
 from game.quest import Quest
 
 if TYPE_CHECKING:
     from core.camera import Camera
-    from game.entities.items import Item
     from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
+
+# How the NPC feels about the player, worst first: the prompt hint fed to their dialogue and
+# the dot drawn by their name. One ladder, so the two can't drift apart.
+AFFINITY_TIERS = (
+    (20, "You dislike the player and are cold, curt, or suspicious of them. ", (200, 60, 60)),
+    (40, "You are wary of the player and not particularly warm towards them. ", (200, 140, 60)),
+    (60, "", (180, 180, 180)),
+    (80, "You like the player and are warm and friendly towards them. ", (120, 200, 120)),
+    (
+        None,
+        "You consider the player a close friend and are especially warm, generous, and open with them. ",
+        (255, 200, 60),
+    ),
+)
 
 
 class NPC(Entity):
@@ -44,28 +58,15 @@ class NPC(Entity):
     def has_active_quest(self):
         return self.quest is not None and not self.quest.is_completed
 
+    def _affinity_tier(self) -> tuple:
+        return next(tier for tier in AFFINITY_TIERS if tier[0] is None or self.affinity < tier[0])
+
     def affinity_descriptor(self) -> str:
         """A prompt hint reflecting how the NPC feels about the player, or "" when neutral."""
-        if self.affinity < 20:
-            return "You dislike the player and are cold, curt, or suspicious of them. "
-        if self.affinity < 40:
-            return "You are wary of the player and not particularly warm towards them. "
-        if self.affinity < 60:
-            return ""
-        if self.affinity < 80:
-            return "You like the player and are warm and friendly towards them. "
-        return "You consider the player a close friend and are especially warm, generous, and open with them. "
+        return self._affinity_tier()[1]
 
     def affinity_tier_color(self) -> tuple:
-        if self.affinity < 20:
-            return (200, 60, 60)
-        if self.affinity < 40:
-            return (200, 140, 60)
-        if self.affinity < 60:
-            return (180, 180, 180)
-        if self.affinity < 80:
-            return (120, 200, 120)
-        return (255, 200, 60)
+        return self._affinity_tier()[2]
 
     def to_dict(self) -> dict:
         return {
@@ -86,8 +87,6 @@ class NPC(Entity):
 
     @classmethod
     def from_dict(cls, data: dict, items_by_id: Dict[str, Item]) -> NPC:
-        from game.entities.items import Item
-
         npc = cls(data["x"], data["y"])
         npc.name = data["name"]
         npc.hp = data["hp"]
@@ -109,8 +108,6 @@ class NPC(Entity):
         return npc
 
     def set_shop(self, shop_data: list):
-        from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
-
         self.shop_items.clear()
         self.shop_prices.clear()
 
@@ -164,17 +161,16 @@ class NPC(Entity):
             health_bar_offset=10,
         )
 
-        bob_offset = math.sin(time.time() * 4) * 4
         badge = self._badge()
         if badge is not None:
             font, symbol, color = badge
+            bob_offset = math.sin(time.time() * 4) * 4
             text = font.render(symbol, True, color)
             text_rect = text.get_rect(center=(screen_x, screen_y - c.Entities.NPC_SIZE // 2 - 20 + bob_offset))
             screen.blit(text, text_rect)
 
-        display_name = self.name or ""
-        if display_name:
-            name_surface = c.Fonts.small.render(display_name, True, c.Colors.WHITE)
+        if self.name:
+            name_surface = c.Fonts.small.render(self.name, True, c.Colors.WHITE)
             name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30))
             bg_rect = name_rect.inflate(10, 4)
             bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)

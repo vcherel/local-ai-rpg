@@ -10,13 +10,14 @@ import core.constants as c
 if TYPE_CHECKING:
     from core.camera import Camera
 
+ARROW_COLOR = (180, 140, 90)
+BOLT_COLOR = (150, 90, 230)
+
 
 class Projectile:
     """A fired arrow travelling in a straight line until it hits, hits a wall, or runs out of range."""
 
-    def __init__(
-        self, x, y, angle, damage, style="arrow", color=(180, 140, 90), knockback=0.0, shake=0.0, hostile=False
-    ):
+    def __init__(self, x, y, angle, damage, style="arrow", color=ARROW_COLOR, knockback=0.0, shake=0.0, hostile=False):
         self.x = x
         self.y = y
         self.angle = angle

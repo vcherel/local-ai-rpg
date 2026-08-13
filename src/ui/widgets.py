@@ -16,6 +16,16 @@ import core.constants as c
 if TYPE_CHECKING:
     from game.entities.items import Item
 
+# The equip slots as the UI shows them: (Player equip slot, caption, ghost glyph drawn when
+# empty). Shared by the HUD strip and the inventory paper-doll so the two can't disagree.
+# Melee and ranged are separate slots, so a sword and a bow are carried and equipped at once.
+EQUIP_SLOTS = (
+    ("melee_weapon", "Melee", "sword"),
+    ("ranged_weapon", "Ranged", "sword"),
+    ("armor", "Armor", "shield"),
+    ("accessory", "Accessory", "gem"),
+)
+
 
 def draw_panel(
     surface: pygame.Surface,

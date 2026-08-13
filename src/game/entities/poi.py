@@ -37,6 +37,13 @@ class PointOfInterest:
         self.looted = False
         self.discovered = False  # shrine flavor line shown / traveller camp met
         self.npc_spawned = False  # traveller camp: its camper already exists in world.npcs
+        # Bandit camp garrison, as a count rather than as entities. None until the camp has
+        # first been seen, then the number of ordinary guards still alive plus whether the
+        # leader is. This is the camp: the monsters standing in it are put there from these
+        # numbers when its chunk loads and taken away with the chunk, so a camp costs the
+        # same whether the player found five of them or five hundred.
+        self.guards_alive: int | None = None
+        self.leader_alive = False
 
     @property
     def variant(self) -> str:
@@ -62,18 +69,47 @@ class PointOfInterest:
     def touched(self) -> bool:
         """True once this POI holds state worth saving; an untouched one is fully described
         by its chunk seed."""
-        return self.looted or self.discovered or self.npc_spawned
+        return self.looted or self.discovered or self.npc_spawned or self.guards_alive is not None
+
+    @property
+    def guards_remaining(self) -> int:
+        """How many bandits should be standing here, leader included."""
+        return (self.guards_alive or 0) + (1 if self.leader_alive else 0)
+
+    @property
+    def guards_defeated(self) -> bool:
+        """True once this camp's garrison has actually been killed, as opposed to never
+        having been posted. What opens a bandit camp's cache."""
+        return self.guards_alive is not None and self.guards_remaining == 0
+
+    def guard_killed(self, leader: bool):
+        """Take one bandit off the camp's roll. The count is the only record of the fight:
+        the guards themselves come and go with the chunk."""
+        if leader:
+            self.leader_alive = False
+        elif self.guards_alive:
+            self.guards_alive -= 1
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
 
     def state(self) -> dict:
-        return {"looted": self.looted, "discovered": self.discovered, "npc_spawned": self.npc_spawned}
+        return {
+            "looted": self.looted,
+            "discovered": self.discovered,
+            "npc_spawned": self.npc_spawned,
+            "guards_alive": self.guards_alive,
+            "leader_alive": self.leader_alive,
+        }
 
     def apply_state(self, state: dict):
         self.looted = state.get("looted", False)
         self.discovered = state.get("discovered", False)
         self.npc_spawned = state.get("npc_spawned", False)
+        # A save from before camps counted their garrison leaves this None, so the camp
+        # rolls a fresh one the next time it is walked up to.
+        self.guards_alive = state.get("guards_alive")
+        self.leader_alive = state.get("leader_alive", False)
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)

@@ -21,6 +21,9 @@ def pick_monster_kind(distance_from_center: float) -> c.MonsterKind:
 
 
 class Monster(Entity):
+    # Bosses shrug off knockback; a plain monster does not.
+    knockback_immune = False
+
     def __init__(self, x, y, kind: c.MonsterKind = c.MONSTER_KINDS[0]):
         super().__init__(x, y, kind.color, kind.size, kind.hp, kind.hp)
         self.kind = kind
@@ -29,6 +32,12 @@ class Monster(Entity):
         self.burn_damage = 0
         self.burn_ticks_remaining = 0
         self.burn_next_ms = 0
+        # Id of the bandit camp this monster was posted at, empty for a roaming monster, and
+        # whether it is that camp's leader. A guard belongs to its camp rather than to the
+        # world: it lives as long as the camp's chunk is loaded, never counts toward the
+        # roaming population cap, and its death is recorded on the camp itself.
+        self.camp_id = ""
+        self.camp_leader = False
 
     def apply_burn(self, damage: int):
         """(Re)ignite this monster: refresh the tick count and take the stronger burn."""
@@ -36,6 +45,8 @@ class Monster(Entity):
         self.burn_ticks_remaining = c.Affixes.BURN_TICKS
         self.burn_next_ms = pygame.time.get_ticks() + c.Affixes.BURN_INTERVAL_MS
 
+    # camp_id/camp_leader are deliberately absent: a guard is rebuilt from its camp's own
+    # count when the chunk loads, so World.serialize drops guards rather than saving them.
     def to_dict(self) -> dict:
         return {"x": self.x, "y": self.y, "hp": self.hp, "kind": self.kind.name}
 
