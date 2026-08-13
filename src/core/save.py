@@ -21,10 +21,16 @@ class SaveSystem:
         - monsters: Monster positions, hp and kind (list[dict])
         - buildings: Building placement, kind, size, name, looted state, and which
           interior crates/exterior windows are broken (list[dict])
+        - villages: Every settlement generated so far: plaza position, owning chunk, size,
+          name and whether it has been walked into. Their buildings and people are saved in
+          `buildings`/`npcs` like the starting town's; unlike a POI a village is generated
+          once and kept, since its NPCs carry names, affinity, quests and stock (list[dict])
         - breakables: Outdoor barrels/pots/bushes not yet smashed, position and kind (list[dict])
         - pois: What the player changed about a wilderness point of interest, by POI id:
-          {"cx:cy": {"looted": bool, "discovered": bool}}. POIs themselves are regenerated
-          from their chunk, so only touched ones appear here (dict)
+          {"cx:cy": {"looted": bool, "discovered": bool, "npc_spawned": bool}}. POIs themselves
+          are regenerated from their chunk, so only touched ones appear here (dict)
+        - explored: Grid cells the player has walked through, as "gx:gy" strings (Fog.CELL
+          wide). The minimap draws these and blacks out everything else (list[str])
         - buffs: Active potion buffs, {effect: {"until": wall-clock seconds, "magnitude": float}}
         - daynight_elapsed_ms: Elapsed time within the current day/night cycle (float)
     """

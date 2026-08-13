@@ -324,7 +324,8 @@ class World:
     WORLD_SIZE: int = 5000
     DETECTION_RANGE = 500
 
-    NB_NPCS: int = 20
+    # How many people a settlement holds follows from its buildings (Villages), not from a
+    # world-wide count: the world is endless, so there is no total to fix.
     NB_MONSTERS: int = 100
 
     # Slain monsters are replenished over time so the world never empties out.
@@ -345,6 +346,11 @@ class World:
     STEER_LOOKAHEAD: float = 12.0
     STEER_MIN_PROBE: int = 26
     DOOR_APPROACH_DISTANCE: int = 90
+
+    # Buildings are bucketed by chunk for collision lookups, each one padded by this much
+    # so a footprint just over a chunk border is still found from the chunk next door.
+    # Comfortably above the biggest radius anything collides with.
+    BUILDING_INDEX_PAD: int = 160
 
     # Floor details stream in per chunk as the player explores, so the world has no edge.
     CHUNK_SIZE: int = 1000
@@ -415,9 +421,8 @@ class DayNight:
 
 @dataclass(frozen=True)
 class Buildings:
-    NB_HOUSES: int = 8
-    NB_SHOPS: int = 3
-    NB_TAVERNS: int = 2
+    # How many of each a settlement holds is set per village size (Villages.COMPOSITION),
+    # not here: buildings only ever exist as part of a village now.
 
     # (width range, height range) per kind. The landmark ruin has no door and no interior.
     # A house/shop/tavern's footprint is also its interior room now (no separate coordinate
@@ -483,11 +488,99 @@ class Breakables:
 
 
 @dataclass(frozen=True)
+class Villages:
+    """Settlements the player finds by walking (game/entities/village.py).
+
+    The world is endless, so villages are not a fixed list: each square region of
+    REGION_CHUNKS x REGION_CHUNKS chunks picks at most one chunk to hold a settlement, which
+    keeps neighbouring villages a long walk apart without any cross-region bookkeeping.
+    A village found for the first time is generated once and then saved with the world
+    (unlike a POI, which is cheap to rebuild from its chunk seed): its NPCs carry affinity,
+    quests and shop stock, none of which survives being regenerated.
+    """
+
+    REGION_CHUNKS: int = 3
+    REGION_CHANCE: float = 0.7
+    # Two regions can both settle near their shared border; the later one stands down, so
+    # there is always this much empty wilderness between one settlement and the next.
+    MIN_GAP: int = 2200
+    # Kept away from the chunk's own edges so the cluster stays inside its own region.
+    CHUNK_MARGIN: int = 380
+    # The starting town already sits here; no streamed village crowds it.
+    MIN_DIST_FROM_SPAWN: int = 3000
+
+    # Buildings sit on a loose grid around an open plaza, close enough to read as one
+    # settlement, far enough apart for the doors (always on the south facade) to be usable.
+    SLOT_W: int = 500
+    SLOT_H: int = 520
+    SLOT_JITTER: int = 30
+
+    # Relative pick weight per settlement size, and what each one is made of.
+    SIZE_WEIGHTS: tuple = (("hamlet", 5), ("village", 4), ("town", 2))
+    COMPOSITION = {
+        "hamlet": {"tavern": (0, 0), "shop": (0, 1), "house": (2, 3)},
+        "village": {"tavern": (0, 1), "shop": (1, 1), "house": (3, 5)},
+        "town": {"tavern": (1, 1), "shop": (1, 2), "house": (5, 7)},
+    }
+    # The village the player starts in, at the world centre.
+    START_COMPOSITION = {"tavern": (2, 2), "shop": (3, 3), "house": (8, 8)}
+    START_DISTANCE_FROM_CENTER: int = 900
+
+    VILLAGERS_PER_HOME: tuple = (1, 2)
+
+    # The plaza: an open patch of packed earth with a well in the middle.
+    PLAZA_RADIUS: int = 150
+    WELL_RADIUS: int = 34
+    PLAZA_COLOR: tuple = (146, 118, 84)
+    WELL_STONE: tuple = (142, 138, 130)
+
+    # Walking this close to the plaza discovers the village (one toast, then its name
+    # shows on the map).
+    DISCOVER_DISTANCE: int = 420
+    # A wilderness point of interest keeps this far from a village site, generated or not.
+    MIN_DIST_FROM_POI: int = 1100
+
+
+@dataclass(frozen=True)
+class Fog:
+    """Explored-ground memory behind the minimap (World.explored).
+
+    The world is remembered as a coarse grid of cells, revealed around the player as they
+    walk and never forgotten. Cells are deliberately big: the map is a record of roughly
+    where you have been, not a survey.
+    """
+
+    CELL: int = 250
+    REVEAL_RADIUS: int = 620
+
+
+@dataclass(frozen=True)
+class Minimap:
+    """The top right map (ui/minimap.py). Small, fixed zoom, no live entities: it says
+    where you have been, never what is around you."""
+
+    SIZE: int = 180
+    MARGIN: int = 10
+    PADDING: int = 6
+    # World span across the whole map. Roughly one and a half screens, so it orients
+    # without scouting ahead.
+    RANGE: int = 2600
+
+    UNSEEN_COLOR: tuple = (18, 17, 22)
+    GROUND_COLOR: tuple = (58, 74, 48)
+    PLAZA_COLOR: tuple = (120, 98, 70)
+    PLAYER_COLOR: tuple = (245, 245, 245)
+    POI_COLORS = {"ruins": (150, 148, 140), "camp": (215, 140, 60), "shrine": (200, 195, 145)}
+
+
+@dataclass(frozen=True)
 class PointsOfInterest:
     """Wilderness landmarks scattered across the map, away from town (game/entities/poi.py).
-    "ruins" and "camp" are smashable loot caches, better odds and rarity than a plain
-    outdoor barrel since they take more effort to find; "shrine" is pure discovery
-    flavor, no loot at all.
+    "ruins" is a smashable loot cache, better odds and rarity than a plain outdoor barrel
+    since it takes more effort to find; "shrine" is pure discovery flavor, no loot at all;
+    a "camp" rolls into either a bandit camp (guarded cache) or a traveller camp (a camper
+    who trades and points the way), and either way its fire can be rested at once the camp
+    is settled.
     """
 
     # Points of interest stream in per chunk like the floor details, so the wilderness
@@ -515,6 +608,26 @@ class PointsOfInterest:
     CACHE_COIN_MIN: int = 8
     CACHE_COIN_MAX: int = 22
     CACHE_ITEM_CHANCE: float = 0.5
+
+    # Which kind of camp this one is, rolled from its id so it never changes under the
+    # player: a bandit camp to clear out, or a traveller camp to trade at.
+    CAMP_BANDIT_CHANCE: float = 0.6
+    # Bandits posted around the fire, plus a leader rolling its kind as if it stood this
+    # much deeper into the wilds, so a camp is a real fight rather than one stray wolf.
+    CAMP_GUARD_MIN: int = 2
+    CAMP_GUARD_MAX: int = 3
+    CAMP_GUARD_SPREAD: int = 130
+    CAMP_LEADER_DANGER_BONUS: int = 1400
+    # Nothing hostile within this far of the fire: the bandit cache can be broken open and
+    # either camp can be rested at. This is the whole gate, so despawns and reloads can't
+    # leave a camp permanently locked.
+    CAMP_CLEAR_RADIUS: int = 340
+    REST_DISTANCE: int = 130
+    # A camper trades out of their pack: stock rolled locally, no LLM call in the wilds.
+    CAMPER_STOCK_SIZE: int = 5
+    # How far a camper's directions look for something the player hasn't walked to yet.
+    HINT_CHUNK_RADIUS: int = 4
+    HINT_MIN_DISTANCE: int = 700
 
 
 @dataclass(frozen=True)

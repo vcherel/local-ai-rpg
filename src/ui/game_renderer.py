@@ -12,6 +12,7 @@ from core.particles import get_particles
 from game.entities.items import POTION_EFFECT_LABELS, draw_shape_with_border, rarity_color
 from ui import widgets
 from ui.loading_indicator import LoadingIndicator
+from ui.minimap import Minimap
 
 # HUD equipment strip: (slot key, caption, ghost glyph shown when empty).
 _EQUIP_HUD_SLOTS = (
@@ -62,7 +63,9 @@ class GameRenderer:
             (self.pause_button_rect, "pause", "Pause (P)"),
         )
 
-        self.loading_indicator = LoadingIndicator(self.screen, c.Screen.WIDTH - 30, 30)
+        self.minimap = Minimap(self.screen)
+        # Left of the minimap, which owns the top right corner now.
+        self.loading_indicator = LoadingIndicator(self.screen, self.minimap.rect.left - 30, 30)
         # Toggled by clicking the loading indicator; lists the LLM's in-flight tasks.
         self.show_llm_tasks = False
 
@@ -98,7 +101,12 @@ class GameRenderer:
             else:
                 pygame.draw.circle(self.screen, (255, 0, 0), (screen_x, screen_y), 2)
 
-        for building in world.buildings:
+        # The plaza a village is built around, drawn under its buildings.
+        for village in world.villages:
+            if self._on_screen(camera, village.x, village.y, margin=c.Villages.PLAZA_RADIUS + 40):
+                village.draw(self.screen, camera)
+
+        for building in world.buildings_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 500):
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
                 building.draw(self.screen, camera, player_inside=building is interior)
 
@@ -236,9 +244,11 @@ class GameRenderer:
         self.screen.blit(label, (text_x, y + icon_size - label.get_height() // 2))
         return text_x + label.get_width() + 22
 
-    def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player):
+    def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player, world: World):
         active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
+
+        self.minimap.draw(world, player)
 
         widgets.draw_panel(self.screen, self.HUD_PANEL_RECT)
         hovered_dock = None

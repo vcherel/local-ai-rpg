@@ -80,7 +80,8 @@ class QuestTracker:
             return
 
         right = c.Screen.WIDTH - 10
-        top = 60  # below the LLM task spinner pinned in the top right corner
+        # Below the minimap, which owns the top right corner.
+        top = c.Minimap.MARGIN + c.Minimap.SIZE + 40
 
         if self.collapsed:
             self._draw_collapsed_pill(right, top, len(active_quests))
