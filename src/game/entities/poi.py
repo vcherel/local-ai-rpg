@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
+from game.entities.village import village_site
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -14,10 +15,15 @@ if TYPE_CHECKING:
 
 
 class PointOfInterest:
-    """A wilderness landmark scattered between towns, so exploring away from the beaten
-    path finds something worth the detour. "ruins" and "camp" are smashable loot
-    caches (game.loot.open_poi_cache); "shrine" is pure discovery flavor, no loot,
-    just a one-time line of text the first time the player walks up to it.
+    """A wilderness landmark scattered between villages, so exploring away from the beaten
+    path finds something worth the detour.
+
+    "ruins" is a smashable loot cache (game.loot.open_poi_cache); "shrine" is pure
+    discovery flavor, no loot, just a one-time line of text the first time the player walks
+    up to it; "camp" is either of two things, rolled from the POI's id so it never changes
+    under the player. A bandit camp posts guards around a cache that stays shut until they
+    are dead; a traveller camp holds a camper who trades and points the way. Either camp's
+    fire can be rested at once nothing hostile is standing near it.
     """
 
     def __init__(self, x, y, kind="ruins", poi_id=""):
@@ -26,30 +32,48 @@ class PointOfInterest:
         self.kind = kind
         # Stable identity ("cx:cy" of the chunk that generated it): the world is endless
         # and POIs are regenerated from their chunk every time it loads, so only what the
-        # player changed (looted, discovered) is saved, keyed by this.
+        # player changed (looted, discovered, camper spawned) is saved, keyed by this.
         self.id = poi_id
         self.looted = False
-        self.discovered = False  # shrine only: has its flavor line already been shown
+        self.discovered = False  # shrine flavor line shown / traveller camp met
+        self.npc_spawned = False  # traveller camp: its camper already exists in world.npcs
+
+    @property
+    def variant(self) -> str:
+        """Either bandit or traveller for a camp, empty for anything else. Rolled from the id,
+        so a camp is the same kind of camp every time its chunk loads."""
+        if self.kind != "camp":
+            return ""
+        roll = random.Random(f"camp:{self.id}").random()
+        return "bandit" if roll < c.PointsOfInterest.CAMP_BANDIT_CHANCE else "traveller"
 
     @property
     def has_loot(self) -> bool:
-        return self.kind in ("ruins", "camp")
+        return self.kind == "ruins" or self.variant == "bandit"
+
+    @property
+    def has_fire(self) -> bool:
+        """Every camp keeps a fire going, cleared out or not: it is what the player rests at,
+        and a bandit camp is worth remembering precisely because taking it leaves one burning
+        out in the wilds. What a sacked camp loses is its tents, not its fire."""
+        return self.kind == "camp"
 
     @property
     def touched(self) -> bool:
         """True once this POI holds state worth saving; an untouched one is fully described
         by its chunk seed."""
-        return self.looted or self.discovered
+        return self.looted or self.discovered or self.npc_spawned
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
 
     def state(self) -> dict:
-        return {"looted": self.looted, "discovered": self.discovered}
+        return {"looted": self.looted, "discovered": self.discovered, "npc_spawned": self.npc_spawned}
 
     def apply_state(self, state: dict):
         self.looted = state.get("looted", False)
         self.discovered = state.get("discovered", False)
+        self.npc_spawned = state.get("npc_spawned", False)
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)
@@ -78,20 +102,54 @@ class PointOfInterest:
 
     def _draw_camp(self, screen, center):
         cx, cy = center
-        tent_w, tent_h = 46, 34
-        tent = [(cx - tent_w // 2, cy + tent_h // 2), (cx, cy - tent_h // 2), (cx + tent_w // 2, cy + tent_h // 2)]
-        pygame.draw.polygon(screen, (150, 120, 80), tent)
-        pygame.draw.polygon(screen, (95, 72, 45), tent, 2)
-        flap = [(cx, cy - tent_h // 2), (cx, cy + tent_h // 2), (cx - 8, cy + tent_h // 2)]
-        pygame.draw.polygon(screen, (110, 85, 55), flap)
+        bandit = self.variant == "bandit"
 
-        fire_pos = (cx + 40, cy + 12)
-        pygame.draw.circle(screen, (90, 60, 40), fire_pos, 11)
-        if not self.looted:
-            pygame.draw.circle(screen, (230, 130, 40), fire_pos, 6)
-            pygame.draw.circle(screen, (250, 200, 80), fire_pos, 3)
+        self._draw_tent(screen, (cx, cy), dark=bandit, collapsed=bandit and self.looted)
+        if bandit:
+            # A second tent and a planted banner: this one is somebody's holdout, not a
+            # place to spend the night. Both go down with the camp.
+            self._draw_tent(screen, (cx - 54, cy + 22), dark=True, scale=0.8, collapsed=self.looted)
+            pole_top = (cx + 12, cy - 46) if not self.looted else (cx + 34, cy - 6)
+            pygame.draw.line(screen, (70, 52, 34), (cx + 12, cy + 6), pole_top, 3)
+            flag = [pole_top, (pole_top[0] + 28, pole_top[1] + 8), (pole_top[0], pole_top[1] + 18)]
+            pygame.draw.polygon(screen, (120, 40, 40) if not self.looted else (80, 60, 55), flag)
         else:
-            pygame.draw.circle(screen, (70, 65, 60), fire_pos, 6)
+            # A bedroll by the fire, and the pack the camper trades out of.
+            roll = pygame.Rect(0, 0, 40, 16)
+            roll.center = (cx - 46, cy + 22)
+            pygame.draw.rect(screen, (170, 150, 110), roll, border_radius=7)
+            pygame.draw.rect(screen, (105, 88, 62), roll, 2, border_radius=7)
+            pack = pygame.Rect(0, 0, 20, 22)
+            pack.center = (cx - 80, cy - 6)
+            pygame.draw.rect(screen, (128, 92, 56), pack, border_radius=4)
+            pygame.draw.rect(screen, (72, 52, 32), pack, 2, border_radius=4)
+
+        self._draw_fire(screen, (cx + 40, cy + 12), lit=self.has_fire)
+
+    @staticmethod
+    def _draw_tent(screen, center, dark: bool, scale: float = 1.0, collapsed: bool = False):
+        cx, cy = center
+        tent_w, tent_h = round(46 * scale), round(34 * scale)
+        if collapsed:
+            # Cut down: the same cloth, flat on the ground.
+            tent_h = round(tent_h * 0.35)
+        cloth = (104, 88, 66) if dark else (150, 120, 80)
+        tent = [(cx - tent_w // 2, cy + tent_h // 2), (cx, cy - tent_h // 2), (cx + tent_w // 2, cy + tent_h // 2)]
+        pygame.draw.polygon(screen, cloth, tent)
+        pygame.draw.polygon(screen, (95, 72, 45), tent, 2)
+        flap = [(cx, cy - tent_h // 2), (cx, cy + tent_h // 2), (cx - round(8 * scale), cy + tent_h // 2)]
+        pygame.draw.polygon(screen, tuple(round(v * 0.78) for v in cloth), flap)
+
+    @staticmethod
+    def _draw_fire(screen, pos, lit: bool):
+        pygame.draw.circle(screen, (90, 60, 40), pos, 11)
+        if not lit:
+            pygame.draw.circle(screen, (70, 65, 60), pos, 6)
+            return
+        # Flame height flickers on the clock, so a live camp reads from across the screen.
+        flicker = 1.0 + 0.25 * math.sin(pygame.time.get_ticks() / 130.0)
+        pygame.draw.circle(screen, (230, 130, 40), pos, round(6 * flicker))
+        pygame.draw.circle(screen, (250, 200, 80), pos, round(3 * flicker))
 
     def _draw_shrine(self, screen, center):
         cx, cy = center
@@ -115,7 +173,9 @@ def pois_for_chunk(cx: int, cy: int, buildings: List["Building"]) -> List[PointO
     Deterministic, so a chunk looks the same every time the player walks back into it, and
     endless, so there is always something to find however far out they go. At most one per
     chunk, placed away from the chunk's own edges, which keeps neighbouring landmarks apart
-    without any cross-chunk lookups. Town and its surroundings stay clear.
+    without any cross-chunk lookups. Villages stay clear: the generated ones through
+    `buildings`, and the ones nobody has walked into yet through their sites, which are a
+    pure function of the chunk and so are known well before the village itself exists.
     """
     rng = random.Random(f"poi:{cx},{cy}")
     if rng.random() > c.PointsOfInterest.PER_CHUNK_CHANCE:
@@ -133,6 +193,11 @@ def pois_for_chunk(cx: int, cy: int, buildings: List["Building"]) -> List[PointO
         math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING for b in buildings
     ):
         return []
+    for nx in range(cx - 1, cx + 2):
+        for ny in range(cy - 1, cy + 2):
+            site = village_site(nx, ny)
+            if site is not None and math.hypot(x - site[0], y - site[1]) < c.Villages.MIN_DIST_FROM_POI:
+                return []
 
     kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
     kind = rng.choices(kinds, weights=weights)[0]

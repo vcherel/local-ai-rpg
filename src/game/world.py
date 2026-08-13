@@ -17,16 +17,28 @@ from core.particles import get_particles
 from core.screen_fx import get_hitstop
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
-from game.entities.buildings import Building, generate_buildings, set_active_buildings
+from game.entities.buildings import Building, set_active_buildings
 from game.entities.critter import Critter, pick_critter_kind
 from game.entities.items import AMMO_BUNDLE, Item, rarity_color, rarity_tier
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest, pois_for_chunk
 from game.entities.projectile import Projectile
+from game.entities.village import Village, generate_starting_world, generate_village, village_site
 from game.events import EventSystem
-from game.loot import break_crate, open_poi_cache
+from game.loot import break_crate, open_poi_cache, roll_shop_stock
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
+
+# What a camper calls each kind of landmark when giving directions.
+_POI_HINT_LABELS = {"ruins": "old ruins", "camp": "somebody's camp", "shrine": "a forgotten shrine"}
+
+
+def _compass_direction(dx: float, dy: float) -> str:
+    """The bearing from one point to another, in the words a person would use."""
+    names = ("east", "south east", "south", "south west", "west", "north west", "north", "north east")
+    index = round(math.atan2(dy, dx) / (math.pi / 4)) % 8
+    return names[index]
+
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -50,15 +62,28 @@ class World:
         # count toward the monster cap, and get their own update, health bar and rewards.
         self.bosses: List[Boss] = []
         self.buildings: List[Building] = []
+        # Buildings (and village wells) bucketed by chunk, so a collision test looks at the
+        # handful standing near a point instead of everything in every village ever found.
+        self._buildings_by_chunk: dict = {}
+        self._wells_by_chunk: dict = {}
         self.breakables: List[Breakable] = []
+        # Every village generated so far. Unlike POIs these are kept, not regenerated: a
+        # settlement's NPCs carry affinity, quests and shop stock that a chunk seed can't
+        # rebuild. `village_site` still decides where they go, so the map itself is endless.
+        self.villages: List[Village] = []
         # Only the POIs of the chunks currently loaded around the player; see _load_chunk.
         self.pois: List[PointOfInterest] = []
-        # What the player did to a POI (looted, discovered), by POI id. Everything else
-        # about a POI comes back from its chunk seed, so this is all that needs saving.
+        # What the player did to a POI (looted, discovered, camper spawned), by POI id.
+        # Everything else about a POI comes back from its chunk seed, so this is all that
+        # needs saving.
         self.poi_state: dict = {}
-        # Chunks whose camp already got its guard this session, so walking in and out of
-        # a camp's chunk doesn't stack up monsters around it.
-        self._guarded_chunks: set = set()
+        # Grid cells the player has walked through (Fog.CELL wide), the memory the minimap
+        # draws. Persisted; everything outside it stays black.
+        self.explored: set = set()
+        self._last_reveal_cell = None
+        # Camps whose bandits are already posted this session, so walking in and out of a
+        # camp's chunk doesn't stack up guards around it.
+        self._guarded_camps: set = set()
         # Wandering wildlife, purely atmospheric; transient like particles, never saved.
         self.critters: List[Critter] = []
         # Arrows in flight; transient like particles, never saved.
@@ -74,11 +99,12 @@ class World:
         self.events = EventSystem(self, notify, show_rumor)
         self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
 
-        # Generation guards: a merchant with no shop yet, or an unnamed landmark, would
-        # otherwise be picked up again by every path that checks, queueing a duplicate
-        # call while the first one is still in flight.
+        # Generation guards: a merchant with no shop yet, an unnamed landmark or an unnamed
+        # village would otherwise be picked up again by every path that checks, queueing a
+        # duplicate call while the first one is still in flight.
         self._shops_generating = False
         self._landmark_naming = False
+        self._naming_villages: set = set()
 
         # Set by close() when the player leaves the game. Background generation threads
         # outlive the session (an LLM call can still be queued behind others), and the
@@ -90,6 +116,9 @@ class World:
         # Saves written before the world became endless hold a plain list of POIs placed
         # inside the old fixed box; those positions mean nothing now, so they're dropped.
         self.poi_state = saved_pois if isinstance(saved_pois, dict) else {}
+        self.explored = {
+            tuple(int(part) for part in key.split(":")) for key in self.save_system.load("explored", []) if ":" in key
+        }
 
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
@@ -100,14 +129,18 @@ class World:
             if self.context:
                 self.start_shop_generation()
         else:
-            self.buildings = generate_buildings()
+            village, buildings = generate_starting_world()
+            self.villages = [village]
+            self.buildings = buildings
+            self._index_buildings()
             set_active_buildings(self.buildings)
             self.breakables = generate_breakables(self.buildings)
-            self._populate_npcs()
+            self._populate_npcs(self.buildings)
             self.monsters = [
                 self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
             ]
             self._spawn_landmark_boss()
+        self._index_buildings()
         set_active_buildings(self.buildings)
 
         if self.context is None:
@@ -116,21 +149,24 @@ class World:
         else:
             self.context_window.show(self.context)
             self._start_landmark_naming()
+            self._start_village_naming()
 
-    def _populate_npcs(self):
-        """Every NPC lives at a building: one merchant per shop, villagers spread over houses and taverns."""
-        homes = [b for b in self.buildings if b.kind in ("house", "tavern")]
-        for shop in (b for b in self.buildings if b.kind == "shop"):
+    def _populate_npcs(self, buildings: List[Building]):
+        """Fill one village with people: a merchant standing at each shop, and a villager or
+        two living at every house and tavern. Called for the starting town and again for each
+        village the player finds, so a settlement is never an empty film set."""
+        for shop in (b for b in buildings if b.kind == "shop"):
             npc = NPC(*shop.door_front())
             npc.is_merchant = True
             npc.color = c.Colors.MERCHANT
             self.npcs.append(npc)
-        while len(self.npcs) < c.World.NB_NPCS:
-            home = random.choice(homes)
+
+        for home in (b for b in buildings if b.kind in ("house", "tavern")):
             door_x, door_y = home.door_front()
-            npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
-            npc.home = (door_x, door_y)
-            self.npcs.append(npc)
+            for _ in range(random.randint(*c.Villages.VILLAGERS_PER_HOME)):
+                npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
+                npc.home = (door_x, door_y)
+                self.npcs.append(npc)
 
     def _random_coords_away_from_spawn(self) -> tuple[int, int]:
         center = c.World.WORLD_SIZE // 2
@@ -143,27 +179,96 @@ class World:
         # A monster standing in a wall beats hanging world generation.
         return x, y
 
-    def _spawn_camp_guard(self, poi: PointOfInterest):
-        """A camp doesn't stand undefended: one regular monster posted next to it, so there's
-        a small fight before the loot. Once per camp per session, and never for a camp that
-        has already been cleared out."""
-        if poi.kind != "camp" or poi.looted or poi.id in self._guarded_chunks:
-            return
-        self._guarded_chunks.add(poi.id)
-        angle = random.uniform(0, 2 * math.pi)
-        x = poi.x + math.cos(angle) * 70
-        y = poi.y + math.sin(angle) * 70
-        self.monsters.append(self._new_monster(x, y))
+    def _populate_camp(self, poi: PointOfInterest):
+        """Put a camp's occupants on the ground the first time its chunk loads.
 
-    def _new_monster(self, x, y) -> Monster:
-        """Tougher kinds unlock farther from the world center, so wandering out gets more dangerous."""
+        A bandit camp gets a ring of guards and a leader rolling its kind as if it stood
+        deeper into the wilds, so the cache behind them is worth the fight; they are posted
+        once per session, since monsters are saved and would otherwise pile up. A traveller
+        camp gets its camper, who is a permanent NPC like any villager and so is spawned
+        once for the whole save (`npc_spawned`)."""
+        if poi.kind != "camp":
+            return
+        if poi.variant == "traveller":
+            self._spawn_camper(poi)
+            return
+        if poi.looted or poi.id in self._guarded_camps:
+            return
+        self._guarded_camps.add(poi.id)
+
+        spread = c.PointsOfInterest.CAMP_GUARD_SPREAD
+        count = random.randint(c.PointsOfInterest.CAMP_GUARD_MIN, c.PointsOfInterest.CAMP_GUARD_MAX)
+        for i in range(count + 1):
+            angle = random.uniform(0, 2 * math.pi)
+            distance = random.uniform(spread * 0.5, spread)
+            x = poi.x + math.cos(angle) * distance
+            y = poi.y + math.sin(angle) * distance
+            leader = i == count
+            self.monsters.append(
+                self._new_monster(x, y, danger_bonus=c.PointsOfInterest.CAMP_LEADER_DANGER_BONUS if leader else 0)
+            )
+
+    def _spawn_camper(self, poi: PointOfInterest):
+        """The trader living at a traveller camp: a merchant like any other, but stocked
+        from the local loot tables rather than the LLM, since a lone camper in the wilds
+        shouldn't hold the queue up behind a shop generation call."""
+        if poi.npc_spawned:
+            return
+        poi.npc_spawned = True
+        npc = NPC(poi.x + 62, poi.y + 60)
+        npc.is_merchant = True
+        npc.color = c.Colors.MERCHANT
+        npc.home = (npc.x, npc.y)
+        npc.set_shop(roll_shop_stock(c.PointsOfInterest.CAMPER_STOCK_SIZE))
+        self.npcs.append(npc)
+
+    def camp_is_clear(self, poi: PointOfInterest) -> bool:
+        """True when nothing hostile is left standing near a camp's fire.
+
+        This is the whole gate on a bandit camp's cache and on resting at either camp:
+        checking the ground rather than tracking which monsters were spawned as guards
+        means despawns, reloads and wandering monsters can't leave a camp locked shut."""
+        return not any(
+            entity.distance_to_point((poi.x, poi.y)) < c.PointsOfInterest.CAMP_CLEAR_RADIUS
+            for entity in self.monsters + self.bosses
+        )
+
+    def camp_in_reach(self, player: Player) -> PointOfInterest | None:
+        """The campfire the player could rest at right now: near enough, still burning, and
+        with nothing hostile around it."""
+        pos = player.get_pos()
+        camps = [
+            poi
+            for poi in self.pois
+            if poi.has_fire
+            and poi.distance_to_point(pos) < c.PointsOfInterest.REST_DISTANCE
+            and self.camp_is_clear(poi)
+        ]
+        return min(camps, key=lambda poi: poi.distance_to_point(pos), default=None)
+
+    def rest_at_camp(self, player: Player, poi: PointOfInterest):
+        """Sit at a camp's fire: back to full health, and the post-death weakness shaken off.
+        Free, and it can't be done with anything hostile nearby, which is what stops it
+        being a heal button in the middle of a fight."""
+        player.heal(player.max_hp)
+        player.clear_death_debuff()
+        play_sound("rest")
+        get_particles().spawn_burst(poi.x + 40, poi.y + 12, (255, 170, 60), count=18, speed=3, life=700, size=4)
+        if self.notify:
+            self.notify("You rest at the fire. Wounds closed, nerves steadied.", (255, 190, 110))
+
+    def _new_monster(self, x, y, danger_bonus: int = 0) -> Monster:
+        """Tougher kinds unlock farther from the world center, so wandering out gets more
+        dangerous. `danger_bonus` rolls the kind as if this spot were that much farther out,
+        which is how a camp leader outclasses the guards around it."""
         center = c.World.WORLD_SIZE // 2
-        distance_from_center = math.hypot(x - center, y - center)
+        distance_from_center = math.hypot(x - center, y - center) + danger_bonus
         return Monster(x, y, pick_monster_kind(distance_from_center))
 
     def _restore(self, saved_npcs: list):
         """Rebuild items, NPCs, monsters and buildings from a saved game, relinking quest items by id."""
         self.buildings = [Building.from_dict(d) for d in self.save_system.load("buildings", [])]
+        self.villages = [Village.from_dict(d) for d in self.save_system.load("villages", [])]
         self.breakables = [Breakable.from_dict(d) for d in self.save_system.load("breakables", [])]
         self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
         items_by_id = {item.id: item for item in self.items}
@@ -211,18 +316,74 @@ class World:
             "monsters": [monster.to_dict() for monster in self.monsters],
             "bosses": [boss.to_dict() for boss in self.bosses],
             "buildings": [building.to_dict() for building in self.buildings],
+            "villages": [village.to_dict() for village in self.villages],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
             "pois": self._poi_state_snapshot(),
+            "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
 
+    # ------------------------------------------------------------------ building lookups
+
+    def _index_buildings(self):
+        """Bucket every building (and every village well) by the chunks it reaches, so a
+        collision test only looks at what stands near the point. The world gains a village
+        every time the player finds one, and scanning the whole list per monster step per
+        frame would get slower the more of the world they had seen."""
+        self._buildings_by_chunk = {}
+        self._wells_by_chunk = {}
+        size = c.World.CHUNK_SIZE
+        pad = c.World.BUILDING_INDEX_PAD
+
+        def bucket(index: dict, rect: pygame.Rect, value):
+            # Padded by the biggest radius any caller tests with, so something just over a
+            # chunk border is still found from the chunk next door.
+            area = rect.inflate(pad * 2, pad * 2)
+            for cx in range(area.left // size, area.right // size + 1):
+                for cy in range(area.top // size, area.bottom // size + 1):
+                    index.setdefault((cx, cy), []).append(value)
+
+        for building in self.buildings:
+            bucket(self._buildings_by_chunk, building.rect, building)
+        for village in self.villages:
+            well = pygame.Rect(0, 0, c.Villages.WELL_RADIUS * 2, c.Villages.WELL_RADIUS * 2)
+            well.center = (round(village.x), round(village.y))
+            bucket(self._wells_by_chunk, well, village)
+
+    def _register_buildings(self, buildings: List[Building]):
+        """Add a newly generated village's buildings to the world and the lookup index."""
+        self.buildings.extend(buildings)
+        self._index_buildings()
+        set_active_buildings(self.buildings)
+
+    def buildings_near(self, x, y) -> List[Building]:
+        """The buildings whose footprint can reach (x, y)."""
+        return self._buildings_by_chunk.get(self._chunk_of(x, y), [])
+
+    def buildings_in_range(self, x, y, radius) -> List[Building]:
+        """Every building in the chunks covering the box of `radius` around (x, y). For
+        callers working over an area (a swing's reach, a detour, the map) rather than a point."""
+        size = c.World.CHUNK_SIZE
+        found = {}
+        for cx in range(int((x - radius) // size), int((x + radius) // size) + 1):
+            for cy in range(int((y - radius) // size), int((y + radius) // size) + 1):
+                for building in self._buildings_by_chunk.get((cx, cy), ()):
+                    found[building.id] = building
+        return list(found.values())
+
+    def buildings_around(self, x, y) -> List[Building]:
+        """The buildings of the chunk block around (x, y), the usual local query."""
+        return self.buildings_in_range(x, y, c.World.CHUNK_SIZE)
+
     def blocked(self, x, y, radius) -> bool:
-        return any(building.blocks(x, y, radius) for building in self.buildings)
+        if any(village.blocks(x, y, radius) for village in self._wells_by_chunk.get(self._chunk_of(x, y), ())):
+            return True
+        return any(building.blocks(x, y, radius) for building in self.buildings_near(x, y))
 
     def building_at(self, x, y) -> Building | None:
         """The building whose floor (x, y) stands on, or None. Buildings are kept far enough
-        apart (Buildings.MIN_GAP) that at most one can contain a given point."""
-        for building in self.buildings:
+        apart that at most one can contain a given point."""
+        for building in self.buildings_near(x, y):
             if building.contains_point(x, y):
                 return building
         return None
@@ -281,7 +442,7 @@ class World:
         whole detour, rather than just picking the nearest corner, is what stops a monster
         oscillating between the near corner behind it and the far corner it should round.
         """
-        for building in self.buildings:
+        for building in self.buildings_around(*start):
             margin = radius + 8
             rect = building.rect.inflate(margin * 2, margin * 2)
             # A goal inside the shell is that building's own doorway; walking round the
@@ -319,7 +480,8 @@ class World:
 
     def _load_chunk(self, chunk: tuple[int, int]):
         """Deterministically generate a chunk's floor details and points of interest, so
-        revisiting it looks the same and walking outward never runs out of things to find."""
+        revisiting it looks the same and walking outward never runs out of things to find.
+        A chunk that holds a village site builds the settlement too, the first time only."""
         cx, cy = chunk
         size = c.World.CHUNK_SIZE
         rng = random.Random(f"{cx},{cy}")
@@ -328,14 +490,37 @@ class World:
             y = cy * size + rng.uniform(0, size)
             self.floor_details.append((x, y, rng.choice(["stone", "flower"])))
 
-        for poi in pois_for_chunk(cx, cy, self.buildings):
+        self._ensure_village(chunk)
+
+        nearby = self.buildings_around((cx + 0.5) * size, (cy + 0.5) * size)
+        for poi in pois_for_chunk(cx, cy, nearby):
             state = self.poi_state.get(poi.id)
             if state:
                 poi.apply_state(state)
             self.pois.append(poi)
-            self._spawn_camp_guard(poi)
+            self._populate_camp(poi)
 
         self._loaded_chunks.add(chunk)
+
+    def _ensure_village(self, chunk: tuple[int, int]):
+        """Build the village this chunk holds, if it holds one and nobody has built it yet.
+
+        This is the one piece of the world that is generated on the fly and then kept: the
+        settlement's people carry names, affinity, quests and stock, so it goes into the save
+        alongside the starting town rather than being rebuilt from the seed on every visit.
+        """
+        site = village_site(*chunk)
+        if site is None or any(village.chunk == chunk for village in self.villages):
+            return
+
+        village, buildings = generate_village(site[0], site[1], chunk)
+        self.villages.append(village)
+        self._register_buildings(buildings)
+        self.breakables.extend(generate_breakables(buildings))
+        self._populate_npcs(buildings)
+        # The new merchants need stock, and the settlement needs a name.
+        self.start_shop_generation()
+        self._start_village_naming()
 
     def _unload_chunk(self, chunk: tuple[int, int]):
         self.floor_details = [d for d in self.floor_details if self._chunk_of(d[0], d[1]) != chunk]
@@ -379,10 +564,49 @@ class World:
 
         self.persist_world()
 
+        self._start_village_naming()
         self.start_shop_generation()
         for boss in self.bosses:
             threading.Thread(target=self._generate_boss_identity, args=(boss, None), daemon=True).start()
         self._start_landmark_naming()
+
+    def _start_village_naming(self):
+        """Name every village still waiting for one, one short call each. A village keeps its
+        name for good, so this runs once per settlement in the life of a save."""
+        if not self.context:
+            return
+        for village in self.villages:
+            if village.name or village.chunk in self._naming_villages:
+                continue
+            self._naming_villages.add(village.chunk)
+            threading.Thread(target=self._generate_village_name, args=(village,), daemon=True).start()
+
+    def _generate_village_name(self, village: Village):
+        system_prompt = "You name settlements for an RPG world. Reply with the name only, no quotes, no punctuation."
+        prompt = (
+            f"{self.context}\nGive a short name, 1 to 3 words, for a small {village.size} in the wilds of this world."
+        )
+        try:
+            name = generate_response_queued(prompt, system_prompt, "Village naming") or ""
+            name = name.strip().strip('"').strip(".")
+            if name:
+                village.name = " ".join(name.split()[:3])
+                self.persist_world()
+        finally:
+            self._naming_villages.discard(village.chunk)
+
+    def _check_village_discovery(self, player: Player):
+        """Walking into a village for the first time announces it. Held back until the name
+        has generated, so the toast never reads "You have found None"."""
+        pos = player.get_pos()
+        for village in self.villages:
+            if village.discovered or not village.name:
+                continue
+            if village.distance_to_point(pos) < c.Villages.DISCOVER_DISTANCE:
+                village.discovered = True
+                play_sound("discover")
+                if self.notify:
+                    self.notify(f"You have found {village.name}", c.Colors.ACCENT)
 
     def _start_landmark_naming(self):
         landmark = next((b for b in self.buildings if b.kind == "landmark"), None)
@@ -624,7 +848,7 @@ class World:
             return
 
         # A swing that reaches a shop/tavern crate smashes it instead.
-        for building in self.buildings:
+        for building in self.buildings_around(*pos):
             crate = building.break_crate_at(pos, hit_radius)
             if crate is not None:
                 self._break_crate(player, building, crate)
@@ -678,7 +902,7 @@ class World:
         (building, index, rect), or None."""
         px, py = pos
         best = None
-        for building in self.buildings:
+        for building in self.buildings_around(px, py):
             for idx, window in enumerate(building.window_rects()):
                 if idx in building.broken_windows:
                     continue
@@ -901,10 +1125,17 @@ class World:
         )
 
     def _break_poi(self, player: Player, poi: PointOfInterest):
-        """Smash a wilderness ruins pile or camp cache: same feedback as an outdoor barrel,
-        better odds and rarity since it took more effort to find. Left in place afterwards
-        (not removed like a breakable) so the ruin/camp still reads as a landmark, just
-        picked over."""
+        """Smash a wilderness ruins pile or bandit camp cache: same feedback as an outdoor
+        barrel, better odds and rarity since it took more effort to find. Left in place
+        afterwards (not removed like a breakable) so the ruin/camp still reads as a landmark,
+        just picked over.
+
+        A bandit camp's cache stays shut while its owners are still on their feet: the loot
+        is the reward for clearing the camp, not for running past it."""
+        if poi.kind == "camp" and not self.camp_is_clear(poi):
+            if self.notify:
+                self.notify("The camp is still guarded", c.Colors.MUTED)
+            return
         poi.looted = True
         self._break_effects(poi.x, poi.y, (150, 140, 120), 20)
         coins, loot_item = open_poi_cache()
@@ -1299,13 +1530,19 @@ class World:
         ]
         return min(in_reach, key=lambda item: item.distance_to_point(pos), default=None)
 
+    def village_at(self, x, y) -> Village | None:
+        """The village whose grounds (x, y) stands on, or None out in the wilds."""
+        return next((village for village in self.villages if village.contains_point(x, y)), None)
+
     def _spawn_monster_away_from(self, player: Player):
         for _ in range(10):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(c.World.SPAWN_MIN_DISTANCE, c.World.SPAWN_MAX_DISTANCE)
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
-            if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
+            # Monsters wander into settlements, but none of them starts life in one: a
+            # village should read as the safe ground between stretches of wilderness.
+            if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2) and self.village_at(x, y) is None:
                 self.monsters.append(self._new_monster(x, y))
                 return
 
@@ -1319,23 +1556,79 @@ class World:
                 self.critters.append(Critter(x, y, pick_critter_kind()))
                 return
 
-    def _check_shrine_discovery(self, player: Player):
+    def _check_poi_discovery(self, player: Player):
+        """The one-time line a landmark gives up the first time the player walks to it: a
+        shrine's flavor, or a camper's directions to somewhere still unexplored."""
         pos = player.get_pos()
         for poi in self.pois:
-            if poi.kind != "shrine" or poi.discovered:
+            if poi.discovered or poi.distance_to_point(pos) >= c.PointsOfInterest.DISCOVER_DISTANCE:
                 continue
-            if poi.distance_to_point(pos) < c.PointsOfInterest.DISCOVER_DISTANCE:
+            if poi.kind == "shrine":
                 poi.discovered = True
                 if self.notify:
                     self.notify(random.choice(c.PointsOfInterest.SHRINE_MESSAGES), c.Colors.WHITE)
+            elif poi.variant == "traveller":
+                poi.discovered = True
+                if self.notify:
+                    self.notify(self._traveller_directions(poi), (200, 190, 150))
+
+    def _traveller_directions(self, poi: PointOfInterest) -> str:
+        """What the camper at a traveller camp tells the player: where the nearest thing they
+        have not walked to yet lies. Village sites and points of interest are both pure
+        functions of their chunk, so this can point at places that have never been generated,
+        which is exactly what makes it worth hearing."""
+        best = None
+        radius = c.PointsOfInterest.HINT_CHUNK_RADIUS
+        cx, cy = self._chunk_of(poi.x, poi.y)
+        for gx in range(cx - radius, cx + radius + 1):
+            for gy in range(cy - radius, cy + radius + 1):
+                candidates = [(site, "a settlement") for site in [village_site(gx, gy)] if site is not None]
+                for other in pois_for_chunk(gx, gy, self.buildings):
+                    candidates.append(((other.x, other.y), _POI_HINT_LABELS[other.kind]))
+                for (x, y), label in candidates:
+                    distance = math.hypot(x - poi.x, y - poi.y)
+                    if distance < c.PointsOfInterest.HINT_MIN_DISTANCE or self.is_explored(x, y):
+                        continue
+                    if best is None or distance < best[0]:
+                        best = (distance, x, y, label)
+
+        if best is None:
+            return "The camper has nothing left to point you towards."
+        distance, x, y, label = best
+        bearing = _compass_direction(x - poi.x, y - poi.y)
+        reach = "not far" if distance < 1800 else ("a fair walk" if distance < 3200 else "a long way")
+        return f"The camper points {bearing}: {label}, {reach} from here."
+
+    def is_explored(self, x, y) -> bool:
+        """True once the player has walked close enough to this spot for the map to remember it."""
+        cell = c.Fog.CELL
+        return (int(x // cell), int(y // cell)) in self.explored
+
+    def _reveal_around(self, player: Player):
+        """Remember the ground around the player. Only recomputed when they cross into a new
+        cell, so the common case costs one comparison."""
+        cell = c.Fog.CELL
+        here = (int(player.x // cell), int(player.y // cell))
+        if here == self._last_reveal_cell:
+            return
+        self._last_reveal_cell = here
+        span = int(c.Fog.REVEAL_RADIUS // cell) + 1
+        for dx in range(-span, span + 1):
+            for dy in range(-span, span + 1):
+                gx, gy = here[0] + dx, here[1] + dy
+                center = ((gx + 0.5) * cell, (gy + 0.5) * cell)
+                if math.hypot(center[0] - player.x, center[1] - player.y) <= c.Fog.REVEAL_RADIUS:
+                    self.explored.add((gx, gy))
 
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of
         # here, so they keep animating even while a menu pauses the rest of this update.
         self._sync_chunks(player)
+        self._reveal_around(player)
         self.daynight.update(dt)
         self.events.update(dt, player, quest_system, npc_name_generator)
-        self._check_shrine_discovery(player)
+        self._check_poi_discovery(player)
+        self._check_village_discovery(player)
 
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).

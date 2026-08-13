@@ -40,7 +40,7 @@ class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
 
-    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed"
+    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed" | "camp"
     target: object
     label: str
     x: float
@@ -207,6 +207,9 @@ class Game:
                     elif event.key == pygame.K_h:
                         self.help_menu.toggle()
 
+                    elif event.key == pygame.K_m:
+                        self.game_renderer.minimap.toggle()
+
                     elif event.key in (pygame.K_p, pygame.K_ESCAPE):
                         self.pause_menu.toggle()
 
@@ -310,6 +313,10 @@ class Game:
         if item is not None:
             offer(Interaction("item", item, f"E: pick up {item.name}", item.x, item.y), reach_of(item.x, item.y))
 
+        camp = self.world.camp_in_reach(self.player)
+        if camp is not None:
+            offer(Interaction("camp", camp, "E: rest at the fire", camp.x + 40, camp.y), reach_of(camp.x, camp.y))
+
         npc = self.world.npc_in_reach(self.player)
         # A merchant still waiting on its stock, or a world whose context hasn't generated
         # yet, can't be talked to: no prompt for something the key wouldn't do.
@@ -335,6 +342,8 @@ class Game:
             self._open_interior_chest()
         elif interaction.kind == "bed":
             self._sleep_in_bed()
+        elif interaction.kind == "camp":
+            self.world.rest_at_camp(self.player, interaction.target)
 
     def _talk_to(self, npc):
         if self.world.context is None or (npc.is_merchant and not npc.shop_ready):
@@ -391,12 +400,8 @@ class Game:
             play_sound("level_up")
 
     def _building_at(self, x, y):
-        """The building whose floor (x, y) is standing on, or None. Buildings are kept far
-        enough apart (Buildings.MIN_GAP) that at most one can ever contain a given point."""
-        for building in self.world.buildings:
-            if building.contains_point(x, y):
-                return building
-        return None
+        """The building whose floor (x, y) is standing on, or None."""
+        return self.world.building_at(x, y)
 
     def _pickup_dropped_item(self, item: Item):
         self.interior.dropped_items.remove(item)
@@ -533,6 +538,7 @@ class Game:
                     len(self.dialogue_manager.quest_system.active_quests),
                     get_llm_tasks(),
                     self.player,
+                    self.world,
                 )
 
             self.context_window.update()

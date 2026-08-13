@@ -34,33 +34,6 @@ def random_open_coordinates() -> tuple:
     return x, y
 
 
-def generate_buildings() -> List["Building"]:
-    """Scatter buildings across the map, keeping them apart and away from the spawn point."""
-    counts = [
-        ("landmark", 1),
-        ("tavern", c.Buildings.NB_TAVERNS),
-        ("shop", c.Buildings.NB_SHOPS),
-        ("house", c.Buildings.NB_HOUSES),
-    ]
-    center = c.World.WORLD_SIZE // 2
-    buildings: List[Building] = []
-    for kind, count in counts:
-        for _ in range(count):
-            for _attempt in range(60):
-                margin = c.Buildings.EDGE_MARGIN
-                x = random.randint(margin, c.World.WORLD_SIZE - margin)
-                y = random.randint(margin, c.World.WORLD_SIZE - margin)
-                if math.hypot(x - center, y - center) < c.Buildings.SPAWN_CLEARANCE:
-                    continue
-                candidate = Building(x, y, kind)
-                gap = c.Buildings.MIN_GAP
-                if any(candidate.rect.inflate(gap * 2, gap * 2).colliderect(other.rect) for other in buildings):
-                    continue
-                buildings.append(candidate)
-                break
-    return buildings
-
-
 def draw_label(screen: pygame.Surface, text: str, center: tuple):
     label = c.Fonts.small.render(text, True, c.Colors.WHITE)
     label_rect = label.get_rect(center=center)
