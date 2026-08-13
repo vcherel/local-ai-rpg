@@ -10,6 +10,7 @@ CONTROLS = [
     ("Left Click", "Attack with melee weapon"),
     ("Right Click", "Fire equipped bow/staff"),
     ("E", "Interact, talk, pick up"),
+    ("B", "Trade with a merchant you are next to"),
     ("F", "Equip the last picked-up upgrade"),
     ("1 - 4", "Drink the potion in that quickbar slot"),
     ("I", "Inventory"),

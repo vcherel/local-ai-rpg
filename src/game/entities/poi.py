@@ -20,10 +20,14 @@ class PointOfInterest:
     just a one-time line of text the first time the player walks up to it.
     """
 
-    def __init__(self, x, y, kind="ruins"):
+    def __init__(self, x, y, kind="ruins", poi_id=""):
         self.x = x
         self.y = y
         self.kind = kind
+        # Stable identity ("cx:cy" of the chunk that generated it): the world is endless
+        # and POIs are regenerated from their chunk every time it loads, so only what the
+        # player changed (looted, discovered) is saved, keyed by this.
+        self.id = poi_id
         self.looted = False
         self.discovered = False  # shrine only: has its flavor line already been shown
 
@@ -31,18 +35,21 @@ class PointOfInterest:
     def has_loot(self) -> bool:
         return self.kind in ("ruins", "camp")
 
+    @property
+    def touched(self) -> bool:
+        """True once this POI holds state worth saving; an untouched one is fully described
+        by its chunk seed."""
+        return self.looted or self.discovered
+
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
 
-    def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "kind": self.kind, "looted": self.looted, "discovered": self.discovered}
+    def state(self) -> dict:
+        return {"looted": self.looted, "discovered": self.discovered}
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "PointOfInterest":
-        poi = cls(data["x"], data["y"], data.get("kind", "ruins"))
-        poi.looted = data.get("looted", False)
-        poi.discovered = data.get("discovered", False)
-        return poi
+    def apply_state(self, state: dict):
+        self.looted = state.get("looted", False)
+        self.discovered = state.get("discovered", False)
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)
@@ -102,31 +109,31 @@ class PointOfInterest:
         pygame.draw.rect(screen, (110, 108, 100), top, 2)
 
 
-def _pick_kind() -> str:
-    kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
-    return random.choices(kinds, weights=weights)[0]
+def pois_for_chunk(cx: int, cy: int, buildings: List["Building"]) -> List[PointOfInterest]:
+    """The points of interest belonging to one chunk, generated from its coordinates.
 
+    Deterministic, so a chunk looks the same every time the player walks back into it, and
+    endless, so there is always something to find however far out they go. At most one per
+    chunk, placed away from the chunk's own edges, which keeps neighbouring landmarks apart
+    without any cross-chunk lookups. Town and its surroundings stay clear.
+    """
+    rng = random.Random(f"poi:{cx},{cy}")
+    if rng.random() > c.PointsOfInterest.PER_CHUNK_CHANCE:
+        return []
 
-def generate_pois(buildings: List["Building"]) -> List[PointOfInterest]:
-    """Scatter wilderness points of interest across the map, away from buildings, the
-    world center and each other, so exploring away from town finds something worth
-    the detour."""
-    result: List[PointOfInterest] = []
+    size = c.World.CHUNK_SIZE
+    margin = c.PointsOfInterest.CHUNK_MARGIN
+    x = cx * size + rng.randint(margin, size - margin)
+    y = cy * size + rng.randint(margin, size - margin)
+
     center = c.World.WORLD_SIZE // 2
-    margin = c.Buildings.EDGE_MARGIN
-    for _ in range(c.PointsOfInterest.COUNT):
-        for _attempt in range(40):
-            x = random.randint(margin, c.World.WORLD_SIZE - margin)
-            y = random.randint(margin, c.World.WORLD_SIZE - margin)
-            if math.hypot(x - center, y - center) < c.PointsOfInterest.MIN_DIST_FROM_CENTER:
-                continue
-            if any(
-                math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING
-                for b in buildings
-            ):
-                continue
-            if any(math.hypot(x - p.x, y - p.y) < c.PointsOfInterest.MIN_DIST_FROM_OTHER for p in result):
-                continue
-            result.append(PointOfInterest(x, y, _pick_kind()))
-            break
-    return result
+    if math.hypot(x - center, y - center) < c.PointsOfInterest.MIN_DIST_FROM_CENTER:
+        return []
+    if any(
+        math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING for b in buildings
+    ):
+        return []
+
+    kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
+    kind = rng.choices(kinds, weights=weights)[0]
+    return [PointOfInterest(x, y, kind, poi_id=f"{cx}:{cy}")]

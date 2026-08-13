@@ -459,9 +459,18 @@ class Item:
             screen_x, screen_y = draw_x, draw_y
             visual_angle = 0
 
-        center = (screen_x, screen_y)
         size = c.Entities.ITEM_SIZE // 2
         border_width = 2
+
+        if camera:
+            # Loot lying in the grass has to be spotted from across the screen: it sits on a
+            # shadow, rides a slow bob, and anything above common pulses a halo in its
+            # rarity colour. Skipped for HUD/menu icons, which are drawn without a camera.
+            phase = pygame.time.get_ticks() / 1000.0 + (self.x + self.y) * 0.01
+            self._draw_ground_marker(surface, screen_x, screen_y, size, phase)
+            screen_y -= round(math.sin(phase * 2.2) * c.Entities.LOOT_BOB_HEIGHT)
+
+        center = (screen_x, screen_y)
 
         padding = size + border_width + 4
         surface_size = c.Entities.ITEM_SIZE + padding * 2
@@ -480,6 +489,24 @@ class Item:
         rect = rotated_surface.get_rect(center=center)
 
         surface.blit(rotated_surface, rect.topleft)
+
+    def _draw_ground_marker(self, surface: pygame.Surface, screen_x, screen_y, size, phase):
+        """The shadow and pulsing halo under a dropped item, so loot reads as loot from a
+        distance instead of blending into the grass."""
+        tier = rarity_tier(self.rarity)
+        glow_color = c.Colors.BLACK if self.rarity == "common" else tier.color
+        radius = size + c.Entities.LOOT_GLOW_RADIUS
+        pulse = (math.sin(phase * 2.2) + 1) / 2
+
+        glow = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        alpha = round(c.Entities.LOOT_GLOW_ALPHA_MIN + pulse * c.Entities.LOOT_GLOW_ALPHA_SWING)
+        pygame.draw.circle(glow, (*glow_color, alpha), (radius, radius), radius)
+        pygame.draw.circle(glow, (*glow_color, min(255, alpha * 2)), (radius, radius), radius, 2)
+        surface.blit(glow, (screen_x - radius, screen_y - radius))
+
+        shadow = pygame.Surface((size * 2, size), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (0, 0, 0, 70), shadow.get_rect())
+        surface.blit(shadow, (screen_x - size, screen_y + size // 2))
 
 
 def draw_shape_with_border(surface, shape, center, size, color, border_width, border_color=None):

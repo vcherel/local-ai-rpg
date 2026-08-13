@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 import pygame
 
@@ -33,6 +34,18 @@ from ui.notification import ToastNotification
 if TYPE_CHECKING:
     from core.save import SaveSystem
     from game.entities.items import Item
+
+
+class Interaction(NamedTuple):
+    """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
+    second line for an extra key on the same target (a merchant's trade key)."""
+
+    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed"
+    target: object
+    label: str
+    x: float
+    y: float
+    hint: str = ""
 
 
 class Game:
@@ -74,6 +87,9 @@ class Game:
         # every frame from the player's position; a building's interior is just its own
         # footprint in world space, so there is no separate coordinate space or mode switch.
         self.interior = None
+        # What E would act on this frame (Game.current_interaction), recomputed each update
+        # and drawn as the single on-screen prompt.
+        self.interaction: Optional[Interaction] = None
 
         self._restore_player_state()
 
@@ -165,10 +181,10 @@ class Game:
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e:
-                        if self.interior is not None:
-                            self._interior_interact()
-                        else:
-                            self._interact_with_world()
+                        self._interact()
+
+                    elif event.key == pygame.K_b:
+                        self._trade_nearby()
 
                     elif event.key == pygame.K_f:
                         self._equip_pending_upgrade()
@@ -255,16 +271,86 @@ class Game:
         else:
             self.loot_notification.show(f"{potion.name}: {result}", potion.color)
 
-    def _interact_with_world(self):
-        item: Item = self.world.pickup_item(self.player)
-        if item is None:
-            npc = self.world.talk_npc(self.player)
-            if npc is not None:
-                self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
-                self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
-                self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
-            return
+    def current_interaction(self) -> Optional[Interaction]:
+        """The single thing the interact key acts on right now: the nearest interactable in
+        reach, indoors or out. The prompt drawn on screen comes from the same call, so a
+        tavern full of beds can't stack labels and the prompt can never point at something
+        other than what the key does."""
+        best: Optional[tuple] = None  # (distance, Interaction)
 
+        def offer(interaction: Interaction, dist: float):
+            nonlocal best
+            if best is None or dist < best[0]:
+                best = (dist, interaction)
+
+        def reach_of(x, y) -> float:
+            return math.hypot(self.player.x - x, self.player.y - y)
+
+        if self.interior is not None:
+            indoor_reach = c.Buildings.INTERACT_DISTANCE
+            for item in self.interior.dropped_items:
+                dist = reach_of(item.x, item.y)
+                if dist <= indoor_reach:
+                    offer(Interaction("dropped_item", item, f"E: pick up {item.name}", item.x, item.y), dist)
+
+            layout = self.interior.interior_layout()
+            chest = layout["chest"]
+            if chest and not self.interior.looted:
+                dist = reach_of(chest.centerx, chest.centery)
+                if dist <= indoor_reach:
+                    offer(Interaction("chest", chest, "E: open chest", chest.centerx, chest.top), dist)
+
+            for bed in layout["beds"]:
+                dist = reach_of(bed.centerx, bed.centery)
+                if dist <= indoor_reach:
+                    label = f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
+                    offer(Interaction("bed", bed, label, bed.centerx, bed.top), dist)
+
+        item = self.world.item_in_reach(self.player)
+        if item is not None:
+            offer(Interaction("item", item, f"E: pick up {item.name}", item.x, item.y), reach_of(item.x, item.y))
+
+        npc = self.world.npc_in_reach(self.player)
+        # A merchant still waiting on its stock, or a world whose context hasn't generated
+        # yet, can't be talked to: no prompt for something the key wouldn't do.
+        if npc is not None and self.world.context is not None and not (npc.is_merchant and not npc.shop_ready):
+            label = f"E: talk to {npc.name}" if npc.name else "E: talk"
+            hint = "B: trade" if npc.is_merchant else ""
+            offer(Interaction("npc", npc, label, npc.x, npc.y - c.Entities.NPC_SIZE, hint), reach_of(npc.x, npc.y))
+
+        return None if best is None else best[1]
+
+    def _interact(self):
+        """Run whatever the on-screen prompt is offering."""
+        interaction = self.current_interaction()
+        if interaction is None:
+            return
+        if interaction.kind == "npc":
+            self._talk_to(interaction.target)
+        elif interaction.kind == "item":
+            self._pickup_world_item(interaction.target)
+        elif interaction.kind == "dropped_item":
+            self._pickup_dropped_item(interaction.target)
+        elif interaction.kind == "chest":
+            self._open_interior_chest()
+        elif interaction.kind == "bed":
+            self._sleep_in_bed()
+
+    def _talk_to(self, npc):
+        if self.world.context is None or (npc.is_merchant and not npc.shop_ready):
+            return
+        self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
+        self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
+        self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
+
+    def _trade_nearby(self):
+        """Open a merchant's shop straight from the world, skipping the conversation."""
+        npc = self.world.npc_in_reach(self.player)
+        if npc is None or not npc.is_merchant or not npc.shop_ready:
+            return
+        self.shop_menu.open(npc, self.player, self.world.items)
+
+    def _pickup_world_item(self, item: Item):
         item.picked_up = True
         if item.item_type == "lootbox":
             self._open_lootbox(item)
@@ -312,21 +398,6 @@ class Game:
                 return building
         return None
 
-    def _interior_interact(self):
-        item = self.interior.pickup_dropped_item(self.player.x, self.player.y)
-        if item is not None:
-            self._pickup_dropped_item(item)
-            return
-
-        hit = self.interior.interactable_at(self.player.x, self.player.y)
-        if hit is None:
-            return
-        kind, _rect = hit
-        if kind == "chest":
-            self._open_interior_chest()
-        elif kind == "bed":
-            self._sleep_in_bed()
-
     def _pickup_dropped_item(self, item: Item):
         self.interior.dropped_items.remove(item)
         item.picked_up = True
@@ -370,6 +441,7 @@ class Game:
         # Whatever was in the air when the player died shouldn't greet them at spawn.
         self.world.projectiles.clear()
         self.interior = None
+        self.interaction = None
         self.update_camera()
         self.save_data()
 
@@ -435,6 +507,7 @@ class Game:
                 # A building's interior is just its own footprint; re-derive which one (if
                 # any) the player is standing in rather than tracking a separate mode.
                 self.interior = self._building_at(self.player.x, self.player.y)
+                self.interaction = self.current_interaction()
                 self.update_camera()
                 get_shake().update(dt)
                 get_particles().update(dt)
@@ -442,7 +515,15 @@ class Game:
                 get_decals().update(dt)
                 get_vignette().update(dt)
 
-            self.game_renderer.draw_world(self.camera, self.world, self.player, self.interior)
+            quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
+            self.game_renderer.draw_world(
+                self.camera,
+                self.world,
+                self.player,
+                self.interior,
+                None if self.active_menu else self.interaction,
+                quest_target,
+            )
             self.world.daynight.draw(self.screen, self.world.events.blood_night_active)
             get_vignette().draw(self.screen)
             if not self.active_menu:

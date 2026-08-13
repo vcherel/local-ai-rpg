@@ -119,7 +119,7 @@ class Boss(Monster):
 
         if dist <= c.Boss.AGGRO_RANGE:
             # Monster.move handles the chase and the basic melee swing.
-            self.move(player, dt, world.blocked)
+            self.move(player, dt, world.blocked, world.chase_waypoint(self, player))
             self.ability_cd -= dt
             if self.ability_cd <= 0 and self.slam_windup <= 0:
                 self._use_ability(world, player)
