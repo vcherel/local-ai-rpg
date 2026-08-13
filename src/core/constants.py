@@ -19,7 +19,12 @@ class Screen:
 @dataclass(frozen=True)
 class Player:
     HP: int = 100
-    REGEN_RATE: float = 0.001
+    # Passive regen is a slow between-fights trickle, not a heal button: it only starts
+    # REGEN_DELAY_MS after the last hit taken, so a fight is won with potions, lifesteal
+    # and positioning rather than by backing off for two seconds. A regen potion is
+    # deliberately exempt from the delay, it's what you drink when you're already hurt.
+    REGEN_RATE: float = 0.00025
+    REGEN_DELAY_MS: int = 8000
     SIZE: int = 30
 
     SPEED: int = 5
@@ -89,6 +94,10 @@ class WeaponArchetype:
 
     name: str
     reach_mult: float
+    # Polearm blind spot: a living target whose centre is closer than this many world
+    # pixels to the player is missed entirely, so a spear hits at the end of its shaft
+    # instead of stabbing something pressed against the player's chest. 0 disables it.
+    min_hit_distance: float
     swing_mult: float  # >1 swings faster (cosmetic animation speed)
     damage_mult: float
     cooldown_ms: int  # minimum time between swings
@@ -101,16 +110,18 @@ class WeaponArchetype:
     uses_ammo: bool  # ranged weapons only: consume an ammo item per shot
 
 
-UNARMED = WeaponArchetype("unarmed", 1.0, 1.0, 1.0, 350, 8, 0.08, False, 1.0, 2.0, False, False)
+UNARMED = WeaponArchetype("unarmed", 1.0, 0.0, 1.0, 1.0, 350, 8, 0.08, False, 1.0, 2.0, False, False)
 
 WEAPON_ARCHETYPES: dict[str, WeaponArchetype] = {
-    "dagger": WeaponArchetype("dagger", 0.8, 1.8, 0.7, 180, 4, 0.30, False, 1.0, 2.0, False, False),
-    "sword": WeaponArchetype("sword", 1.0, 1.0, 1.0, 350, 10, 0.12, True, 1.4, 4.0, False, False),
-    "axe": WeaponArchetype("axe", 1.05, 0.7, 1.25, 520, 14, 0.10, True, 1.8, 7.0, False, False),
-    "hammer": WeaponArchetype("hammer", 0.9, 0.55, 1.6, 620, 26, 0.05, False, 1.0, 14.0, False, False),
-    "spear": WeaponArchetype("spear", 1.8, 0.9, 0.95, 380, 8, 0.12, False, 1.0, 4.0, False, False),
-    "staff": WeaponArchetype("staff", 1.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False),
-    "bow": WeaponArchetype("bow", 1.0, 1.0, 1.0, 400, 4, 0.10, False, 1.0, 1.0, True, True),
+    "dagger": WeaponArchetype("dagger", 0.8, 0.0, 1.8, 0.7, 180, 4, 0.30, False, 1.0, 2.0, False, False),
+    "sword": WeaponArchetype("sword", 1.0, 0.0, 1.0, 1.0, 350, 10, 0.12, True, 1.4, 4.0, False, False),
+    "axe": WeaponArchetype("axe", 1.05, 0.0, 0.7, 1.25, 520, 14, 0.10, True, 1.8, 7.0, False, False),
+    "hammer": WeaponArchetype("hammer", 0.9, 0.0, 0.55, 1.6, 620, 26, 0.05, False, 1.0, 14.0, False, False),
+    # The spear trades the whole close range for reach and a heavy thrust: nothing within
+    # 46px of the player is hit at all, and the ring it does cover runs out past 85px.
+    "spear": WeaponArchetype("spear", 2.2, 46.0, 0.9, 1.35, 380, 14, 0.12, False, 1.0, 5.0, False, False),
+    "staff": WeaponArchetype("staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False),
+    "bow": WeaponArchetype("bow", 1.0, 0.0, 1.0, 1.0, 400, 4, 0.10, False, 1.0, 1.0, True, True),
 }
 
 # Weapon-name keyword -> archetype key. Keywords mirror items.WEAPON_KEYWORDS.
@@ -318,8 +329,9 @@ class World:
 
     # Slain monsters are replenished over time so the world never empties out.
     RESPAWN_INTERVAL_MS: int = 3000
-    # New monsters spawn at least this far from the player so they never pop into view...
-    SPAWN_MIN_DISTANCE: int = 900
+    # New monsters spawn at least this far from the player so they never pop into view.
+    # The screen's half-diagonal is ~1006px, so anything under that can appear on camera.
+    SPAWN_MIN_DISTANCE: int = 1100
     # ...and at most this far, so they still show up as the player explores.
     SPAWN_MAX_DISTANCE: int = 1500
     # Monsters left this far behind despawn, freeing their slot to respawn near the player.
@@ -507,22 +519,24 @@ class PointsOfInterest:
 
 @dataclass(frozen=True)
 class Wildlife:
-    """Non-hostile critters that wander the wilderness for atmosphere (game/entities/critter.py).
+    """Non-hostile critters that wander the wilderness (game/entities/critter.py).
     Session-only, like particles or projectiles: never saved, just respawned near the
-    player as the world loads or as they roam. Can't be fought; they just skitter off
-    if the player gets too close.
+    player as the world loads or as they roam. They never fight back, they skitter off,
+    but they can be hunted down and killed for a pelt worth selling.
     """
 
     KINDS: tuple = ("rabbit", "deer", "fox")
     KIND_WEIGHTS: tuple = (5, 2, 3)
     COLORS = {"rabbit": (200, 190, 170), "deer": (150, 110, 70), "fox": (195, 100, 55)}
-    SIZES = {"rabbit": 14, "deer": 22, "fox": 16}
+    SIZES = {"rabbit": 14, "deer": 26, "fox": 16}
 
     COUNT: int = 25
     RESPAWN_INTERVAL_MS: int = 800
-    SPAWN_MIN_DISTANCE: int = 500
-    SPAWN_MAX_DISTANCE: int = 1000
-    DESPAWN_DISTANCE: int = 1500
+    # Kept above the screen's half-diagonal (~1006px) so an animal is never seen popping
+    # into existence in front of the player; it has to be walked up to.
+    SPAWN_MIN_DISTANCE: int = 1150
+    SPAWN_MAX_DISTANCE: int = 1700
+    DESPAWN_DISTANCE: int = 2200
 
     WANDER_SPEED: float = 1.0
     WANDER_RADIUS: int = 200
@@ -532,6 +546,15 @@ class Wildlife:
     # Skitters away once the player closes to this distance, faster than its normal wander.
     FLEE_DISTANCE: int = 90
     FLEE_SPEED_MULT: float = 2.6
+
+    # Hunting. A critter never fights back, so its only defence is running: a wounded one
+    # bolts for BOLT_DURATION_MS however far away the player is, which is what makes a
+    # rabbit worth chasing instead of a free kill.
+    HP = {"rabbit": 8, "deer": 22, "fox": 12}
+    BOLT_DURATION_MS: int = 2500
+    # A kill sometimes leaves a valuable behind. Bigger game is the surer bet.
+    DROP_CHANCE = {"rabbit": 0.5, "deer": 1.0, "fox": 0.75}
+    DROP_NAMES = {"rabbit": "Rabbit Pelt", "deer": "Venison Haunch", "fox": "Fox Pelt"}
 
 
 @dataclass(frozen=True)
@@ -656,15 +679,29 @@ class Affixes:
 class Decals:
     """Blood splats left on the ground by hits and kills (core/decals.py)."""
 
-    LIFE_MS: float = 12_000.0
+    LIFE_MS: float = 18_000.0
     # Oldest decal is dropped once the list grows past this, so a long fight
     # never leaves an unbounded number of splats to draw.
-    MAX_COUNT: int = 140
+    MAX_COUNT: int = 300
 
     HIT_RADIUS: int = 7
-    KILL_RADIUS: int = 18
-    BOSS_KILL_RADIUS: int = 30
+    KILL_RADIUS: int = 22
+    BOSS_KILL_RADIUS: int = 38
     PLAYER_HURT_RADIUS: int = 11
+
+    # A kill throws a fan of droplets out along the killing blow rather than leaving one
+    # tidy circle: the pool marks where it died, the spray says how it went.
+    SPRAY_SPREAD_DEG: float = 110.0
+    KILL_SPRAY_COUNT: int = 10
+    KILL_SPRAY_DISTANCE: tuple = (16.0, 105.0)
+    KILL_SPRAY_RADIUS: tuple = (3.0, 9.0)
+    # A boss bleeds across half the arena.
+    BOSS_SPRAY_COUNT: int = 24
+    BOSS_SPRAY_DISTANCE: tuple = (25.0, 210.0)
+    BOSS_SPRAY_RADIUS: tuple = (5.0, 15.0)
+    # Deep arterial red, darker than the bright particle spray so the two read as
+    # "still in the air" versus "already on the ground".
+    BLOOD_COLOR: tuple = (128, 16, 16)
 
 
 @dataclass(frozen=True)
@@ -716,7 +753,7 @@ class Stats:
     RESISTANCE_PER_LEVEL: int = 1  # flat damage reduction
     SPEED_PER_LEVEL: float = 0.04  # +4% move speed
     VITALITY_HP_PER_LEVEL: int = 15  # extra max HP
-    VITALITY_REGEN_PER_LEVEL: float = 0.0005
+    VITALITY_REGEN_PER_LEVEL: float = 0.0001
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
 
     # Quest reward weight shifted from "rare" to "legendary" per level above 1, capped so

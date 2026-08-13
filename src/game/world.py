@@ -19,7 +19,7 @@ from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
 from game.entities.buildings import Building, generate_buildings, set_active_buildings
 from game.entities.critter import Critter, pick_critter_kind
-from game.entities.items import AMMO_BUNDLE, Item, rarity_color
+from game.entities.items import AMMO_BUNDLE, Item, rarity_color, rarity_tier
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest, pois_for_chunk
@@ -581,27 +581,42 @@ class World:
 
         reach = c.Player.ATTACK_REACH * arch.reach_mult
         pos = player.get_pos(reach)
+        origin = player.get_pos()
         base_damage = (
             c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
         ) * player.damage_multiplier()
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
 
+        def in_reach(entities, size_of):
+            return self._targets_in_reach(
+                entities, pos, hit_radius, size_of, arch.cleave, origin, arch.min_hit_distance
+            )
+
         if self.bosses:
-            boss_targets = self._targets_in_reach(self.bosses, pos, hit_radius, lambda b: b.kind.size, arch.cleave)
+            boss_targets = in_reach(self.bosses, lambda b: b.kind.size)
             if boss_targets:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
                 for boss in boss_targets:
                     self._strike_monster(boss, self.bosses, base_damage, arch, player, quest_system, blocked)
                 return
 
-        monster_targets = self._targets_in_reach(self.monsters, pos, hit_radius, lambda m: m.kind.size, arch.cleave)
+        monster_targets = in_reach(self.monsters, lambda m: m.kind.size)
         if monster_targets:
             player.stats.train("strength", c.Stats.XP_PER_HIT)
             for monster in monster_targets:
                 self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
             return
 
-        npc_targets = self._targets_in_reach(self.npcs, pos, hit_radius, lambda n: c.Entities.NPC_SIZE, arch.cleave)
+        # Wildlife is struck before villagers, so hunting a rabbit in a crowd doesn't start
+        # a brawl, and after monsters, so a fox never soaks a swing meant for a wolf.
+        critter_targets = in_reach(self.critters, lambda cr: cr.size)
+        if critter_targets:
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            for critter in critter_targets:
+                self._strike_critter(critter, base_damage, arch, player)
+            return
+
+        npc_targets = in_reach(self.npcs, lambda n: c.Entities.NPC_SIZE)
         if npc_targets:
             player.stats.train("strength", c.Stats.XP_PER_HIT)
             for npc in npc_targets:
@@ -642,10 +657,18 @@ class World:
             self._break_window(building, idx, window)
 
     @staticmethod
-    def _targets_in_reach(entities, pos, hit_radius, size_of, cleave: bool) -> list:
+    def _targets_in_reach(
+        entities, pos, hit_radius, size_of, cleave: bool, origin=None, min_distance: float = 0.0
+    ) -> list:
         """Entities within a swing's reach: every one in range if the weapon cleaves,
-        otherwise just the nearest."""
+        otherwise just the nearest.
+
+        `min_distance` is the weapon's blind spot measured from `origin` (the player's own
+        position): a spear covers a ring, not a disc, so anything pressed up against the
+        player is past the point of the shaft and takes nothing."""
         targets = [e for e in entities if e.distance_to_point(pos) < hit_radius + size_of(e) // 2]
+        if min_distance and origin is not None:
+            targets = [e for e in targets if e.distance_to_point(origin) >= min_distance]
         if not targets or cleave:
             return targets
         return [min(targets, key=lambda e: e.distance_to_point(pos))]
@@ -686,7 +709,14 @@ class World:
         if now < player.attack_ready_ms:
             return
         if arch.uses_ammo:
-            ammo = next((item for item in player.inventory if item.item_type == "ammo"), None)
+            # Ammo stacks per rarity, so shoot the cheapest quiver first: rarity only
+            # changes what a stack sells for, and nobody wants to fire legendary arrows
+            # at slimes while common ones sit in the bag.
+            ammo = min(
+                (item for item in player.inventory if item.item_type == "ammo"),
+                key=lambda item: rarity_tier(item.rarity).price_mult,
+                default=None,
+            )
             if ammo is None:
                 return
             ammo.quantity -= 1
@@ -807,6 +837,33 @@ class World:
             blocked=blocked,
         )
 
+    def _strike_critter(self, critter: Critter, base_damage, arch, player: Player):
+        """Wildlife takes hits like anything else, but never fights back: a survivor just
+        bolts. No quest system involvement, no loot table, nothing to burn or chain into."""
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
+        get_shake().add(arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0))
+        self._pop_damage(critter.x, critter.y - critter.size / 2, damage, crit)
+        kb_dir = self._dir_from(player.x, player.y, critter.x, critter.y)
+        if critter.receive_damage(damage):
+            self._kill_critter(critter, player, kb_dir)
+            return
+        self._hit_feedback(critter.x, critter.y, crit, kb_dir)
+        self._knockback(critter, critter.size / 2, kb_dir, arch.knockback, self.blocked)
+        critter.startle()
+
+    def _kill_critter(self, critter: Critter, player: Player, direction=None):
+        """A hunted animal leaves a pelt worth selling, and nothing else: critters are
+        session-only, so the drop is the only trace of it that reaches the save."""
+        play_sound("monster_death")
+        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        self._spill_blood(critter.x, critter.y, c.Wildlife.COLORS[critter.kind], direction)
+        player.stats.train("vitality", c.Stats.XP_PER_KILL * 0.5)
+        if random.random() < c.Wildlife.DROP_CHANCE[critter.kind]:
+            drop = Item(critter.x, critter.y, c.Wildlife.DROP_NAMES[critter.kind], "misc", rarity="common")
+            drop.start_pop_anim(critter.x, critter.y - critter.size)
+            self.items.append(drop)
+        self.critters.remove(critter)
+
     @staticmethod
     def _break_effects(x, y, color, count):
         """Shared shake, crash sound and shard burst for a smashed crate/cache/barrel."""
@@ -905,14 +962,55 @@ class World:
         get_shake().add(shake)
         self._pop_damage(monster.x, monster.y - monster.kind.size / 2, damage, crit)
         if monster.receive_damage(damage):
-            self._kill_monster(monster, monster_list, player, quest_system)
+            self._kill_monster(monster, monster_list, player, quest_system, direction=kb_dir)
             return True
         self._hit_feedback(monster.x, monster.y, crit, kb_dir)
         if not getattr(monster, "knockback_immune", False):
             self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
         return False
 
-    def _kill_monster(self, monster, monster_list, player: Player, quest_system: QuestSystem):
+    @staticmethod
+    def _spill_blood(x, y, body_color, direction=None, boss: bool = False):
+        """The gore of a kill: a pool where it dropped, a fan of droplets thrown along the
+        killing blow, and a spray still in the air over both.
+
+        `direction` is the blow's (dx, dy) unit vector, so the mess points away from the
+        player instead of ringing the corpse. A kill with no direction (a burn tick, an
+        execute) bursts outward instead."""
+        decals = get_decals()
+        decals.spawn(x, y, radius=c.Decals.BOSS_KILL_RADIUS if boss else c.Decals.KILL_RADIUS)
+        decals.spawn_spray(
+            x,
+            y,
+            direction,
+            count=c.Decals.BOSS_SPRAY_COUNT if boss else c.Decals.KILL_SPRAY_COUNT,
+            distance=c.Decals.BOSS_SPRAY_DISTANCE if boss else c.Decals.KILL_SPRAY_DISTANCE,
+            radius=c.Decals.BOSS_SPRAY_RADIUS if boss else c.Decals.KILL_SPRAY_RADIUS,
+        )
+
+        blood = (178, 26, 26)
+        count = 34 if boss else 22
+        speed = 12 if boss else 9
+        size = 6 if boss else 5
+        if direction:
+            get_particles().spawn_directional_burst(
+                x,
+                y,
+                math.atan2(direction[1], direction[0]),
+                spread_deg=c.Decals.SPRAY_SPREAD_DEG,
+                color=blood,
+                count=count,
+                speed=speed,
+                life=700,
+                size=size,
+                gravity=0.32,
+            )
+        else:
+            get_particles().spawn_burst(x, y, blood, count=count, speed=speed, life=700, size=size, gravity=0.32)
+        # Chunks of the thing itself, so a slime still bleeds green over the red.
+        get_particles().spawn_burst(x, y, body_color, count=16 if boss else 12, speed=6, life=550, size=5, gravity=0.42)
+
+    def _kill_monster(self, monster, monster_list, player: Player, quest_system: QuestSystem, direction=None):
         """Death rewards and cleanup for a slain monster, shared by hits and burn ticks."""
         player.stats.train("vitality", c.Stats.XP_PER_KILL)
         play_sound("monster_death")
@@ -921,14 +1019,11 @@ class World:
         if bloodlust > 1.0:
             player.apply_buff("bloodlust", bloodlust, c.Affixes.BLOODLUST_DURATION_S)
         if isinstance(monster, Boss):
-            self._on_boss_killed(monster, quest_system)
+            self._on_boss_killed(monster, quest_system, direction)
             monster_list.remove(monster)
             return
         get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
-        get_decals().spawn(monster.x, monster.y, radius=c.Decals.KILL_RADIUS)
-        get_particles().spawn_burst(
-            monster.x, monster.y, monster.kind.color, count=14, speed=5, life=500, size=5, gravity=0.3
-        )
+        self._spill_blood(monster.x, monster.y, monster.kind.color, direction)
         quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
         if quest_item is not None:
             self.items.append(quest_item)
@@ -990,10 +1085,10 @@ class World:
         )
         self._apply_on_hit_effects(chain_target, target_list, chain_damage, player, quest_system, died, ranged=ranged)
 
-    def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem):
+    def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem, direction=None):
         """A boss dies with extra spectacle and a guaranteed legendary lootbox."""
         get_hitstop().trigger(c.Combat.HITSTOP_BOSS_MS)
-        get_decals().spawn(boss.x, boss.y, radius=c.Decals.BOSS_KILL_RADIUS)
+        self._spill_blood(boss.x, boss.y, boss.template.color, direction, boss=True)
         get_particles().spawn_burst(boss.x, boss.y, boss.template.aura, count=40, speed=10, life=800, size=7)
         get_shake().add(c.Boss.SLAM_SHAKE)
         quest_system.on_boss_killed(boss)
@@ -1025,8 +1120,7 @@ class World:
             quest_system.remove_quest(npc)
             play_sound("monster_death")
             get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
-            get_decals().spawn(npc.x, npc.y, radius=c.Decals.KILL_RADIUS)
-            get_particles().spawn_burst(npc.x, npc.y, npc.color, count=14, speed=5, life=500, size=5, gravity=0.3)
+            self._spill_blood(npc.x, npc.y, npc.color, kb_dir)
             self.npcs.remove(npc)
             return True
         self._hit_feedback(npc.x, npc.y, crit, kb_dir)
@@ -1081,6 +1175,8 @@ class World:
                 continue
             if self._projectile_hits_monster(proj, self.bosses, player, quest_system):
                 continue
+            if self._projectile_hits_critter(proj, player):
+                continue
             self._projectile_hits_npc(proj, player, quest_system)
 
     def _projectile_hits_monster(self, proj: Projectile, targets, player: Player, quest_system: QuestSystem) -> bool:
@@ -1114,6 +1210,34 @@ class World:
         self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
         self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
         self._projectile_after_hit(proj, self.projectiles, target)
+        return True
+
+    def _projectile_hits_critter(self, proj: Projectile, player: Player) -> bool:
+        """Resolve a projectile against wildlife: an arrow is how most animals get hunted,
+        since they run long before a swing lands. Returns True if it struck one."""
+        critter = next(
+            (
+                cr
+                for cr in self.critters
+                if id(cr) not in proj.hit_ids
+                and proj.distance_to_point((cr.x, cr.y)) < c.Projectile.SIZE + cr.size // 2
+            ),
+            None,
+        )
+        if critter is None:
+            return False
+
+        player.stats.train("strength", c.Stats.XP_PER_HIT)
+        get_shake().add(proj.shake)
+        kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
+        self._pop_damage(critter.x, critter.y - critter.size / 2, proj.damage, False)
+        if critter.receive_damage(proj.damage):
+            self._kill_critter(critter, player, kb_dir)
+        else:
+            self._hit_feedback(critter.x, critter.y, False, kb_dir)
+            self._knockback(critter, critter.size / 2, kb_dir, proj.knockback, self.blocked)
+            critter.startle()
+        self._projectile_after_hit(proj, self.projectiles, critter)
         return True
 
     def _projectile_hits_npc(self, proj: Projectile, player: Player, quest_system: QuestSystem):

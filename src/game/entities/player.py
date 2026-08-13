@@ -167,17 +167,30 @@ class Player(Entity):
 
         self.max_hp = self.stats.max_hp()
         if self.hp < self.max_hp:
-            # Standing still lets the regen-while-still armour affix top up faster.
-            regen = self.regen_rate() + (0.0 if moving else self.regen_still_bonus())
+            # A regen potion works the moment it's drunk, that's what it's for. Everything
+            # passive (vitality, accessory, the regen-while-still armour affix) stays shut
+            # off until the player has gone REGEN_DELAY_MS without being hit, so healing up
+            # is something you earn by disengaging rather than by waiting out a fight.
+            regen = self.buff_magnitude("regen")
+            if pygame.time.get_ticks() - self.last_damage_ms >= c.Player.REGEN_DELAY_MS:
+                regen += self.passive_regen_rate() + (0.0 if moving else self.regen_still_bonus())
             self.hp = min(self.hp + regen * dt, self.max_hp)
 
     def add_item(self, item):
         """Add an item to the inventory, merging a stackable (ammo, potion) into a matching
-        stack. Potions only merge with the same rarity, since rarity is what makes one
-        healing potion stronger than another."""
+        stack. Both only merge with the same rarity: rarity is what makes one healing potion
+        stronger than another, and what makes a legendary quiver worth more than a common
+        one. Merging across rarities silently threw the better item away."""
         existing = None
         if item.item_type == "ammo":
-            existing = next((i for i in self.inventory if i.item_type == "ammo" and i.name == item.name), None)
+            existing = next(
+                (
+                    i
+                    for i in self.inventory
+                    if i.item_type == "ammo" and i.name == item.name and i.rarity == item.rarity
+                ),
+                None,
+            )
         elif item.item_type == "potion":
             existing = next(
                 (
@@ -396,9 +409,11 @@ class Player(Entity):
         base = self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
         return base * self.buff_magnitude("swiftness", 1.0)
 
-    def regen_rate(self) -> float:
+    def passive_regen_rate(self) -> float:
+        """Regen from vitality and gear, the part held back by the out-of-combat delay.
+        A regen potion is added on top of it in `move`, and is never delayed."""
         accessory = self.accessory_bonus("regen") * c.Stats.ACCESSORY_REGEN_PER_BONUS
-        return self.stats.regen_rate() + accessory + self.buff_magnitude("regen")
+        return self.stats.regen_rate() + accessory
 
     def buy_multiplier(self) -> float:
         luck = self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS

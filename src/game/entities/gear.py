@@ -20,7 +20,7 @@ WEAPON_LENGTH = {
     "sword": 1.15,
     "axe": 1.05,
     "hammer": 1.0,
-    "spear": 1.9,
+    "spear": 2.4,
     "staff": 1.55,
     "bow": 1.0,
 }
