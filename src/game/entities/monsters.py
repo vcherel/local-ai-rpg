@@ -41,6 +41,16 @@ class Monster(Entity):
         # Ranged kinds only: the earliest tick this one may loose its next shot. World
         # fires it (WorldCombat.fire_monster_shots), since the arrow belongs to the world.
         self.next_shot_ms = 0
+        # Charger state (kind.charge): when the current windup/rush ends, the heading it
+        # committed to, and the earliest tick it may line up another one.
+        self.charge_windup_until_ms = 0
+        self.charge_until_ms = 0
+        self.charge_angle = 0.0
+        self.charge_ready_ms = 0
+        # Flanker state (kind.flank_deg): which side it is currently swinging round, and
+        # when it next switches.
+        self.flank_side = random.choice((-1, 1))
+        self.flank_flip_ms = 0
 
     def apply_burn(self, damage: int):
         """(Re)ignite this monster: refresh the tick count and take the stronger burn."""
@@ -85,6 +95,48 @@ class Monster(Entity):
                 return angle
         return target_angle
 
+    def _flank(self, target_angle, dist) -> float:
+        """Bend the approach to one side, swapping sides every few seconds. The bend fades
+        out as the monster closes, so a flanker circles in and still arrives instead of
+        orbiting the player out of reach forever."""
+        if not self.kind.flank_deg:
+            return target_angle
+        now = pygame.time.get_ticks()
+        if now >= self.flank_flip_ms:
+            self.flank_side = -self.flank_side
+            self.flank_flip_ms = now + random.randint(c.Flank.FLIP_MIN_MS, c.Flank.FLIP_MAX_MS)
+        fade = min(1.0, max(0.0, (dist - c.Flank.CLOSE_DISTANCE) / c.Flank.CLOSE_DISTANCE))
+        return target_angle + math.radians(self.kind.flank_deg) * self.flank_side * fade
+
+    def _charge(self, dist, aware, move_factor, radius, blocked) -> bool:
+        """Line up a rush, run it, or decline. True while the charge owns this monster's
+        movement, which is the whole of it: the windup is spent planted so the rush can be
+        sidestepped, and the heading is locked before it starts so stepping aside works.
+
+        Damage is not special-cased. A charge just delivers the monster to the player at
+        speed; the ordinary swing does the rest."""
+        now = pygame.time.get_ticks()
+        if now < self.charge_windup_until_ms:
+            return True
+        if now < self.charge_until_ms:
+            speed = self.kind.speed * c.Charge.SPEED_MULT * move_factor
+            step_x = math.cos(self.charge_angle) * speed
+            step_y = math.sin(self.charge_angle) * speed
+            if blocked is not None and blocked(self.x + step_x, self.y + step_y, radius):
+                # Hit something mid-rush: the charge is spent and it goes back to walking.
+                self.charge_until_ms = 0
+                return False
+            self.x += step_x
+            self.y += step_y
+            return True
+        if aware and now >= self.charge_ready_ms and c.Charge.MIN_RANGE < dist < c.Charge.RANGE:
+            self.charge_angle = self.orientation
+            self.charge_windup_until_ms = now + c.Charge.WINDUP_MS
+            self.charge_until_ms = self.charge_windup_until_ms + c.Charge.DURATION_MS
+            self.charge_ready_ms = self.charge_until_ms + c.Charge.COOLDOWN_MS
+            return True
+        return False
+
     def move(self, player: Player, dt, blocked=None, waypoint=None, damage_mult: float = 1.0, detection=None):
         """Chase the player, or `waypoint` when one is given: a door the monster has to walk
         through first because the player is on the other side of a wall (see World.chase_waypoint).
@@ -95,11 +147,15 @@ class Monster(Entity):
         night, and a monster that spawned at noon is no gentler for it once the sun is down.
 
         A ranged kind never closes: it walks into its firing range, backs off if the player
-        gets inside `keep_distance`, and leaves the shooting itself to the world."""
+        gets inside `keep_distance`, and leaves the shooting itself to the world. A charger
+        crosses the gap in one telegraphed rush instead of walking, and a flanker bends its
+        approach to one side so a group of them comes in from several angles at once."""
         dx = player.x + self.target_offset[0] - self.x
         dy = player.y + self.target_offset[1] - self.y
         dist = math.hypot(dx, dy)
         senses = c.World.DETECTION_RANGE if detection is None else detection
+        move_factor = dt * c.TARGET_FPS / 1000.0
+        radius = self.kind.size / 2
 
         if waypoint is not None:
             target_angle = math.atan2(waypoint[1] - self.y, waypoint[0] - self.x)
@@ -109,11 +165,13 @@ class Monster(Entity):
 
         aware = dist < senses + c.Player.SIZE // 2
         retreating = self.kind.ranged and dist < self.kind.keep_distance
-        if aware and (retreating or self.kind.attack_range < dist):
-            move_factor = dt * c.TARGET_FPS / 1000.0
+        charging = self.kind.charge and self._charge(dist, aware, move_factor, radius, blocked)
+        if charging:
+            self.orientation = self.charge_angle
+        elif aware and (retreating or self.kind.attack_range < dist):
             speed = self.kind.speed * move_factor
-            radius = self.kind.size / 2
-            angle = self._steer(target_angle + (math.pi if retreating else 0.0), blocked, radius, speed)
+            move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
+            angle = self._steer(move_angle + (math.pi if retreating else 0.0), blocked, radius, speed)
             step_x = math.cos(angle) * speed
             step_y = math.sin(angle) * speed
             # Move one axis at a time so a wall on one axis lets the monster slide along it.
@@ -136,6 +194,7 @@ class Monster(Entity):
 
     def draw(self, screen, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
+        self._draw_charge_telegraph(screen, screen_x, screen_y)
         super().draw(
             screen,
             screen_x,
@@ -149,3 +208,18 @@ class Monster(Entity):
             bar_height=8,
             health_bar_offset=10,
         )
+
+    def _draw_charge_telegraph(self, screen, screen_x, screen_y):
+        """The lane a winding-up charger is about to cross, drawn under it. Without this the
+        rush is unreadable: the monster stands still and then arrives."""
+        remaining = self.charge_windup_until_ms - pygame.time.get_ticks()
+        if remaining <= 0:
+            return
+        progress = 1.0 - remaining / c.Charge.WINDUP_MS
+        length = c.Charge.RANGE * 0.7 * progress
+        end = (
+            screen_x + math.cos(self.charge_angle) * length,
+            screen_y + math.sin(self.charge_angle) * length,
+        )
+        pygame.draw.line(screen, (170, 60, 50), (screen_x, screen_y), end, 3)
+        pygame.draw.circle(screen, (200, 80, 60), (round(screen_x), round(screen_y)), round(self.kind.size * 0.8), 2)
