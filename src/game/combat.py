@@ -99,7 +99,7 @@ class WorldCombat:
 
         # Wildlife is struck before villagers, so hunting a rabbit in a crowd doesn't start
         # a brawl, and after monsters, so a fox never soaks a swing meant for a wolf.
-        critter_targets = in_reach(self.critters, lambda cr: cr.size)
+        critter_targets = in_reach(self.critters, lambda cr: cr.hit_radius * 2)
         if critter_targets:
             player.stats.train("strength", c.Stats.XP_PER_HIT)
             for critter in critter_targets:
@@ -711,7 +711,7 @@ class WorldCombat:
                 cr
                 for cr in self.critters
                 if id(cr) not in proj.hit_ids
-                and proj.distance_to_point((cr.x, cr.y)) < c.Projectile.SIZE + cr.size // 2
+                and proj.distance_to_point((cr.x, cr.y)) < c.Projectile.SIZE + cr.hit_radius
             ),
             None,
         )

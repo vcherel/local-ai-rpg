@@ -45,6 +45,14 @@ class Critter:
     def size(self) -> int:
         return c.Wildlife.SIZES[self.kind]
 
+    @property
+    def hit_radius(self) -> float:
+        """How far from its centre the animal can be struck. Not `size / 2`: every critter
+        is drawn longer than it is wide, and the deer is drawn as a whole quadruped running
+        well past its own size, so half the size missed the head, flank and rear of what was
+        plainly on screen."""
+        return self.size * c.Wildlife.HIT_RADIUS_MULT[self.kind]
+
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
 

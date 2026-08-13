@@ -45,21 +45,27 @@ class QuestSystem:
         return random.choices(c.MONSTER_KINDS, weights=[kind.weight for kind in c.MONSTER_KINDS])[0]
 
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
-        """Returns {has_quest, quest_type, quest_description, item_name, monster_hint, kill_count, reward_item}"""
+        """Returns {has_quest, quest_type, quest_description, item_name, monster_hint,
+        kill_count, reward_item}. `has_quest` already accounts for the player's answer: a
+        task the player turned down is not a quest, however clearly the NPC offered it."""
         system_prompt = (
             "You are a conversation analyzer for an RPG game. "
-            "Analyze the conversation and determine whether the NPC gave the player a quest. "
+            "Analyze the conversation and determine whether the NPC gave the player a quest, "
+            "and whether the player agreed to do it. "
             "A quest is one of: "
             "fetch (bring back a specific item), "
             "kill_mob (kill a number of a kind of monster or creature), "
             "loot_mob (kill monsters of a kind until a specific item drops from them), "
             "recover_stolen (recover a specific item that was stolen from the NPC by someone else), "
             "slay_boss (defeat a single powerful named boss, beast or warlord terrorizing the area). "
+            "Set player_accepted to false if the player refused, changed the subject, left without "
+            "answering, or only listened to a rumour or a complaint. "
             "Reply ONLY with valid JSON, with no extra text."
         )
 
         json_format = (
-            '{"has_quest": true/false, "quest_type": "fetch/kill_mob/loot_mob/recover_stolen/slay_boss",'
+            '{"has_quest": true/false, "player_accepted": true/false,'
+            ' "quest_type": "fetch/kill_mob/loot_mob/recover_stolen/slay_boss",'
             ' "quest_description": "short description",'
             ' "item_name": "item to fetch, loot or recover, empty for kill_mob",'
             ' "monster_hint": "kind of monster or creature involved, empty for fetch/recover_stolen",'
@@ -67,8 +73,8 @@ class QuestSystem:
             ' "reward_item": "item the NPC will give as reward, empty string if only coins"}'
         )
         no_quest = (
-            "{'has_quest': false, 'quest_type': '', 'quest_description': '', 'item_name': '',"
-            " 'monster_hint': '', 'kill_count': '', 'reward_item': ''}"
+            "{'has_quest': false, 'player_accepted': false, 'quest_type': '', 'quest_description': '',"
+            " 'item_name': '', 'monster_hint': '', 'kill_count': '', 'reward_item': ''}"
         )
         prompt = (
             f"Conversation:\n{conversation_history}\n\n"

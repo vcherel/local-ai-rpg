@@ -117,7 +117,6 @@ def parse_response_quest_analysis(response):
         result = json.loads(json_str)
 
         fields = [
-            "has_quest",
             "quest_description",
             "item_name",
             "reward_item",
@@ -125,13 +124,13 @@ def parse_response_quest_analysis(response):
             "monster_hint",
             "kill_count",
         ]
-        result_dict = {}
-
-        for field in fields:
-            if field == "has_quest":
-                result_dict[field] = bool(result.get(field, False))
-            else:
-                result_dict[field] = result.get(field, "")
+        result_dict = {field: result.get(field, "") for field in fields}
+        # A quest is only handed over if the NPC offered one *and* the player took it.
+        # `player_accepted` defaults to True so an older or sloppier reply that omits it
+        # behaves as it always did rather than silently dropping every quest.
+        result_dict["has_quest"] = _as_bool(result.get("has_quest"), default=False) and _as_bool(
+            result.get("player_accepted"), default=True
+        )
 
         if result_dict["has_quest"] and not (
             result_dict["quest_description"] or result_dict["item_name"] or result_dict["monster_hint"]
@@ -146,6 +145,24 @@ def parse_response_quest_analysis(response):
         llm_log.log_parse_failure("Conversation analyze", response, f"{type(e).__name__}: {e}")
 
     return _empty_quest_analysis()
+
+
+def _as_bool(value, default: bool) -> bool:
+    """Read a flag the model may have written as a JSON boolean or as text.
+
+    Plain `bool()` is not enough: the repairs above quote every unquoted value, so a literal
+    `false` reaches here as the string "false", which is truthy. That is what used to hand
+    the player a quest they had just turned down."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in ("false", "no", "0", "none", ""):
+        return False
+    if text in ("true", "yes", "1"):
+        return True
+    return default
 
 
 def _empty_quest_analysis() -> dict:

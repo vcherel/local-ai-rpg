@@ -346,7 +346,11 @@ class DialogueManager:
 
         log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
 
-        if not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
+        # A conversation the player never answered can't hold a quest they accepted, so it
+        # isn't worth an analysis: that call would only make the next NPC's greeting wait
+        # behind it for nothing.
+        player_spoke = any(msg["role"] == "user" for msg in self.conversation.messages)
+        if player_spoke and not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
             self.pending_quest_analysis = True
 
         self._execute_pending_actions(log_path)

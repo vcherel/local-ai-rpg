@@ -71,6 +71,10 @@ class Game:
         self.game_renderer = GameRenderer(self.screen)
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
+        # A new game spawns at the fixed world centre, which the starting town's grid often
+        # covers, so the player would start standing in a wall. Applied to a loaded position
+        # too, which frees a save left stuck inside one.
+        self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, c.Player.SIZE / 2)
 
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
         # slay_boss quests spawn their target through the world.
@@ -245,12 +249,26 @@ class Game:
         self.world.items.remove(lootbox)
         self._award_loot(lootbox.rarity, "Lootbox")
 
-    def _offer_upgrade(self, item: Item):
-        """Flag a just-acquired item as an upgrade and prompt to equip it with F."""
+    def _offer_upgrade(self, item: Item) -> bool:
+        """Flag a just-acquired item as an upgrade and prompt to equip it with F. Returns
+        whether it said anything, so a caller can fall back to its own message."""
         if not self.player.is_upgrade(item):
-            return
+            return False
         self.pending_upgrade_id = item.id
         self.loot_notification.show(f"New {item.name} (+{item.bonus}), press F to equip", rarity_color(item.rarity))
+        return True
+
+    def _announce_pickup(self, item: Item):
+        """Say something for every item that reaches the inventory. An upgrade gets the F
+        prompt; anything else at least names itself, since a pickup that isn't an upgrade
+        (a second bow while a stronger staff is equipped, a pelt, a potion) used to be
+        silent apart from the sound."""
+        if self._offer_upgrade(item):
+            return
+        label = f"Picked up {item.name}"
+        if item.quantity > 1:
+            label += f" x{item.quantity}"
+        self.loot_notification.show(label, rarity_color(item.rarity))
 
     def _equip_pending_upgrade(self):
         if self.pending_upgrade_id is None:
@@ -375,7 +393,7 @@ class Game:
         """Feedback shared by every item pickup. The caller has already settled the item
         into the inventory and the world's master item list."""
         play_sound("pickup")
-        self._offer_upgrade(item)
+        self._announce_pickup(item)
         get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
 
     def _pop_levelups(self):
@@ -435,8 +453,8 @@ class Game:
         swinging at what killed them. The run carries on from there."""
         coins_lost = self.player.apply_death_penalty()
         self.player.hp = self.player.max_hp
-        self.player.x = c.World.WORLD_SIZE // 2
-        self.player.y = c.World.WORLD_SIZE // 2
+        center = c.World.WORLD_SIZE // 2
+        self.player.x, self.player.y = self.world.free_spot_near(center, center, c.Player.SIZE / 2)
         # Whatever was in the air when the player died shouldn't greet them at spawn.
         self.world.projectiles.clear()
         self.interior = None

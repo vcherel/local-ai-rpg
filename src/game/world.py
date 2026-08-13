@@ -434,6 +434,27 @@ class World(WorldCombat, WorldStreaming):
             return True
         return any(building.blocks(x, y, radius) for building in self.buildings_near(x, y))
 
+    def free_spot_near(self, x, y, radius) -> tuple[float, float]:
+        """The nearest standable point to (x, y), which may be (x, y) itself.
+
+        The spawn point is a fixed world coordinate while the starting town is laid out
+        around a random centre near it, so the two overlap often; the same is true of any
+        village generated later. Rather than move the settlement, whoever is being placed
+        steps out to the first clear spot around it."""
+        if not self.blocked(x, y, radius):
+            return x, y
+        step = radius * 2
+        for ring in range(1, c.World.FREE_SPOT_MAX_RINGS + 1):
+            distance = ring * step
+            for index in range(ring * 8):
+                angle = 2 * math.pi * index / (ring * 8)
+                cx, cy = x + math.cos(angle) * distance, y + math.sin(angle) * distance
+                if not self.blocked(cx, cy, radius):
+                    return cx, cy
+        # Walled in on every side within the search: leave the caller where they were
+        # rather than teleporting them somewhere arbitrary.
+        return x, y
+
     def building_at(self, x, y) -> Building | None:
         """The building whose floor (x, y) stands on, or None. Buildings are kept far enough
         apart that at most one can contain a given point."""
