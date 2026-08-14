@@ -131,7 +131,7 @@ class LLMRequestQueue:
         return result
 
     def generate_response_stream(
-        self, prompt: str, system_prompt: str, category: str, max_tokens: int = None, stop: list = None
+        self, prompt: str, system_prompt: str, category: str, max_tokens: int = None, stop: list = None, poll=False
     ):
         result_queue = Queue()
         stream_queue = Queue()
@@ -151,7 +151,19 @@ class LLMRequestQueue:
         yield ""
 
         while True:
-            status, data = stream_queue.get()
+            if poll:
+                # Drained rather than waited on: this generator is stepped once per frame
+                # from the main thread, and the worker may be busy with an earlier request
+                # (a closing conversation's quest analysis, world context, shop stock).
+                # Blocking here froze the whole game until that finished. None means
+                # "nothing new yet", the caller simply draws another frame.
+                try:
+                    status, data = stream_queue.get_nowait()
+                except queue.Empty:
+                    yield None
+                    continue
+            else:
+                status, data = stream_queue.get()
             if status == "done":
                 break
             yield data
@@ -187,12 +199,22 @@ def get_llm_tasks():
     return get_llm_queue().get_active_tasks()
 
 
+def llm_busy() -> bool:
+    """True while the worker has anything running or queued. One model serves the whole
+    game and a running call cannot be preempted, so a conversation opened on top of one
+    would sit there with an empty box until it finished; the interaction prompt says the
+    NPC is busy instead. Never forces the model to load: no queue means nothing in flight."""
+    return bool(llm_queue and llm_queue.get_active_tasks())
+
+
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
     return get_llm_queue().generate_response(prompt, system_prompt, log, max_tokens=max_tokens, raw=raw)
 
 
-def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None, stop=None):
-    yield from get_llm_queue().generate_response_stream(prompt, system_prompt, log, max_tokens=max_tokens, stop=stop)
+def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None, stop=None, poll=False):
+    yield from get_llm_queue().generate_response_stream(
+        prompt, system_prompt, log, max_tokens=max_tokens, stop=stop, poll=poll
+    )
 
 
 def generate_response_internal(prompt, system_prompt, category, max_tokens=None, raw=False):

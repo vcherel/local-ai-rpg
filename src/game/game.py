@@ -18,7 +18,7 @@ from game.loot import open_lootbox
 from game.world import World
 from llm.death_taunts import DeathTauntGenerator
 from llm.dialogue_manager import DialogueManager
-from llm.llm_request_queue import get_llm_tasks
+from llm.llm_request_queue import get_llm_tasks, llm_busy
 from llm.name_generator import NPCNameGenerator
 from ui.game_renderer import GameRenderer
 from ui.menus.context_menu import ContextMenu
@@ -358,7 +358,12 @@ class Game:
             and self.world.context is not None
             and not (npc.is_merchant and not npc.shop_ready)
         ):
-            label = f"E: talk to {npc.name}" if npc.name else "E: talk"
+            if llm_busy():
+                # One model serves the whole game and the call already running cannot be
+                # cut short, so a conversation opened now would sit on an empty box.
+                label = f"{npc.name} is busy..." if npc.name else "Busy..."
+            else:
+                label = f"E: talk to {npc.name}" if npc.name else "E: talk"
             hint = "B: trade" if npc.is_merchant else ""
             offer(Interaction("npc", npc, label, npc.x, npc.y - c.Entities.NPC_SIZE, hint), reach_of(npc.x, npc.y))
 
@@ -386,6 +391,9 @@ class Game:
 
     def _talk_to(self, npc):
         if self.world.context is None or not npc.can_talk or (npc.is_merchant and not npc.shop_ready):
+            return
+        if llm_busy():
+            self.loot_notification.show(f"{npc.name or 'They'} looks busy, give it a moment", c.Colors.MUTED)
             return
         self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
         self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
