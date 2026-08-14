@@ -32,6 +32,19 @@ class Entities:
     VILLAGER_ITEM_CHANCE: float = 0.18
     MERCHANT_COIN_MULT: float = 3.0
     MERCHANT_ITEM_CHANCE: float = 0.45
+    # A chaser walks to its own bearing on a ring just inside its own reach rather than to
+    # the player's exact position, and shoulders aside anything standing where it wants to
+    # be, so a pack surrounds the player instead of stacking into one body.
+    CHASE_RING_MARGIN: int = 4
+    CHASE_ARRIVE: int = 6
+    # How much of the overlap between two chasers is undone per frame when they collide.
+    SEPARATION_PUSH: float = 0.45
+    # Backing away is always slower than walking in, so closing on an archer is a real
+    # answer; driven inside this fraction of its keep_distance it stops retreating, stops
+    # shooting and fights with the knife it has, at this reach.
+    RETREAT_SPEED_MULT: float = 0.55
+    CORNERED_FRAC: float = 0.4
+    RANGED_MELEE_RANGE: int = 8
     SWING_SPEED: float = 0.007
     # How long an entity flashes white after being hit (ms).
     FLASH_MS: int = 150

@@ -259,6 +259,70 @@ class WorldCombat:
         building.window_hp.pop(idx, None)
         self._break_window(building, idx, window)
 
+    def blocking_door(self, chaser, player: Player) -> Building | None:
+        """The shut door standing between a chaser and the player, once the chaser is at it.
+
+        A door is the one obstacle in the world that cannot be walked round, which is exactly
+        why it is the one a monster is allowed to break. Either the player is inside and the
+        chaser out, or the other way about: anything else means the door is not what is
+        keeping them apart."""
+        building = self.building_at(player.x, player.y) or self.building_at(chaser.x, chaser.y)
+        if building is None or not building.door_closed:
+            return None
+        if building.contains_point(chaser.x, chaser.y) == building.contains_point(player.x, player.y):
+            return None
+        door = building.door_rect()
+        if math.hypot(chaser.x - door.centerx, chaser.y - door.centery) > c.Buildings.DOOR_BASH_REACH:
+            return None
+        return building
+
+    def bash_doors(self, player: Player, damage_mult: float = 1.0):
+        """Let every monster held up at a shut door beat on it.
+
+        Kept here rather than on `Monster` for the same reason a monster's arrow is: the door
+        belongs to the world, and what happens to it is a blow landing on a hit-point pool
+        like any other. It takes the monster's own damage, so a troll is through a door in a
+        few swings and a slime is a long while about it, and the hole it leaves is permanent."""
+        now = pygame.time.get_ticks()
+        for monster in self.monsters:
+            # Cheap box test first: only something already on the player can be held up by
+            # a door between them, and this runs over every monster alive every frame.
+            if (
+                abs(monster.x - player.x) > c.World.DETECTION_RANGE
+                or abs(monster.y - player.y) > c.World.DETECTION_RANGE
+            ):
+                continue
+            building = self.blocking_door(monster, player)
+            if building is None or now < monster.next_bash_ms:
+                continue
+            monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
+            # Monster.start_attack_anim resolves a melee hit from a distance; the door wants
+            # the swing only, so it goes to the plain Entity one.
+            Entity.start_attack_anim(monster)
+            door = building.door_rect()
+            angle = math.atan2(door.centery - monster.y, door.centerx - monster.x)
+            self._hit_door(building, round(monster.kind.damage * damage_mult), angle)
+
+    def _hit_door(self, building: Building, damage: int, angle: float = 0.0):
+        """Land a blow on a shut door, and put it through once it has taken enough."""
+        door = building.door_rect()
+        if not building.damage_door(damage):
+            self._prop_chip(door.centerx, door.centery, c.Buildings.DOOR_COLOR, "crate_break", building.door_key, angle)
+            return
+        get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(
+            door.centerx,
+            door.centery,
+            c.Buildings.DOOR_COLOR,
+            count=18,
+            speed=6,
+            life=520,
+            size=4,
+            gravity=0.5,
+            shape="shard",
+        )
+
     def _break_window(self, building: Building, idx: int, window):
         """Shatter a window: no loot, just a satisfying crash."""
         building.broken_windows.add(idx)
@@ -907,13 +971,15 @@ class WorldCombat:
 
         Nothing shoots through a wall: the arrow was always stopped by one, but the archer
         used to keep loosing into it at a player it had no way of seeing, so breaking line
-        of sight is now a real answer too."""
+        of sight is now a real answer too. Nothing shoots point blank either: an archer with
+        the player on top of it is cornered (Monster.cornered) and has to use its knife."""
         now = pygame.time.get_ticks()
         for monster in self.monsters:
             if not monster.kind.ranged or now < monster.next_shot_ms:
                 continue
             dx, dy = player.x - monster.x, player.y - monster.y
-            if math.hypot(dx, dy) > monster.kind.attack_range:
+            distance = math.hypot(dx, dy)
+            if distance > monster.kind.attack_range or monster.cornered(distance):
                 continue
             if not self.line_of_sight(monster.x, monster.y, player.x, player.y):
                 continue

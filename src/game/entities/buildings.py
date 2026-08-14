@@ -63,6 +63,12 @@ class Building:
         # far along the player got with the rest.
         self.crate_hp: dict = {}
         self.window_hp: dict = {}
+        # The front door, shut until somebody opens it. `door_open` and `door_broken` are
+        # persisted (a door left open stays open, a door beaten down is a hole for good);
+        # the damage a door still standing has taken is session-only, like a crate's.
+        self.door_open = False
+        self.door_broken = False
+        self.door_hp = c.Buildings.DOOR_HP
         # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
         # persisted: it lives only for the current play session, same as indoor monsters.
         self.dropped_items: List["Item"] = []
@@ -93,6 +99,43 @@ class Building:
     def door_front(self) -> tuple:
         return (self.x, self.rect.bottom + 60)
 
+    def door_rect(self) -> pygame.Rect:
+        """The door leaf itself, filling the gap in the front wall."""
+        wall = c.Buildings.WALL_THICKNESS
+        return pygame.Rect(
+            round(self.x - c.Buildings.DOOR_WIDTH / 2), self.rect.bottom - wall, c.Buildings.DOOR_WIDTH, wall
+        )
+
+    @property
+    def door_closed(self) -> bool:
+        """True while the doorway is shut: a wall to anything trying to walk through it."""
+        return self.has_door and not self.door_open and not self.door_broken
+
+    @property
+    def door_key(self) -> str:
+        """Identity of this door for `core.damage_fx`, which is keyed by string."""
+        return f"{self.id}:door"
+
+    def toggle_door(self) -> bool:
+        """Open a shut door or shut an open one. Returns the new open state; a door that has
+        been beaten down is past opening or closing and stays as it is."""
+        if not self.has_door or self.door_broken:
+            return True
+        self.door_open = not self.door_open
+        return self.door_open
+
+    def damage_door(self, damage: int) -> bool:
+        """Land a blow on the door. True on the blow that finally puts it through: from then
+        on the doorway is a hole, exactly like the gap every building used to have."""
+        if not self.door_closed:
+            return False
+        self.door_hp -= damage
+        if self.door_hp > 0:
+            return False
+        self.door_hp = 0
+        self.door_broken = True
+        return True
+
     def window_rects(self) -> List[pygame.Rect]:
         """Two windows flanking the door on the front facade, in world coordinates.
         The landmark has no facade at all, so it gets none."""
@@ -115,13 +158,17 @@ class Building:
         wall = c.Buildings.WALL_THICKNESS
         door_left = round(self.x - c.Buildings.DOOR_WIDTH / 2)
         door_right = round(self.x + c.Buildings.DOOR_WIDTH / 2)
-        return [
+        segments = [
             pygame.Rect(r.left, r.top, r.width, wall),  # back wall
             pygame.Rect(r.left, r.top, wall, r.height),  # left wall
             pygame.Rect(r.right - wall, r.top, wall, r.height),  # right wall
             pygame.Rect(r.left, r.bottom - wall, door_left - r.left, wall),  # front, left of door
             pygame.Rect(door_right, r.bottom - wall, r.right - door_right, wall),  # front, right of door
         ]
+        # A shut door is part of the shell; open it or break it and the gap is back.
+        if self.door_closed:
+            segments.append(self.door_rect())
+        return segments
 
     def blocks(self, x, y, radius) -> bool:
         """True if a point (with this radius) overlaps the wall shell (the door gap is
@@ -151,6 +198,8 @@ class Building:
             "looted": self.looted,
             "broken_crates": sorted(self.broken_crates),
             "broken_windows": sorted(self.broken_windows),
+            "door_open": self.door_open,
+            "door_broken": self.door_broken,
         }
 
     @classmethod
@@ -161,6 +210,8 @@ class Building:
         building.looted = data["looted"]
         building.broken_crates = set(data.get("broken_crates", []))
         building.broken_windows = set(data.get("broken_windows", []))
+        building.door_open = data.get("door_open", False)
+        building.door_broken = data.get("door_broken", False)
         return building
 
     # ------------------------------------------------------------------ interior
@@ -337,11 +388,8 @@ class Building:
         roof = srect.inflate(-16, -16)
         self._draw_roof(screen, roof, style)
 
-        door = pygame.Rect(
-            round(srect.centerx - c.Buildings.DOOR_WIDTH / 2), srect.bottom - 12, c.Buildings.DOOR_WIDTH, 12
-        )
-        pygame.draw.rect(screen, (45, 32, 26), door)
         pygame.draw.rect(screen, (205, 185, 140), pygame.Rect(srect.centerx - 22, srect.bottom, 44, 10))
+        self._draw_door(screen, camera)
 
         windows = self.window_rects()
         for idx, window in enumerate(windows):
@@ -600,10 +648,10 @@ class Building:
             wx, _ = camera.world_to_screen(x, floor.top)
             pygame.draw.line(screen, plank, (wx, floor_screen.top), (wx, floor_screen.bottom - 1), 2)
 
-        # Doorway through the front wall: a floor-coloured gap, matching the collision gap.
-        wall = c.Buildings.WALL_THICKNESS
-        door = pygame.Rect(round(self.x - c.Buildings.DOOR_WIDTH / 2), floor.bottom, c.Buildings.DOOR_WIDTH, wall)
-        pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, to_screen(door))
+        # Doorway through the front wall: a floor-coloured gap, matching the collision gap,
+        # with whatever is left of the door drawn in it.
+        pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, to_screen(self.door_rect()))
+        self._draw_door(screen, camera)
 
         for idx, window in enumerate(self.window_rects()):
             self._draw_window(
@@ -642,6 +690,50 @@ class Building:
         # can't stack labels over each other.
         for item in self.dropped_items:
             item.draw(screen, camera)
+
+    def _draw_door(self, screen: pygame.Surface, camera: Camera):
+        """The front door as it currently stands: shut (a planked leaf, cracking further
+        with every blow it takes), open (swung out of the frame, the dark doorway showing)
+        or beaten down (a hole with a few splinters left in the jamb).
+
+        Drawn from the same rect the collision shell uses, so what is painted across the
+        doorway is exactly what is standing in it."""
+        if not self.has_door:
+            return
+        door = self.door_rect()
+        sx, sy = camera.world_to_screen(door.left, door.top)
+        rect = pygame.Rect(round(sx), round(sy), door.width, door.height)
+        frame = (52, 36, 24)
+        dark = (32, 24, 20)
+
+        if self.door_broken:
+            pygame.draw.rect(screen, dark, rect)
+            # Seeded from world space so the wreckage holds still as the camera pans.
+            rng = random.Random(door.left * 31 + door.top)
+            for _ in range(5):
+                w = rng.randint(5, 13)
+                shard = pygame.Rect(rng.randint(rect.left, rect.right - w), rect.top, w, rng.randint(4, rect.height))
+                pygame.draw.rect(screen, c.Buildings.DOOR_COLOR, shard)
+                pygame.draw.rect(screen, frame, shard, 1)
+            return
+
+        if self.door_open:
+            pygame.draw.rect(screen, dark, rect)
+            # The leaf standing open against the facade, so an open house reads as open
+            # from across the street.
+            leaf = pygame.Rect(rect.right - 7, rect.bottom - 2, 8, round(door.width * 0.6))
+            pygame.draw.rect(screen, c.Buildings.DOOR_COLOR, leaf)
+            pygame.draw.rect(screen, frame, leaf, 1)
+            return
+
+        leaf = rect.move(get_damage_fx().offset(self.door_key))
+        pygame.draw.rect(screen, c.Buildings.DOOR_COLOR, leaf)
+        pygame.draw.rect(screen, frame, leaf, 2)
+        for i in (1, 2):
+            plank_x = leaf.left + round(leaf.width * i / 3)
+            pygame.draw.line(screen, frame, (plank_x, leaf.top + 2), (plank_x, leaf.bottom - 3), 1)
+        pygame.draw.circle(screen, (208, 176, 96), (leaf.right - 10, leaf.centery), 3)
+        draw_cracks(screen, leaf, self.door_hp / c.Buildings.DOOR_HP, self.door_key)
 
     @staticmethod
     def _draw_window(

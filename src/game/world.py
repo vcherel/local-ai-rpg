@@ -433,8 +433,18 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
 
         if monster_building is player_building:
             if monster_building is not None:
-                # Same room: nothing between them but furniture, which steering handles.
-                return None
+                # Same room: the only things between them are the bed and the table, so the
+                # detour that walks round a house walks round those too. Without it a monster
+                # steered into the furniture and stuck there while the player stood in a
+                # corner two steps away.
+                solids = [rect for rect, _kind in monster_building.interior_layout()["solids"]]
+                corner = self._detour_corner(start, (player.x, player.y), radius, solids)
+                # A room is small enough that the way round a table can be a point inside the
+                # wall behind it. Sending a monster at one is worse than sending it nowhere:
+                # steering gets round furniture on its own, it just needs the room to do it.
+                if corner is not None and self.blocked(corner[0], corner[1], radius):
+                    return None
+                return corner
             # Both outdoors: straight at the player, round anything standing in the way.
             goal = (player.x, player.y)
         elif monster_building is not None:
@@ -446,6 +456,17 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
 
         return self._detour_corner(start, goal, radius) or goal
 
+    def open_door_for(self, chaser):
+        """A villager chasing the player into a house lets themselves in: the door is theirs
+        and they live behind it. Monsters get no such courtesy and beat it down instead
+        (WorldCombat.bash_doors), which is the whole difference between the two."""
+        for building in self.buildings_near(chaser.x, chaser.y):
+            if not building.door_closed:
+                continue
+            door = building.door_rect()
+            if math.hypot(chaser.x - door.centerx, chaser.y - door.centery) <= c.Buildings.DOOR_BASH_REACH:
+                building.door_open = True
+
     @staticmethod
     def _door_goal(building: Building, monster: Monster, radius: float, leaving: bool):
         """The point to walk to next to get through `building`'s door, in or out. A monster
@@ -455,6 +476,11 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         inside = (building.x, building.interior_rect().bottom - 20)
         fits = radius < c.Buildings.DOOR_WIDTH / 2 - 4
         aligned = abs(monster.x - building.x) < c.Buildings.DOOR_WIDTH / 2 - radius
+        if building.door_closed:
+            # A shut door is a wall with nothing to walk round: come right up against it from
+            # whichever side this is on and beat on it (WorldCombat.bash_doors). Close enough
+            # to be in reach of the leaf, which the usual standing-off point is not.
+            return inside if leaving else (building.x, building.rect.bottom + radius + 6)
         if leaving:
             return door_front if aligned else inside
         # Too broad for the doorway (the stone colossus): it waits on the doorstep rather
@@ -464,18 +490,23 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             return door_front
         return inside
 
-    def _detour_corner(self, start, goal, radius: float):
-        """The corner to head for when a building sits between `start` and `goal`, or None
-        when the way is clear.
+    def _detour_corner(self, start, goal, radius: float, rects=None):
+        """The corner to head for when something solid sits between `start` and `goal`, or
+        None when the way is clear.
 
         The way past a rectangle runs through at most two of its corners, so both ways round
         are costed in full and the first corner of the shorter one is returned. Costing the
         whole detour, rather than just picking the nearest corner, is what stops a monster
         oscillating between the near corner behind it and the far corner it should round.
+
+        `rects` is what stands in the way: the buildings around `start` by default, or a
+        room's furniture when the chase is happening inside one.
         """
-        for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE):
+        if rects is None:
+            rects = [building.rect for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE)]
+        for obstacle in rects:
             margin = radius + 8
-            rect = building.rect.inflate(margin * 2, margin * 2)
+            rect = obstacle.inflate(margin * 2, margin * 2)
             # A goal inside the shell is that building's own doorway; walking round the
             # building would be walking away from the door.
             if rect.collidepoint(goal):
@@ -690,12 +721,18 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 # A pack kind (wolves, goblins) is rolled once and then stood up as a group,
                 # so the wilds hold a few real fights rather than a scatter of single mobs.
                 leader = self._new_monster(x, y, danger_bonus=bonus)
-                self.monsters.append(leader)
+                pack = [leader]
                 for _ in range(random.randint(*leader.kind.group) - 1):
                     spread = c.World.PACK_SPREAD
                     mate_x, mate_y = x + random.uniform(-spread, spread), y + random.uniform(-spread, spread)
                     if not self.blocked(mate_x, mate_y, leader.kind.size / 2):
-                        self.monsters.append(Monster(mate_x, mate_y, leader.kind))
+                        pack.append(Monster(mate_x, mate_y, leader.kind))
+                # Each member takes its own bearing around the player, evenly spread from a
+                # random start, so a pack closes in as a ring instead of a queue.
+                base = random.uniform(0, 2 * math.pi)
+                for index, member in enumerate(pack):
+                    member.slot_angle = base + 2 * math.pi * index / len(pack)
+                self.monsters.extend(pack)
                 return
 
     def _spawn_critter_away_from(self, player: Player):
@@ -779,11 +816,16 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt).
         update_radius = detection + c.Player.SIZE
-        for monster in self.monsters:
-            if abs(monster.x - player.x) <= update_radius and abs(monster.y - player.y) <= update_radius:
-                waypoint = self.chase_waypoint(monster, player, monster.kind.size / 2)
-                monster.move(player, dt, self.blocked, waypoint, damage_mult, detection)
+        nearby = [
+            m for m in self.monsters if abs(m.x - player.x) <= update_radius and abs(m.y - player.y) <= update_radius
+        ]
+        for monster in nearby:
+            waypoint = self.chase_waypoint(monster, player, monster.kind.size / 2)
+            # `nearby` doubles as the crowd each monster shoulders its way out of: the ones
+            # converging on the player are exactly the ones that pile up on each other.
+            monster.move(player, dt, self.blocked, waypoint, damage_mult, detection, crowd=nearby)
         self.fire_monster_shots(player, damage_mult)
+        self.bash_doors(player, damage_mult)
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         # Camp guards are the exception: they hold a place rather than roam, and their camp
@@ -812,6 +854,8 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             # Only an angry villager actually closing on the player needs a route round
             # the houses; everyone else is wandering and steers for itself.
             chasing = npc.hostile and npc.distance_to_point(player_pos) <= c.Entities.NPC_HOSTILE_RANGE
+            if chasing:
+                self.open_door_for(npc)
             waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
             npc.update(player, dt, self.blocked, waypoint)
 

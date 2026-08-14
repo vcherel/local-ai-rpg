@@ -10,7 +10,7 @@ CONTROLS = [
     ("Left Click", "Attack with melee weapon"),
     ("Right Click", "Fire equipped bow/staff"),
     ("Space", "Hold to raise your shield and block"),
-    ("E", "Interact, talk, pick up, rest at a camp"),
+    ("E", "Interact, talk, pick up, open a door, rest at a camp"),
     ("B", "Trade with a merchant you are next to"),
     ("F", "Equip the last picked-up upgrade"),
     ("1 - 3", "Draw the weapon in that bar slot"),
