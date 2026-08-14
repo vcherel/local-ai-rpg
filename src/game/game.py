@@ -333,6 +333,15 @@ class Game:
                 if dist <= indoor_reach:
                     offer(Interaction("bed", bed, self._bed_label(), bed.centerx, bed.top), dist)
 
+        for building in self.world.buildings_near(self.player.x, self.player.y):
+            if not building.has_door or building.door_broken:
+                continue
+            door = building.door_rect()
+            dist = reach_of(door.centerx, door.centery)
+            if dist <= c.Buildings.INTERACT_DISTANCE:
+                label = "E: close the door" if building.door_open else "E: open the door"
+                offer(Interaction("door", building, label, door.centerx, door.top - 10), dist)
+
         item = self.world.item_in_reach(self.player)
         if item is not None:
             offer(Interaction("item", item, f"E: pick up {item.name}", item.x, item.y), reach_of(item.x, item.y))
@@ -385,6 +394,8 @@ class Game:
             self._open_interior_chest()
         elif interaction.kind == "bed":
             self._sleep_in_bed()
+        elif interaction.kind == "door":
+            self._use_door(interaction.target)
         elif interaction.kind == "camp":
             self.world.rest_at_camp(self.player, interaction.target)
         elif interaction.kind == "shrine":
@@ -484,6 +495,17 @@ class Game:
         if cooling > 0:
             return f"E: this bed is still warm ({int(cooling) + 1}s)"
         return "E: sleep in their bed"
+
+    def _use_door(self, building):
+        """Open or shut a door. Shutting one is the only way to put a wall between the player
+        and whatever is chasing them, which is the point: a monster can beat a door down, but
+        it takes it several swings and they are audible."""
+        building.toggle_door()
+        play_sound("door")
+        if building.door_closed:
+            # Never shut a door on oneself: standing in the gap when it swings to would wall
+            # the player into the doorframe.
+            self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, c.Player.SIZE / 2)
 
     def _sleep_in_bed(self):
         # A bed is the one full night's rest in the game: unlike a campfire it heals

@@ -27,7 +27,11 @@ class Monster(Entity):
     def __init__(self, x, y, kind: c.MonsterKind = c.MONSTER_KINDS[0]):
         super().__init__(x, y, kind.color, kind.size, kind.hp, kind.hp)
         self.kind = kind
-        self.target_offset = (random.uniform(-15, 15), random.uniform(-15, 15))
+        # The bearing this one takes around the player: it walks to its own point on a ring
+        # just inside its reach rather than to the player's exact position, so a pack comes
+        # in from several sides. A pack's members are given evenly spread bearings when they
+        # are stood up (World._spawn_monster_away_from); a lone monster rolls its own.
+        self.slot_angle = random.uniform(0, 2 * math.pi)
         # Burn (weapon affix) state: damage per tick, ticks left, and the next tick's time.
         self.burn_damage = 0
         self.burn_ticks_remaining = 0
@@ -41,6 +45,8 @@ class Monster(Entity):
         # Ranged kinds only: the earliest tick this one may loose its next shot. World
         # fires it (WorldCombat.fire_monster_shots), since the arrow belongs to the world.
         self.next_shot_ms = 0
+        # Earliest tick this one may swing at a closed door again (World.bash_door).
+        self.next_bash_ms = 0
         # Charger state (kind.charge): when the current windup/rush ends, the heading it
         # committed to, and the earliest tick it may line up another one.
         self.charge_windup_until_ms = 0
@@ -70,30 +76,102 @@ class Monster(Entity):
         monster.hp = data["hp"]
         return monster
 
+    @property
+    def melee_reach(self) -> int:
+        """How close this one has to be to land a swing. A ranged kind's `attack_range` is
+        how far it can shoot rather than how far it can reach, so it gets a knife's reach:
+        an archer cornered into fighting must not be hitting from across the clearing."""
+        return c.Entities.RANGED_MELEE_RANGE if self.kind.ranged else self.kind.attack_range
+
     def start_attack_anim(self, dist):
         """Return True in case of hit to the player"""
         was_attacking = self.attack_in_progress
         super().start_attack_anim()
-        return not was_attacking and dist < self.kind.attack_range + c.Player.SIZE // 2
+        return not was_attacking and dist < self.melee_reach + c.Player.SIZE // 2
 
     # Deflection angles tried when the straight line to the player is blocked, alternating
     # sides so the monster steers around whichever edge of the obstacle is nearer.
     _STEER_OFFSETS_DEG = (0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150)
 
-    def _steer(self, target_angle, blocked, radius, speed):
+    def _steer(self, target_angle, blocked, radius, speed, goal_dist=None):
         """Pick the least deflected heading that stays clear a few steps ahead. Probing at
         a lookahead distance rather than one step makes a monster commit to going around a
-        wall while it still has room, instead of grinding into it until it happens to slide free."""
+        wall while it still has room, instead of grinding into it until it happens to slide free.
+
+        The probe never reaches past the goal itself: a player standing in a corner has a wall
+        a step behind them, and steering round a wall that lies beyond where the monster is
+        trying to stand is what used to leave it circling just out of reach."""
         if blocked is None:
             return target_angle
-        probe = max(speed * c.World.STEER_LOOKAHEAD, radius + c.World.STEER_MIN_PROBE)
-        for offset_deg in self._STEER_OFFSETS_DEG:
-            angle = target_angle + math.radians(offset_deg)
-            nx = self.x + math.cos(angle) * probe
-            ny = self.y + math.sin(angle) * probe
-            if not blocked(nx, ny, radius):
-                return angle
+        far = max(speed * c.World.STEER_LOOKAHEAD, radius + c.World.STEER_MIN_PROBE)
+        if goal_dist is not None:
+            far = max(radius + c.World.STEER_CLOSE_PROBE, min(far, goal_dist))
+        # The short probe is the fallback: in a corner or between two pieces of furniture
+        # every long probe is blocked, and giving up there is what used to leave a monster
+        # grinding into a table while the player stood two steps away.
+        for probe in (far, radius + c.World.STEER_CLOSE_PROBE):
+            for offset_deg in self._STEER_OFFSETS_DEG:
+                angle = target_angle + math.radians(offset_deg)
+                nx = self.x + math.cos(angle) * probe
+                ny = self.y + math.sin(angle) * probe
+                if not blocked(nx, ny, radius):
+                    return angle
         return target_angle
+
+    def _aim_point(self, player: Player, blocked, radius: float, cornered: bool = False) -> tuple:
+        """Where this one is trying to stand: its own bearing on a ring just inside its own
+        reach, so a group ends up around the player rather than all on the same spot. A kind
+        with a long reach settles further out for free.
+
+        Falls back to the player's own position when that spot is inside something (a corner,
+        a wall behind the player): a slot nobody can stand in is worse than no slot at all."""
+        if self.kind.ranged and not cornered:
+            standoff = float(self.kind.keep_distance)
+        else:
+            # Cornered, a shooter wants the same place a melee kind does: knife range.
+            standoff = max(0.0, self.melee_reach + c.Player.SIZE / 2 - c.Entities.CHASE_RING_MARGIN)
+        for bearing in (self.slot_angle, math.atan2(self.y - player.y, self.x - player.x)):
+            x = player.x + math.cos(bearing) * standoff
+            y = player.y + math.sin(bearing) * standoff
+            if blocked is None or not blocked(x, y, radius):
+                return x, y
+        # Nothing clear anywhere on the ring: a melee kind walks straight at the player and
+        # lets steering sort the last few steps out, a shooter holds where it is standing.
+        return (self.x, self.y) if self.kind.ranged else (player.x, player.y)
+
+    def _separate(self, crowd, blocked, radius: float):
+        """Push out of anything standing in the same place. Chasers stop moving once they
+        are in reach, which is exactly when they pile into one body; this runs whether the
+        monster is walking or swinging, so the pile comes apart on its own."""
+        if not crowd:
+            return
+        push_x = push_y = 0.0
+        for other in crowd:
+            if other is self:
+                continue
+            dx, dy = self.x - other.x, self.y - other.y
+            gap = math.hypot(dx, dy)
+            overlap = radius + other.kind.size / 2 - gap
+            if overlap <= 0:
+                continue
+            if gap < 1e-6:
+                # Exactly on top of each other: shove along its own bearing rather than
+                # dividing by nothing.
+                dx, dy, gap = math.cos(self.slot_angle), math.sin(self.slot_angle), 1.0
+            push_x += dx / gap * overlap * c.Entities.SEPARATION_PUSH
+            push_y += dy / gap * overlap * c.Entities.SEPARATION_PUSH
+        if push_x == 0.0 and push_y == 0.0:
+            return
+        if blocked is None or not blocked(self.x + push_x, self.y, radius):
+            self.x += push_x
+        if blocked is None or not blocked(self.x, self.y + push_y, radius):
+            self.y += push_y
+
+    def cornered(self, dist: float) -> bool:
+        """A ranged kind with the player right on top of it. It has nowhere useful to back
+        off to, so it stops retreating, stops shooting and swings instead: closing the gap
+        is meant to be the answer to an archer, not the start of a stalemate."""
+        return self.kind.ranged and dist < self.kind.keep_distance * c.Entities.CORNERED_FRAC
 
     def _flank(self, target_angle, dist) -> float:
         """Bend the approach to one side, swapping sides every few seconds. The bend fades
@@ -137,7 +215,9 @@ class Monster(Entity):
             return True
         return False
 
-    def move(self, player: Player, dt, blocked=None, waypoint=None, damage_mult: float = 1.0, detection=None):
+    def move(
+        self, player: Player, dt, blocked=None, waypoint=None, damage_mult: float = 1.0, detection=None, crowd=None
+    ):
         """Chase the player, or `waypoint` when one is given: a door the monster has to walk
         through first because the player is on the other side of a wall (see World.chase_waypoint).
         The attack swing always keys off the real distance to the player, waypoint or not.
@@ -146,32 +226,45 @@ class Monster(Entity):
         both are properties of the moment: everything hits harder and notices sooner at
         night, and a monster that spawned at noon is no gentler for it once the sun is down.
 
-        A ranged kind never closes: it walks into its firing range, backs off if the player
-        gets inside `keep_distance`, and leaves the shooting itself to the world. A charger
-        crosses the gap in one telegraphed rush instead of walking, and a flanker bends its
-        approach to one side so a group of them comes in from several angles at once."""
-        dx = player.x + self.target_offset[0] - self.x
-        dy = player.y + self.target_offset[1] - self.y
-        dist = math.hypot(dx, dy)
+        A ranged kind never closes: it holds `keep_distance` and backs off (slower than it
+        advances) when the player gets inside it, leaving the shooting itself to the world,
+        until the player is right on top of it and it has to fight. A charger crosses the gap
+        in one telegraphed rush instead of walking, and a flanker bends its approach to one
+        side so a group of them comes in from several angles at once.
+
+        `crowd` is the other chasers nearby: whoever is standing where this one wants to be
+        gets shouldered aside, which is what keeps a pack a ring rather than a single body."""
+        dist = math.hypot(player.x - self.x, player.y - self.y)
         senses = c.World.DETECTION_RANGE if detection is None else detection
         move_factor = dt * c.TARGET_FPS / 1000.0
         radius = self.kind.size / 2
 
-        if waypoint is not None:
-            target_angle = math.atan2(waypoint[1] - self.y, waypoint[0] - self.x)
-        else:
-            target_angle = math.atan2(dy, dx)
-        self.orientation = target_angle
-
         aware = dist < senses + c.Player.SIZE // 2
-        retreating = self.kind.ranged and dist < self.kind.keep_distance
+        cornered = self.cornered(dist)
+        retreating = self.kind.ranged and not cornered and dist < self.kind.keep_distance
+
+        goal = waypoint if waypoint is not None else self._aim_point(player, blocked, radius, cornered)
+        gdx, gdy = goal[0] - self.x, goal[1] - self.y
+        goal_dist = math.hypot(gdx, gdy)
+        # Standing still is only allowed once the monster can act from where it is: a shooter
+        # holding its distance, or a melee kind close enough to land its swing. Otherwise a
+        # slot a few pixels short of reach would have it wait politely out of range forever.
+        settled = (self.kind.ranged and not cornered) or dist < self.melee_reach + c.Player.SIZE / 2
+        arrived = waypoint is None and goal_dist <= c.Entities.CHASE_ARRIVE and settled
+        # Facing follows the walk, except once it has taken its place: the angle to a spot
+        # it is already standing on is noise, and what it wants to face then is the player.
+        target_angle = math.atan2(gdy, gdx)
+        self.orientation = math.atan2(player.y - self.y, player.x - self.x) if arrived else target_angle
+
         charging = self.kind.charge and self._charge(dist, aware, move_factor, radius, blocked)
         if charging:
             self.orientation = self.charge_angle
-        elif aware and (retreating or self.kind.attack_range < dist):
+        elif aware and not arrived:
             speed = self.kind.speed * move_factor
+            if retreating:
+                speed *= c.Entities.RETREAT_SPEED_MULT
             move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
-            angle = self._steer(move_angle + (math.pi if retreating else 0.0), blocked, radius, speed)
+            angle = self._steer(move_angle, blocked, radius, speed, goal_dist)
             step_x = math.cos(angle) * speed
             step_y = math.sin(angle) * speed
             # Move one axis at a time so a wall on one axis lets the monster slide along it.
@@ -182,7 +275,9 @@ class Monster(Entity):
                 step_y = 0
             self.y += step_y
 
-        if not self.kind.ranged and dist < self.kind.attack_range * 10:
+        self._separate(crowd, blocked, radius)
+
+        if (not self.kind.ranged or cornered) and dist < self.melee_reach * 10:
             hit = self.start_attack_anim(dist)
             if hit:
                 player.receive_damage(round(self.kind.damage * damage_mult), source=self)

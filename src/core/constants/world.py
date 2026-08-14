@@ -32,6 +32,10 @@ class World:
     STEER_LOOKAHEAD: float = 12.0
     STEER_MIN_PROBE: int = 26
     DOOR_APPROACH_DISTANCE: int = 90
+    # When every long probe is blocked (a corner, a gap between two pieces of furniture),
+    # the same fan is tried again this far ahead: in a tight room there is usually exactly
+    # one way out and the lookahead is too long to see it.
+    STEER_CLOSE_PROBE: int = 4
 
     # Buildings are bucketed by chunk for collision lookups, each one padded by this much
     # so a footprint just over a chunk border is still found from the chunk next door.
@@ -192,6 +196,14 @@ class Buildings:
     DOOR_WIDTH: int = 70
     # The entry trigger straddles the front wall, extending this far on each side of it.
     DOOR_DEPTH: int = 35
+
+    # Every door starts shut and blocks the doorway like any other wall. The player opens
+    # and closes it with E; a monster that cannot reach the player through it beats it
+    # down over several blows, and a door once broken is a hole for good.
+    DOOR_HP: int = 55
+    DOOR_BASH_REACH: int = 46
+    DOOR_BASH_COOLDOWN_MS: int = 900
+    DOOR_COLOR: tuple = (96, 68, 44)
 
     # Thickness of the wall shell drawn/collided around a building's footprint; the
     # walkable floor is the footprint inset by this on every side.
