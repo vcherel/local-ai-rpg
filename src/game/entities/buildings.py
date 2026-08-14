@@ -67,6 +67,10 @@ class Building:
         self.dropped_items: List["Item"] = []
         self._layout = None
         self._ruin = None
+        # How this one is built (roof material and form, wall tint, extras). Rolled from
+        # the building's own id on first draw, so a street is a row of different houses
+        # and each of them keeps its look for good.
+        self._style = None
 
     @property
     def rect(self) -> pygame.Rect:
@@ -311,18 +315,14 @@ class Building:
             self._draw_interior(screen, camera)
             return
 
+        style = self.style()
         r = self.rect
         sx, sy = camera.world_to_screen(r.left, r.top)
         srect = pygame.Rect(sx, sy, r.width, r.height)
-        pygame.draw.rect(screen, c.Buildings.WALL_COLOR, srect)
+        pygame.draw.rect(screen, style["wall"], srect)
 
         roof = srect.inflate(-16, -16)
-        roof_color = c.Buildings.ROOF_COLORS[self.kind]
-        pygame.draw.rect(screen, roof_color, roof)
-        lighter = tuple(min(255, round(v * 1.18)) for v in roof_color)
-        pygame.draw.rect(screen, lighter, pygame.Rect(roof.left, roof.top, roof.width, roof.height // 2))
-        darker = tuple(round(v * 0.7) for v in roof_color)
-        pygame.draw.line(screen, darker, (roof.left, roof.centery), (roof.right - 1, roof.centery), 3)
+        self._draw_roof(screen, roof, style)
 
         door = pygame.Rect(
             round(srect.centerx - c.Buildings.DOOR_WIDTH / 2), srect.bottom - 12, c.Buildings.DOOR_WIDTH, 12
@@ -330,13 +330,147 @@ class Building:
         pygame.draw.rect(screen, (45, 32, 26), door)
         pygame.draw.rect(screen, (205, 185, 140), pygame.Rect(srect.centerx - 22, srect.bottom, 44, 10))
 
-        for idx, window in enumerate(self.window_rects()):
+        windows = self.window_rects()
+        for idx, window in enumerate(windows):
             self._draw_window(screen, camera, window, idx in self.broken_windows)
+        self._draw_extras(screen, camera, srect, roof, windows, style)
 
         if self.kind == "shop":
             self._draw_awning(screen, srect)
         elif self.kind == "tavern":
             self._draw_tavern_sign(screen, srect)
+
+    def style(self) -> dict:
+        """How this building is built. Rolled once from its id, which is stable across a
+        save, so a house keeps its roof and its shutters for the life of the world."""
+        if self._style is not None:
+            return self._style
+
+        rng = random.Random(f"style:{self.id}")
+
+        def pick(weights):
+            names, values = zip(*weights)
+            return rng.choices(names, weights=values)[0]
+
+        material = pick(c.Buildings.ROOF_MATERIALS)
+        base = c.Buildings.ROOF_MATERIAL_COLORS[material]
+        # The kind's own colour is blended into the material's, so a shop still reads
+        # blue-ish and a tavern purple-ish whatever they happen to be roofed with.
+        kind_color = c.Buildings.ROOF_COLORS[self.kind]
+        blend = c.Buildings.ROOF_KIND_BLEND
+        roof = tuple(round(base[i] * (1 - blend) + kind_color[i] * blend) for i in range(3))
+        tint = rng.uniform(*c.Buildings.WALL_TINT_RANGE)
+        wall = tuple(min(255, round(v * tint)) for v in c.Buildings.WALL_COLOR)
+
+        extras = rng.sample([name for name, _ in c.Buildings.EXTRAS], k=len(c.Buildings.EXTRAS))
+        extras = [name for name in extras if rng.random() < 0.55][: c.Buildings.EXTRA_MAX]
+
+        self._style = {
+            "material": material,
+            "form": pick(c.Buildings.ROOF_FORMS),
+            "roof": roof,
+            "wall": wall,
+            "extras": extras,
+            # Which way the ridge of a gable roof runs, and which side the extras sit on.
+            "ridge_horizontal": rng.random() < 0.5,
+            "side": rng.choice((-1, 1)),
+        }
+        return self._style
+
+    def _draw_roof(self, screen, roof: pygame.Rect, style: dict):
+        """The covering over the walls: a ridged gable, a hipped pyramid or a flat slab,
+        then the texture of whatever it is made of."""
+        color = style["roof"]
+        lighter = tuple(min(255, round(v * 1.18)) for v in color)
+        darker = tuple(round(v * 0.7) for v in color)
+        pygame.draw.rect(screen, color, roof)
+
+        if style["form"] == "gable":
+            if style["ridge_horizontal"]:
+                pygame.draw.rect(screen, lighter, pygame.Rect(roof.left, roof.top, roof.width, roof.height // 2))
+                pygame.draw.line(screen, darker, (roof.left, roof.centery), (roof.right - 1, roof.centery), 4)
+            else:
+                pygame.draw.rect(screen, lighter, pygame.Rect(roof.left, roof.top, roof.width // 2, roof.height))
+                pygame.draw.line(screen, darker, (roof.centerx, roof.top), (roof.centerx, roof.bottom - 1), 4)
+        elif style["form"] == "hip":
+            inner = roof.inflate(-round(roof.width * 0.42), -round(roof.height * 0.42))
+            corners = (roof.topleft, roof.topright, roof.bottomright, roof.bottomleft)
+            inners = (inner.topleft, inner.topright, inner.bottomright, inner.bottomleft)
+            shades = (lighter, color, darker, color)
+            for i in range(4):
+                slope = (corners[i], corners[(i + 1) % 4], inners[(i + 1) % 4], inners[i])
+                pygame.draw.polygon(screen, shades[i], slope)
+            pygame.draw.rect(screen, lighter, inner, 2)
+        else:
+            pygame.draw.rect(screen, lighter, pygame.Rect(roof.left, roof.top, roof.width, 10))
+
+        self._draw_roof_texture(screen, roof, style)
+        pygame.draw.rect(screen, darker, roof, 2)
+
+    @staticmethod
+    def _draw_roof_texture(screen, roof: pygame.Rect, style: dict):
+        color = style["roof"]
+        line = tuple(round(v * 0.82) for v in color)
+        if style["material"] == "thatch":
+            for y in range(roof.top + 6, roof.bottom - 2, 9):
+                pygame.draw.line(screen, line, (roof.left + 3, y), (roof.right - 4, y), 2)
+        elif style["material"] == "shingle":
+            for row, y in enumerate(range(roof.top + 8, roof.bottom - 2, 12)):
+                offset = 9 if row % 2 else 0
+                for x in range(roof.left + 4 + offset, roof.right - 6, 18):
+                    pygame.draw.arc(screen, line, pygame.Rect(x, y - 6, 16, 12), 3.34, 6.08, 2)
+        elif style["material"] == "slate":
+            for x in range(roof.left + 14, roof.right - 4, 16):
+                pygame.draw.line(screen, line, (x, roof.top + 3), (x, roof.bottom - 4), 1)
+            for y in range(roof.top + 14, roof.bottom - 4, 16):
+                pygame.draw.line(screen, line, (roof.left + 3, y), (roof.right - 4, y), 1)
+        else:
+            for y in range(roof.top + 12, roof.bottom - 4, 14):
+                pygame.draw.line(screen, line, (roof.left + 3, y), (roof.right - 4, y), 2)
+
+    def _draw_extras(self, screen, camera: Camera, srect: pygame.Rect, roof: pygame.Rect, windows, style: dict):
+        """The one or two things that make this house somebody's: a smoking chimney, a
+        porch over the door, shutters, a flower box, a stack of firewood."""
+        side = style["side"]
+        for extra in style["extras"]:
+            if extra == "chimney":
+                stack = pygame.Rect(0, 0, 22, 22)
+                stack.center = (roof.centerx + side * (roof.width // 3), roof.top + roof.height // 3)
+                pygame.draw.rect(screen, (108, 92, 84), stack, border_radius=3)
+                pygame.draw.rect(screen, (66, 56, 50), stack, 2, border_radius=3)
+                # A slow curl of smoke, so a lived-in house reads as lived in from a distance.
+                drift = math.sin(pygame.time.get_ticks() / 700.0)
+                for i in range(3):
+                    puff = (round(stack.centerx + drift * (4 + i * 4)), stack.top - 8 - i * 11)
+                    pygame.draw.circle(screen, (206, 202, 198), puff, 5 + i * 2)
+            elif extra == "porch":
+                porch = pygame.Rect(0, 0, c.Buildings.DOOR_WIDTH + 46, 20)
+                porch.midtop = (srect.centerx, srect.bottom - 2)
+                pygame.draw.rect(screen, (126, 100, 68), porch)
+                pygame.draw.rect(screen, (78, 60, 40), porch, 2)
+                for post_x in (porch.left + 5, porch.right - 5):
+                    pygame.draw.circle(screen, (94, 74, 50), (post_x, porch.bottom - 3), 5)
+            elif extra == "shutters":
+                for window in windows:
+                    wx, wy = camera.world_to_screen(window.left, window.top)
+                    for offset in (-8, window.width):
+                        shutter = pygame.Rect(round(wx) + offset, round(wy), 8, window.height)
+                        pygame.draw.rect(screen, (92, 108, 86), shutter)
+                        pygame.draw.rect(screen, (54, 66, 52), shutter, 1)
+            elif extra == "flowerbox" and windows:
+                window = windows[0] if side < 0 else windows[-1]
+                wx, wy = camera.world_to_screen(window.left, window.bottom)
+                box = pygame.Rect(round(wx) - 2, round(wy), window.width + 4, 9)
+                pygame.draw.rect(screen, (112, 84, 54), box)
+                for i in range(3):
+                    pygame.draw.circle(screen, (216, 96, 120), (box.left + 7 + i * 11, box.top + 1), 4)
+            elif extra == "woodpile":
+                pile = pygame.Rect(0, 0, 16, 46)
+                pile.midtop = (srect.centerx + side * (srect.width // 2 - 12), srect.bottom + 4)
+                pygame.draw.rect(screen, (104, 78, 50), pile, border_radius=3)
+                for y in range(pile.top + 6, pile.bottom - 2, 10):
+                    pygame.draw.circle(screen, (146, 116, 76), (pile.centerx, y), 5)
+                    pygame.draw.circle(screen, (74, 54, 34), (pile.centerx, y), 5, 1)
 
     def _draw_awning(self, screen, srect: pygame.Rect):
         band = pygame.Rect(round(srect.centerx - 110), srect.bottom - 6, 220, 16)

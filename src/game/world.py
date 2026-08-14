@@ -22,6 +22,7 @@ from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest, pois_for_chunk
 from game.entities.projectile import Projectile
+from game.entities.scenery import Scenery
 from game.entities.village import Village, generate_starting_world, village_site
 from game.events import EventSystem
 from game.loot import roll_shop_stock
@@ -29,8 +30,17 @@ from game.streaming import WorldStreaming
 from llm.llm_request_queue import generate_response_queued
 from llm.merchant_system import generate_shop_inventories
 
-# What a camper calls each kind of landmark when giving directions.
-_POI_HINT_LABELS = {"ruins": "old ruins", "camp": "somebody's camp", "shrine": "a forgotten shrine"}
+# What a camper or a signpost calls each kind of landmark when giving directions.
+_POI_HINT_LABELS = {
+    "ruins": "old ruins",
+    "camp": "somebody's camp",
+    "shrine": "a forgotten shrine",
+    "farmstead": "an abandoned farmstead",
+    "graveyard": "an old graveyard",
+    "watchtower": "a ruined watchtower",
+    "stones": "a ring of standing stones",
+    "signpost": "a crossroads",
+}
 
 
 def _compass_direction(dx: float, dy: float) -> str:
@@ -61,6 +71,14 @@ class World(WorldCombat, WorldStreaming):
     def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify):
         # Regenerated on the fly as the player explores; see _sync_chunks.
         self.floor_details = []
+        # The wilderness: trees, rocks, grass, ponds and roads, streamed with the chunks
+        # and never saved. Indexed by `_reindex_scenery` into what is drawn under the
+        # entities, what is drawn with the props, and a fine grid of the solid ones for
+        # `blocked`.
+        self.scenery: List[Scenery] = []
+        self._ground_by_chunk: dict = {}
+        self._props_by_chunk: dict = {}
+        self._scenery_by_cell: dict = {}
         self._loaded_chunks = set()
         self._current_chunk = None
 
@@ -569,7 +587,37 @@ class World(WorldCombat, WorldStreaming):
     def blocked(self, x, y, radius) -> bool:
         if any(village.blocks(x, y, radius) for village in self._wells_by_chunk.get(self._chunk_of(x, y), ())):
             return True
-        return any(building.blocks(x, y, radius) for building in self.buildings_near(x, y))
+        if any(building.blocks(x, y, radius) for building in self.buildings_near(x, y)):
+            return True
+        return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
+
+    def _chunk_window(self, x, y, radius) -> List[tuple[int, int]]:
+        size = c.World.CHUNK_SIZE
+        return [
+            (cx, cy)
+            for cx in range(int((x - radius) // size), int((x + radius) // size) + 1)
+            for cy in range(int((y - radius) // size), int((y + radius) // size) + 1)
+        ]
+
+    def scenery_ground_in_range(self, x, y, radius):
+        """The ground itself around a point (patches, ponds, roads, grass), yielded kind by
+        kind in draw order, so a road is never buried under the meadow it crosses."""
+        chunks = self._chunk_window(x, y, radius)
+        for kind in c.Scenery.GROUND_KINDS:
+            for chunk in chunks:
+                yield from self._ground_by_chunk.get(chunk, {}).get(kind, ())
+
+    def scenery_props_in_range(self, x, y, radius):
+        """The trees, rocks and reeds standing around a point."""
+        for chunk in self._chunk_window(x, y, radius):
+            yield from self._props_by_chunk.get(chunk, ())
+
+    def scenery_near(self, x, y) -> List[Scenery]:
+        """The solid scenery (trunks, boulders) that can reach (x, y). Bucketed on its own
+        fine grid: there are far more trees in a wood than buildings in a village, and this
+        runs several times per entity per frame."""
+        cell = c.Scenery.INDEX_CELL
+        return self._scenery_by_cell.get((int(x // cell), int(y // cell)), [])
 
     def free_spot_near(self, x, y, radius) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
@@ -930,7 +978,8 @@ class World(WorldCombat, WorldStreaming):
 
     def _check_poi_discovery(self, player: Player):
         """The one-time line a landmark gives up the first time the player walks to it: a
-        shrine's flavor, or a camper's directions to somewhere still unexplored."""
+        shrine's flavor, a quiet landmark saying what it is, a signpost or a camper pointing
+        the way to somewhere still unexplored."""
         pos = player.get_pos()
         for poi in self.pois:
             if poi.discovered or poi.distance_to_point(pos) >= c.PointsOfInterest.DISCOVER_DISTANCE:
@@ -940,6 +989,14 @@ class World(WorldCombat, WorldStreaming):
                 if self.notify:
                     flavor = random.choice(c.PointsOfInterest.SHRINE_MESSAGES)
                     self.notify(f"{flavor} {c.PointsOfInterest.SHRINE_EXPLANATION}", c.Colors.WHITE)
+            elif poi.kind in c.PointsOfInterest.LANDMARK_MESSAGES:
+                poi.discovered = True
+                if self.notify:
+                    self.notify(random.choice(c.PointsOfInterest.LANDMARK_MESSAGES[poi.kind]), c.Colors.WHITE)
+            elif poi.kind == "signpost":
+                poi.discovered = True
+                if self.notify:
+                    self.notify(self._signpost_directions(poi), (200, 190, 150))
             elif poi.variant == "traveller":
                 poi.discovered = True
                 if self.notify:
@@ -966,6 +1023,17 @@ class World(WorldCombat, WorldStreaming):
                     if best is None or distance < best[0]:
                         best = (distance, x, y, label)
         return best
+
+    def _signpost_directions(self, poi: PointOfInterest) -> str:
+        """What a signpost reads out: the way to the nearest place the player has not walked
+        to, marked on the map like a rumour so the lead is worth the detour to read it."""
+        best = self.unexplored_lead(poi.x, poi.y)
+        if best is None:
+            return "The signpost points at places you have already been."
+        _distance, x, y, label = best
+        bearing = _compass_direction(x - poi.x, y - poi.y)
+        self.mark_rumor(x, y, label)
+        return f"The signpost still reads: {label}, {bearing} of here."
 
     def _traveller_directions(self, poi: PointOfInterest) -> str:
         """What the camper at a traveller camp tells the player: where the nearest thing they
