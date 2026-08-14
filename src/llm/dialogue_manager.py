@@ -11,7 +11,7 @@ import core.constants as c
 from core import dialogue_log
 from core.audio import play_sound
 from core.utils import ConversationHistory
-from game.entities.items import potion_description
+from game.entities.items import draw_shape_with_border, potion_description
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem
 from ui import widgets
@@ -413,8 +413,16 @@ class DialogueManager:
                 text_color=(100, 255, 100),
                 accent=(100, 255, 100),
             )
+            self._draw_purse(self.shop_button_rect.left - 14, self.shop_button_rect.centery)
         else:
             self.shop_button_rect = None
+
+    def _draw_purse(self, right: int, centery: int):
+        """The player's coins beside the Shop button. Haggling with a merchant is the one
+        conversation where what's in the purse decides what to say next."""
+        amount = c.Fonts.button.render(str(self.quest_system.player.coins), True, c.Colors.ACCENT)
+        self.ui.screen.blit(amount, (right - amount.get_width(), centery - amount.get_height() // 2))
+        draw_shape_with_border(self.ui.screen, "coin", (right - amount.get_width() - 16, centery), 8, (235, 205, 80), 2)
 
     def _send_chat_message(self, message: str):
         if self.conversation_ended:

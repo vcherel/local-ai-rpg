@@ -64,7 +64,7 @@ class QuestMenu(BaseMenu):
                 self.scroll_offset = max(0, self.scroll_offset - 1)
             elif event.key == pygame.K_DOWN:
                 self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
-            elif event.key in (pygame.K_q, pygame.K_ESCAPE):
+            elif event.key in (pygame.K_j, pygame.K_ESCAPE):
                 self.close()
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_offset = max(0, min(max_scroll, self.scroll_offset - event.y))

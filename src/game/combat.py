@@ -244,18 +244,23 @@ class WorldCombat:
         if now < player.attack_ready_ms:
             return
         if arch.uses_ammo:
-            # Ammo stacks per rarity, so shoot the cheapest quiver first: rarity only
-            # changes what a stack sells for, and nobody wants to fire legendary arrows
-            # at slimes while common ones sit in the bag.
-            ammo = min(
-                (item for item in player.inventory if item.item_type == "ammo"),
-                key=lambda item: rarity_tier(item.rarity).price_mult,
-                default=None,
-            )
+            # The quiver in the ammo slot is what gets fired. With nothing chosen (or the
+            # chosen stack spent) it falls back to the cheapest one carried: rarity only
+            # changes what a stack sells for, and nobody wants to fire legendary arrows at
+            # slimes while common ones sit in the bag. The fallback matters, since running
+            # a chosen quiver dry should not leave a stocked player unable to shoot.
+            ammo = player.equipped_item("ammo")
+            if ammo is None:
+                ammo = min(
+                    (item for item in player.inventory if item.item_type == "ammo"),
+                    key=lambda item: rarity_tier(item.rarity).price_mult,
+                    default=None,
+                )
             if ammo is None:
                 return
             ammo.quantity -= 1
             if ammo.quantity <= 0:
+                player.unequip_if_equipped(ammo)
                 player.inventory.remove(ammo)
 
         player.attack_ready_ms = now + arch.cooldown_ms

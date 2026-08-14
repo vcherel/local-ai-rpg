@@ -13,6 +13,7 @@ from game.entities.items import (
     draw_shape_with_border,
     potion_description,
     rarity_color,
+    rarity_tier,
 )
 from ui import widgets
 from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
@@ -23,6 +24,10 @@ if TYPE_CHECKING:
 
 
 RARE_GLOW = {"rare", "epic", "legendary"}
+
+# Order the grid groups items in: what you fight with, then what you wear, then supplies,
+# then the junk you are carrying to a merchant.
+TYPE_ORDER = ("weapon", "shield", "armor", "accessory", "ammo", "potion", "misc", "lootbox")
 
 
 class InventoryMenu(BaseMenu):
@@ -60,7 +65,16 @@ class InventoryMenu(BaseMenu):
             if key not in item_dict:
                 item_dict[key] = {"count": 0, "item": item}
             item_dict[key]["count"] += item.quantity
-        return list(item_dict.values())
+
+        def sort_key(entry):
+            item = entry["item"]
+            type_rank = TYPE_ORDER.index(item.item_type) if item.item_type in TYPE_ORDER else len(TYPE_ORDER)
+            # Best first inside a type, so the gear worth equipping sits at the top of
+            # its block rather than wherever it happened to be picked up.
+            rarity_rank = -c.Rarity.TIERS.index(rarity_tier(item.rarity))
+            return (type_rank, rarity_rank, -item.bonus, item.name)
+
+        return sorted(item_dict.values(), key=sort_key)
 
     # --- geometry -------------------------------------------------------------
     # width/height are fixed, so draw and hit-testing share the same layout.
@@ -155,6 +169,15 @@ class InventoryMenu(BaseMenu):
                     player.toggle_equip(equipped)
                 return True
 
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+            # Right click walks a weapon along the number-key bar and then off the end,
+            # which is the only manual way to set the bar up; equipping fills it on its own.
+            rel_x, rel_y = event.pos[0] - menu_x, event.pos[1] - menu_y
+            slot = self._slot_at(rel_x, rel_y, len(items_list))
+            if slot is not None:
+                player.cycle_weapon_slot(items_list[slot]["item"])
+            return True
+
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_row = max(0, min(self._max_scroll(len(items_list)), self.scroll_row - event.y))
 
@@ -191,7 +214,7 @@ class InventoryMenu(BaseMenu):
         self.hovered_equip = self._equip_at(rel_x, rel_y)
 
         self._draw_paperdoll(surface, player)
-        self._draw_grid(surface, items_list, equipped_ids)
+        self._draw_grid(surface, items_list, equipped_ids, player.weapon_bar)
 
         tooltip_item = None
         if self.hovered_slot is not None:
@@ -199,7 +222,9 @@ class InventoryMenu(BaseMenu):
         elif self.hovered_equip is not None:
             tooltip_item = player.equipped_item(self.hovered_equip)
 
-        self.draw_hint(surface, "Click to equip, unequip or drink. Scroll for more. ESC or I to close")
+        self.draw_hint(
+            surface, "Click to equip, unequip or drink. Right click a weapon for its number key. ESC or I to close"
+        )
         self.blit_panel(surface)
 
         # Drawn on the screen after the panel, not onto it: a long tooltip near an edge
@@ -230,7 +255,7 @@ class InventoryMenu(BaseMenu):
             else:
                 draw_shape_with_border(surface, glyph, rect.center, 24, (66, 66, 76), 2, (90, 90, 104))
 
-    def _draw_grid(self, surface, items_list, equipped_ids):
+    def _draw_grid(self, surface, items_list, equipped_ids, weapon_bar):
         g = self._grid_geom()
         for row in range(g["rows"]):
             for col in range(g["cols"]):
@@ -266,6 +291,9 @@ class InventoryMenu(BaseMenu):
 
                 if equipped:
                     pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 12, rect.y + 12), 5)
+                if item.id in weapon_bar:
+                    key = c.Fonts.small.render(str(weapon_bar.index(item.id) + 1), True, c.Colors.ACCENT)
+                    surface.blit(key, (rect.right - key.get_width() - 5, rect.y + 3))
                 if count > 1:
                     self._draw_count(surface, rect, count)
 
@@ -322,6 +350,8 @@ class InventoryMenu(BaseMenu):
             text += "  [equipped, click to unequip]"
         elif item.item_type == "potion":
             text += "  [click to drink]"
+        elif item.item_type == "ammo":
+            text += "  [click to load]"
         elif item.item_type in ("weapon", "armor", "shield", "accessory"):
             text += "  [click to equip]"
 

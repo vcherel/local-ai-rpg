@@ -108,6 +108,27 @@ POTION_EFFECT_KEYWORDS = (
 AMMO_BUNDLE = 20
 
 
+def icon_shape(item_type: str, name: str) -> str:
+    """The icon an item draws as. A weapon takes the shape of its archetype, so a bow, an
+    axe and a dagger are told apart at a glance instead of all being one generic sword,
+    and body armour gets its own cuirass rather than borrowing the shield's outline."""
+    if item_type == "weapon":
+        return c.weapon_archetype(name).name
+    if item_type == "armor":
+        return "cuirass"
+    if item_type == "shield":
+        return "shield"
+    if item_type == "accessory":
+        return "gem"
+    if item_type == "lootbox":
+        return "chest"
+    if item_type == "ammo":
+        return "arrow"
+    if item_type == "potion":
+        return "flask"
+    return "coin"
+
+
 def item_type_from_name(name: str) -> str:
     lower = name.lower()
     if any(kw in lower for kw in AMMO_KEYWORDS):
@@ -360,29 +381,23 @@ class Item:
         self.quantity = quantity
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
-            self.shape = "sword"
         elif item_type in ("armor", "shield"):
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ARMOR_COLOR)
-            self.shape = "shield"
         elif item_type == "accessory":
             if self.accessory_flavor is None:
                 self.accessory_flavor = roll_accessory_flavor(self.rarity)
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ACCESSORY_COLOR)
-            self.shape = "gem"
         elif item_type == "lootbox":
             self.color = LOOTBOX_COLOR
-            self.shape = "chest"
         elif item_type == "ammo":
             self.color = AMMO_COLOR
-            self.shape = "arrow"
         elif item_type == "potion":
             if self.potion_effect is None:
                 self.potion_effect = potion_effect_from_name(name)
             self.color = c.Potions.COLORS[self.potion_effect]
-            self.shape = "flask"
         else:  # misc: a valuable to sell, drawn as a coin so it reads clearly
             self.color = VALUABLE_COLOR
-            self.shape = "coin"
+        self.shape = icon_shape(item_type, name)
         # Weapons and armour carry rolled special effects; everything else stays {}.
         self.affixes = roll_affixes(item_type, self.rarity)
         self.picked_up = False
@@ -434,14 +449,16 @@ class Item:
         item.id = data["id"]
         item.angle = data["angle"]
         item.color = tuple(data["color"])
-        item.shape = data["shape"]
+        # The icon is recomputed rather than restored, so a save written before weapons
+        # were drawn per archetype picks up the new shapes instead of keeping its old
+        # generic sword. Nothing about an item's identity lives in `shape`.
+        item.shape = icon_shape(item.item_type, item.name)
         # Restore saved effects rather than the fresh ones __init__ rolled; old saves have none.
         item.affixes = data.get("affixes", {})
         item.picked_up = data["picked_up"]
         # Old saves stored misc items as random polygons; normalise them to the coin look.
         if item.item_type == "misc":
             item.color = VALUABLE_COLOR
-            item.shape = "coin"
         return item
 
     def draw(self, surface: pygame.Surface, camera: Camera = None, x=None, y=None):
@@ -516,34 +533,131 @@ class Item:
         surface.blit(shadow, (screen_x - size, screen_y + size // 2))
 
 
+# Wood and leather on a weapon's haft and grip. Fixed rather than taken from the item's
+# colour, so the metal head stands out against the handle instead of the whole icon being
+# one silhouette in one tint.
+HAFT_COLOR = (138, 96, 58)
+GRIP_COLOR = (92, 62, 44)
+
+
+def _poly(surface, points, color, border_color, border_width):
+    pygame.draw.polygon(surface, color, points)
+    pygame.draw.polygon(surface, border_color, points, border_width)
+
+
 def draw_shape_with_border(surface, shape, center, size, color, border_width, border_color=None):
     if border_color is None:
         border_color = c.Colors.BLACK
     cx, cy = center
+    thin = max(1, border_width - 1)
+
+    def at(fx, fy):
+        """A point given as a fraction of `size` from the icon's centre."""
+        return (cx + size * fx, cy + size * fy)
+
     if shape == "circle":
         pygame.draw.circle(surface, border_color, center, size + border_width)
         pygame.draw.circle(surface, color, center, size)
     elif shape == "sword":
-        points = [
-            (cx, cy - size),
-            (cx + size * 0.4, cy - size * 0.15),
-            (cx + size * 0.15, cy + size * 0.35),
-            (cx, cy + size * 0.55),
-            (cx - size * 0.15, cy + size * 0.35),
-            (cx - size * 0.4, cy - size * 0.15),
+        # Straight blade with a crossguard, wrapped grip and pommel.
+        pygame.draw.line(surface, GRIP_COLOR, at(0, 0.25), at(0, 0.85), max(3, int(size * 0.22)))
+        pygame.draw.circle(surface, color, at(0, 0.92), max(2, int(size * 0.16)))
+        pygame.draw.circle(surface, border_color, at(0, 0.92), max(2, int(size * 0.16)), thin)
+        guard = [at(-0.62, 0.16), at(0.62, 0.16), at(0.62, 0.32), at(-0.62, 0.32)]
+        _poly(surface, guard, color, border_color, thin)
+        blade = [at(0, -1.0), at(0.24, -0.6), at(0.24, 0.18), at(-0.24, 0.18), at(-0.24, -0.6)]
+        _poly(surface, blade, color, border_color, border_width)
+    elif shape == "dagger":
+        # A short blade over an oversized handle: the proportions, not the outline, are
+        # what stop it reading as a small sword.
+        pygame.draw.line(surface, GRIP_COLOR, at(0, 0.28), at(0, 0.78), max(4, int(size * 0.26)))
+        pygame.draw.circle(surface, color, at(0, 0.88), max(3, int(size * 0.18)))
+        pygame.draw.circle(surface, border_color, at(0, 0.88), max(3, int(size * 0.18)), thin)
+        guard = [at(-0.55, 0.1), at(0.55, 0.1), at(0.55, 0.28), at(-0.55, 0.28)]
+        _poly(surface, guard, color, border_color, thin)
+        blade = [at(0, -0.62), at(0.28, -0.2), at(0.28, 0.12), at(-0.28, 0.12), at(-0.28, -0.2)]
+        _poly(surface, blade, color, border_color, border_width)
+    elif shape == "axe":
+        haft = [at(-0.22, -0.98), at(0.04, -0.98), at(0.04, 0.98), at(-0.22, 0.98)]
+        _poly(surface, haft, HAFT_COLOR, border_color, thin)
+        # A single bit gripping the haft over a short eye and flaring into horns above
+        # and below it. Without the horns the head is just a blob on a pole, which reads
+        # as a pennant rather than an axe.
+        head = [
+            at(-0.02, -0.9),
+            at(0.5, -1.0),
+            at(0.95, -0.55),
+            at(1.0, -0.1),
+            at(0.62, 0.28),
+            at(0.28, 0.1),
+            at(-0.02, -0.35),
         ]
-        pygame.draw.polygon(surface, color, points)
-        pygame.draw.polygon(surface, border_color, points, border_width)
+        _poly(surface, head, color, border_color, border_width)
+    elif shape == "hammer":
+        haft = [at(-0.14, -0.7), at(0.14, -0.7), at(0.14, 0.98), at(-0.14, 0.98)]
+        _poly(surface, haft, HAFT_COLOR, border_color, thin)
+        # Tall and narrow rather than wide and flat, which read as a signpost.
+        head = [at(-0.56, -0.98), at(0.56, -0.98), at(0.56, -0.24), at(-0.56, -0.24)]
+        _poly(surface, head, color, border_color, border_width)
+        pygame.draw.line(surface, border_color, at(-0.2, -0.98), at(-0.2, -0.24), thin)
+        pygame.draw.line(surface, border_color, at(0.2, -0.98), at(0.2, -0.24), thin)
+    elif shape == "spear":
+        haft = [at(-0.13, -0.4), at(0.13, -0.4), at(0.13, 1.0), at(-0.13, 1.0)]
+        _poly(surface, haft, HAFT_COLOR, border_color, thin)
+        # A leaf blade with shoulders, long enough to be the thing you notice: a small
+        # diamond on a pole is indistinguishable from the staff's orb at icon size.
+        point = [at(0, -1.0), at(0.34, -0.5), at(0.2, -0.28), at(0, -0.2), at(-0.2, -0.28), at(-0.34, -0.5)]
+        _poly(surface, point, color, border_color, border_width)
+    elif shape == "staff":
+        haft = [at(-0.13, -0.4), at(0.13, -0.4), at(0.13, 1.0), at(-0.13, 1.0)]
+        _poly(surface, haft, HAFT_COLOR, border_color, thin)
+        orb = at(0, -0.6)
+        radius = max(3, int(size * 0.38))
+        pygame.draw.circle(surface, border_color, orb, radius + thin)
+        pygame.draw.circle(surface, color, orb, radius)
+        pygame.draw.circle(surface, tuple(min(255, v + 60) for v in color), at(-0.14, -0.72), max(1, int(size * 0.12)))
+    elif shape == "bow":
+        # A curved limb with the string drawn straight across it, the one weapon
+        # silhouette that isn't a stick with something on the end.
+        rect = pygame.Rect(0, 0, int(size * 1.4), int(size * 2))
+        rect.center = at(-0.2, 0)
+        pygame.draw.arc(
+            surface, border_color, rect.inflate(border_width, border_width), -math.pi / 2, math.pi / 2, border_width + 2
+        )
+        pygame.draw.arc(surface, color, rect, -math.pi / 2, math.pi / 2, max(2, border_width))
+        pygame.draw.line(surface, (235, 232, 220), at(-0.2, -1.0), at(-0.2, 1.0), max(1, thin))
+    elif shape == "cuirass":
+        # Body armour: shoulders, a neck dip and a waisted torso, so it stops reading
+        # as a second shield.
+        torso = [
+            at(-0.72, -0.5),
+            at(-0.3, -0.62),
+            at(0, -0.42),
+            at(0.3, -0.62),
+            at(0.72, -0.5),
+            at(0.56, 0.3),
+            at(0.34, 0.86),
+            at(-0.34, 0.86),
+            at(-0.56, 0.3),
+        ]
+        _poly(surface, torso, color, border_color, border_width)
+        pygame.draw.line(surface, border_color, at(0, -0.42), at(0, 0.84), thin)
+        belt = [at(-0.6, 0.24), at(0.6, 0.24), at(0.57, 0.44), at(-0.57, 0.44)]
+        _poly(surface, belt, GRIP_COLOR, border_color, 1)
     elif shape == "shield":
         points = [
-            (cx - size * 0.65, cy - size * 0.45),
-            (cx + size * 0.65, cy - size * 0.45),
+            (cx - size * 0.65, cy - size * 0.6),
+            (cx + size * 0.65, cy - size * 0.6),
             (cx + size * 0.65, cy + size * 0.15),
-            (cx, cy + size * 0.7),
+            (cx, cy + size * 0.85),
             (cx - size * 0.65, cy + size * 0.15),
         ]
-        pygame.draw.polygon(surface, color, points)
-        pygame.draw.polygon(surface, border_color, points, border_width)
+        _poly(surface, points, color, border_color, border_width)
+        # A spine down the middle and a raised boss: the two things that tell a shield
+        # from a breastplate once the icon is down to a handful of pixels.
+        pygame.draw.line(surface, border_color, at(0, -0.6), at(0, 0.85), thin)
+        pygame.draw.circle(surface, border_color, at(0, -0.05), max(3, int(size * 0.24)))
+        pygame.draw.circle(surface, tuple(min(255, v + 55) for v in color), at(0, -0.05), max(2, int(size * 0.16)))
     elif shape == "gem":
         points = [
             (cx, cy - size),

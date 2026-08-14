@@ -19,8 +19,13 @@ PANEL_GAP = 20
 ROW_HEIGHT = 60
 # Room below the column labels for the first row.
 LABEL_GAP = 30
-# Strip at the bottom of the panel kept clear for the hint line.
-FOOTER_HEIGHT = 46
+# Strip at the bottom of the panel kept clear for the hint line and the sell-all buttons.
+FOOTER_HEIGHT = 84
+BULK_BUTTON_HEIGHT = 30
+
+# What "unused gear" means: equippable kinds only. Ammo and potions are supplies you
+# spend rather than gear you outgrow, so a bulk sell never touches them.
+GEAR_TYPES = ("weapon", "armor", "shield", "accessory")
 
 
 def _affinity_swing(npc: NPC) -> float:
@@ -91,6 +96,32 @@ class ShopMenu(BaseMenu):
         swing = _affinity_swing(self.merchant)
         return max(1, round(base_value(item) * self.player.sell_multiplier() * (1.0 + swing)))
 
+    # --- bulk selling ---------------------------------------------------------
+
+    def _valuables(self) -> List[Item]:
+        return [item for item in self.player.inventory if item.item_type == "misc"]
+
+    def _unused_gear(self) -> List[Item]:
+        """Equippable items the player is neither wearing nor keeping on the weapon bar."""
+        spoken_for = set(self.player.equipped_ids().values()) | set(self.player.weapon_bar)
+        return [item for item in self.player.inventory if item.item_type in GEAR_TYPES and item.id not in spoken_for]
+
+    def _bulk_button_rects(self) -> tuple[pygame.Rect, pygame.Rect]:
+        width = (self._panel_width() - 10) // 2
+        y = self.height - FOOTER_HEIGHT + 6
+        left = self._sell_panel_x()
+        return (
+            pygame.Rect(left, y, width, BULK_BUTTON_HEIGHT),
+            pygame.Rect(left + width + 10, y, width, BULK_BUTTON_HEIGHT),
+        )
+
+    def _sell_all(self, items: List[Item]):
+        """Sell a whole batch through the normal per-item path, so each one still trains
+        bartering and warms the merchant exactly as it would clicked by hand."""
+        for item in items:
+            if item in self.player.inventory:
+                self._sell(self.player.inventory.index(item))
+
     def _slot_at(self, panel_x: int, count: int, scroll: int, rel_x: int, rel_y: int) -> Optional[int]:
         """Index in the full list of the row under (rel_x, rel_y), or None."""
         for i in range(max(0, min(self._visible_rows(), count - scroll))):
@@ -136,6 +167,13 @@ class ShopMenu(BaseMenu):
             sell_idx = self._sell_slot_at(rx, ry)
             if sell_idx is not None:
                 self._sell(sell_idx)
+                return True
+            valuables_rect, gear_rect = self._bulk_button_rects()
+            if valuables_rect.collidepoint(rx, ry):
+                self._sell_all(self._valuables())
+                return True
+            if gear_rect.collidepoint(rx, ry):
+                self._sell_all(self._unused_gear())
                 return True
 
         return True
@@ -240,9 +278,30 @@ class ShopMenu(BaseMenu):
                 surface, sx, pw, row, item, price, self.hovered_sell == index, (255, 180, 80), equipped=equipped
             )
         self._draw_scrollbar(surface, sx + pw + 4, len(sell_items), self.sell_scroll)
+        self._draw_bulk_buttons(surface)
 
         self.draw_hint(surface, "Click an item to buy or sell. Scroll for more. ESC or B to close")
         self.blit_panel(surface)
+
+    def _draw_bulk_buttons(self, surface: pygame.Surface):
+        """The two sell-everything buttons under the sell column, each labelled with what
+        it would actually pay, so clearing the bag is never a blind click."""
+        menu_x, menu_y = self.get_centered_position()
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        rel = (mouse_x - menu_x, mouse_y - menu_y)
+
+        batches = (("Valuables", self._valuables()), ("Unused gear", self._unused_gear()))
+        for rect, (caption, items) in zip(self._bulk_button_rects(), batches):
+            total = sum(self._sell_price(item) for item in items)
+            label = f"Sell {caption.lower()}  {total}g" if items else f"No {caption.lower()}"
+            widgets.draw_button(
+                surface,
+                rect,
+                label,
+                c.Fonts.small,
+                hovered=bool(items) and rect.collidepoint(rel),
+                text_color=c.Colors.WHITE if items else c.Colors.MUTED,
+            )
 
     def _draw_scrollbar(self, surface: pygame.Surface, x: int, count: int, scroll: int):
         max_scroll = self._max_scroll(count)

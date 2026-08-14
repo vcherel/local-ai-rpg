@@ -21,10 +21,11 @@ if TYPE_CHECKING:
 # Melee and ranged are separate slots, so a sword and a bow are carried and equipped at once.
 EQUIP_SLOTS = (
     ("melee_weapon", "Melee", "sword"),
-    ("ranged_weapon", "Ranged", "sword"),
+    ("ranged_weapon", "Ranged", "bow"),
     ("offhand", "Shield", "shield"),
-    ("armor", "Armor", "shield"),
-    ("accessory", "Accessory", "gem"),
+    ("armor", "Armor", "cuirass"),
+    ("accessory", "Trinket", "gem"),
+    ("ammo", "Ammo", "arrow"),
 )
 
 
