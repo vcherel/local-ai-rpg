@@ -125,6 +125,12 @@ class QuestMenu(BaseMenu):
             return f"Recover: {quest.item_name} from {quest.thief_npc_name}"
         if quest.quest_type == "slay_boss":
             return f"Slay: {quest.boss_name}" if quest.boss_name else "Slay: the boss"
+        if quest.quest_type == "clear_camp":
+            return f"Clear: the bandit camp ({quest.kills_done}/{quest.kill_count})"
+        if quest.quest_type == "steal":
+            return f"Steal: {quest.item_name} from a house"
+        if quest.quest_type == "deliver":
+            return f"Deliver: {quest.item_name} to {quest.recipient_npc_name} ({quest.kills_done}/{quest.kill_count})"
         return f"Fetch: {quest.item_name}"
 
     def _draw_card(self, surface, quest, card_y: int):

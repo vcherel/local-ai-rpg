@@ -16,6 +16,7 @@ from game.entities.items import rarity_color, roll_rarity
 from game.entities.player import Player
 from game.loot import open_lootbox
 from game.world import World
+from llm.death_taunts import DeathTauntGenerator
 from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import get_llm_tasks
 from llm.name_generator import NPCNameGenerator
@@ -78,6 +79,7 @@ class Game:
         # slay_boss quests spawn their target through the world.
         self.dialogue_manager.quest_system.world = self.world
         self.npc_name_generator = NPCNameGenerator(self.save_system)
+        self.death_taunts = DeathTauntGenerator(self.save_system)
         self.active_menu = False
         # Set by the pause menu's "Quit to menu"; breaks the run loop so control
         # returns to the main menu (game state is saved on the way out).
@@ -327,13 +329,14 @@ class Game:
             if chest and not self.interior.looted:
                 dist = reach_of(chest.centerx, chest.centery)
                 if dist <= indoor_reach:
-                    offer(Interaction("chest", chest, "E: open chest", chest.centerx, chest.top), dist)
+                    # A chest only ever stands in somebody's house, so opening it is theft
+                    # and the prompt says so rather than dressing it up as loot.
+                    offer(Interaction("chest", chest, "E: steal from the chest", chest.centerx, chest.top), dist)
 
             for bed in layout["beds"]:
                 dist = reach_of(bed.centerx, bed.centery)
                 if dist <= indoor_reach:
-                    label = f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
-                    offer(Interaction("bed", bed, label, bed.centerx, bed.top), dist)
+                    offer(Interaction("bed", bed, self._bed_label(), bed.centerx, bed.top), dist)
 
         item = self.world.item_in_reach(self.player)
         if item is not None:
@@ -341,7 +344,7 @@ class Game:
 
         camp = self.world.camp_in_reach(self.player)
         if camp is not None:
-            cooling = self.world.camp_rest_ready_in(camp)
+            cooling = self.world.rest_ready_in(camp.id)
             label = f"E: fire burned low ({int(cooling) + 1}s)" if cooling > 0 else "E: rest at the fire"
             offer(Interaction("camp", camp, label, camp.x + 40, camp.y), reach_of(camp.x, camp.y))
 
@@ -451,24 +454,69 @@ class Game:
         self._collect_item(item)
 
     def _open_interior_chest(self):
-        self.interior.looted = True
-        self._award_loot(roll_rarity(), "Chest")
+        """Empty the chest in someone's house. Free, silent, and entirely between the player
+        and whoever happens to be standing outside."""
+        building = self.interior
+        building.looted = True
+        self._award_loot(roll_rarity(), "Stolen goods")
+        stolen = self.dialogue_manager.quest_system.on_theft(building.id)
+        if stolen is not None:
+            self.loot_notification.show(f"You take the {stolen.name}", c.Colors.YELLOW)
+        self._check_witness()
+
+    def _bed_label(self) -> str:
+        """What the prompt over a bed says: the inn charges, a villager's bed doesn't, and
+        a bed slept in recently says how long until it is worth lying in again."""
+        if self.interior.kind != "house":
+            return f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
+        cooling = self.world.rest_ready_in(self.interior.id)
+        if cooling > 0:
+            return f"E: this bed is still warm ({int(cooling) + 1}s)"
+        return "E: sleep in their bed"
 
     def _sleep_in_bed(self):
-        # A paid bed is the one full night's rest in the game: unlike a campfire it heals
-        # everything and shakes off the post-death weakness, which is what the coins buy.
+        # A bed is the one full night's rest in the game: unlike a campfire it heals
+        # everything and shakes off the post-death weakness. The inn charges coins for it;
+        # a villager's own bed asks nothing but that nobody sees you climb into it, and
+        # that household won't have it slept in again for a while.
         if self.player.hp >= self.player.max_hp and not self.player.is_shaken():
             self.loot_notification.show("You are already fully rested", c.Colors.WHITE)
             return
-        if self.player.coins < c.Buildings.TAVERN_SLEEP_COST:
-            self.loot_notification.show("Not enough coins to rest here", c.Colors.RED)
-            return
-        self.player.add_coins(-c.Buildings.TAVERN_SLEEP_COST)
+
+        stolen_sleep = self.interior.kind == "house"
+        if stolen_sleep:
+            remaining = self.world.rest_ready_in(self.interior.id)
+            if remaining > 0:
+                self.loot_notification.show(f"You slept here recently. Again in {int(remaining) + 1}s", c.Colors.MUTED)
+                return
+            self.world.rest_in_house(self.interior)
+        else:
+            if self.player.coins < c.Buildings.TAVERN_SLEEP_COST:
+                self.loot_notification.show("Not enough coins to rest here", c.Colors.RED)
+                return
+            self.player.add_coins(-c.Buildings.TAVERN_SLEEP_COST)
+
         self.player.clear_death_debuff()
         self.player.max_hp = self.player.effective_max_hp()
         self.player.hp = self.player.max_hp
         self.loot_notification.show("You rest and recover fully", c.Colors.GREEN)
         play_sound("quest_complete")
+        if stolen_sleep:
+            self._check_witness()
+
+    def _check_witness(self):
+        """See whether anyone caught the player helping themselves in someone's house.
+
+        The one place a single NPC turns hostile on their own: whoever saw it comes for the
+        player, and the rest of the village never hears about it. Swinging back at them is
+        what turns the whole settlement, through the usual `World.provoke_village`."""
+        witness = self.world.theft_witness(self.player.x, self.player.y)
+        if witness is None:
+            return
+        self.world.catch_thief(witness)
+        # Nobody sees a task through for someone they are trying to kill.
+        self.dialogue_manager.quest_system.remove_quest(witness)
+        play_sound("player_hurt")
 
     def _save_from_menu(self):
         """Manual save from the pause menu, with an on-screen confirmation."""
@@ -480,6 +528,11 @@ class Game:
         weaken the player for a while, and put them back at world spawn so they can't keep
         swinging at what killed them. The run carries on from there."""
         coins_lost = self.player.apply_death_penalty()
+        # Read before anything else touches the player: the screen wants to know what killed
+        # them, and the taunt was written long before this death happened.
+        killer = self.player.last_hit_by
+        taunt = self.death_taunts.take()
+        self.player.last_hit_by = ""
         self.player.hp = self.player.max_hp
         center = c.World.WORLD_SIZE // 2
         self.player.x, self.player.y = self.world.free_spot_near(center, center, c.Player.SIZE / 2)
@@ -490,7 +543,7 @@ class Game:
         self.update_camera()
         self.save_data()
 
-        run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S)
+        run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S, taunt, killer)
         self.loot_notification.show(f"You died. -{coins_lost} coins", c.Colors.RED)
 
     def _quit_to_menu(self):
@@ -616,3 +669,4 @@ class Game:
         # belong to a session that is over and must leave the save file to the next game.
         self.world.close()
         self.npc_name_generator.close()
+        self.death_taunts.close()

@@ -9,14 +9,23 @@ from core.utils import parse_response_quest_analysis
 from game.entities.buildings import random_open_coordinates
 from game.entities.items import Item, item_type_from_name, roll_bonus, roll_rarity
 from game.entities.npcs import NPC
-from game.quest import Quest
+from game.quest import COUNTED_QUEST_TYPES, Quest
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
     from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
 
-QUEST_TYPES = ("fetch", "kill_mob", "loot_mob", "recover_stolen", "slay_boss")
+QUEST_TYPES = (
+    "fetch",
+    "kill_mob",
+    "loot_mob",
+    "recover_stolen",
+    "slay_boss",
+    "clear_camp",
+    "steal",
+    "deliver",
+)
 
 
 class QuestSystem:
@@ -44,6 +53,15 @@ class QuestSystem:
                 return kind
         return random.choices(c.MONSTER_KINDS, weights=[kind.weight for kind in c.MONSTER_KINDS])[0]
 
+    def _pick_recipient(self, giver: NPC) -> Optional[NPC]:
+        """Who a delivery is for: someone else already living in the world, named, still on
+        speaking terms with the player, and as far from the giver as the world allows, so a
+        delivery is a journey rather than a walk across the plaza."""
+        candidates = [npc for npc in self.npcs if npc is not giver and npc.name and not npc.hostile]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda npc: npc.distance_to_point((giver.x, giver.y)))
+
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
         """Returns {has_quest, quest_type, quest_description, item_name, monster_hint,
         kill_count, reward_item}. `has_quest` already accounts for the player's answer: a
@@ -57,7 +75,10 @@ class QuestSystem:
             "kill_mob (kill a number of a kind of monster or creature), "
             "loot_mob (kill monsters of a kind until a specific item drops from them), "
             "recover_stolen (recover a specific item that was stolen from the NPC by someone else), "
-            "slay_boss (defeat a single powerful named boss, beast or warlord terrorizing the area). "
+            "slay_boss (defeat a single powerful named boss, beast or warlord terrorizing the area), "
+            "clear_camp (wipe out a bandit camp in the wilds), "
+            "steal (steal a specific item from a neighbour's house), "
+            "deliver (carry a specific item to another person and come back). "
             "Set player_accepted to false if the player refused, changed the subject, left without "
             "answering, or only listened to a rumour or a complaint. "
             "Reply ONLY with valid JSON, with no extra text."
@@ -65,9 +86,9 @@ class QuestSystem:
 
         json_format = (
             '{"has_quest": true/false, "player_accepted": true/false,'
-            ' "quest_type": "fetch/kill_mob/loot_mob/recover_stolen/slay_boss",'
+            ' "quest_type": "fetch/kill_mob/loot_mob/recover_stolen/slay_boss/clear_camp/steal/deliver",'
             ' "quest_description": "short description",'
-            ' "item_name": "item to fetch, loot or recover, empty for kill_mob",'
+            ' "item_name": "item to fetch, loot, recover, steal or deliver, empty otherwise",'
             ' "monster_hint": "kind of monster or creature involved, empty for fetch/recover_stolen",'
             ' "kill_count": "number to kill, only for kill_mob",'
             ' "reward_item": "item the NPC will give as reward, empty string if only coins"}'
@@ -149,6 +170,65 @@ class QuestSystem:
                 reward_item_name=reward_item_name,
             )
 
+        elif quest_type == "clear_camp":
+            # No world to look through, or no camp still held anywhere near: drop the quest
+            # rather than send the player after a place that doesn't exist.
+            camp = self.world.find_bandit_camp(npc.x, npc.y) if self.world else None
+            if camp is None:
+                return
+            quest = Quest(
+                npc_name=npc.name,
+                description=description,
+                item_name="",
+                quest_type="clear_camp",
+                target_poi_id=camp.id,
+                target_x=camp.x,
+                target_y=camp.y,
+                kill_count=1,
+                reward_item_name=reward_item_name,
+            )
+
+        elif quest_type == "steal":
+            if not quest_info.get("item_name"):
+                return
+            house = self.world.house_to_rob(npc) if self.world else None
+            if house is None:
+                return
+            quest = Quest(
+                npc_name=npc.name,
+                description=description,
+                item_name=self._strip_article(quest_info["item_name"]),
+                quest_type="steal",
+                target_building_id=house.id,
+                target_x=house.x,
+                target_y=house.y,
+                reward_item_name=reward_item_name,
+            )
+
+        elif quest_type == "deliver":
+            if not quest_info.get("item_name"):
+                return
+            recipient = self._pick_recipient(npc)
+            if recipient is None:
+                return
+            # The parcel is handed over as the quest is given, so the player is carrying it
+            # from the first step: a delivery is a walk, not a hunt for the thing to deliver.
+            item_name = self._strip_article(quest_info["item_name"])
+            parcel = Item(self.player.x, self.player.y, item_name)
+            parcel.picked_up = True
+            if self.player.add_item(parcel) is parcel:
+                self.items.append(parcel)
+            quest = Quest(
+                npc_name=npc.name,
+                description=description,
+                item_name=item_name,
+                item=parcel,
+                quest_type="deliver",
+                recipient_npc_name=recipient.name,
+                kill_count=1,
+                reward_item_name=reward_item_name,
+            )
+
         elif quest_type == "recover_stolen":
             if not quest_info.get("item_name"):
                 return
@@ -204,6 +284,45 @@ class QuestSystem:
         for quest in self.active_quests:
             if quest.quest_type == "slay_boss" and quest.target_monster_kind == boss.quest_tag:
                 quest.kills_done = quest.kill_count
+
+    def on_camp_cleared(self, poi_id: str) -> None:
+        """Complete the objective of any clear_camp quest sent after this camp."""
+        for quest in self.active_quests:
+            if quest.quest_type == "clear_camp" and quest.target_poi_id == poi_id:
+                quest.kills_done = quest.kill_count
+
+    def on_theft(self, building_id: str) -> Optional[Item]:
+        """Hand over the item a steal quest was after, if this is the house it named. The
+        item only exists once the chest it was supposed to be in has actually been opened."""
+        for quest in self.active_quests:
+            if quest.quest_type != "steal" or quest.item is not None:
+                continue
+            if quest.target_building_id != building_id:
+                continue
+            stolen = Item(self.player.x, self.player.y, quest.item_name)
+            stolen.picked_up = True
+            quest.item = stolen
+            if self.player.add_item(stolen) is stolen:
+                self.items.append(stolen)
+            return stolen
+        return None
+
+    def on_delivery(self, npc: NPC) -> Optional[Quest]:
+        """Hand a parcel over to the person it was for, when the player talks to them. The
+        quest itself is still handed in to whoever gave it: the reward is theirs to pay."""
+        for quest in self.active_quests:
+            if quest.quest_type != "deliver" or quest.recipient_npc_name != npc.name:
+                continue
+            if quest.kills_done >= quest.kill_count or quest.item is None:
+                continue
+            if quest.item not in self.player.inventory:
+                continue
+            self.player.inventory.remove(quest.item)
+            if quest.item in self.items:
+                self.items.remove(quest.item)
+            quest.kills_done = quest.kill_count
+            return quest
+        return None
 
     def on_npc_killed(self, npc: NPC) -> Optional[Item]:
         """Drop the stolen item this NPC was carrying, if they're the thief of an active quest."""
@@ -274,7 +393,7 @@ class QuestSystem:
         if not quest:
             return
 
-        if quest.quest_type in ("kill_mob", "slay_boss"):
+        if quest.quest_type in COUNTED_QUEST_TYPES:
             if quest.kills_done < quest.kill_count:
                 return
         else:

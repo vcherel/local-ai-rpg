@@ -211,7 +211,11 @@ class Building:
         if self.kind == "house":
             bed_left = rng.random() < 0.5
             bed_x = floor.left + 20 if bed_left else floor.right - 90
-            solids.append((pygame.Rect(bed_x, floor.top + 15, 70, 100), "bed"))
+            # The household's own bed, which the player can sleep in for nothing at all,
+            # provided nobody outside sees them do it (Game._sleep_in_bed).
+            house_bed = pygame.Rect(bed_x, floor.top + 15, 70, 100)
+            solids.append((house_bed, "bed"))
+            beds.append(house_bed)
             solids.append((pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf"))
             chest_x = floor.right - 55 if bed_left else floor.left + 20
             chest = pygame.Rect(chest_x, floor.bottom - 70, 40, 32)

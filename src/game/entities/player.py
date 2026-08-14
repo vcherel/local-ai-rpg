@@ -41,6 +41,19 @@ def _item_outline(item) -> tuple:
     return c.Colors.BLACK if item.rarity == "common" else rarity_color(item.rarity)
 
 
+def _damage_source_name(source) -> str:
+    """What to call whatever just hit the player, on the death screen. A boss goes by its
+    full title, a villager by their name, anything else by its species; damage with no
+    attacker behind it (a shrine's curse, a burn) names nobody and leaves the last one."""
+    if source is None:
+        return ""
+    for attr in ("display_name", "name"):
+        value = getattr(source, attr, None)
+        if value:
+            return str(value)
+    return getattr(getattr(source, "kind", None), "name", "") or ""
+
+
 def _equip_slot(item) -> str | None:
     """Which equip slot an item belongs to. Weapons split into a melee and a ranged
     slot by archetype (constants.weapon_archetype), so a bow and a sword can be
@@ -113,6 +126,10 @@ class Player(Entity):
         # same reason as the death debuff, so quitting can't reset the proc early.
         self.guardian_ward_cooldown_until = save_system.load("guardian_ward_cooldown_until", 0.0)
         self.guardian_ward_invuln_until = 0.0
+
+        # What last landed a blow on the player, named the way the death screen says it.
+        # Session-only: read once, between the killing hit and the screen it feeds.
+        self.last_hit_by = ""
 
         # Rampage (legendary weapon affix): landed-hit counter per weapon slot, session-only.
         self._rampage_streak = {"melee_weapon": 0, "ranged_weapon": 0}
@@ -624,6 +641,10 @@ class Player(Entity):
 
         # A raised shield eats its share of a frontal blow before anything else looks at it.
         damage = self._absorb_with_shield(damage, source)
+
+        attacker = _damage_source_name(source)
+        if attacker:
+            self.last_hit_by = attacker
 
         # Taking hits trains resistance and, more slowly, vitality.
         self.stats.train("resistance", c.Stats.XP_PER_DAMAGE_TAKEN)
