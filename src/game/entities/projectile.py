@@ -17,7 +17,19 @@ BOLT_COLOR = (150, 90, 230)
 class Projectile:
     """A fired arrow travelling in a straight line until it hits, hits a wall, or runs out of range."""
 
-    def __init__(self, x, y, angle, damage, style="arrow", color=ARROW_COLOR, knockback=0.0, shake=0.0, hostile=False):
+    def __init__(
+        self,
+        x,
+        y,
+        angle,
+        damage,
+        style="arrow",
+        color=ARROW_COLOR,
+        knockback=0.0,
+        shake=0.0,
+        hostile=False,
+        owner_id=None,
+    ):
         self.x = x
         self.y = y
         self.angle = angle
@@ -28,25 +40,41 @@ class Projectile:
         self.color = color
         self.knockback = knockback
         self.shake = shake
-        # Player arrows/bolts hit monsters and NPCs; a boss's bolts are hostile and hit the player.
+        # A hostile shot threatens the player, a friendly one the player's enemies. Neither
+        # is choosy about what else it meets on the way: an arrow hits the first body in
+        # its path, whoever loosed it, which is what makes standing behind a wolf a
+        # mistake for a goblin archer.
         self.hostile = hostile
         # Pierce lets an arrow pass through this many targets before stopping (arrow-pierce accessory).
         self.pierce = 0
-        self.hit_ids = set()
+        # Whoever fired it, already counted as struck so a shot can never hit its own
+        # shooter on the frame it leaves them.
+        self.owner_id = owner_id
+        self.hit_ids = set() if owner_id is None else {owner_id}
         self.traveled = 0.0
         self.dead = False
 
     def update(self, dt, blocked=None):
+        """Advance one frame, in hops no longer than the projectile is wide.
+
+        Stepping the whole frame at once let an arrow cross a wall in a single move when
+        the framerate dipped: the speed is 14px at 60fps but twice that at 30, and a wall
+        shell is 16px thick. Substepping means a wall stops a shot at any framerate."""
         move_factor = dt * c.TARGET_FPS / 1000.0
-        step_x = self.vx * move_factor
-        step_y = self.vy * move_factor
-        self.x += step_x
-        self.y += step_y
-        self.traveled += math.hypot(step_x, step_y)
-        if self.traveled >= c.Projectile.RANGE:
-            self.dead = True
-        elif blocked is not None and blocked(self.x, self.y, c.Projectile.SIZE):
-            self.dead = True
+        total_x = self.vx * move_factor
+        total_y = self.vy * move_factor
+        distance = math.hypot(total_x, total_y)
+        steps = max(1, math.ceil(distance / c.Projectile.SIZE))
+        for _ in range(steps):
+            self.x += total_x / steps
+            self.y += total_y / steps
+            self.traveled += distance / steps
+            if self.traveled >= c.Projectile.RANGE:
+                self.dead = True
+                return
+            if blocked is not None and blocked(self.x, self.y, c.Projectile.SIZE):
+                self.dead = True
+                return
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])

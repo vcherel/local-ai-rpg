@@ -9,10 +9,12 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
+from core.damage_fx import get_damage_fx
 from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_hitstop
+from core.swing_arcs import get_swings
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
@@ -23,7 +25,7 @@ from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
 from game.entities.projectile import ARROW_COLOR, BOLT_COLOR, Projectile
-from game.loot import break_crate, open_poi_cache
+from game.loot import break_crate, loot_villager, open_poi_cache
 
 if TYPE_CHECKING:
     from game.entities.player import Player
@@ -78,9 +80,22 @@ class WorldCombat:
         ) * player.damage_multiplier()
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
 
+        # The wedge the swing covers, drawn and enforced from the same two numbers, so a
+        # cleaving weapon's wide sweep is visible before it lands rather than inferred
+        # from three damage numbers popping at once.
+        get_swings().spawn(origin[0], origin[1], player.orientation, reach, arch.arc_deg, arch.cleave)
+
         def in_reach(entities, size_of):
             return self._targets_in_reach(
-                entities, pos, hit_radius, size_of, arch.cleave, origin, arch.min_hit_distance
+                entities,
+                pos,
+                hit_radius,
+                size_of,
+                arch.cleave,
+                origin,
+                arch.min_hit_distance,
+                player.orientation,
+                arch.arc_deg,
             )
 
         def strike_boss(boss):
@@ -120,6 +135,7 @@ class WorldCombat:
         # damage rather than breaking on contact, so a heavy hammer clears a barrel in one
         # blow and a dagger has to work at it.
         prop_damage = max(1, int(round(base_damage * arch.damage_mult)))
+        blow = player.orientation
 
         for building in self.buildings_in_range(*pos, c.World.CHUNK_SIZE):
             hit = building.damage_crate_at(pos, hit_radius, prop_damage)
@@ -128,7 +144,9 @@ class WorldCombat:
                 if destroyed:
                     self._break_crate(player, building, crate)
                 else:
-                    self._prop_chip(crate.centerx, crate.centery, (150, 110, 70), "crate_break")
+                    self._prop_chip(
+                        crate.centerx, crate.centery, (150, 110, 70), "crate_break", building.crate_key(crate), blow
+                    )
                 return
 
         poi_hit = next(
@@ -140,37 +158,65 @@ class WorldCombat:
             None,
         )
         if poi_hit is not None:
-            self._hit_poi(player, poi_hit, prop_damage)
+            self._hit_poi(player, poi_hit, prop_damage, blow)
             return
 
         breakable = next(
             (b for b in self.breakables if b.distance_to_point(pos) < hit_radius + c.Breakables.HIT_RADIUS), None
         )
         if breakable is not None:
-            self._hit_breakable(player, breakable, prop_damage)
+            self._hit_breakable(player, breakable, prop_damage, quest_system, blow)
             return
 
         window_hit = self._find_window_in_reach(pos, hit_radius)
         if window_hit is not None:
             building, idx, window = window_hit
-            self._hit_window(building, idx, window, prop_damage)
+            self._hit_window(building, idx, window, prop_damage, blow)
 
     @staticmethod
     def _targets_in_reach(
-        entities, pos, hit_radius, size_of, cleave: bool, origin=None, min_distance: float = 0.0
+        entities,
+        pos,
+        hit_radius,
+        size_of,
+        cleave: bool,
+        origin=None,
+        min_distance: float = 0.0,
+        facing: float | None = None,
+        arc_deg: float = 360.0,
     ) -> list:
         """Entities within a swing's reach: every one in range if the weapon cleaves,
         otherwise just the nearest.
 
         `min_distance` is the weapon's blind spot measured from `origin` (the player's own
         position): a spear covers a ring, not a disc, so anything pressed up against the
-        player is past the point of the shaft and takes nothing."""
+        player is past the point of the shaft and takes nothing.
+
+        `facing`/`arc_deg` are the wedge the swing covers, the same one drawn on screen by
+        `core.swing_arcs`. Without it a cleaving weapon caught things standing behind the
+        player, which the drawn arc would then be lying about."""
         targets = [e for e in entities if e.distance_to_point(pos) < hit_radius + size_of(e) // 2]
         if min_distance and origin is not None:
             targets = [e for e in targets if e.distance_to_point(origin) >= min_distance]
+        if facing is not None and origin is not None and arc_deg < 360.0:
+            targets = [e for e in targets if WorldCombat._within_arc(origin, facing, arc_deg, e.x, e.y)]
         if not targets or cleave:
             return targets
         return [min(targets, key=lambda e: e.distance_to_point(pos))]
+
+    @staticmethod
+    def _within_arc(origin, facing: float, arc_deg: float, x, y) -> bool:
+        """Is (x, y) inside the wedge of `arc_deg` centred on `facing` from `origin`?
+
+        Anything all but on top of the swinger counts as inside: its bearing is noise at
+        that range, and a weapon that misses what is hugging the player reads as broken."""
+        dx, dy = x - origin[0], y - origin[1]
+        if math.hypot(dx, dy) < 20:
+            return True
+        # Angles here are measured from straight up, clockwise, like every facing.
+        delta = math.atan2(dx, -dy) - facing
+        delta = (delta + math.pi) % (2 * math.pi) - math.pi
+        return abs(delta) <= math.radians(arc_deg) / 2
 
     def _find_window_in_reach(self, pos, hit_radius):
         """Nearest unbroken window (on any non-landmark building) a swing reaches, as
@@ -187,19 +233,28 @@ class WorldCombat:
         return None if best is None else (best[1], best[2], best[3])
 
     @staticmethod
-    def _prop_chip(x, y, color, sound: str = "hit"):
-        """A blow that damaged a prop without finishing it: a small puff and a knock, so
-        hitting something breakable always reads as progress even when it holds."""
+    def _prop_chip(x, y, color, sound: str = "hit", key: str | None = None, angle: float = 0.0):
+        """A blow that damaged a prop without finishing it: a small puff, a knock, and the
+        prop itself flinching and cracking, so hitting something breakable always reads as
+        progress even when it holds.
+
+        `key` is what identifies the prop to `core.damage_fx`, which is what the drawing
+        side reads back: props are not all objects (a crate is an index into a building's
+        layout), so the registry is keyed by string rather than by identity."""
         get_shake().add(c.Combat.DECOR_BREAK_SHAKE * 0.5)
         play_sound(sound)
         get_particles().spawn_burst(x, y, color, count=5, speed=4, life=280, size=3, gravity=0.4, shape="shard")
+        if key is not None:
+            get_damage_fx().hit(key, angle)
 
-    def _hit_window(self, building: Building, idx: int, window, damage: int):
+    def _hit_window(self, building: Building, idx: int, window, damage: int, angle: float = 0.0):
         """Crack a window, and shatter it once it has taken enough."""
         remaining = building.window_hp.get(idx, c.Buildings.WINDOW_HP) - damage
         if remaining > 0:
             building.window_hp[idx] = remaining
-            self._prop_chip(window.centerx, window.centery, (210, 230, 240), "glass_break")
+            self._prop_chip(
+                window.centerx, window.centery, (210, 230, 240), "glass_break", f"{building.id}:window:{idx}", angle
+            )
             return
         building.window_hp.pop(idx, None)
         self._break_window(building, idx, window)
@@ -269,6 +324,7 @@ class WorldCombat:
             color=color,
             knockback=arch.knockback,
             shake=arch.shake + crit_shake + rampage_shake,
+            owner_id=id(player),
         )
         proj.pierce = player.pierce_count()
         self.projectiles.append(proj)
@@ -341,6 +397,7 @@ class WorldCombat:
         self._resolve_npc_hit(
             npc,
             damage,
+            player,
             quest_system,
             crit=crit,
             shake=shake,
@@ -366,13 +423,17 @@ class WorldCombat:
         critter.startle()
         self.aggro_pack(critter)
 
-    def _kill_critter(self, critter: Critter, player: Player, direction=None):
+    def _kill_critter(self, critter: Critter, player: Player, direction=None, by_player: bool = True):
         """A hunted animal leaves a pelt worth selling, and nothing else: critters are
-        session-only, so the drop is the only trace of it that reaches the save."""
+        session-only, so the drop is the only trace of it that reaches the save.
+
+        The pelt is left even when something else did the killing (it is lying there, and
+        the player is welcome to it); the hunting xp is not."""
         play_sound("monster_death")
-        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        if by_player:
+            get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+            player.stats.train("vitality", c.Stats.XP_PER_KILL * 0.5)
         self._spill_blood(critter.x, critter.y, critter.kind.color, direction)
-        player.stats.train("vitality", c.Stats.XP_PER_KILL * 0.5)
         if critter.kind.drop_name and random.random() < critter.kind.drop_chance:
             drop = Item(critter.x, critter.y, critter.kind.drop_name, "misc", rarity="common")
             drop.start_pop_anim(critter.x, critter.y - critter.size)
@@ -415,7 +476,7 @@ class WorldCombat:
             player, crate.centerx, crate.centery, coins, loot_item, "Crate smashed", building.dropped_items.append
         )
 
-    def _hit_poi(self, player: Player, poi: PointOfInterest, damage: int):
+    def _hit_poi(self, player: Player, poi: PointOfInterest, damage: int, angle: float = 0.0):
         """Work at a ruins pile or a camp cache. It takes several blows to force one open,
         which is why the guard check comes first: nobody chips away at a strongbox with
         three bandits still standing over it."""
@@ -425,7 +486,7 @@ class WorldCombat:
             return
         poi.cache_hp -= damage
         if poi.cache_hp > 0:
-            self._prop_chip(poi.x, poi.y, (150, 140, 120), "crate_break")
+            self._prop_chip(poi.x, poi.y, (150, 140, 120), "crate_break", f"poi:{poi.id}", angle)
             return
         self._break_poi(player, poi)
 
@@ -444,23 +505,36 @@ class WorldCombat:
         label = {"camp": "Camp cache", "farmstead": "Farmstead searched"}.get(poi.kind, "Ruins searched")
         self._break_loot(player, poi.x, poi.y, coins, loot_item, label, self.items.append)
 
-    def _hit_breakable(self, player: Player, breakable: Breakable, damage: int):
+    def _hit_breakable(
+        self, player: Player, breakable: Breakable, damage: int, quest_system: QuestSystem, angle: float = 0.0
+    ):
         """Take a swing at an outdoor prop. A bush goes down in one, a barrel takes a
         beating; either way the reward only comes when it finally gives."""
         breakable.hp -= damage
         if breakable.hp > 0:
             color = (80, 150, 65) if breakable.kind == "bush" else (150, 110, 70)
-            self._prop_chip(breakable.x, breakable.y, color, "bush_rustle" if breakable.kind == "bush" else "hit")
+            self._prop_chip(
+                breakable.x,
+                breakable.y,
+                color,
+                "bush_rustle" if breakable.kind == "bush" else "hit",
+                breakable.damage_key,
+                angle,
+            )
             return
-        self._break_breakable(player, breakable)
+        self._break_breakable(player, breakable, quest_system)
 
-    def _break_breakable(self, player: Player, breakable: Breakable):
+    def _break_breakable(self, player: Player, breakable: Breakable, quest_system: QuestSystem):
         """Smash an outdoor prop. A barrel plays out like a shop crate: juice, coins,
-        and a small chance of a dropped item landing straight in the open world. Anything
-        planted is pure decoration: a satisfying puff and nothing else, so the world has
-        more to smash without inflating the loot economy. Either way the prop is gone for
-        good, no debris left behind."""
+        and a small chance of a dropped item landing straight in the open world. A powder
+        keg pays nothing and goes off instead. Anything planted is pure decoration: a
+        satisfying puff and nothing else, so the world has more to smash without inflating
+        the loot economy. Either way the prop is gone for good, no debris left behind."""
         self.breakables.remove(breakable)
+
+        if breakable.kind == "powder":
+            self.explode(breakable.x, breakable.y, player, quest_system)
+            return
 
         if not breakable.loot:
             get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
@@ -474,6 +548,88 @@ class WorldCombat:
         coins, loot_item = break_crate()
         self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
 
+    def explode(self, x, y, player: Player, quest_system: QuestSystem, depth: int = 0):
+        """A powder keg going off: the one thing in the world that kills a crowd without a
+        swing.
+
+        Everything alive inside `Explosion.RADIUS` takes damage falling off toward the rim,
+        the player included, and any other keg caught in it goes off in turn. That is the
+        whole design: a keg is not loot, it is a piece of ground the player can decide to
+        fight over, and shooting one from across a clearing is a plan rather than a lucky
+        swing. Kills count as the player's, since setting it off is what killed them.
+
+        `depth` caps a chain so a shipment of kegs cannot recurse without end.
+        """
+        get_shake().add(c.Explosion.SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(x, y, (255, 170, 60), count=40, speed=11, life=650, size=7, gravity=0.2)
+        get_particles().spawn_burst(x, y, (90, 80, 75), count=22, speed=6, life=900, size=8, gravity=0.05)
+        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        if self.notify and depth == 0:
+            self.notify("The powder keg goes off!", (255, 170, 60))
+
+        def blast_damage(distance: float) -> int:
+            frac = max(0.0, 1.0 - distance / c.Explosion.RADIUS)
+            scale = c.Explosion.EDGE_DAMAGE_FRAC + (1.0 - c.Explosion.EDGE_DAMAGE_FRAC) * frac
+            return max(1, round(c.Explosion.DAMAGE * scale))
+
+        def caught(entities, radius_of):
+            return [
+                (e, math.hypot(e.x - x, e.y - y))
+                for e in list(entities)
+                if math.hypot(e.x - x, e.y - y) < c.Explosion.RADIUS + radius_of(e)
+            ]
+
+        for group in (self.bosses, self.monsters):
+            for monster, distance in caught(group, lambda m: m.kind.size / 2):
+                self._resolve_monster_hit(
+                    monster,
+                    group,
+                    blast_damage(distance),
+                    player,
+                    quest_system,
+                    knockback=c.Explosion.KNOCKBACK,
+                    kb_dir=self._dir_from(x, y, monster.x, monster.y),
+                    blocked=self.blocked,
+                )
+
+        for critter, distance in caught(self.critters, lambda cr: cr.hit_radius):
+            damage = blast_damage(distance)
+            kb_dir = self._dir_from(x, y, critter.x, critter.y)
+            self._pop_damage(critter.x, critter.y - critter.size / 2, damage, False)
+            if critter.receive_damage(damage):
+                self._kill_critter(critter, player, kb_dir)
+            else:
+                self._knockback(critter, critter.size / 2, kb_dir, c.Explosion.KNOCKBACK, self.blocked)
+                critter.startle()
+                self.aggro_pack(critter)
+
+        for npc, distance in caught(self.npcs, lambda n: c.Entities.NPC_SIZE / 2):
+            self._resolve_npc_hit(
+                npc,
+                blast_damage(distance),
+                player,
+                quest_system,
+                knockback=c.Explosion.KNOCKBACK,
+                kb_dir=self._dir_from(x, y, npc.x, npc.y),
+                blocked=self.blocked,
+            )
+
+        player_distance = math.hypot(player.x - x, player.y - y)
+        if player_distance < c.Explosion.RADIUS:
+            player.receive_damage(round(blast_damage(player_distance) * c.Explosion.PLAYER_DAMAGE_MULT))
+
+        if depth >= 3:
+            return
+        for keg in [
+            b
+            for b in list(self.breakables)
+            if b.kind == "powder" and math.hypot(b.x - x, b.y - y) < c.Explosion.CHAIN_RADIUS
+        ]:
+            if keg in self.breakables:
+                self.breakables.remove(keg)
+                self.explode(keg.x, keg.y, player, quest_system, depth + 1)
+
     def _resolve_monster_hit(
         self,
         monster: Monster,
@@ -486,12 +642,13 @@ class WorldCombat:
         knockback: float = 0.0,
         kb_dir=None,
         blocked=None,
+        by_player: bool = True,
     ) -> bool:
         """Applies damage to a monster and its kill rewards. Returns True if it died."""
         get_shake().add(shake)
         self._pop_damage(monster.x, monster.y - monster.kind.size / 2, damage, crit)
         if monster.receive_damage(damage):
-            self._kill_monster(monster, monster_list, player, quest_system, direction=kb_dir)
+            self._kill_monster(monster, monster_list, player, quest_system, direction=kb_dir, by_player=by_player)
             return True
         self._hit_feedback(monster.x, monster.y, crit, kb_dir)
         if not monster.knockback_immune:
@@ -539,28 +696,39 @@ class WorldCombat:
         # Chunks of the thing itself, so a slime still bleeds green over the red.
         get_particles().spawn_burst(x, y, body_color, count=16 if boss else 12, speed=6, life=550, size=5, gravity=0.42)
 
-    def _kill_monster(self, monster, monster_list, player: Player, quest_system: QuestSystem, direction=None):
-        """Death rewards and cleanup for a slain monster, shared by hits and burn ticks."""
-        player.stats.train("vitality", c.Stats.XP_PER_KILL)
+    def _kill_monster(
+        self, monster, monster_list, player: Player, quest_system: QuestSystem, direction=None, by_player: bool = True
+    ):
+        """Death rewards and cleanup for a slain monster, shared by hits and burn ticks.
+
+        `by_player` False is a monster killed by another monster's stray arrow: it dies and
+        bleeds like any other, but the xp, the lootbox and the quest counter all stay with
+        the player's own kills, so standing behind an archer is not a way to farm. The one
+        thing that still counts is a camp guard falling, since a garrison is world state:
+        whoever shot it, it is not standing up again."""
+        if by_player:
+            player.stats.train("vitality", c.Stats.XP_PER_KILL)
+            # Bloodlust: any kill with a weapon carrying it refreshes the damage buff.
+            bloodlust = player.bloodlust_mult()
+            if bloodlust > 1.0:
+                player.apply_buff("bloodlust", bloodlust, c.Affixes.BLOODLUST_DURATION_S)
         play_sound("monster_death")
-        # Bloodlust: any kill with a weapon carrying it refreshes the damage buff.
-        bloodlust = player.bloodlust_mult()
-        if bloodlust > 1.0:
-            player.apply_buff("bloodlust", bloodlust, c.Affixes.BLOODLUST_DURATION_S)
         if isinstance(monster, Boss):
             self._on_boss_killed(monster, quest_system, direction)
             monster_list.remove(monster)
             return
-        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        if by_player:
+            get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
         self._spill_blood(monster.x, monster.y, monster.kind.color, direction)
-        quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
-        if quest_item is not None:
-            self.items.append(quest_item)
-        drop_chance = c.LootBox.DROP_CHANCE
-        if self.events.blood_night_active:
-            drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
-        if random.random() < drop_chance:
-            self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
+        if by_player:
+            quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
+            if quest_item is not None:
+                self.items.append(quest_item)
+            drop_chance = c.LootBox.DROP_CHANCE
+            if self.events.blood_night_active:
+                drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
+            if random.random() < drop_chance:
+                self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
         # A camp guard's death is the camp's business: it is what opens the cache, and the
         # only thing that lowers the garrison it stands back up from on the next chunk load.
         if monster.camp_id:
@@ -635,21 +803,27 @@ class WorldCombat:
         self,
         npc: NPC,
         damage: int,
+        player: Player,
         quest_system: QuestSystem,
         crit: bool = False,
         shake: float = 0.0,
         knockback: float = 0.0,
         kb_dir=None,
         blocked=None,
+        by_player: bool = True,
     ) -> bool:
         """Applies damage to an NPC and handles death. Returns True if it died.
 
         Striking anyone is what turns their village on the player, so it happens here:
-        every path that lands a blow on an NPC (swing, arrow, cleave) goes through this."""
-        for provoked in self.provoke_village(npc):
-            # Nobody hands in a task to someone they are trying to kill; drop it rather
-            # than leave an uncompletable quest in the log.
-            quest_system.remove_quest(provoked)
+        every path that lands a blow on an NPC (swing, arrow, cleave, blast) goes through
+        this. `by_player` False is the one exception, and it exists for exactly one case:
+        a monster's arrow catching a villager. The village has nothing to blame the player
+        for, so it is not provoked and the purse is not theirs to take."""
+        if by_player:
+            for provoked in self.provoke_village(npc):
+                # Nobody hands in a task to someone they are trying to kill; drop it rather
+                # than leave an uncompletable quest in the log.
+                quest_system.remove_quest(provoked)
         get_shake().add(shake)
         self._pop_damage(npc.x, npc.y - c.Entities.NPC_SIZE / 2, damage, crit)
         if npc.receive_damage(damage):
@@ -659,13 +833,40 @@ class WorldCombat:
             # Drop any quest this NPC was offering so it can't become uncompletable
             quest_system.remove_quest(npc)
             play_sound("monster_death")
-            get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+            if by_player:
+                get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
             self._spill_blood(npc.x, npc.y, npc.color, kb_dir)
+            self._drop_villager_loot(npc, player, by_player)
             self.npcs.remove(npc)
             return True
         self._hit_feedback(npc.x, npc.y, crit, kb_dir)
         self._knockback(npc, c.Entities.NPC_SIZE / 2, kb_dir, knockback, blocked)
         return False
+
+    def _drop_villager_loot(self, npc: NPC, player: Player, by_player: bool):
+        """What a killed villager leaves behind: the purse they were carrying, and
+        sometimes a piece of what they owned.
+
+        Killing a townsperson used to cost the player their village and pay nothing, which
+        made it a pure mistake rather than a choice. A merchant carries more than a
+        labourer, since a merchant's whole day is coins. The coins only reach the player
+        when the player did the killing; the item is lying on the ground either way, and
+        anyone is welcome to pick it up."""
+        coins, loot_item = loot_villager(bool(npc.shop_items))
+        if loot_item is not None:
+            loot_item.x, loot_item.y = npc.x, npc.y
+            loot_item.start_pop_anim(npc.x, npc.y - c.Entities.NPC_SIZE)
+            self.items.append(loot_item)
+        if not by_player:
+            return
+        player.gain_coins(coins)
+        message = f"Took {coins} coins from {npc.name or 'the body'}"
+        color = c.Colors.WHITE
+        if loot_item is not None:
+            message += f", and dropped a {loot_item.rarity} {loot_item.name}"
+            color = rarity_color(loot_item.rarity)
+        if self.notify:
+            self.notify(message, color)
 
     @staticmethod
     def _hit_feedback(x, y, crit: bool, direction=None):
@@ -702,13 +903,19 @@ class WorldCombat:
         Kept here rather than on `Monster` because the shot is the world's, not the
         monster's: it goes in the same `projectiles` list the player's arrows do, and
         it is stopped by the same walls. A shot is aimed where the player stands now,
-        so sidestepping it is a real answer."""
+        so sidestepping it is a real answer.
+
+        Nothing shoots through a wall: the arrow was always stopped by one, but the archer
+        used to keep loosing into it at a player it had no way of seeing, so breaking line
+        of sight is now a real answer too."""
         now = pygame.time.get_ticks()
         for monster in self.monsters:
             if not monster.kind.ranged or now < monster.next_shot_ms:
                 continue
             dx, dy = player.x - monster.x, player.y - monster.y
             if math.hypot(dx, dy) > monster.kind.attack_range:
+                continue
+            if not self.line_of_sight(monster.x, monster.y, player.x, player.y):
                 continue
             monster.next_shot_ms = now + monster.kind.shot_cooldown_ms
             # Monster.start_attack_anim takes a distance and resolves a melee hit from it;
@@ -727,6 +934,7 @@ class WorldCombat:
                     color=color,
                     shake=c.Combat.PLAYER_HURT_SHAKE,
                     hostile=True,
+                    owner_id=id(monster),
                 )
             )
 
@@ -737,7 +945,11 @@ class WorldCombat:
                 self.projectiles.remove(proj)
                 continue
 
-            # A boss's bolts fly past monsters and NPCs and only threaten the player.
+            # A hostile shot is aimed at the player, but it is an arrow, not a guided one:
+            # anything standing in the way takes it instead. What that hits is nobody's
+            # doing, so it is uncredited (`by_player=False`): no xp, no loot, no quest
+            # progress, and a villager felled by a goblin's stray arrow does not turn the
+            # village on the player who was only walking past.
             if proj.hostile:
                 if proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
                     # Passed as the source so a raised shield can catch it: an arrow is
@@ -745,15 +957,18 @@ class WorldCombat:
                     player.receive_damage(proj.damage, source=proj)
                     get_shake().add(proj.shake)
                     self.projectiles.remove(proj)
-                continue
+                    continue
 
-            if self._projectile_hits_monster(proj, self.monsters, player, quest_system):
+            by_player = not proj.hostile
+            if self._projectile_hits_monster(proj, self.monsters, player, quest_system, by_player):
                 continue
-            if self._projectile_hits_monster(proj, self.bosses, player, quest_system):
+            if self._projectile_hits_monster(proj, self.bosses, player, quest_system, by_player):
                 continue
-            if self._projectile_hits_critter(proj, player):
+            if self._projectile_hits_critter(proj, player, by_player):
                 continue
-            self._projectile_hits_npc(proj, player, quest_system)
+            if self._projectile_hits_npc(proj, player, quest_system, by_player):
+                continue
+            self._projectile_hits_keg(proj, player, quest_system)
 
     @staticmethod
     def _projectile_target(proj: Projectile, entities, radius_of):
@@ -770,14 +985,21 @@ class WorldCombat:
             None,
         )
 
-    def _projectile_hits_monster(self, proj: Projectile, targets, player: Player, quest_system: QuestSystem) -> bool:
+    def _projectile_hits_monster(
+        self, proj: Projectile, targets, player: Player, quest_system: QuestSystem, by_player: bool = True
+    ) -> bool:
         """Resolve a projectile against one list of monsters or bosses (both take hits the
-        same way). Returns True if it struck something, pierced onward or not."""
+        same way). Returns True if it struck something, pierced onward or not.
+
+        `by_player` is False for a monster's own arrow catching another monster: it still
+        dies, but none of the player's affixes fire on a shot they did not loose and none
+        of the reward is theirs."""
         target = self._projectile_target(proj, targets, lambda t: t.kind.size // 2)
         if target is None:
             return False
 
-        player.stats.train("strength", c.Stats.XP_PER_HIT)
+        if by_player:
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
         kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
         died = self._resolve_monster_hit(
             target,
@@ -785,56 +1007,87 @@ class WorldCombat:
             proj.damage,
             player,
             quest_system,
-            shake=proj.shake,
+            shake=proj.shake if by_player else 0.0,
             knockback=proj.knockback,
             kb_dir=kb_dir,
             blocked=self.blocked,
+            by_player=by_player,
         )
-        self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
-        self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
+        if by_player:
+            self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
+            self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
         self._projectile_after_hit(proj, target)
         return True
 
-    def _projectile_hits_critter(self, proj: Projectile, player: Player) -> bool:
+    def _projectile_hits_critter(self, proj: Projectile, player: Player, by_player: bool = True) -> bool:
         """Resolve a projectile against wildlife: an arrow is how most animals get hunted,
-        since they run long before a swing lands. Returns True if it struck one."""
+        since they run long before a swing lands. Returns True if it struck one.
+
+        A shot that was not the player's still wounds the animal, but the pack it belongs
+        to has no reason to blame the player for it, so `aggro_pack` is skipped."""
         critter = self._projectile_target(proj, self.critters, lambda cr: cr.hit_radius)
         if critter is None:
             return False
 
-        player.stats.train("strength", c.Stats.XP_PER_HIT)
-        get_shake().add(proj.shake)
+        if by_player:
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            get_shake().add(proj.shake)
         kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
         self._pop_damage(critter.x, critter.y - critter.size / 2, proj.damage, False)
         if critter.receive_damage(proj.damage):
-            self._kill_critter(critter, player, kb_dir)
+            self._kill_critter(critter, player, kb_dir, by_player=by_player)
         else:
             self._hit_feedback(critter.x, critter.y, False, kb_dir)
             self._knockback(critter, critter.size / 2, kb_dir, proj.knockback, self.blocked)
             critter.startle()
-            self.aggro_pack(critter)
+            if by_player:
+                self.aggro_pack(critter)
         self._projectile_after_hit(proj, critter)
         return True
 
-    def _projectile_hits_npc(self, proj: Projectile, player: Player, quest_system: QuestSystem):
+    def _projectile_hits_npc(
+        self, proj: Projectile, player: Player, quest_system: QuestSystem, by_player: bool = True
+    ) -> bool:
         npc = self._projectile_target(proj, self.npcs, lambda n: c.Entities.NPC_SIZE // 2)
         if npc is None:
-            return
+            return False
 
-        player.stats.train("strength", c.Stats.XP_PER_HIT)
+        if by_player:
+            player.stats.train("strength", c.Stats.XP_PER_HIT)
         self._resolve_npc_hit(
             npc,
             proj.damage,
+            player,
             quest_system,
-            shake=proj.shake,
+            shake=proj.shake if by_player else 0.0,
             knockback=proj.knockback,
             kb_dir=self._dir_from(0, 0, proj.vx, proj.vy),
             blocked=self.blocked,
+            by_player=by_player,
         )
-        frac = player.lifesteal_frac(ranged=True)
+        frac = player.lifesteal_frac(ranged=True) if by_player else 0.0
         if frac > 0:
             player.heal(proj.damage * frac)
         self._projectile_after_hit(proj, npc)
+        return True
+
+    def _projectile_hits_keg(self, proj: Projectile, player: Player, quest_system: QuestSystem) -> bool:
+        """A shot that reaches a powder keg sets it off. Kegs are the only prop an arrow
+        interacts with, deliberately: shooting one from across a clearing is a way to kill
+        a crowd, where shooting a flower bed would just be loot at no risk."""
+        keg = next(
+            (
+                b
+                for b in self.breakables
+                if b.kind == "powder" and b.distance_to_point((proj.x, proj.y)) < c.Breakables.POWDER_HIT_RADIUS
+            ),
+            None,
+        )
+        if keg is None:
+            return False
+        self.projectiles.remove(proj)
+        self._break_breakable(player, keg, quest_system)
+        return True
 
     def _tick_burns(self, monster_list: List[Monster], player: Player, quest_system: QuestSystem):
         now = pygame.time.get_ticks()

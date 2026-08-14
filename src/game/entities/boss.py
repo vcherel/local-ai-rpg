@@ -197,6 +197,7 @@ class Boss(Monster):
                     color=self.template.aura,
                     shake=4.0,
                     hostile=True,
+                    owner_id=id(self),
                 )
             )
 

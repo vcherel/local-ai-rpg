@@ -60,6 +60,48 @@ class Combat:
     VIGNETTE_DECAY: float = 0.90  # per-60fps-frame multiplier
     PLAYER_HURT_VIGNETTE: float = 0.7
 
+    # The arc drawn along a swing (core/swing_arcs.py). It spans the weapon's `arc_deg`
+    # at its `reach`, so a cleaving sweep visibly covers the crowd it is about to hit.
+    SWING_ARC_MS: float = 170.0
+    SWING_ARC_WIDTH: int = 7
+    SWING_ARC_COLOR: tuple = (235, 235, 220)
+    SWING_ARC_CLEAVE_COLOR: tuple = (255, 210, 130)
+
+
+@dataclass(frozen=True)
+class Explosion:
+    """A powder keg going off (game/combat.py `explode`).
+
+    The one thing in the world that kills a crowd without a swing: the player shoots or
+    smashes a keg standing in the middle of one. It hurts whoever is near it, the player
+    included, so it is a decision rather than free damage.
+    """
+
+    RADIUS: float = 165.0
+    DAMAGE: int = 55
+    # Damage falls off from full at the centre to this share of it at the rim.
+    EDGE_DAMAGE_FRAC: float = 0.35
+    # The blast is not choosy: it takes this much of its damage off the player too.
+    PLAYER_DAMAGE_MULT: float = 0.7
+    KNOCKBACK: float = 34.0
+    SHAKE: float = 22.0
+    # A keg inside the blast of another one goes off as well, which is what makes a
+    # cluster of them worth lining up.
+    CHAIN_RADIUS: float = 150.0
+
+
+@dataclass(frozen=True)
+class DamageFx:
+    """How a prop that has been hit but not yet broken shows it (core/damage_fx.py)."""
+
+    # A struck prop flinches away from the blow and flashes, for this long.
+    FLASH_MS: float = 130.0
+    FLASH_OFFSET: float = 3.0
+    FLASH_COLOR: tuple = (255, 240, 210)
+    # Cracks drawn over a damaged hard prop: none at full health, this many at a sliver.
+    MAX_CRACKS: int = 4
+    CRACK_COLOR: tuple = (38, 26, 18)
+
 
 @dataclass(frozen=True)
 class WeaponArchetype:
@@ -85,20 +127,27 @@ class WeaponArchetype:
     shake: float  # base screen shake on a hit
     ranged: bool  # fires a projectile instead of swinging
     uses_ammo: bool  # ranged weapons only: consume an ammo item per shot
+    # The wedge a swing actually covers, measured across the facing. It is both what the
+    # arc drawn on screen spans and what the hit test accepts, so the picture never
+    # promises a reach the swing does not have. A cleaving weapon sweeps wide; a thrust
+    # or a poke covers a narrow slice of the same disc.
+    arc_deg: float = 100.0
 
 
-UNARMED = WeaponArchetype("unarmed", 1.0, 0.0, 1.0, 1.0, 350, 8, 0.08, False, 1.0, 2.0, False, False)
+UNARMED = WeaponArchetype("unarmed", 1.0, 0.0, 1.0, 1.0, 350, 8, 0.08, False, 1.0, 2.0, False, False, 90.0)
 
 WEAPON_ARCHETYPES: dict[str, WeaponArchetype] = {
-    "dagger": WeaponArchetype("dagger", 0.8, 0.0, 1.8, 0.7, 180, 4, 0.30, False, 1.0, 2.0, False, False),
-    "sword": WeaponArchetype("sword", 1.0, 0.0, 1.0, 1.0, 350, 10, 0.12, True, 1.4, 4.0, False, False),
-    "axe": WeaponArchetype("axe", 1.05, 0.0, 0.7, 1.25, 520, 14, 0.10, True, 1.8, 7.0, False, False),
-    "hammer": WeaponArchetype("hammer", 0.9, 0.0, 0.55, 1.6, 620, 26, 0.05, False, 1.0, 14.0, False, False),
+    "dagger": WeaponArchetype("dagger", 0.8, 0.0, 1.8, 0.7, 180, 4, 0.30, False, 1.0, 2.0, False, False, 90.0),
+    "sword": WeaponArchetype("sword", 1.0, 0.0, 1.0, 1.0, 350, 10, 0.12, True, 1.4, 4.0, False, False, 130.0),
+    "axe": WeaponArchetype("axe", 1.05, 0.0, 0.7, 1.25, 520, 14, 0.10, True, 1.8, 7.0, False, False, 160.0),
+    # The hammer earns its 620ms cooldown by clearing a crowd: a wide, slow sweep that
+    # catches everything in front of it rather than one target at a time.
+    "hammer": WeaponArchetype("hammer", 0.9, 0.0, 0.55, 1.6, 620, 26, 0.05, True, 1.5, 14.0, False, False, 150.0),
     # The spear trades the whole close range for reach and a heavy thrust: nothing within
     # 46px of the player is hit at all, and the ring it does cover runs out past 85px.
-    "spear": WeaponArchetype("spear", 2.2, 46.0, 0.9, 1.35, 380, 14, 0.12, False, 1.0, 5.0, False, False),
-    "staff": WeaponArchetype("staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False),
-    "bow": WeaponArchetype("bow", 1.0, 0.0, 1.0, 1.0, 400, 4, 0.10, False, 1.0, 1.0, True, True),
+    "spear": WeaponArchetype("spear", 2.2, 46.0, 0.9, 1.35, 380, 14, 0.12, False, 1.0, 5.0, False, False, 75.0),
+    "staff": WeaponArchetype("staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False, 90.0),
+    "bow": WeaponArchetype("bow", 1.0, 0.0, 1.0, 1.0, 400, 4, 0.10, False, 1.0, 1.0, True, True, 90.0),
 }
 
 # Weapon-name keyword -> archetype key. Keywords mirror items.WEAPON_KEYWORDS.

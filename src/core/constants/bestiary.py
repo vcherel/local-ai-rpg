@@ -25,6 +25,13 @@ class Entities:
     # to their houses. Still hostile, still waiting, just no longer following you across
     # the world in a column of eighteen.
     NPC_HOSTILE_RANGE: int = 1100
+    # What a killed villager leaves on the ground (game/loot.py `loot_villager`). Enough
+    # that cutting one down is a real choice against losing the village, nowhere near
+    # enough to make a street of them worth farming. A merchant carries a merchant's purse.
+    VILLAGER_COIN_RANGE: tuple = (3, 14)
+    VILLAGER_ITEM_CHANCE: float = 0.18
+    MERCHANT_COIN_MULT: float = 3.0
+    MERCHANT_ITEM_CHANCE: float = 0.45
     SWING_SPEED: float = 0.007
     # How long an entity flashes white after being hit (ms).
     FLASH_MS: int = 150

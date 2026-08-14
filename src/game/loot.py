@@ -117,6 +117,28 @@ def break_crate() -> tuple[int, Item | None]:
     return coins, item
 
 
+def loot_villager(merchant: bool = False) -> tuple[int, Item | None]:
+    """What a killed villager was carrying: their purse, and sometimes one of their own
+    possessions.
+
+    A merchant carries a merchant's purse and a better chance of something worth having,
+    since their stock is the reason they are out on the street at all. Nothing here is
+    generous: robbing a village is meant to be a decision with a price, not an income.
+    """
+    lo, hi = c.Entities.VILLAGER_COIN_RANGE
+    coins = random.randint(lo, hi)
+    chance = c.Entities.VILLAGER_ITEM_CHANCE
+    if merchant:
+        coins = round(coins * c.Entities.MERCHANT_COIN_MULT)
+        chance = c.Entities.MERCHANT_ITEM_CHANCE
+
+    item = None
+    if random.random() < chance:
+        item = _roll_loot_item(0, 0, roll_rarity() if merchant else "common", (6, 12))
+
+    return coins, item
+
+
 def open_poi_cache() -> tuple[int, Item | None]:
     """Contents of a wilderness point-of-interest cache (ruins or camp): better coins,
     a better chance of an item, and the item's rarity is rolled properly instead of

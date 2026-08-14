@@ -12,6 +12,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_hitstop, get_vignette
+from core.swing_arcs import get_swings
 from game.entities.items import rarity_color, roll_rarity
 from game.entities.player import Player
 from game.loot import open_lootbox
@@ -615,6 +616,7 @@ class Game:
                 self.update_camera()
                 get_shake().update(dt)
                 get_particles().update(dt)
+                get_swings().update(dt)
                 get_floating_text().update(dt)
                 get_decals().update(dt)
                 get_vignette().update(dt)
