@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, List, Optional
 import pygame
 
 import core.constants as c
+from core.damage_fx import draw_cracks, get_damage_fx
 from core.utils import random_coordinates
 
 if TYPE_CHECKING:
@@ -273,6 +274,14 @@ class Building:
         self._layout = {"solids": solids, "beds": beds, "crates": crates, "chest": chest, "rug": rug}
         return self._layout
 
+    def crate_key(self, crate: pygame.Rect) -> str:
+        """Identity of one crate for `core.damage_fx`. A crate is an index into this
+        building's layout rather than an object of its own, so the registry that remembers
+        recent blows needs a string to hang them on."""
+        crates = self.interior_layout()["crates"]
+        idx = crates.index(crate) if crate in crates else -1
+        return f"{self.id}:crate:{idx}"
+
     def damage_crate_at(self, pos, hit_radius, damage: int) -> Optional[tuple]:
         """Land a blow on the nearest intact crate (shop or tavern) a swing reaches.
 
@@ -336,7 +345,14 @@ class Building:
 
         windows = self.window_rects()
         for idx, window in enumerate(windows):
-            self._draw_window(screen, camera, window, idx in self.broken_windows)
+            self._draw_window(
+                screen,
+                camera,
+                window,
+                idx in self.broken_windows,
+                f"{self.id}:window:{idx}",
+                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
+            )
         self._draw_extras(screen, camera, srect, roof, windows, style)
 
         if self.kind == "shop":
@@ -590,7 +606,14 @@ class Building:
         pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, to_screen(door))
 
         for idx, window in enumerate(self.window_rects()):
-            self._draw_window(screen, camera, window, idx in self.broken_windows)
+            self._draw_window(
+                screen,
+                camera,
+                window,
+                idx in self.broken_windows,
+                f"{self.id}:window:{idx}",
+                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
+            )
 
         layout = self.interior_layout()
         rug_screen = to_screen(layout["rug"])
@@ -599,6 +622,15 @@ class Building:
 
         for rect, kind in layout["solids"]:
             self._draw_furniture(screen, to_screen(rect), kind, rect)
+
+        # Crates carry their damage on them: the cracks say how many more blows it takes,
+        # and a struck one flinches on the frame it was hit.
+        fx = get_damage_fx()
+        for idx, crate in enumerate(layout["crates"]):
+            if idx in self.broken_crates or idx not in self.crate_hp:
+                continue
+            rect = to_screen(crate).move(fx.offset(f"{self.id}:crate:{idx}"))
+            draw_cracks(screen, rect, self.crate_hp[idx] / c.Buildings.CRATE_HP, f"{self.id}-{idx}")
 
         for idx in self.broken_crates:
             if idx < len(layout["crates"]):
@@ -612,9 +644,13 @@ class Building:
             item.draw(screen, camera)
 
     @staticmethod
-    def _draw_window(screen, camera: Camera, window: pygame.Rect, broken: bool):
+    def _draw_window(
+        screen, camera: Camera, window: pygame.Rect, broken: bool, damage_key: str = "", hp_frac: float = 1.0
+    ):
         wx, wy = camera.world_to_screen(window.left, window.top)
         wrect = pygame.Rect(round(wx), round(wy), window.width, window.height)
+        if damage_key:
+            wrect = wrect.move(get_damage_fx().offset(damage_key))
         if broken:
             pygame.draw.rect(screen, (32, 28, 26), wrect)
             pygame.draw.rect(screen, (70, 50, 35), wrect, 2)
@@ -626,6 +662,8 @@ class Building:
         pygame.draw.rect(screen, (150, 195, 210), pane)
         pygame.draw.line(screen, (70, 50, 35), (pane.centerx, pane.top), (pane.centerx, pane.bottom), 2)
         pygame.draw.line(screen, (70, 50, 35), (pane.left, pane.centery), (pane.right, pane.centery), 2)
+        # A cracked pane before it shatters: the same wear every other breakable shows.
+        draw_cracks(screen, pane, hp_frac, damage_key)
 
     def _draw_broken_crate(self, screen, rect: pygame.Rect, world_rect: pygame.Rect):
         """A smashed crate: a scatter of splintered planks left on the floor."""

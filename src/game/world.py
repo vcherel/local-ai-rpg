@@ -338,6 +338,25 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             return True
         return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
 
+    def line_of_sight(self, x0, y0, x1, y1) -> bool:
+        """Is there a clear line between two points, or is something solid in the way?
+
+        Walks the segment in steps half a wall thick, asking the same `blocked` everything
+        else does, so a house wall, a well or a tree trunk all break sight the way they
+        break movement. Used by ranged monsters before they shoot: their arrow was already
+        stopped by the wall, but they used to keep firing into it at a player they could
+        not possibly see."""
+        dx, dy = x1 - x0, y1 - y0
+        distance = math.hypot(dx, dy)
+        if distance == 0:
+            return True
+        step = c.Buildings.WALL_THICKNESS / 2
+        for i in range(1, int(distance / step) + 1):
+            t = i * step / distance
+            if self.blocked(x0 + dx * t, y0 + dy * t, 1):
+                return False
+        return True
+
     def _chunk_window(self, x, y, radius) -> List[tuple[int, int]]:
         """Every chunk covering the box of `radius` around (x, y). The one place that walk
         is written, shared by the building lookup and by the scenery the renderer asks for."""

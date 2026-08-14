@@ -9,6 +9,7 @@ import core.constants as c
 from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
+from core.swing_arcs import get_swings
 from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import POTION_EFFECT_LABELS, rarity_color
 from ui import widgets
@@ -151,6 +152,9 @@ class GameRenderer:
         for projectile in world.projectiles:
             projectile.draw(self.screen, camera)
 
+        # Under the particles and over the entities: the arc says how much ground the
+        # swing covered, the particles say what it landed on.
+        get_swings().draw(self.screen, camera)
         get_particles().draw(self.screen, camera)
         get_floating_text().draw(self.screen, camera)
 

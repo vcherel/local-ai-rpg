@@ -226,7 +226,8 @@ class Buildings:
 class Breakables:
     """Outdoor props scattered near houses/shops/taverns (game/entities/breakables.py).
     "barrel" smashes the same way as an interior crate, with the same coin/item odds;
-    everything else is pure decoration, just a satisfying puff with no reward."""
+    "powder" is a keg that goes off instead of dropping anything; everything else is pure
+    decoration, just a satisfying puff with no reward."""
 
     PER_BUILDING_MIN: int = 2
     PER_BUILDING_MAX: int = 4
@@ -237,16 +238,20 @@ class Breakables:
     # decorative half of the list is planted rather than potted.
     KIND_WEIGHTS: tuple = (
         ("barrel", 5),
+        ("powder", 2),
         ("bush", 3),
         ("flowerbed", 3),
         ("herbs", 2),
         ("sapling", 2),
     )
+    # A powder keg gives quickly and takes an arrow, because the point of it is the blast
+    # (constants.Explosion), not the work of breaking it.
+    POWDER_HIT_RADIUS: int = 26
     # How much punishment each kind takes before it gives. A flower bed is cleared in a
     # swipe, a barrel has to be worked at; the props are scenery you fight through, not
     # confetti.
     DEFAULT_HP: int = 8
-    HP = {"barrel": 20, "bush": 5, "flowerbed": 4, "herbs": 4, "sapling": 9}
+    HP = {"barrel": 20, "powder": 6, "bush": 5, "flowerbed": 4, "herbs": 4, "sapling": 9}
 
 
 @dataclass(frozen=True)

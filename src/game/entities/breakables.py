@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
+from core.damage_fx import draw_cracks, get_damage_fx, tint
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -14,10 +15,11 @@ if TYPE_CHECKING:
 
 
 class Breakable:
-    """A standalone outdoor prop the player can smash: a loot-bearing barrel, or one of
-    the things planted around a doorstep (a bush, a flower bed, a herb patch, a sapling),
-    scattered near a house, shop or tavern. Unlike interior shop crates it carries no
-    broken/debris state; once smashed it's simply gone for the rest of the session."""
+    """A standalone outdoor prop the player can smash: a loot-bearing barrel, a powder keg
+    that goes off, or one of the things planted around a doorstep (a bush, a flower bed, a
+    herb patch, a sapling), scattered near a house, shop or tavern. Unlike interior shop
+    crates it carries no broken/debris state; once smashed it's simply gone for the rest of
+    the session."""
 
     def __init__(self, x, y, kind="barrel", hp=None):
         self.x = x
@@ -25,11 +27,18 @@ class Breakable:
         self.kind = kind
         # What it takes to break: persisted, so a barrel worked half-way down stays that
         # way across a save rather than healing itself while the player is in a menu.
-        self.hp = c.Breakables.HP.get(kind, c.Breakables.DEFAULT_HP) if hp is None else hp
+        self.max_hp = c.Breakables.HP.get(kind, c.Breakables.DEFAULT_HP)
+        self.hp = self.max_hp if hp is None else hp
 
     @property
     def loot(self) -> bool:
         return self.kind == "barrel"
+
+    @property
+    def damage_key(self) -> str:
+        """Identity for `core.damage_fx`. Keyed by position rather than by object, like
+        everything else in that registry, and a breakable never moves."""
+        return f"breakable:{round(self.x)},{round(self.y)}"
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -43,56 +52,100 @@ class Breakable:
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)
-        center = (round(sx), round(sy))
+        fx = get_damage_fx()
+        # A prop that has just been struck flinches away from the blow, and a hard one
+        # carries the cracks of everything it has taken so far: how battered it looks is
+        # how close it is to giving.
+        offset = fx.offset(self.damage_key)
+        flash = fx.flash(self.damage_key)
+        center = (round(sx) + offset[0], round(sy) + offset[1])
+        hp_frac = max(0.0, min(1.0, self.hp / self.max_hp))
         # Seeded from the world position (stable) rather than the screen position (which
         # pans every frame), so the planting doesn't jitter as the camera moves.
         rng = random.Random(f"{self.x},{self.y}")
         if self.kind == "bush":
-            self._draw_bush(screen, center, rng)
+            self._draw_bush(screen, center, rng, hp_frac, flash)
         elif self.kind == "flowerbed":
-            self._draw_flowerbed(screen, center, rng)
+            self._draw_flowerbed(screen, center, rng, hp_frac, flash)
         elif self.kind == "herbs":
-            self._draw_herbs(screen, center, rng)
+            self._draw_herbs(screen, center, rng, hp_frac, flash)
         elif self.kind == "sapling":
-            self._draw_sapling(screen, center, rng)
+            self._draw_sapling(screen, center, rng, hp_frac, flash)
+        elif self.kind == "powder":
+            self._draw_powder_keg(screen, center, flash)
+            self._draw_wear(screen, center, hp_frac, int(c.Breakables.SIZE * 1.15))
         else:
-            self._draw_barrel(screen, center)
+            self._draw_barrel(screen, center, flash)
+            self._draw_wear(screen, center, hp_frac, c.Breakables.SIZE)
+
+    def _draw_wear(self, screen: pygame.Surface, center, hp_frac: float, width: int):
+        body = pygame.Rect(0, 0, width, int(width * 1.3))
+        body.center = center
+        draw_cracks(screen, body, hp_frac, f"{self.x},{self.y}")
 
     @staticmethod
-    def _draw_barrel(screen: pygame.Surface, center):
+    def _draw_barrel(screen: pygame.Surface, center, flash: float = 0.0):
         w, h = c.Breakables.SIZE, int(c.Breakables.SIZE * 1.3)
         body = pygame.Rect(0, 0, w, h)
         body.center = center
-        pygame.draw.rect(screen, (112, 76, 42), body, border_radius=5)
+        pygame.draw.rect(screen, tint((112, 76, 42), flash), body, border_radius=5)
         pygame.draw.rect(screen, (66, 44, 24), body, 2, border_radius=5)
         for frac in (0.28, 0.72):
             band_y = round(body.top + body.height * frac)
             pygame.draw.line(screen, (66, 44, 24), (body.left + 2, band_y), (body.right - 2, band_y), 3)
 
     @staticmethod
-    def _draw_bush(screen: pygame.Surface, center, rng: random.Random):
+    def _draw_powder_keg(screen: pygame.Surface, center, flash: float = 0.0):
+        """A keg of black powder: squatter and darker than a barrel, iron-banded, with a
+        fuse out of the lid. It has to be told apart from an ordinary barrel at a glance,
+        because walking up and hitting one is a very different decision."""
+        w, h = round(c.Breakables.SIZE * 1.15), round(c.Breakables.SIZE * 1.15)
+        body = pygame.Rect(0, 0, w, h)
+        body.center = center
+        pygame.draw.rect(screen, tint((58, 46, 40), flash), body, border_radius=6)
+        pygame.draw.rect(screen, (30, 24, 20), body, 2, border_radius=6)
+        for frac in (0.25, 0.75):
+            band_y = round(body.top + body.height * frac)
+            pygame.draw.line(screen, (128, 118, 104), (body.left + 2, band_y), (body.right - 2, band_y), 3)
+        # Fuse, curling off the top, with a bright tip so the eye lands on it.
+        fuse_base = (body.centerx, body.top + 2)
+        pygame.draw.lines(
+            screen,
+            (162, 138, 96),
+            False,
+            [fuse_base, (body.centerx + 5, body.top - 6), (body.centerx - 2, body.top - 12)],
+            2,
+        )
+        pygame.draw.circle(screen, (255, 190, 90), (body.centerx - 2, body.top - 12), 3)
+
+    @staticmethod
+    def _draw_bush(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
+        """A planted prop shows its damage by losing bulk rather than by cracking: the
+        clumps shrink as it is hacked at, so a half-cleared bush reads as half cleared."""
         cx, cy = center
-        radius = c.Breakables.SIZE // 2
+        radius = c.Breakables.SIZE // 2 * (0.5 + 0.5 * hp_frac)
         offsets = [(0, 0), (-radius * 0.5, radius * 0.2), (radius * 0.5, radius * 0.2), (0, -radius * 0.35)]
         for ox, oy in offsets:
             r = round(radius * rng.uniform(0.55, 0.75))
             leaf_color = (60 + rng.randint(-10, 15), 120 + rng.randint(-10, 20), 55 + rng.randint(-10, 10))
-            pygame.draw.circle(screen, leaf_color, (round(cx + ox), round(cy + oy)), r)
+            pygame.draw.circle(screen, tint(leaf_color, flash), (round(cx + ox), round(cy + oy)), r)
             pygame.draw.circle(screen, (35, 75, 32), (round(cx + ox), round(cy + oy)), r, 1)
 
     @staticmethod
-    def _draw_flowerbed(screen: pygame.Surface, center, rng: random.Random):
+    def _draw_flowerbed(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
         """A tilled bed with a few blooms in it, the thing most likely to be growing by a
-        village door."""
+        village door. Blooms are trampled off it one by one as it takes hits."""
         cx, cy = center
         size = c.Breakables.SIZE
         soil = pygame.Rect(0, 0, round(size * 1.2), round(size * 0.55))
         soil.center = (cx, cy + size // 5)
-        pygame.draw.ellipse(screen, (98, 72, 48), soil)
+        pygame.draw.ellipse(screen, tint((98, 72, 48), flash), soil)
         pygame.draw.ellipse(screen, (68, 50, 34), soil, 2)
         palette = ((228, 96, 112), (236, 202, 92), (170, 128, 220), (240, 240, 232))
         color = rng.choice(palette)
-        for _ in range(rng.randint(4, 6)):
+        # The count is rolled in full and then trimmed, so damage takes blooms away
+        # instead of rearranging the ones that are left.
+        for _ in range(max(1, round(rng.randint(4, 6) * hp_frac))):
             ox = rng.uniform(-size * 0.45, size * 0.45)
             oy = rng.uniform(-size * 0.18, size * 0.12)
             stem_bottom = (round(cx + ox), round(cy + oy + 8))
@@ -102,26 +155,26 @@ class Breakable:
             pygame.draw.circle(screen, (250, 236, 160), head, 1)
 
     @staticmethod
-    def _draw_herbs(screen: pygame.Surface, center, rng: random.Random):
+    def _draw_herbs(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
         """A kitchen patch: low, ragged, no flowers to speak of."""
         cx, cy = center
         size = c.Breakables.SIZE
-        for _ in range(rng.randint(5, 8)):
+        for _ in range(max(1, round(rng.randint(5, 8) * hp_frac))):
             ox = rng.uniform(-size * 0.4, size * 0.4)
             base = (round(cx + ox), round(cy + size * 0.25))
             height = rng.randint(10, 18)
             lean = rng.uniform(-5, 5)
             green = (72 + rng.randint(-12, 12), 116 + rng.randint(-14, 18), 58 + rng.randint(-10, 12))
-            pygame.draw.line(screen, green, base, (round(base[0] + lean), base[1] - height), 3)
+            pygame.draw.line(screen, tint(green, flash), base, (round(base[0] + lean), base[1] - height), 3)
 
     @staticmethod
-    def _draw_sapling(screen: pygame.Surface, center, rng: random.Random):
+    def _draw_sapling(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
         """A young tree somebody planted: a thin trunk and a small crown, small enough to
         read as part of the garden rather than as wilderness."""
         cx, cy = center
         size = c.Breakables.SIZE
-        pygame.draw.line(screen, (104, 78, 48), (cx, cy + size // 2), (cx, cy - 4), 4)
-        for _ in range(rng.randint(3, 4)):
+        pygame.draw.line(screen, tint((104, 78, 48), flash), (cx, cy + size // 2), (cx, cy - 4), 4)
+        for _ in range(max(1, round(rng.randint(3, 4) * hp_frac))):
             ox = rng.uniform(-size * 0.3, size * 0.3)
             oy = rng.uniform(-size * 0.45, -size * 0.1)
             leaf = (58 + rng.randint(-10, 12), 118 + rng.randint(-12, 20), 54 + rng.randint(-8, 10))

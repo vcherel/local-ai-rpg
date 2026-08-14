@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
+from core.damage_fx import draw_cracks, get_damage_fx
 from game.entities.village import village_site
 
 if TYPE_CHECKING:
@@ -124,7 +125,10 @@ class PointOfInterest:
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)
-        center = (round(sx), round(sy))
+        # A cache being forced open flinches and cracks like any other breakable, so the
+        # blows land visibly instead of the pile sitting untouched until it gives.
+        offset = get_damage_fx().offset(f"poi:{self.id}")
+        center = (round(sx) + offset[0], round(sy) + offset[1])
         drawer = {
             "camp": self._draw_camp,
             "shrine": self._draw_shrine,
@@ -135,6 +139,11 @@ class PointOfInterest:
             "signpost": self._draw_signpost,
         }.get(self.kind, self._draw_ruins)
         drawer(screen, center)
+
+        if self.has_loot and not self.looted and self.cache_hp < c.PointsOfInterest.CACHE_HP:
+            wear = pygame.Rect(0, 0, 56, 44)
+            wear.center = center
+            draw_cracks(screen, wear, self.cache_hp / c.PointsOfInterest.CACHE_HP, self.id)
 
     def _draw_farmstead(self, screen, center):
         """A caved-in barn with its fence still half standing. Lootable like a ruins pile,
