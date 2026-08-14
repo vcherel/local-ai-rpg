@@ -57,6 +57,7 @@ class WorldCombat:
             weapon = player.equipped_item("ranged_weapon")
             if weapon is None:
                 return
+            player.end_spawn_grace()
             self._fire_ranged(player, c.weapon_archetype(weapon.name))
             return
 
@@ -68,6 +69,9 @@ class WorldCombat:
             return
         player.attack_ready_ms = now + arch.cooldown_ms
         player.attack_swing_mult = arch.swing_mult
+        # Swinging spends whatever is left of the spawn grace: it is there to get the player
+        # out of what killed them, not to let them open a fight untouchable.
+        player.end_spawn_grace()
 
         player.start_attack_anim("right")
         play_sound("attack")

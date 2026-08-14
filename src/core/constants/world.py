@@ -10,7 +10,15 @@ class World:
 
     # How many people a settlement holds follows from its buildings (Villages), not from a
     # world-wide count: the world is endless, so there is no total to fix.
-    NB_MONSTERS: int = 120
+    #
+    # How many monsters roam is not world-wide either: it follows where the player is
+    # standing, ramping from the near cap on the starting town's doorstep to the far cap
+    # out past ROAMING_CAP_FAR_DISTANCE. The safest ground in the game shouldn't be
+    # stocked like the deep wilds. The far cap is also how many the world is created with,
+    # since those are scattered across the whole settled ring rather than around anyone.
+    ROAMING_CAP_NEAR: int = 60
+    ROAMING_CAP_FAR: int = 120
+    ROAMING_CAP_FAR_DISTANCE: int = 2500
 
     # Slain monsters are replenished over time so the world never empties out.
     RESPAWN_INTERVAL_MS: int = 2200
@@ -22,7 +30,16 @@ class World:
     # Monsters left this far behind despawn, freeing their slot to respawn near the player.
     DESPAWN_DISTANCE: int = 3000
     # Monsters placed at world creation start at least this far from the player spawn point.
-    INITIAL_SPAWN_MIN_DISTANCE: int = 1200
+    INITIAL_SPAWN_MIN_DISTANCE: int = 1400
+    # Nothing hostile is ever spawned within this radius of the world centre, which is where
+    # the player starts and respawns. Comfortably past the starting village's own radius, so
+    # standing in town produces no respawns at all rather than a ring at its boundary: the
+    # player has to walk out to find the fight. Kept equal to INITIAL_SPAWN_MIN_DISTANCE so
+    # world creation and respawning follow the one rule.
+    SAFE_RADIUS: int = 1400
+    # ...and none within this much of any other settlement's edge either, so a monster never
+    # materialises pressed against the houses.
+    VILLAGE_SPAWN_MARGIN: int = 400
     # How far apart the members of a pack kind (MonsterKind.group) are scattered on spawn.
     PACK_SPREAD: int = 110
 
@@ -57,6 +74,11 @@ class World:
     # How many rings World.free_spot_near searches before giving up. Each ring is one body
     # diameter farther out, so this covers a building's whole footprint and then some.
     FREE_SPOT_MAX_RINGS: int = 24
+
+    # How far World.safe_spot_near keeps the player from anything hostile when placing them.
+    # Well past every melee reach, so whatever is standing on the spawn point cannot swing
+    # the moment the player arrives.
+    SAFE_SPOT_CLEARANCE: int = 350
 
     # How many rings of chunks World.find_bandit_camp generates outward looking for a camp
     # a clear_camp quest can send the player at. Far enough to be a journey, near enough
