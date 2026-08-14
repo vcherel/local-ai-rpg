@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from core.save import SaveSystem
 
 
+# Every equip slot, and the attribute holding the id of what is in it. The one definition
+# of the slots the player has: the constructor fills them from the save, `equipped_ids`
+# writes them back, and the equip/unequip paths look the attribute up here.
 EQUIP_SLOT_ATTRS = {
     "melee_weapon": "equipped_melee_weapon_id",
     "ranged_weapon": "equipped_ranged_weapon_id",
@@ -33,7 +36,7 @@ EQUIP_SLOT_ATTRS = {
 
 # Held down to raise the shield. A hold rather than a toggle, so blocking is something
 # you do for the blow you saw coming instead of a stance you leave switched on.
-BLOCK_KEYS = (pygame.K_SPACE,)
+BLOCK_KEY = pygame.K_SPACE
 
 
 def _item_outline(item) -> tuple:
@@ -87,16 +90,8 @@ class Player(Entity):
         self.hp = self.max_hp
 
         equipped = save_system.load("equipped", {})
-        self.equipped_melee_weapon_id = equipped.get("melee_weapon")
-        self.equipped_ranged_weapon_id = equipped.get("ranged_weapon")
-        # Migrate a pre-dual-slot save: the old single "weapon" key was always a melee
-        # weapon in practice, since ranged combat had no separate slot to get stuck in.
-        if equipped.get("weapon") and self.equipped_melee_weapon_id is None:
-            self.equipped_melee_weapon_id = equipped["weapon"]
-        self.equipped_offhand_id = equipped.get("offhand")
-        self.equipped_armor_id = equipped.get("armor")
-        self.equipped_accessory_id = equipped.get("accessory")
-        self.equipped_ammo_id = equipped.get("ammo")
+        for slot, attr in EQUIP_SLOT_ATTRS.items():
+            setattr(self, attr, equipped.get(slot))
 
         # The weapon bar the number keys switch between. It sits on top of the melee and
         # ranged slots rather than replacing them: selecting a bar slot routes that weapon
@@ -242,8 +237,7 @@ class Player(Entity):
         once it has been left alone long enough. A broken guard stays down until its
         timer runs out, which is the window the player pays for holding block too long."""
         now = pygame.time.get_ticks()
-        wants_block = any(keys[key] for key in BLOCK_KEYS)
-        self.blocking = wants_block and self.has_shield() and not self.guard_broken()
+        self.blocking = bool(keys[BLOCK_KEY]) and self.has_shield() and not self.guard_broken()
         if self.blocking:
             self.last_guard_use_ms = now
             return
@@ -320,14 +314,7 @@ class Player(Entity):
         return [item for item in self.inventory if item.item_type == "potion"][: c.Potions.QUICK_SLOTS]
 
     def equipped_ids(self) -> dict:
-        return {
-            "melee_weapon": self.equipped_melee_weapon_id,
-            "ranged_weapon": self.equipped_ranged_weapon_id,
-            "offhand": self.equipped_offhand_id,
-            "armor": self.equipped_armor_id,
-            "accessory": self.equipped_accessory_id,
-            "ammo": self.equipped_ammo_id,
-        }
+        return {slot: getattr(self, attr) for slot, attr in EQUIP_SLOT_ATTRS.items()}
 
     def equipped_item(self, slot: str):
         item_id = getattr(self, EQUIP_SLOT_ATTRS[slot])
@@ -662,7 +649,10 @@ class Player(Entity):
         ward_threshold = self.guardian_ward_threshold()
         warded = ward_threshold > 0 and now >= self.guardian_ward_cooldown_until and old_hp - actual <= 0
         if warded:
-            self.hp = round(self.max_hp * ward_threshold)
+            # Never above what the player had a moment ago: a ward that fires while they
+            # are already under its floor saves them, it doesn't hand back health (which
+            # would also pop a negative damage number, `lost` being what they actually lost).
+            self.hp = min(old_hp, round(self.max_hp * ward_threshold))
             self.guardian_ward_invuln_until = now + c.Affixes.GUARDIAN_WARD_INVULN_S
             self.guardian_ward_cooldown_until = now + c.Affixes.GUARDIAN_WARD_COOLDOWN_S
             self.save_system.update("guardian_ward_cooldown_until", self.guardian_ward_cooldown_until)

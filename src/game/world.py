@@ -9,9 +9,7 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
-from core.audio import play_sound
 from core.daynight import DayNightCycle
-from core.particles import get_particles
 from game.combat import WorldCombat
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
@@ -20,35 +18,15 @@ from game.entities.critter import Critter, pick_critter_kind
 from game.entities.items import AMMO_BUNDLE, Item
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
-from game.entities.poi import PointOfInterest, pois_for_chunk
+from game.entities.poi import PointOfInterest
 from game.entities.projectile import Projectile
 from game.entities.scenery import Scenery
-from game.entities.village import Village, generate_starting_world, village_site
+from game.entities.village import Village, generate_starting_world
 from game.events import EventSystem
-from game.loot import roll_shop_stock
+from game.places import WorldPlaces
 from game.streaming import WorldStreaming
 from llm.llm_request_queue import generate_response_queued
 from llm.merchant_system import generate_shop_inventories
-
-# What a camper or a signpost calls each kind of landmark when giving directions.
-_POI_HINT_LABELS = {
-    "ruins": "old ruins",
-    "camp": "somebody's camp",
-    "shrine": "a forgotten shrine",
-    "farmstead": "an abandoned farmstead",
-    "graveyard": "an old graveyard",
-    "watchtower": "a ruined watchtower",
-    "stones": "a ring of standing stones",
-    "signpost": "a crossroads",
-}
-
-
-def _compass_direction(dx: float, dy: float) -> str:
-    """The bearing from one point to another, in the words a person would use."""
-    names = ("east", "south east", "south", "south west", "west", "north west", "north", "north east")
-    index = round(math.atan2(dy, dx) / (math.pi / 4)) % 8
-    return names[index]
-
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -58,14 +36,17 @@ if TYPE_CHECKING:
     from ui.menus.context_menu import ContextMenu
 
 
-class World(WorldCombat, WorldStreaming):
+class World(WorldCombat, WorldStreaming, WorldPlaces):
     """The living world and everything standing in it.
 
-    Two halves live in their own modules and are mixed in here: `WorldCombat` (game/combat.py)
-    resolves every blow and its aftermath, `WorldStreaming` (game/streaming.py) generates the
-    endless map around the player and names what it finds. Both work on the entity lists this
-    class owns; keeping them here as one class is what lets `self.monsters` and friends stay
-    the single source of truth.
+    Three parts live in their own modules and are mixed in here: `WorldCombat`
+    (game/combat.py) resolves every blow and its aftermath, `WorldStreaming`
+    (game/streaming.py) generates the endless map around the player and names what it
+    finds, and `WorldPlaces` (game/places.py) is what the player can do at a place once
+    they reach it (camps, fires, shrines, directions, theft). All of them work on the
+    entity lists this class owns; keeping them as one class is what lets `self.monsters`
+    and friends stay the single source of truth, and what decides which file a new method
+    belongs in is the job it does, not which object holds the data.
     """
 
     def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify):
@@ -112,10 +93,6 @@ class World(WorldCombat, WorldStreaming):
         self.critters: List[Critter] = []
         # Arrows in flight; transient like particles, never saved.
         self.projectiles: List[Projectile] = []
-        # When each place the player rests will serve them again, by POI id for a campfire
-        # and by building id for a villager's bed (wall-clock seconds, so quitting to the
-        # menu can't reset a fire or a bed the player just used).
-        self.rest_cooldowns: dict = {}
         # Places a rumour pointed at, drawn on the minimap until the player gets there.
         # Session-only: a rumour is a lead to follow now, not a pin to keep forever.
         self.rumor_marks: List[dict] = []
@@ -148,14 +125,15 @@ class World(WorldCombat, WorldStreaming):
         # write a dead world's state over the new game's save.
         self.closed = False
 
+        # When each place the player rests will serve them again, by POI id for a campfire
+        # and by building id for a villager's bed (wall-clock seconds, so quitting to the
+        # menu can't reset a fire or a bed the player just used). One that has come round
+        # again is dropped rather than loaded.
         self.rest_cooldowns = {
             key: until for key, until in self.save_system.load("camp_rest", {}).items() if until > time.time()
         }
 
-        saved_pois = self.save_system.load("pois", {})
-        # Saves written before the world became endless hold a plain list of POIs placed
-        # inside the old fixed box; those positions mean nothing now, so they're dropped.
-        self.poi_state = saved_pois if isinstance(saved_pois, dict) else {}
+        self.poi_state = self.save_system.load("pois", {})
         self.explored = {
             tuple(int(part) for part in key.split(":")) for key in self.save_system.load("explored", []) if ":" in key
         }
@@ -218,310 +196,6 @@ class World(WorldCombat, WorldStreaming):
         # Nothing clear in 20 tries: settle for the last roll rather than looping forever.
         # A monster standing in a wall beats hanging world generation.
         return x, y
-
-    def _populate_camp(self, poi: PointOfInterest):
-        """Put a camp's occupants on the ground as its chunk loads.
-
-        A bandit camp's garrison is a number, not a set of entities: the first sighting rolls
-        how many bandits live here, and from then on that count (and the leader's own flag) is
-        the camp. Every chunk load stands the survivors back up around the fire, `_unload_chunk`
-        takes them away again, and only a kill lowers the count, so walking off can never empty
-        a camp and finding a hundred camps costs no more memory than finding one. They roll
-        their kind as if the camp stood deeper into the wilds, so the cache behind them is
-        worth the fight. A traveller camp instead gets its camper, a permanent NPC like any
-        villager, spawned once for the whole save (`npc_spawned`)."""
-        if poi.kind != "camp":
-            return
-        if poi.variant == "traveller":
-            self._spawn_camper(poi)
-            return
-        if poi.looted:
-            return
-        if poi.guards_alive is None:
-            poi.guards_alive = random.randint(c.PointsOfInterest.CAMP_GUARD_MIN, c.PointsOfInterest.CAMP_GUARD_MAX)
-            poi.leader_alive = True
-
-        spread = c.PointsOfInterest.CAMP_GUARD_SPREAD
-        for i in range(poi.guards_remaining):
-            angle = random.uniform(0, 2 * math.pi)
-            distance = random.uniform(spread * 0.5, spread)
-            x = poi.x + math.cos(angle) * distance
-            y = poi.y + math.sin(angle) * distance
-            leader = poi.leader_alive and i == poi.guards_remaining - 1
-            guard = self._new_monster(x, y, danger_bonus=c.PointsOfInterest.CAMP_LEADER_DANGER_BONUS if leader else 0)
-            guard.camp_id = poi.id
-            guard.camp_leader = leader
-            self.monsters.append(guard)
-
-        # Camp dogs come and go with the garrison rather than being counted with it: they
-        # are wildlife, so they can't hold a camp open, but a camp with bandits still in it
-        # has its dogs. Once the garrison is dead the kennel stays empty.
-        if not poi.guards_remaining:
-            return
-        for _ in range(random.Random(f"dogs{poi.id}").randint(*c.Wildlife.CAMP_DOGS)):
-            angle = random.uniform(0, 2 * math.pi)
-            x = poi.x + math.cos(angle) * spread
-            y = poi.y + math.sin(angle) * spread
-            self.critters.append(Critter(x, y, c.CRITTER_KINDS_BY_NAME["dog"], home=(x, y), camp_id=poi.id))
-
-    def on_guard_killed(self, monster: Monster, quest_system: QuestSystem):
-        """Strike a fallen bandit off its camp's roll, which is what decides whether the cache
-        opens and how many stand there when the chunk next loads. Emptying the roll is also
-        what finishes a clear_camp quest, whether or not the camp's chunk is still loaded."""
-        poi = next((p for p in self.pois if p.id == monster.camp_id), None)
-        if poi is not None:
-            poi.guard_killed(monster.camp_leader)
-            self.poi_state[poi.id] = poi.state()
-            if poi.guards_defeated:
-                quest_system.on_camp_cleared(poi.id)
-            return
-        # The camp's chunk unloaded while this guard was still chasing the player: its POI
-        # object is gone, so the saved state is the only copy left to edit.
-        state = self.poi_state.get(monster.camp_id)
-        if state is None:
-            return
-        if monster.camp_leader:
-            state["leader_alive"] = False
-        else:
-            state["guards_alive"] = max(0, (state.get("guards_alive") or 0) - 1)
-        if not state.get("guards_alive") and not state.get("leader_alive"):
-            quest_system.on_camp_cleared(monster.camp_id)
-
-    def find_bandit_camp(self, x: float, y: float) -> PointOfInterest | None:
-        """A bandit camp still held, for a clear_camp quest to send the player at.
-
-        Loaded chunks first, then rings of chunks outward, generated from their coordinates
-        exactly as `_load_chunk` would: a camp is a pure function of its chunk, so a quest
-        can name one nobody has walked to yet. Saved state is applied before judging a camp,
-        so one the player already emptied is never handed out as a task."""
-        held = [poi for poi in self.pois if poi.variant == "bandit" and not poi.guards_defeated and not poi.looted]
-        if held:
-            return min(held, key=lambda poi: poi.distance_to_point((x, y)))
-
-        size = c.World.CHUNK_SIZE
-        cx0, cy0 = self._chunk_of(x, y)
-        for ring in range(1, c.World.CAMP_SEARCH_RINGS + 1):
-            for cx in range(cx0 - ring, cx0 + ring + 1):
-                for cy in range(cy0 - ring, cy0 + ring + 1):
-                    if max(abs(cx - cx0), abs(cy - cy0)) != ring:
-                        continue
-                    center = ((cx + 0.5) * size, (cy + 0.5) * size)
-                    for poi in pois_for_chunk(cx, cy, self.buildings_around(*center)):
-                        if poi.variant != "bandit":
-                            continue
-                        state = self.poi_state.get(poi.id)
-                        if state:
-                            poi.apply_state(state)
-                        if not poi.guards_defeated and not poi.looted:
-                            return poi
-        return None
-
-    def _spawn_camper(self, poi: PointOfInterest):
-        """The trader living at a traveller camp: a merchant like any other, but stocked
-        from the local loot tables rather than the LLM, since a lone camper in the wilds
-        shouldn't hold the queue up behind a shop generation call."""
-        if poi.npc_spawned:
-            return
-        poi.npc_spawned = True
-        npc = NPC(poi.x + 62, poi.y + 60)
-        npc.is_merchant = True
-        npc.color = c.Colors.MERCHANT
-        npc.home = (npc.x, npc.y)
-        npc.set_shop(roll_shop_stock(c.PointsOfInterest.CAMPER_STOCK_SIZE))
-        self.npcs.append(npc)
-
-    def camp_is_clear(self, poi: PointOfInterest) -> bool:
-        """True when a camp is safe to loot and to rest at.
-
-        Two conditions, and they answer different questions. A bandit camp's garrison has to
-        have been killed (`guards_defeated`, a count that survives the guards themselves
-        being unloaded), which is what makes the cache the reward for taking the camp rather
-        than for walking away and back. And whatever the camp, nothing hostile may be standing
-        near the fire right now, so a wandering wolf still stops the player resting mid-fight."""
-        if poi.variant == "bandit" and not poi.guards_defeated:
-            return False
-        threats = self.monsters + self.bosses + [cr for cr in self.critters if cr.hostile]
-        return not any(
-            entity.distance_to_point((poi.x, poi.y)) < c.PointsOfInterest.CAMP_CLEAR_RADIUS for entity in threats
-        )
-
-    def camp_in_reach(self, player: Player) -> PointOfInterest | None:
-        """The campfire the player could rest at right now: near enough, still burning, and
-        with nothing hostile around it. A fire still on its cooldown is offered anyway, so
-        the prompt can say why nothing happens rather than silently vanishing."""
-        pos = player.get_pos()
-        camps = [
-            poi
-            for poi in self.pois
-            if poi.has_fire
-            and poi.distance_to_point(pos) < c.PointsOfInterest.REST_DISTANCE
-            and self.camp_is_clear(poi)
-        ]
-        return min(camps, key=lambda poi: poi.distance_to_point(pos), default=None)
-
-    def rest_ready_in(self, key: str) -> float:
-        """Seconds until this fire or bed will serve the player again; 0 when it's ready now.
-        Keyed by POI id for a campfire, by building id for a villager's bed."""
-        return max(0.0, self.rest_cooldowns.get(key, 0.0) - time.time())
-
-    def rest_at_camp(self, player: Player, poi: PointOfInterest):
-        """Sit at a camp's fire: some health back, and the post-death weakness shaken off.
-
-        Not a full heal and not repeatable: this particular fire goes cold on the player for
-        REST_COOLDOWN_S afterwards. Otherwise any cleared camp is a health button to stand
-        next to, and the walk back to town for a bed or a potion stops meaning anything.
-        """
-        remaining = self.rest_ready_in(poi.id)
-        if remaining > 0:
-            if self.notify:
-                self.notify(f"This fire has burned low. Usable again in {int(remaining) + 1}s", c.Colors.MUTED)
-            return
-        self.rest_cooldowns[poi.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
-        player.heal(player.max_hp * c.PointsOfInterest.REST_HEAL_FRAC)
-        player.clear_death_debuff()
-        play_sound("rest")
-        get_particles().spawn_burst(poi.x + 40, poi.y + 12, (255, 170, 60), count=18, speed=3, life=700, size=4)
-        if self.notify:
-            self.notify("You rest at the fire. Some wounds close, nerves steadied.", (255, 190, 110))
-
-    def shrine_in_reach(self, player: Player) -> PointOfInterest | None:
-        """The shrine the player could pray at right now: near enough, and not yet answered.
-        A spent shrine offers nothing, so it stops prompting entirely."""
-        pos = player.get_pos()
-        shrines = [
-            poi
-            for poi in self.pois
-            if poi.kind == "shrine"
-            and not poi.prayed
-            and poi.distance_to_point(pos) < c.PointsOfInterest.SHRINE_PRAY_DISTANCE
-        ]
-        return min(shrines, key=lambda poi: poi.distance_to_point(pos), default=None)
-
-    def pray_at_shrine(self, player: Player, poi: PointOfInterest):
-        """Take the shrine's one answer: usually a timed blessing, sometimes a curse. Once
-        per shrine ever (`prayed` is persisted), so praying is a gamble rather than a tap.
-
-        Blessings are the ordinary potion buffs, read back by the same multipliers, and the
-        curses reuse what the game already does to the player: the Shaken weakness dying
-        leaves behind, a bite out of the purse, a bite out of the health bar.
-        """
-        if poi.prayed:
-            return
-        poi.prayed = True
-        self.poi_state[poi.id] = poi.state()
-
-        if random.random() < c.PointsOfInterest.SHRINE_CURSE_CHANCE:
-            kind, message = random.choice(c.PointsOfInterest.SHRINE_CURSES)
-            amount = 0
-            if kind == "weakness":
-                player.apply_weakness(c.PointsOfInterest.SHRINE_CURSE_WEAKNESS_S)
-            elif kind == "tithe":
-                amount = int(player.coins * c.PointsOfInterest.SHRINE_CURSE_TITHE_FRAC)
-                player.add_coins(-amount)
-            else:
-                player.receive_damage(round(player.max_hp * c.PointsOfInterest.SHRINE_CURSE_WOUND_FRAC))
-            get_particles().spawn_burst(poi.x, poi.y - 20, (120, 40, 140), count=22, speed=4, life=800, size=4)
-            play_sound("player_hurt")
-            if self.notify:
-                self.notify(message.format(amount=amount), (190, 90, 200))
-            return
-
-        effect, magnitude, duration, message = random.choice(c.PointsOfInterest.SHRINE_BLESSINGS)
-        player.apply_buff(effect, magnitude, duration)
-        get_particles().spawn_burst(poi.x, poi.y - 20, (240, 225, 150), count=22, speed=4, life=800, size=4)
-        play_sound("level_up")
-        if self.notify:
-            self.notify(message, (245, 230, 150))
-
-    def mark_rumor(self, x: float, y: float, label: str):
-        """Put a rumour's subject on the minimap. Session-only and deliberately not saved:
-        a rumour is a lead to follow now, not a permanent pin, and it rubs itself out as
-        soon as the player has walked close enough to see the place themselves."""
-        self.rumor_marks.append({"x": x, "y": y, "label": label})
-
-    def _clear_reached_rumors(self, player: Player):
-        self.rumor_marks = [
-            mark
-            for mark in self.rumor_marks
-            if math.hypot(mark["x"] - player.x, mark["y"] - player.y) > c.Minimap.RUMOR_CLEAR_DISTANCE
-        ]
-
-    def provoke_village(self, npc: NPC) -> List[NPC]:
-        """Turn a settlement on the player after one of its people is struck, returning
-        everyone who just went hostile (so the caller can strike their quests off).
-
-        Everyone whose home village this is drops what they were doing and comes for the
-        player, their goodwill gone and any quest they were offering with it. Violence in
-        town is a decision, not a stray click: the whole place remembers it, and nothing
-        here ever calms them back down.
-        """
-        village = self.village_at(npc.x, npc.y)
-        if village is None:
-            # A camper or a wandering merchant out in the wilds has no village behind them.
-            crowd = [npc]
-        else:
-            crowd = [other for other in self.npcs if village.contains_point(other.x, other.y)]
-
-        newly_hostile = [other for other in crowd if not other.hostile]
-        if not newly_hostile:
-            return newly_hostile
-        for other in newly_hostile:
-            other.hostile = True
-            other.affinity = c.Affinity.MIN
-        # The dogs go with their people. A settlement turning on the player turns everything
-        # it keeps on the player, and a dog is faster than a villager.
-        if village is not None:
-            key = f"{village.chunk[0]}:{village.chunk[1]}"
-            for dog in self.critters:
-                if dog.village_key == key:
-                    dog.aggro()
-        if self.notify:
-            name = village.name if village is not None and village.name else "The locals"
-            self.notify(f"{name} turns on you!", c.Colors.RED)
-        return newly_hostile
-
-    def theft_witness(self, x: float, y: float) -> NPC | None:
-        """Whoever sees the player helping themselves at (x, y), or None if nobody is looking.
-
-        Deliberately a plain distance test rather than a roll: the player can see who is on
-        the street before they open the chest, so getting caught is a decision they made and
-        not luck. Night halves the radius, which is what makes robbing a house something you
-        do after dark. Anyone already hostile is past caring what else the player takes."""
-        radius = c.Crime.WITNESS_RADIUS * (c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0)
-        seen = [npc for npc in self.npcs if not npc.hostile and npc.distance_to_point((x, y)) <= radius]
-        return min(seen, key=lambda npc: npc.distance_to_point((x, y)), default=None)
-
-    def rest_in_house(self, building: Building) -> None:
-        """Note that this household's bed has been slept in, so it isn't a free full heal to
-        stand next to: the same cooldown a campfire gets, kept per building and persisted."""
-        self.rest_cooldowns[building.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
-
-    def catch_thief(self, npc: NPC) -> NPC:
-        """One villager catches the player stealing and comes for them, alone.
-
-        The single exception to violence's all-or-nothing rule: theft is between the player
-        and whoever saw it, so the rest of the village goes on with its day. Swinging back
-        at the one who caught you is what turns the whole place, through the usual
-        `provoke_village`. Like every other way an NPC turns, there is no way back."""
-        npc.hostile = True
-        npc.affinity = c.Affinity.MIN
-        if self.notify:
-            name = npc.name or "A villager"
-            self.notify(f"{name} catches you in the act!", c.Colors.RED)
-        return npc
-
-    def house_to_rob(self, npc: NPC) -> Building | None:
-        """A house in this NPC's village whose chest nobody has emptied yet, for a steal quest
-        to name. None out in the wilds, or in a village already picked clean."""
-        village = self.village_at(npc.x, npc.y)
-        if village is None:
-            return None
-        houses = [
-            building
-            for building in self.buildings
-            if building.kind == "house" and not building.looted and village.contains_point(building.x, building.y)
-        ]
-        return random.choice(houses) if houses else None
 
     def night_damage_mult(self) -> float:
         """How much harder everything hits right now. A property of the hour, not of the
@@ -651,17 +325,11 @@ class World(WorldCombat, WorldStreaming):
     def buildings_in_range(self, x, y, radius) -> List[Building]:
         """Every building in the chunks covering the box of `radius` around (x, y). For
         callers working over an area (a swing's reach, a detour, the map) rather than a point."""
-        size = c.World.CHUNK_SIZE
         found = {}
-        for cx in range(int((x - radius) // size), int((x + radius) // size) + 1):
-            for cy in range(int((y - radius) // size), int((y + radius) // size) + 1):
-                for building in self._buildings_by_chunk.get((cx, cy), ()):
-                    found[building.id] = building
+        for chunk in self._chunk_window(x, y, radius):
+            for building in self._buildings_by_chunk.get(chunk, ()):
+                found[building.id] = building
         return list(found.values())
-
-    def buildings_around(self, x, y) -> List[Building]:
-        """The buildings of the chunk block around (x, y), the usual local query."""
-        return self.buildings_in_range(x, y, c.World.CHUNK_SIZE)
 
     def blocked(self, x, y, radius) -> bool:
         if any(village.blocks(x, y, radius) for village in self._wells_by_chunk.get(self._chunk_of(x, y), ())):
@@ -671,6 +339,8 @@ class World(WorldCombat, WorldStreaming):
         return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
 
     def _chunk_window(self, x, y, radius) -> List[tuple[int, int]]:
+        """Every chunk covering the box of `radius` around (x, y). The one place that walk
+        is written, shared by the building lookup and by the scenery the renderer asks for."""
         size = c.World.CHUNK_SIZE
         return [
             (cx, cy)
@@ -784,7 +454,7 @@ class World(WorldCombat, WorldStreaming):
         whole detour, rather than just picking the nearest corner, is what stops a monster
         oscillating between the near corner behind it and the far corner it should round.
         """
-        for building in self.buildings_around(*start):
+        for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE):
             margin = radius + 8
             rect = building.rect.inflate(margin * 2, margin * 2)
             # A goal inside the shell is that building's own doorway; walking round the
@@ -838,6 +508,7 @@ class World(WorldCombat, WorldStreaming):
     def spawn_boss_for_quest(self) -> Boss:
         """Spawn a boss out in the dangerous outer ring as a quest hunt target."""
         center = c.World.WORLD_SIZE // 2
+        x = y = center
         for _ in range(20):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(c.Boss.ROAM_MIN_DISTANCE, c.World.WORLD_SIZE // 2)
@@ -849,6 +520,9 @@ class World(WorldCombat, WorldStreaming):
                 and not self.blocked(x, y, c.MONSTER_MAX_SIZE)
             ):
                 break
+        # A boss never despawns, so unlike a monster it can't be left standing in a wall
+        # if every roll was blocked: whatever came out of the loop is stepped clear first.
+        x, y = self.free_spot_near(x, y, c.MONSTER_MAX_SIZE)
         tag = f"quest_boss_{random.randint(1000, 9999)}"
         return self.spawn_boss(x, y, quest_tag=tag)
 
@@ -1064,97 +738,6 @@ class World(WorldCombat, WorldStreaming):
             same_pack = other.kind is critter.kind and near
             if same_pack or (critter.village_key and other.village_key == critter.village_key):
                 other.aggro()
-
-    def _check_poi_discovery(self, player: Player):
-        """The one-time line a landmark gives up the first time the player walks to it: a
-        shrine's flavor, a quiet landmark saying what it is, a signpost or a camper pointing
-        the way to somewhere still unexplored."""
-        pos = player.get_pos()
-        for poi in self.pois:
-            if poi.discovered or poi.distance_to_point(pos) >= c.PointsOfInterest.DISCOVER_DISTANCE:
-                continue
-            if poi.kind == "shrine":
-                poi.discovered = True
-                if self.notify:
-                    flavor = random.choice(c.PointsOfInterest.SHRINE_MESSAGES)
-                    self.notify(f"{flavor} {c.PointsOfInterest.SHRINE_EXPLANATION}", c.Colors.WHITE)
-            elif poi.kind in c.PointsOfInterest.LANDMARK_MESSAGES:
-                poi.discovered = True
-                if self.notify:
-                    self.notify(random.choice(c.PointsOfInterest.LANDMARK_MESSAGES[poi.kind]), c.Colors.WHITE)
-            elif poi.kind == "signpost":
-                poi.discovered = True
-                if self.notify:
-                    self.notify(self._signpost_directions(poi), (200, 190, 150))
-            elif poi.variant == "traveller":
-                poi.discovered = True
-                if self.notify:
-                    self.notify(self._traveller_directions(poi), (200, 190, 150))
-
-    def unexplored_lead(self, from_x: float, from_y: float):
-        """The nearest place the player has not walked to yet, as (distance, x, y, label),
-        or None when everything around here is already known. Village sites and points of
-        interest are both pure functions of their chunk, so this can point at places that
-        have never been generated, which is exactly what makes it worth hearing. Shared by
-        a traveller's directions and by the rumours the map marks."""
-        best = None
-        radius = c.PointsOfInterest.HINT_CHUNK_RADIUS
-        cx, cy = self._chunk_of(from_x, from_y)
-        for gx in range(cx - radius, cx + radius + 1):
-            for gy in range(cy - radius, cy + radius + 1):
-                candidates = [(site, "a settlement") for site in [village_site(gx, gy)] if site is not None]
-                for other in pois_for_chunk(gx, gy, self.buildings):
-                    candidates.append(((other.x, other.y), _POI_HINT_LABELS[other.kind]))
-                for (x, y), label in candidates:
-                    distance = math.hypot(x - from_x, y - from_y)
-                    if distance < c.PointsOfInterest.HINT_MIN_DISTANCE or self.is_explored(x, y):
-                        continue
-                    if best is None or distance < best[0]:
-                        best = (distance, x, y, label)
-        return best
-
-    def _signpost_directions(self, poi: PointOfInterest) -> str:
-        """What a signpost reads out: the way to the nearest place the player has not walked
-        to, marked on the map like a rumour so the lead is worth the detour to read it."""
-        best = self.unexplored_lead(poi.x, poi.y)
-        if best is None:
-            return "The signpost points at places you have already been."
-        _distance, x, y, label = best
-        bearing = _compass_direction(x - poi.x, y - poi.y)
-        self.mark_rumor(x, y, label)
-        return f"The signpost still reads: {label}, {bearing} of here."
-
-    def _traveller_directions(self, poi: PointOfInterest) -> str:
-        """What the camper at a traveller camp tells the player: where the nearest thing they
-        have not walked to yet lies."""
-        best = self.unexplored_lead(poi.x, poi.y)
-        if best is None:
-            return "The camper has nothing left to point you towards."
-        distance, x, y, label = best
-        bearing = _compass_direction(x - poi.x, y - poi.y)
-        reach = "not far" if distance < 1800 else ("a fair walk" if distance < 3200 else "a long way")
-        return f"The camper points {bearing}: {label}, {reach} from here."
-
-    def is_explored(self, x, y) -> bool:
-        """True once the player has walked close enough to this spot for the map to remember it."""
-        cell = c.Fog.CELL
-        return (int(x // cell), int(y // cell)) in self.explored
-
-    def _reveal_around(self, player: Player):
-        """Remember the ground around the player. Only recomputed when they cross into a new
-        cell, so the common case costs one comparison."""
-        cell = c.Fog.CELL
-        here = (int(player.x // cell), int(player.y // cell))
-        if here == self._last_reveal_cell:
-            return
-        self._last_reveal_cell = here
-        span = int(c.Fog.REVEAL_RADIUS // cell) + 1
-        for dx in range(-span, span + 1):
-            for dy in range(-span, span + 1):
-                gx, gy = here[0] + dx, here[1] + dy
-                center = ((gx + 0.5) * cell, (gy + 0.5) * cell)
-                if math.hypot(center[0] - player.x, center[1] - player.y) <= c.Fog.REVEAL_RADIUS:
-                    self.explored.add((gx, gy))
 
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of

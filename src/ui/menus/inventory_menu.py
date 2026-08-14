@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Optional
 import pygame
 
 import core.constants as c
+from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import (
     ACCESSORY_FLAVOR_LABELS,
     affix_label,
     base_value,
-    draw_shape_with_border,
     potion_description,
     rarity_color,
     rarity_tier,

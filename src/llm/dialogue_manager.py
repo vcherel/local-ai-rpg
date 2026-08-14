@@ -11,7 +11,8 @@ import core.constants as c
 from core import dialogue_log
 from core.audio import play_sound
 from core.utils import ConversationHistory
-from game.entities.items import draw_shape_with_border, potion_description
+from game.entities.item_icons import draw_shape_with_border
+from game.entities.items import potion_description
 from game.quest import COUNTED_QUEST_TYPES
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem
@@ -45,6 +46,48 @@ SENTENCE_END_RE = re.compile(r"[.!?…]['\"]?(?=\s|$)")
 # here on purpose: the model sometimes opens with one, which would cut the reply to
 # nothing. The stream itself drops everything past the first line break instead.
 DIALOGUE_STOPS = ["Player:", "player:"]
+
+
+# What an NPC is told about the quest they gave, per quest type: the line for a task just
+# finished, the line reminding them what they asked for, and the line saying how far the
+# player has got with it. Formatted against the quest's own fields, so adding a quest type
+# is three strings here rather than another branch in `_build_system_prompt`.
+QUEST_LINES = {
+    "clear_camp": (
+        "The player has just wiped out the bandit camp you sent them to ({description}). ",
+        "You asked the player to wipe out a bandit camp ({description}). ",
+        "The bandits are still there. ",
+    ),
+    "deliver": (
+        "The player has just delivered your {item_name} to {recipient} ({description}). ",
+        "You asked the player to carry your {item_name} to {recipient} ({description}). ",
+        "They have not delivered it yet. ",
+    ),
+    "steal": (
+        "The player has just brought you the {item_name} you asked them to steal ({description}). ",
+        "You asked the player to steal a {item_name} from a neighbour's house ({description}). "
+        "Keep your voice down about it. ",
+        "They have not brought it to you yet. ",
+    ),
+    "slay_boss": (
+        "The player has just slain the boss you asked them to defeat ({description}). ",
+        "You asked the player to slay a powerful boss terrorizing the area ({description}). ",
+        "They have not defeated it yet. ",
+    ),
+    "kill_mob": (
+        "The player has just killed the {kill_count} {monster_kind}(s) you asked for ({description}). ",
+        "You asked the player to kill {kill_count} {monster_kind}(s). ",
+        "They have killed {kills_done}/{kill_count} so far. ",
+    ),
+}
+
+# Fetching a named thing is the shape every other quest type falls back to: the objective
+# is an item, so the status is simply whether the player is carrying it yet.
+FETCH_LINES = (
+    "The player has just brought you {item_name} that you asked for ({description}). ",
+    "You asked the player to fetch {item_name}. ",
+    "{fetch_status}",
+)
 
 
 def _ware_effect(item) -> str:
@@ -142,84 +185,7 @@ class DialogueManager:
             )
 
         if npc.has_active_quest:
-            quest = npc.quest
-            if quest_complete:
-                if quest.quest_type == "clear_camp":
-                    system_prompt += (
-                        f"The player has just wiped out the bandit camp you sent them to ({quest.description}). "
-                        f"Thank them and give them their reward"
-                    )
-                elif quest.quest_type == "deliver":
-                    system_prompt += (
-                        f"The player has just delivered your {quest.item_name} to {quest.recipient_npc_name} "
-                        f"({quest.description}). Thank them and give them their reward"
-                    )
-                elif quest.quest_type == "steal":
-                    system_prompt += (
-                        f"The player has just brought you the {quest.item_name} you asked them to steal "
-                        f"({quest.description}). Thank them and give them their reward"
-                    )
-                elif quest.quest_type == "slay_boss":
-                    system_prompt += (
-                        f"The player has just slain the boss you asked them to defeat ({quest.description}). "
-                        f"Thank them and give them their reward"
-                    )
-                elif quest.quest_type == "kill_mob":
-                    system_prompt += (
-                        f"The player has just killed the {quest.kill_count} {quest.target_monster_kind}(s) "
-                        f"you asked for ({quest.description}). Thank them and give them their reward"
-                    )
-                else:
-                    system_prompt += (
-                        f"The player has just brought you {quest.item_name} that you asked for "
-                        f"({quest.description}). Thank them and give them their reward"
-                    )
-                if quest.reward_item_name:
-                    system_prompt += f" (your {quest.reward_item_name} and any coins you promised)"
-                else:
-                    system_prompt += " in coins"
-                system_prompt += ". "
-            elif quest.quest_type == "clear_camp":
-                system_prompt += f"You asked the player to wipe out a bandit camp ({quest.description}). "
-                if quest.reward_item_name:
-                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                system_prompt += "The bandits are still there. "
-            elif quest.quest_type == "deliver":
-                system_prompt += (
-                    f"You asked the player to carry your {quest.item_name} to {quest.recipient_npc_name} "
-                    f"({quest.description}). "
-                )
-                if quest.reward_item_name:
-                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                system_prompt += "They have not delivered it yet. "
-            elif quest.quest_type == "steal":
-                system_prompt += (
-                    f"You asked the player to steal a {quest.item_name} from a neighbour's house "
-                    f"({quest.description}). Keep your voice down about it. "
-                )
-                if quest.reward_item_name:
-                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                system_prompt += "They have not brought it to you yet. "
-            elif quest.quest_type == "slay_boss":
-                system_prompt += (
-                    f"You asked the player to slay a powerful boss terrorizing the area ({quest.description}). "
-                )
-                if quest.reward_item_name:
-                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                system_prompt += "They have not defeated it yet. "
-            elif quest.quest_type == "kill_mob":
-                system_prompt += f"You asked the player to kill {quest.kill_count} {quest.target_monster_kind}(s). "
-                if quest.reward_item_name:
-                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                system_prompt += f"They have killed {quest.kills_done}/{quest.kill_count} so far. "
-            elif quest.item_name:
-                system_prompt += f"You asked the player to fetch {quest.item_name}. "
-                if quest.reward_item_name:
-                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
-                if quest.item and quest.item in self.quest_system.player.inventory:
-                    system_prompt += "The player now has it in their inventory. "
-                else:
-                    system_prompt += "The player has not found it yet. "
+            system_prompt += self._quest_lines(npc.quest, quest_complete)
         else:
             system_prompt += (
                 "You may have needs or problems. "
@@ -239,6 +205,40 @@ class DialogueManager:
         )
 
         return system_prompt
+
+    def _quest_lines(self, quest, quest_complete: bool) -> str:
+        """What to tell an NPC about the quest they gave: that the player has just finished
+        it and is owed a reward, or what was asked for and how far they have got with it."""
+        carrying = quest.item is not None and quest.item in self.quest_system.player.inventory
+        fields = {
+            "description": quest.description,
+            "item_name": quest.item_name,
+            "recipient": quest.recipient_npc_name,
+            "kill_count": quest.kill_count,
+            "kills_done": quest.kills_done,
+            "monster_kind": quest.target_monster_kind,
+            "fetch_status": (
+                "The player now has it in their inventory. " if carrying else "The player has not found it yet. "
+            ),
+        }
+        known_type = quest.quest_type in QUEST_LINES
+        done_line, asked_line, pending_line = QUEST_LINES.get(quest.quest_type, FETCH_LINES)
+
+        if quest_complete:
+            reward = (
+                f" (your {quest.reward_item_name} and any coins you promised)"
+                if quest.reward_item_name
+                else " in coins"
+            )
+            return done_line.format(**fields) + "Thank them and give them their reward" + reward + ". "
+
+        # A quest that is neither one of the known types nor about a named item has nothing
+        # to remind the NPC of, so it is left out of the prompt entirely.
+        if not known_type and not quest.item_name:
+            return ""
+
+        promise = f"You promised them your {quest.reward_item_name} as a reward. " if quest.reward_item_name else ""
+        return asked_line.format(**fields) + promise + pending_line.format(**fields)
 
     def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, world: World):
         npc.assign_name(npc_name_generator)

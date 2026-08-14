@@ -55,10 +55,6 @@ class Breakable:
             self._draw_herbs(screen, center, rng)
         elif self.kind == "sapling":
             self._draw_sapling(screen, center, rng)
-        elif self.kind == "pot":
-            # Only ever reached by a save made before the clay pots were replaced by
-            # something growing; new villages never roll one.
-            self._draw_pot(screen, center)
         else:
             self._draw_barrel(screen, center)
 
@@ -72,19 +68,6 @@ class Breakable:
         for frac in (0.28, 0.72):
             band_y = round(body.top + body.height * frac)
             pygame.draw.line(screen, (66, 44, 24), (body.left + 2, band_y), (body.right - 2, band_y), 3)
-
-    @staticmethod
-    def _draw_pot(screen: pygame.Surface, center):
-        cx, cy = center
-        size = round(c.Breakables.SIZE * 0.75)
-        body = pygame.Rect(0, 0, size, round(size * 0.85))
-        body.center = (cx, cy + size // 6)
-        pygame.draw.rect(screen, (168, 92, 56), body, border_radius=6)
-        pygame.draw.rect(screen, (110, 58, 34), body, 2, border_radius=6)
-        rim = pygame.Rect(0, 0, round(size * 1.05), round(size * 0.22))
-        rim.center = (cx, body.top + 2)
-        pygame.draw.ellipse(screen, (188, 112, 70), rim)
-        pygame.draw.ellipse(screen, (110, 58, 34), rim, 2)
 
     @staticmethod
     def _draw_bush(screen: pygame.Surface, center, rng: random.Random):

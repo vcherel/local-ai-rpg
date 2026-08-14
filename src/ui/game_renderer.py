@@ -9,7 +9,8 @@ import core.constants as c
 from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
-from game.entities.items import POTION_EFFECT_LABELS, draw_shape_with_border, rarity_color
+from game.entities.item_icons import draw_shape_with_border
+from game.entities.items import POTION_EFFECT_LABELS, rarity_color
 from ui import widgets
 from ui.loading_indicator import LoadingIndicator
 from ui.minimap import Minimap
@@ -167,19 +168,18 @@ class GameRenderer:
         y -= 30
         bob = math.sin(pygame.time.get_ticks() / 260.0) * 3
 
-        label = c.Fonts.small.render(interaction.label, True, c.Colors.WHITE)
-        lines = [(label, c.Colors.WHITE)]
+        lines = [c.Fonts.small.render(interaction.label, True, c.Colors.WHITE)]
         if interaction.hint:
-            lines.append((c.Fonts.small.render(interaction.hint, True, c.Colors.ACCENT), c.Colors.ACCENT))
+            lines.append(c.Fonts.small.render(interaction.hint, True, c.Colors.ACCENT))
 
-        width = max(surface.get_width() for surface, _ in lines) + 16
-        height = sum(surface.get_height() for surface, _ in lines) + 6 * len(lines)
+        width = max(surface.get_width() for surface in lines) + 16
+        height = sum(surface.get_height() for surface in lines) + 6 * len(lines)
         box = pygame.Rect(0, 0, width, height)
         box.midbottom = (round(x), round(y + bob))
         widgets.draw_panel(self.screen, box)
 
         line_y = box.y + 3
-        for surface, _color in lines:
+        for surface in lines:
             self.screen.blit(surface, (box.centerx - surface.get_width() // 2, line_y))
             line_y += surface.get_height() + 6
 
@@ -466,7 +466,7 @@ class GameRenderer:
         name_surface = c.Fonts.button.render(label, True, c.Colors.WHITE)
         self.screen.blit(name_surface, ((c.Screen.WIDTH - name_surface.get_width()) // 2, y - 26))
 
-    def draw_offscreen_indicators(self, camera: Camera, target, color=c.Colors.YELLOW):
+    def draw_offscreen_indicators(self, camera: Camera, target):
         """One arrow, for the tracked quest's target and nothing else. Pointing at every
         dropped item and every boss on the map turned the screen edge into noise; loot is
         found by looking at it now (Item.draw's ground glow), not by following an arrow."""
@@ -505,7 +505,7 @@ class GameRenderer:
         ]
 
         arrow_surface = pygame.Surface((arrow_size * 3, arrow_size * 3), pygame.SRCALPHA)
-        pygame.draw.polygon(arrow_surface, (*color, 120), local_points)
+        pygame.draw.polygon(arrow_surface, (*c.Colors.YELLOW, 120), local_points)
         pygame.draw.polygon(arrow_surface, (*c.Colors.BLACK, 150), local_points, 1)
         self.screen.blit(arrow_surface, (arrow_x - arrow_size * 1.5, arrow_y - arrow_size * 1.5))
 
