@@ -44,6 +44,11 @@ class Death:
     # How long the death screen holds before the player is put back at world spawn.
     RESPAWN_DELAY_S: float = 2.5
 
+    # Nothing lands on the player for this long after they spawn or respawn, so a death can
+    # never chain into the next one before they have their bearings. It ends the moment they
+    # swing or shoot: the window is there to get out of trouble, not to open a fight for free.
+    SPAWN_GRACE_S: float = 3.0
+
     # The death screen mocks the player with an LLM-written line. Generated ahead of time
     # into a buffer (llm/death_taunts.py), because the screen is blocking and waiting on
     # the model there would turn a death into a stall; these are what it says if the

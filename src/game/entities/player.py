@@ -122,6 +122,11 @@ class Player(Entity):
         self.guardian_ward_cooldown_until = save_system.load("guardian_ward_cooldown_until", 0.0)
         self.guardian_ward_invuln_until = 0.0
 
+        # Spawn grace: nothing lands until this wall-clock time. Session-only and deliberately
+        # not persisted, unlike the debuff and the ward cooldown: it is granted on every entry
+        # into the world anyway, so there is nothing a save could bank or lose.
+        self.invuln_until = 0.0
+
         # What last landed a blow on the player, named the way the death screen says it.
         # Session-only: read once, between the killing hit and the screen it feeds.
         self.last_hit_by = ""
@@ -616,6 +621,12 @@ class Player(Entity):
 
     def receive_damage(self, damage, source=None):
         now = time.time()
+        # Spawn grace: the few seconds after arriving in the world or coming back from a
+        # death, so a respawn can never chain straight into the next one.
+        if now < self.invuln_until:
+            get_particles().spawn_burst(self.x, self.y, c.Colors.WHITE, count=4, speed=3, life=250, size=3)
+            return
+
         # Guardian's Ward: while its brief invulnerability window is up, nothing lands.
         if now < self.guardian_ward_invuln_until:
             get_particles().spawn_burst(self.x, self.y, (255, 215, 120), count=6, speed=3, life=250, size=3)
@@ -758,7 +769,30 @@ class Player(Entity):
             }
         return gear
 
+    def grant_spawn_grace(self):
+        """Open the untouchable window the player arrives in the world with."""
+        self.invuln_until = time.time() + c.Death.SPAWN_GRACE_S
+
+    def end_spawn_grace(self):
+        """Swinging or shooting spends the window: it is there to get the player out of
+        whatever killed them, not to let them open a fight for free."""
+        self.invuln_until = 0.0
+
+    def _draw_spawn_grace(self, screen):
+        """The window is worth nothing if the player can't see it. A ring pulsing round the
+        body, fading as the last of it runs out, so its end is read rather than discovered."""
+        left = self.invuln_until - time.time()
+        if left <= 0:
+            return
+        pulse = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 90.0)
+        alpha = int(min(left / c.Death.SPAWN_GRACE_S, 1.0) * (90 + 90 * pulse))
+        radius = c.Player.SIZE // 2 + 12 + int(4 * pulse)
+        halo = pygame.Surface((radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(halo, (*c.Colors.WHITE, alpha), (radius + 2, radius + 2), radius, 3)
+        screen.blit(halo, halo.get_rect(center=(c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y)))
+
     def draw(self, screen):
+        self._draw_spawn_grace(screen)
         super().draw(
             screen,
             c.Screen.ORIGIN_X,

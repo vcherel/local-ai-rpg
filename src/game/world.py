@@ -155,7 +155,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             self.breakables = generate_breakables(self.buildings)
             self._populate_npcs(self.buildings)
             self.monsters = [
-                self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.NB_MONSTERS)
+                self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.ROAMING_CAP_FAR)
             ]
             self._spawn_landmark_boss()
         self._index_buildings()
@@ -191,7 +191,9 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         min_dist = c.World.INITIAL_SPAWN_MIN_DISTANCE
         for _ in range(20):
             x, y = random.randint(0, c.World.WORLD_SIZE), random.randint(0, c.World.WORLD_SIZE)
-            if math.hypot(x - center, y - center) >= min_dist and not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
+            if math.hypot(x - center, y - center) < min_dist or self._spawn_is_sheltered(x, y):
+                continue
+            if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
                 return x, y
         # Nothing clear in 20 tries: settle for the last roll rather than looping forever.
         # A monster standing in a wall beats hanging world generation.
@@ -407,6 +409,42 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         # Walled in on every side within the search: leave the caller where they were
         # rather than teleporting them somewhere arbitrary.
         return x, y
+
+    def hostiles_near(self, x, y, radius: float) -> list:
+        """Everything within `radius` of (x, y) that would attack the player: monsters,
+        bosses, villagers who have turned, and animals currently hunting."""
+        near = []
+        near += [m for m in self.monsters if m.distance_to_point((x, y)) <= radius]
+        near += [b for b in self.bosses if b.distance_to_point((x, y)) <= radius]
+        near += [n for n in self.npcs if n.hostile and n.distance_to_point((x, y)) <= radius]
+        near += [cr for cr in self.critters if cr.hostile and cr.distance_to_point((x, y)) <= radius]
+        return near
+
+    def safe_spot_near(self, x, y, radius, clearance: float = None) -> tuple[float, float]:
+        """Where to put the player: `free_spot_near` knows only about geometry, and a point
+        with no wall in it is not safe if whatever killed the player is standing on it. Same
+        outward ring search, with candidates holding anything hostile within `clearance`
+        rejected as well, falling back to the geometric answer when the search finds nowhere
+        clear (better a rough spawn than a hang)."""
+        clearance = c.World.SAFE_SPOT_CLEARANCE if clearance is None else clearance
+        if not self.blocked(x, y, radius) and not self.hostiles_near(x, y, clearance):
+            return x, y
+        step = radius * 2
+        for ring in range(1, c.World.FREE_SPOT_MAX_RINGS + 1):
+            distance = ring * step
+            for index in range(ring * 8):
+                angle = 2 * math.pi * index / (ring * 8)
+                cx, cy = x + math.cos(angle) * distance, y + math.sin(angle) * distance
+                if not self.blocked(cx, cy, radius) and not self.hostiles_near(cx, cy, clearance):
+                    return cx, cy
+        return self.free_spot_near(x, y, radius)
+
+    def clear_hostiles_around(self, x, y, radius: float):
+        """Send the roaming monsters standing around (x, y) back out into the wilds. Used
+        when the player respawns: the pack that killed them shouldn't still be bearing down
+        on the spawn point. Bosses and camp garrisons stay put, being where they belong and
+        not something to be rid of by dying."""
+        self.monsters = [m for m in self.monsters if m.camp_id or m.distance_to_point((x, y)) > radius]
 
     def building_at(self, x, y) -> Building | None:
         """The building whose floor (x, y) stands on, or None. Buildings are kept far enough
@@ -703,9 +741,32 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         ]
         return min(in_reach, key=lambda item: item.distance_to_point(pos), default=None)
 
-    def village_at(self, x, y) -> Village | None:
-        """The village whose grounds (x, y) stands on, or None out in the wilds."""
-        return next((village for village in self.villages if village.contains_point(x, y)), None)
+    def village_at(self, x, y, margin: float = 0) -> Village | None:
+        """The village whose grounds (x, y) stands on, or None out in the wilds. `margin`
+        widens the grounds, which is what keeps a spawn off a settlement's doorstep."""
+        return next(
+            (village for village in self.villages if village.distance_to_point((x, y)) <= village.radius + margin),
+            None,
+        )
+
+    def _spawn_is_sheltered(self, x, y) -> bool:
+        """Whether (x, y) is ground nothing hostile may be spawned on: inside the ring the
+        world centre holds, or on a settlement's grounds or doorstep."""
+        center = c.World.WORLD_SIZE // 2
+        if math.hypot(x - center, y - center) < c.World.SAFE_RADIUS:
+            return True
+        return self.village_at(x, y, c.World.VILLAGE_SPAWN_MARGIN) is not None
+
+    def roaming_cap(self, player: Player) -> int:
+        """How many roaming monsters the world holds around the player right now. A ramp
+        from the near cap on the starting town's doorstep to the far cap out in the wilds,
+        rather than one world-wide number: the early game shouldn't be as crowded as the
+        ground the player reaches an hour later."""
+        center = c.World.WORLD_SIZE // 2
+        distance = math.hypot(player.x - center, player.y - center)
+        span = max(c.World.ROAMING_CAP_FAR_DISTANCE - c.World.SAFE_RADIUS, 1)
+        ratio = min(max((distance - c.World.SAFE_RADIUS) / span, 0.0), 1.0)
+        return round(c.World.ROAMING_CAP_NEAR + (c.World.ROAMING_CAP_FAR - c.World.ROAMING_CAP_NEAR) * ratio)
 
     def _spawn_monster_away_from(self, player: Player):
         for _ in range(10):
@@ -713,9 +774,14 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             dist = random.uniform(c.World.SPAWN_MIN_DISTANCE, c.World.SPAWN_MAX_DISTANCE)
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
-            # Monsters wander into settlements, but none of them starts life in one: a
-            # village should read as the safe ground between stretches of wilderness.
-            if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2) and self.village_at(x, y) is None:
+            # Monsters wander into settlements, but none of them starts life in one or on
+            # its doorstep: a village should read as the safe ground between stretches of
+            # wilderness. The starting town's ground is wider still (World.SAFE_RADIUS
+            # around the world centre), since that is where every run begins and every
+            # death sends the player back to.
+            if self._spawn_is_sheltered(x, y):
+                continue
+            if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
                 # What crawls out after dark is what lives much deeper in the wilds.
                 bonus = c.DayNight.NIGHT_DANGER_BONUS if self.daynight.is_night else 0
                 # A pack kind (wolves, goblins) is rolled once and then stood up as a group,
@@ -878,7 +944,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         # Camp guards don't count: they never despawn, so counting them would slowly choke
         # off the roaming population as the player finds more camps.
         roaming = sum(1 for m in self.monsters if not m.camp_id)
-        if roaming < c.World.NB_MONSTERS:
+        if roaming < self.roaming_cap(player):
             self.respawn_timer += dt
             respawn_interval = c.World.RESPAWN_INTERVAL_MS
             if self.events.blood_night_active:

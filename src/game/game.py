@@ -73,8 +73,10 @@ class Game:
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
         # A new game spawns at the fixed world centre, which the starting town's grid often
         # covers, so the player would start standing in a wall. Applied to a loaded position
-        # too, which frees a save left stuck inside one.
-        self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, c.Player.SIZE / 2)
+        # too, which frees a save left stuck inside one, and it looks past the walls: a save
+        # made mid-fight would otherwise load the player back under whatever they were
+        # fighting, with no chance to react while the first frame is still being drawn.
+        self.player.x, self.player.y = self.world.safe_spot_near(self.player.x, self.player.y, c.Player.SIZE / 2)
 
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
         # slay_boss quests spawn their target through the world.
@@ -568,7 +570,12 @@ class Game:
         self.player.last_hit_by = ""
         self.player.hp = self.player.max_hp
         center = c.World.WORLD_SIZE // 2
-        self.player.x, self.player.y = self.world.free_spot_near(center, center, c.Player.SIZE / 2)
+        # Nothing that was after the player is waiting for them at the spawn point: the pack
+        # is sent back out into the wilds (the respawn loop restocks it soon enough, further
+        # out), the player is placed clear of whatever is left, and the window they arrive in
+        # covers the seconds it takes to work out where they are.
+        self.world.clear_hostiles_around(center, center, c.World.SAFE_RADIUS)
+        self.player.x, self.player.y = self.world.safe_spot_near(center, center, c.Player.SIZE / 2)
         # Whatever was in the air when the player died shouldn't greet them at spawn.
         self.world.projectiles.clear()
         self.interior = None
@@ -577,6 +584,9 @@ class Game:
         self.save_data()
 
         run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S, taunt, killer)
+        # Granted after the death screen, not before: it holds for seconds of wall-clock time
+        # and would otherwise be spent staring at it.
+        self.player.grant_spawn_grace()
         self.loot_notification.show(f"You died. -{coins_lost} coins", c.Colors.RED)
 
     def _quit_to_menu(self):
@@ -599,6 +609,9 @@ class Game:
     def run(self):
         running = True
         last_save_time = pygame.time.get_ticks()
+        # Started here rather than in __init__ so the window covers the first seconds the
+        # player is actually playing, not the model loading and the world being built.
+        self.player.grant_spawn_grace()
 
         while running:
             self.active_menu = (
