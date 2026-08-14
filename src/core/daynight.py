@@ -38,6 +38,19 @@ class DayNightCycle:
     def is_night(self) -> bool:
         return self.darkness > 0.5
 
+    @property
+    def phase(self) -> str:
+        """What the clock in the HUD calls the current stretch of the cycle."""
+        d = c.DayNight
+        p = self.progress
+        if p < d.DAY_END:
+            return "Day"
+        if p < d.DUSK_END:
+            return "Dusk"
+        if p < d.NIGHT_END:
+            return "Night"
+        return "Dawn"
+
     def draw(self, surface: pygame.Surface, blood_night_active: bool):
         if blood_night_active:
             color = c.DayNight.BLOOD_NIGHT_COLOR

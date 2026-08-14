@@ -18,12 +18,13 @@ class PointOfInterest:
     """A wilderness landmark scattered between villages, so exploring away from the beaten
     path finds something worth the detour.
 
-    "ruins" is a smashable loot cache (game.loot.open_poi_cache); "shrine" is pure
-    discovery flavor, no loot, just a one-time line of text the first time the player walks
-    up to it; "camp" is either of two things, rolled from the POI's id so it never changes
-    under the player. A bandit camp posts guards around a cache that stays shut until they
-    are dead; a traveller camp holds a camper who trades and points the way. Either camp's
-    fire can be rested at once nothing hostile is standing near it.
+    "ruins" is a smashable loot cache (game.loot.open_poi_cache); "shrine" says what it is
+    the first time the player walks up to it and can then be prayed at once, answering with
+    a timed blessing or with a curse (World.pray_at_shrine); "camp" is either of two things,
+    rolled from the POI's id so it never changes under the player. A bandit camp posts guards
+    around a cache that stays shut until they are dead; a traveller camp holds a camper who
+    trades and points the way. Either camp's fire can be rested at once nothing hostile is
+    standing near it.
     """
 
     def __init__(self, x, y, kind="ruins", poi_id=""):
@@ -35,7 +36,8 @@ class PointOfInterest:
         # player changed (looted, discovered, camper spawned) is saved, keyed by this.
         self.id = poi_id
         self.looted = False
-        self.discovered = False  # shrine flavor line shown / traveller camp met
+        self.discovered = False  # shrine announced itself / traveller camp met
+        self.prayed = False  # this shrine has already answered, for good or ill
         self.npc_spawned = False  # traveller camp: its camper already exists in world.npcs
         # Bandit camp garrison, as a count rather than as entities. None until the camp has
         # first been seen, then the number of ordinary guards still alive plus whether the
@@ -73,7 +75,7 @@ class PointOfInterest:
     def touched(self) -> bool:
         """True once this POI holds state worth saving; an untouched one is fully described
         by its chunk seed."""
-        return self.looted or self.discovered or self.npc_spawned or self.guards_alive is not None
+        return self.looted or self.discovered or self.prayed or self.npc_spawned or self.guards_alive is not None
 
     @property
     def guards_remaining(self) -> int:
@@ -102,6 +104,7 @@ class PointOfInterest:
             "looted": self.looted,
             "discovered": self.discovered,
             "npc_spawned": self.npc_spawned,
+            "prayed": self.prayed,
             "guards_alive": self.guards_alive,
             "leader_alive": self.leader_alive,
         }
@@ -110,6 +113,7 @@ class PointOfInterest:
         self.looted = state.get("looted", False)
         self.discovered = state.get("discovered", False)
         self.npc_spawned = state.get("npc_spawned", False)
+        self.prayed = state.get("prayed", False)
         # A save from before camps counted their garrison leaves this None, so the camp
         # rolls a fresh one the next time it is walked up to.
         self.guards_alive = state.get("guards_alive")
@@ -205,6 +209,13 @@ class PointOfInterest:
         top.center = (cx, cy - 26)
         pygame.draw.rect(screen, (190, 185, 140), top)
         pygame.draw.rect(screen, (110, 108, 100), top, 2)
+        if not self.prayed:
+            # A shrine still holding an answer glows faintly, so a spent one is told apart
+            # from one worth walking to without reading a prompt.
+            pulse = 0.6 + 0.4 * math.sin(pygame.time.get_ticks() / 500.0)
+            glow = pygame.Surface((60, 60), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (230, 220, 150, round(45 * pulse)), (30, 30), 26)
+            screen.blit(glow, (cx - 30, cy - 36))
 
 
 def pois_for_chunk(cx: int, cy: int, buildings: List["Building"]) -> List[PointOfInterest]:

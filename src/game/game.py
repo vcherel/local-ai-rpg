@@ -26,7 +26,6 @@ from ui.menus.help_menu import HelpMenu
 from ui.menus.inventory_menu import InventoryMenu
 from ui.menus.pause_menu import PauseMenu
 from ui.menus.quest_menu import QuestMenu
-from ui.menus.rumor_menu import RumorMenu
 from ui.menus.shop_menu import ShopMenu
 from ui.menus.stats_menu import StatsMenu
 from ui.notification import ToastNotification
@@ -40,7 +39,7 @@ class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
 
-    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed" | "camp"
+    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed" | "camp" | "shrine"
     target: object
     label: str
     x: float
@@ -61,13 +60,12 @@ class Game:
         self.stats_menu = StatsMenu(self.screen)
         self.help_menu = HelpMenu(self.screen)
         self.pause_menu = PauseMenu(self.screen)
-        self.rumor_menu = RumorMenu(self.screen)
         self.loot_notification = ToastNotification(self.screen)
         # id of the last picked-up item flagged as a gear upgrade; F equips it.
         self.pending_upgrade_id = None
 
         self.save_system = save_system
-        self.world = World(self.save_system, self.context_window, self.loot_notification.show, self.rumor_menu.push)
+        self.world = World(self.save_system, self.context_window, self.loot_notification.show)
         self.game_renderer = GameRenderer(self.screen)
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
@@ -120,9 +118,6 @@ class Game:
                 # Closing the window ends the whole game, not just this session.
                 self.quit_app = True
                 return False
-
-            if self.rumor_menu.handle_event(event):
-                continue
 
             if self.context_window.handle_event(event):
                 continue
@@ -350,6 +345,13 @@ class Game:
             label = f"E: fire burned low ({int(cooling) + 1}s)" if cooling > 0 else "E: rest at the fire"
             offer(Interaction("camp", camp, label, camp.x + 40, camp.y), reach_of(camp.x, camp.y))
 
+        shrine = self.world.shrine_in_reach(self.player)
+        if shrine is not None:
+            offer(
+                Interaction("shrine", shrine, "E: pray at the shrine", shrine.x, shrine.y - 40),
+                reach_of(shrine.x, shrine.y),
+            )
+
         npc = self.world.npc_in_reach(self.player)
         # A merchant still waiting on its stock, someone who has turned on the player, or a
         # world whose context hasn't generated yet: no prompt for something the key wouldn't do.
@@ -382,6 +384,8 @@ class Game:
             self._sleep_in_bed()
         elif interaction.kind == "camp":
             self.world.rest_at_camp(self.player, interaction.target)
+        elif interaction.kind == "shrine":
+            self.world.pray_at_shrine(self.player, interaction.target)
 
     def _talk_to(self, npc):
         if self.world.context is None or not npc.can_talk or (npc.is_merchant and not npc.shop_ready):
@@ -521,10 +525,6 @@ class Game:
                 or self.help_menu.active
                 or self.pause_menu.active
             )
-            # A rumour finished generating on a background thread; open it now if the
-            # screen is free, so it never lands on top of another menu.
-            self.rumor_menu.update(self.active_menu)
-            self.active_menu = self.active_menu or self.rumor_menu.active
 
             running = self.handle_input()
             if not running:
@@ -590,7 +590,6 @@ class Game:
             self.help_menu.draw()
             self.pause_menu.draw()
             self.context_window.draw()
-            self.rumor_menu.draw()
 
             if not self.active_menu:
                 fps = self.clock.get_fps()

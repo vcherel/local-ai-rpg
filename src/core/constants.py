@@ -720,12 +720,24 @@ class Minimap:
     PLAYER_COLOR: tuple = (245, 245, 245)
     POI_COLORS = {"ruins": (150, 148, 140), "camp": (215, 140, 60), "shrine": (200, 195, 145)}
 
+    # A rumour is the one thing on the map the player has not walked to: it is drawn
+    # wherever it lies, clamped to the panel edge when it is further out than RANGE, and
+    # rubbed out once the player gets close enough to see the place for themselves.
+    RUMOR_COLOR: tuple = (236, 196, 92)
+    RUMOR_CLEAR_DISTANCE: int = 700
+
+    # The day/night dial under the map, drawn whether or not the map itself is shown.
+    CLOCK_HEIGHT: int = 46
+    CLOCK_DAY_COLOR: tuple = (238, 206, 120)
+    CLOCK_NIGHT_COLOR: tuple = (150, 170, 220)
+
 
 @dataclass(frozen=True)
 class PointsOfInterest:
     """Wilderness landmarks scattered across the map, away from town (game/entities/poi.py).
     "ruins" is a smashable loot cache, better odds and rarity than a plain outdoor barrel
-    since it takes more effort to find; "shrine" is pure discovery flavor, no loot at all;
+    since it takes more effort to find; "shrine" is a one-time gamble, prayed at for a
+    blessing that sometimes turns out to be a curse;
     a "camp" rolls into either a bandit camp (guarded cache) or a traveller camp (a camper
     who trades and points the way), and either way its fire can be rested at once the camp
     is settled.
@@ -744,7 +756,9 @@ class PointsOfInterest:
     # Relative pick weight among kinds scattered across the wilderness.
     KIND_WEIGHTS: tuple = (("ruins", 4), ("camp", 3), ("shrine", 3))
 
-    # A shrine shows its flavor line the first time the player gets this close.
+    # A shrine shows its flavor line the first time the player gets this close. The line
+    # always ends with what a shrine is for, because a landmark that never says what it
+    # does is a landmark the player walks past forever.
     DISCOVER_DISTANCE: int = 160
     SHRINE_MESSAGES: tuple = (
         "An old shrine, worn smooth by countless hands.",
@@ -752,6 +766,29 @@ class PointsOfInterest:
         "The carvings on this shrine predate any living memory.",
         "Someone has left a wilted flower at this shrine.",
     )
+    SHRINE_EXPLANATION: str = "Pray at it (E) for a blessing, but the old gods are not always kind."
+
+    # Praying is a gamble taken once per shrine: mostly a timed blessing, sometimes the
+    # shrine takes something instead.
+    SHRINE_PRAY_DISTANCE: int = 120
+    SHRINE_CURSE_CHANCE: float = 0.3
+    # (buff effect, magnitude, seconds, message). The effects are the potion buffs, read
+    # back by the same multipliers, so a blessing needs no machinery of its own.
+    SHRINE_BLESSINGS: tuple = (
+        ("strength", 1.35, 45.0, "The shrine's warmth settles in your arms: you strike harder."),
+        ("swiftness", 1.30, 45.0, "Your feet feel light. The shrine speeds your step."),
+        ("stoneskin", 7, 45.0, "Your skin hardens like the shrine's own stone."),
+    )
+    # (curse kind, message). "weakness" is the same Shaken timer dying leaves behind,
+    # "tithe" takes coins, "wound" takes health on the spot.
+    SHRINE_CURSES: tuple = (
+        ("weakness", "The shrine drinks something out of you. You feel shaken."),
+        ("tithe", "The offering bowl empties your purse: {amount} coins gone."),
+        ("wound", "Old stone cuts back. Something unseen tears at you."),
+    )
+    SHRINE_CURSE_WEAKNESS_S: float = 40.0
+    SHRINE_CURSE_TITHE_FRAC: float = 0.2
+    SHRINE_CURSE_WOUND_FRAC: float = 0.2
 
     # A cache is stone and iron banding, not a barrel: it takes real work to open.
     CACHE_HP: int = 45

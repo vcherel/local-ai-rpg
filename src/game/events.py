@@ -18,17 +18,20 @@ if TYPE_CHECKING:
     from llm.name_generator import NPCNameGenerator
     from llm.quest_system import QuestSystem
 
+RUMOR_COLOR = c.Minimap.RUMOR_COLOR
+
 
 class EventSystem:
     """Rolls random world events on a cooldown: wandering merchants, treasure, blood nights,
-    rumors and village crises. Owned by World, which supplies the state each event mutates."""
+    rumors and village crises. Owned by World, which supplies the state each event mutates.
 
-    def __init__(self, world: World, notify: Callable[[str, tuple], None], show_rumor: Callable[[str], None]):
+    A rumour is not flavour text: it points at somewhere the player has never walked (or at
+    a treasure it promises) and marks it on the minimap, so hearing one gives them somewhere
+    to go rather than a panel to dismiss."""
+
+    def __init__(self, world: World, notify: Callable[[str, tuple], None]):
         self.world = world
         self._notify = notify
-        # Rumours are full sentences, unreadable in a passing toast: they get their own
-        # dismissible panel instead.
-        self._show_rumor = show_rumor
         self.cooldown = random.uniform(*c.Events.INTERVAL_RANGE_MS)
 
         self.wandering_merchant: Optional[NPC] = None
@@ -45,11 +48,6 @@ class EventSystem:
         was handed belongs to that dead game, not to whatever is on screen now."""
         if not self.world.closed:
             self._notify(message, color)
-
-    def show_rumor(self, text: str):
-        """Same guard as notify: a rumour generated after the session ended has nowhere to go."""
-        if not self.world.closed:
-            self._show_rumor(text)
 
     def update(self, dt, player: Player, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         self._tick_merchant(dt)
@@ -101,7 +99,7 @@ class EventSystem:
             else:
                 self._spawn_boss_event(player)
         elif kind == "rumor":
-            threading.Thread(target=self._generate_rumor, daemon=True).start()
+            threading.Thread(target=self._generate_rumor, args=(player,), daemon=True).start()
         elif kind == "prophetic_rumor":
             threading.Thread(target=self._generate_prophetic_rumor, args=(player,), daemon=True).start()
         elif kind == "crisis":
@@ -152,7 +150,7 @@ class EventSystem:
 
     # ------------------------------------------------------------------ treasure cache
 
-    def _spawn_treasure(self, player: Player, message: str = None):
+    def _spawn_treasure(self, player: Player, message: str = None, mark: str = ""):
         pos = self._point_near_player(
             player, c.Events.TREASURE_MIN_DIST, c.Events.TREASURE_MAX_DIST, c.Entities.ITEM_SIZE / 2
         )
@@ -160,6 +158,10 @@ class EventSystem:
             return
         self.world.items.append(Item(*pos, "Lootbox", "lootbox"))
         self.notify(message or "Something glints in the distance...", c.Colors.YELLOW)
+        # Only a treasure a rumour promised gets a map mark: the promise is what makes it
+        # a lead rather than a lucky find.
+        if mark:
+            self.world.mark_rumor(pos[0], pos[1], mark)
 
     def _treasure_with_presage(self, player: Player):
         text = self._generate_lore_line(
@@ -204,19 +206,32 @@ class EventSystem:
 
     # ------------------------------------------------------------------ rumors
 
-    def _generate_rumor(self):
-        text = self._generate_lore_line("Generate a short rumor a villager might whisper, for flavor only.")
-        if text:
-            self.show_rumor(text)
+    def _generate_rumor(self, player: Player):
+        """A rumour is a lead, not decoration: it names somewhere the player has never walked
+        and puts it on the minimap. With nothing left unexplored nearby there is nothing to
+        whisper about, so the event simply passes."""
+        lead = self.world.unexplored_lead(player.x, player.y)
+        if lead is None:
+            return
+        _, x, y, label = lead
+        text = self._generate_lore_line(
+            f"In at most 15 words, have a villager whisper a rumor about {label} out in the wilds."
+        )
+        whisper = text or f"someone speaks of {label} out in the wilds"
+        self.notify(f"Rumour: {whisper} (marked on your map)", RUMOR_COLOR)
+        self.world.mark_rumor(x, y, label)
 
     def _generate_prophetic_rumor(self, player: Player):
         text = self._generate_lore_line(
-            "Generate a short rumor claiming a treasure is hidden somewhere in this world, like a "
-            "villager's gossip, without giving exact directions."
+            "In at most 15 words, have a villager whisper that a treasure lies hidden out in the wilds, "
+            "without giving exact directions."
         )
-        self.show_rumor(text or "A villager's rumor mentions a treasure hidden somewhere in this world...")
+        self.notify(
+            f"Rumour: {text or 'a treasure lies hidden somewhere out there'} (watch your map)",
+            RUMOR_COLOR,
+        )
         time.sleep(random.uniform(*c.Events.PROPHECY_DELAY_RANGE_S))
-        self._spawn_treasure(player, "The rumor was true: treasure glints somewhere out there")
+        self._spawn_treasure(player, "The rumor was true: treasure glints somewhere out there", mark="the treasure")
 
     # ------------------------------------------------------------------ village crisis
 
