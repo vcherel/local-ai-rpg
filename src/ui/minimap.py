@@ -21,6 +21,11 @@ class Minimap:
     NPCs, no loot, no quest marker, and a fixed zoom of about one and a half screens, so it
     can orient the player without ever doing their exploring for them. Everything not yet
     walked stays black.
+
+    The one exception is a rumour's mark (World.rumor_marks): somewhere the player has been
+    told about but never seen, which is the whole point of hearing a rumour. Under the panel
+    sit the name of the village being stood in and the day/night clock, and the clock is
+    drawn even when the map is toggled off.
     """
 
     def __init__(self, screen: pygame.Surface):
@@ -33,7 +38,10 @@ class Minimap:
         self.visible = not self.visible
 
     def draw(self, world: World, player: Player):
+        # The clock is drawn whether or not the map is up: hiding the map hides where you
+        # have been, not what time it is.
         if not self.visible:
+            self._draw_strips(world, player, self.rect.top)
             return
 
         widgets.draw_panel(self.screen, self.rect)
@@ -51,11 +59,12 @@ class Minimap:
         self._draw_villages(world, player, scale, to_map)
         self._draw_buildings(world, player, scale, to_map)
         self._draw_pois(world, to_map)
+        self._draw_rumors(world, inner, scale, to_map)
         self._draw_player(player, inner)
 
         self.screen.set_clip(previous_clip)
         self._draw_compass(inner)
-        self._draw_here_label(world, player)
+        self._draw_strips(world, player, self.rect.bottom)
 
     def _draw_explored(self, world: World, player: Player, inner: pygame.Rect, scale: float, to_map):
         """The remembered ground, one flat square per explored cell. Cells are big enough
@@ -119,13 +128,51 @@ class Minimap:
         label = c.Fonts.small.render("N", True, c.Colors.MUTED)
         self.screen.blit(label, label.get_rect(midtop=(inner.centerx, inner.top + 2)))
 
-    def _draw_here_label(self, world: World, player: Player):
-        """The name of the village the player is standing in, under the map. The only place
-        a name is spelled out, so the map itself stays a picture."""
+    def _draw_rumors(self, world: World, inner: pygame.Rect, scale: float, to_map):
+        """The one thing on this map the player has not walked to: where a rumour said to go.
+        A lead further out than the map's range is pinned to the edge in its direction, so
+        it still says which way to set off, and it is rubbed out on arrival by World."""
+        pulse = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 300.0)
+        for mark in world.rumor_marks:
+            x, y = to_map(mark["x"], mark["y"])
+            x = min(max(x, inner.left + 6), inner.right - 6)
+            y = min(max(y, inner.top + 6), inner.bottom - 6)
+            radius = round(4 + 2 * pulse)
+            pygame.draw.circle(self.screen, c.Minimap.RUMOR_COLOR, (round(x), round(y)), radius)
+            pygame.draw.circle(self.screen, (40, 32, 12), (round(x), round(y)), radius, 1)
+
+    def _draw_strips(self, world: World, player: Player, top: int):
+        """The panels stacked under the map: the village standing on it, then the clock."""
+        y = top + 4
         village = world.village_at(player.x, player.y)
-        if village is None or not village.name or not village.discovered:
-            return
-        label = c.Fonts.small.render(village.name, True, c.Colors.WHITE)
-        strip = pygame.Rect(self.rect.left, self.rect.bottom + 4, self.rect.width, label.get_height() + 8)
+        if village is not None and village.name and village.discovered:
+            label = c.Fonts.small.render(village.name, True, c.Colors.WHITE)
+            strip = pygame.Rect(self.rect.left, y, self.rect.width, label.get_height() + 8)
+            widgets.draw_panel(self.screen, strip)
+            self.screen.blit(label, label.get_rect(center=strip.center))
+            y = strip.bottom + 4
+        self._draw_clock(world, y)
+
+    def _draw_clock(self, world: World, top: int):
+        """The time of day, as a dial swept once per cycle plus the name of the phase. The
+        marker is warm while it is light and cold once it is dark, so a glance says whether
+        night is coming without reading the word."""
+        daynight = world.daynight
+        strip = pygame.Rect(self.rect.left, top, self.rect.width, c.Minimap.CLOCK_HEIGHT)
         widgets.draw_panel(self.screen, strip)
-        self.screen.blit(label, label.get_rect(center=strip.center))
+
+        radius = c.Minimap.CLOCK_HEIGHT // 2 - 7
+        center = (strip.left + 8 + radius, strip.centery)
+        night = daynight.is_night
+        color = c.Minimap.CLOCK_NIGHT_COLOR if night else c.Minimap.CLOCK_DAY_COLOR
+        pygame.draw.circle(self.screen, (60, 58, 66), center, radius, 1)
+
+        # Midnight at the bottom of the dial, noon at the top, so the hand rises through
+        # the morning and falls through the evening the way the sun does.
+        angle = daynight.progress * 2 * math.pi - math.pi / 2
+        hand = (center[0] + math.cos(angle) * radius, center[1] + math.sin(angle) * radius)
+        pygame.draw.line(self.screen, color, center, hand, 2)
+        pygame.draw.circle(self.screen, color, (round(hand[0]), round(hand[1])), 5)
+
+        label = c.Fonts.small.render(daynight.phase, True, c.Colors.WHITE)
+        self.screen.blit(label, label.get_rect(midleft=(center[0] + radius + 10, strip.centery)))

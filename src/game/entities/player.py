@@ -690,6 +690,13 @@ class Player(Entity):
         """Seconds left on the post-death weakness, for the HUD chip. 0 when not shaken."""
         return max(0.0, self.death_debuff_until - time.time())
 
+    def apply_weakness(self, duration_s: float):
+        """Start (or extend) the weakness the HUD shows as "Shaken". Dying is one source,
+        an angry shrine is the other; both run through this so there is a single timer."""
+        self.death_debuff_until = max(self.death_debuff_until, time.time() + duration_s)
+        self.save_system.update("death_debuff_until", self.death_debuff_until)
+        self.max_hp = self.effective_max_hp()
+
     def clear_death_debuff(self):
         """End the post-death weakness early, the way a night at a fire or an inn would."""
         self.death_debuff_until = 0.0
@@ -707,9 +714,7 @@ class Player(Entity):
         # Whatever was coursing through the player's veins died with them.
         self.buffs = {}
         self.save_system.update("buffs", self.buffs)
-        self.death_debuff_until = time.time() + c.Death.DEBUFF_DURATION_S
-        self.save_system.update("death_debuff_until", self.death_debuff_until)
-        self.max_hp = self.effective_max_hp()
+        self.apply_weakness(c.Death.DEBUFF_DURATION_S)
         self.guard = c.Shield.GUARD_MAX
         self.guard_broken_until_ms = 0
         return loss
@@ -755,7 +760,7 @@ class Player(Entity):
             bar_width=800,
             bar_height=30,
             health_bar_offset=360,
-            bar_color=c.Colors.GREEN,
+            bar_color=c.Colors.RED,
             bar_border_width=4,
             gear=self.gear(),
         )

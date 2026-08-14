@@ -58,7 +58,7 @@ class World(WorldCombat, WorldStreaming):
     the single source of truth.
     """
 
-    def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify, show_rumor):
+    def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify):
         # Regenerated on the fly as the player explores; see _sync_chunks.
         self.floor_details = []
         self._loaded_chunks = set()
@@ -97,6 +97,9 @@ class World(WorldCombat, WorldStreaming):
         # When each camp's fire will serve the player again, by POI id (wall-clock seconds,
         # so quitting to the menu can't reset a fire the player just used).
         self.camp_rest_cooldowns: dict = {}
+        # Places a rumour pointed at, drawn on the minimap until the player gets there.
+        # Session-only: a rumour is a lead to follow now, not a pin to keep forever.
+        self.rumor_marks: List[dict] = []
         self.respawn_timer = 0.0
         self.critter_respawn_timer = 0.0
         self.boss_roam_timer = 0.0
@@ -105,7 +108,7 @@ class World(WorldCombat, WorldStreaming):
         self.context_window = context_window
         self.notify = notify
         self.context = self.save_system.load("context", None)
-        self.events = EventSystem(self, notify, show_rumor)
+        self.events = EventSystem(self, notify)
         self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
 
         # Generation guards: a merchant with no shop yet, an unnamed landmark or an unnamed
@@ -326,6 +329,68 @@ class World(WorldCombat, WorldStreaming):
         get_particles().spawn_burst(poi.x + 40, poi.y + 12, (255, 170, 60), count=18, speed=3, life=700, size=4)
         if self.notify:
             self.notify("You rest at the fire. Some wounds close, nerves steadied.", (255, 190, 110))
+
+    def shrine_in_reach(self, player: Player) -> PointOfInterest | None:
+        """The shrine the player could pray at right now: near enough, and not yet answered.
+        A spent shrine offers nothing, so it stops prompting entirely."""
+        pos = player.get_pos()
+        shrines = [
+            poi
+            for poi in self.pois
+            if poi.kind == "shrine"
+            and not poi.prayed
+            and poi.distance_to_point(pos) < c.PointsOfInterest.SHRINE_PRAY_DISTANCE
+        ]
+        return min(shrines, key=lambda poi: poi.distance_to_point(pos), default=None)
+
+    def pray_at_shrine(self, player: Player, poi: PointOfInterest):
+        """Take the shrine's one answer: usually a timed blessing, sometimes a curse. Once
+        per shrine ever (`prayed` is persisted), so praying is a gamble rather than a tap.
+
+        Blessings are the ordinary potion buffs, read back by the same multipliers, and the
+        curses reuse what the game already does to the player: the Shaken weakness dying
+        leaves behind, a bite out of the purse, a bite out of the health bar.
+        """
+        if poi.prayed:
+            return
+        poi.prayed = True
+        self.poi_state[poi.id] = poi.state()
+
+        if random.random() < c.PointsOfInterest.SHRINE_CURSE_CHANCE:
+            kind, message = random.choice(c.PointsOfInterest.SHRINE_CURSES)
+            amount = 0
+            if kind == "weakness":
+                player.apply_weakness(c.PointsOfInterest.SHRINE_CURSE_WEAKNESS_S)
+            elif kind == "tithe":
+                amount = int(player.coins * c.PointsOfInterest.SHRINE_CURSE_TITHE_FRAC)
+                player.add_coins(-amount)
+            else:
+                player.receive_damage(round(player.max_hp * c.PointsOfInterest.SHRINE_CURSE_WOUND_FRAC))
+            get_particles().spawn_burst(poi.x, poi.y - 20, (120, 40, 140), count=22, speed=4, life=800, size=4)
+            play_sound("player_hurt")
+            if self.notify:
+                self.notify(message.format(amount=amount), (190, 90, 200))
+            return
+
+        effect, magnitude, duration, message = random.choice(c.PointsOfInterest.SHRINE_BLESSINGS)
+        player.apply_buff(effect, magnitude, duration)
+        get_particles().spawn_burst(poi.x, poi.y - 20, (240, 225, 150), count=22, speed=4, life=800, size=4)
+        play_sound("level_up")
+        if self.notify:
+            self.notify(message, (245, 230, 150))
+
+    def mark_rumor(self, x: float, y: float, label: str):
+        """Put a rumour's subject on the minimap. Session-only and deliberately not saved:
+        a rumour is a lead to follow now, not a permanent pin, and it rubs itself out as
+        soon as the player has walked close enough to see the place themselves."""
+        self.rumor_marks.append({"x": x, "y": y, "label": label})
+
+    def _clear_reached_rumors(self, player: Player):
+        self.rumor_marks = [
+            mark
+            for mark in self.rumor_marks
+            if math.hypot(mark["x"] - player.x, mark["y"] - player.y) > c.Minimap.RUMOR_CLEAR_DISTANCE
+        ]
 
     def provoke_village(self, npc: NPC) -> List[NPC]:
         """Turn a settlement on the player after one of its people is struck, returning
@@ -873,32 +938,39 @@ class World(WorldCombat, WorldStreaming):
             if poi.kind == "shrine":
                 poi.discovered = True
                 if self.notify:
-                    self.notify(random.choice(c.PointsOfInterest.SHRINE_MESSAGES), c.Colors.WHITE)
+                    flavor = random.choice(c.PointsOfInterest.SHRINE_MESSAGES)
+                    self.notify(f"{flavor} {c.PointsOfInterest.SHRINE_EXPLANATION}", c.Colors.WHITE)
             elif poi.variant == "traveller":
                 poi.discovered = True
                 if self.notify:
                     self.notify(self._traveller_directions(poi), (200, 190, 150))
 
-    def _traveller_directions(self, poi: PointOfInterest) -> str:
-        """What the camper at a traveller camp tells the player: where the nearest thing they
-        have not walked to yet lies. Village sites and points of interest are both pure
-        functions of their chunk, so this can point at places that have never been generated,
-        which is exactly what makes it worth hearing."""
+    def unexplored_lead(self, from_x: float, from_y: float):
+        """The nearest place the player has not walked to yet, as (distance, x, y, label),
+        or None when everything around here is already known. Village sites and points of
+        interest are both pure functions of their chunk, so this can point at places that
+        have never been generated, which is exactly what makes it worth hearing. Shared by
+        a traveller's directions and by the rumours the map marks."""
         best = None
         radius = c.PointsOfInterest.HINT_CHUNK_RADIUS
-        cx, cy = self._chunk_of(poi.x, poi.y)
+        cx, cy = self._chunk_of(from_x, from_y)
         for gx in range(cx - radius, cx + radius + 1):
             for gy in range(cy - radius, cy + radius + 1):
                 candidates = [(site, "a settlement") for site in [village_site(gx, gy)] if site is not None]
                 for other in pois_for_chunk(gx, gy, self.buildings):
                     candidates.append(((other.x, other.y), _POI_HINT_LABELS[other.kind]))
                 for (x, y), label in candidates:
-                    distance = math.hypot(x - poi.x, y - poi.y)
+                    distance = math.hypot(x - from_x, y - from_y)
                     if distance < c.PointsOfInterest.HINT_MIN_DISTANCE or self.is_explored(x, y):
                         continue
                     if best is None or distance < best[0]:
                         best = (distance, x, y, label)
+        return best
 
+    def _traveller_directions(self, poi: PointOfInterest) -> str:
+        """What the camper at a traveller camp tells the player: where the nearest thing they
+        have not walked to yet lies."""
+        best = self.unexplored_lead(poi.x, poi.y)
         if best is None:
             return "The camper has nothing left to point you towards."
         distance, x, y, label = best
@@ -936,6 +1008,7 @@ class World(WorldCombat, WorldStreaming):
         self.events.update(dt, player, quest_system, npc_name_generator)
         self._check_poi_discovery(player)
         self._check_village_discovery(player)
+        self._clear_reached_rumors(player)
 
         player_pos = player.get_pos()
 
