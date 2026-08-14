@@ -34,6 +34,9 @@ class SaveSystem:
           are regenerated from their chunk, so only touched ones appear here (dict)
         - explored: Grid cells the player has walked through, as "gx:gy" strings (Fog.CELL
           wide). The minimap draws these and blacks out everything else (list[str])
+        - camp_rest: When each place the player rested will serve them again, by POI id for a
+          campfire and by building id for a villager's bed (wall-clock seconds)
+        - death_taunts: Mocking death-screen lines written ahead of need, not yet used (list[str])
         - buffs: Active potion buffs, {effect: {"until": wall-clock seconds, "magnitude": float}}
         - daynight_elapsed_ms: Elapsed time within the current day/night cycle (float)
     """

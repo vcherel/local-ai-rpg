@@ -12,6 +12,7 @@ from core import dialogue_log
 from core.audio import play_sound
 from core.utils import ConversationHistory
 from game.entities.items import draw_shape_with_border, potion_description
+from game.quest import COUNTED_QUEST_TYPES
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem
 from ui import widgets
@@ -99,7 +100,7 @@ class DialogueManager:
         self.quest_system = QuestSystem(items, player, npcs)
         self._npc_name_generator: NPCNameGenerator | None = None
 
-    def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool) -> str:
+    def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool, delivered: str = "") -> str:
         persuasion_hint = self.quest_system.player.stats.persuasion_descriptor()
         affinity_hint = npc.affinity_descriptor()
 
@@ -134,10 +135,31 @@ class DialogueManager:
             + affinity_hint
         )
 
+        if delivered:
+            system_prompt += (
+                f"The player has just handed you {delivered}, sent to you by someone else. "
+                "Take it and thank them; you owe them nothing, the sender pays them. "
+            )
+
         if npc.has_active_quest:
             quest = npc.quest
             if quest_complete:
-                if quest.quest_type == "slay_boss":
+                if quest.quest_type == "clear_camp":
+                    system_prompt += (
+                        f"The player has just wiped out the bandit camp you sent them to ({quest.description}). "
+                        f"Thank them and give them their reward"
+                    )
+                elif quest.quest_type == "deliver":
+                    system_prompt += (
+                        f"The player has just delivered your {quest.item_name} to {quest.recipient_npc_name} "
+                        f"({quest.description}). Thank them and give them their reward"
+                    )
+                elif quest.quest_type == "steal":
+                    system_prompt += (
+                        f"The player has just brought you the {quest.item_name} you asked them to steal "
+                        f"({quest.description}). Thank them and give them their reward"
+                    )
+                elif quest.quest_type == "slay_boss":
                     system_prompt += (
                         f"The player has just slain the boss you asked them to defeat ({quest.description}). "
                         f"Thank them and give them their reward"
@@ -157,6 +179,27 @@ class DialogueManager:
                 else:
                     system_prompt += " in coins"
                 system_prompt += ". "
+            elif quest.quest_type == "clear_camp":
+                system_prompt += f"You asked the player to wipe out a bandit camp ({quest.description}). "
+                if quest.reward_item_name:
+                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
+                system_prompt += "The bandits are still there. "
+            elif quest.quest_type == "deliver":
+                system_prompt += (
+                    f"You asked the player to carry your {quest.item_name} to {quest.recipient_npc_name} "
+                    f"({quest.description}). "
+                )
+                if quest.reward_item_name:
+                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
+                system_prompt += "They have not delivered it yet. "
+            elif quest.quest_type == "steal":
+                system_prompt += (
+                    f"You asked the player to steal a {quest.item_name} from a neighbour's house "
+                    f"({quest.description}). Keep your voice down about it. "
+                )
+                if quest.reward_item_name:
+                    system_prompt += f"You promised them your {quest.reward_item_name} as a reward. "
+                system_prompt += "They have not brought it to you yet. "
             elif quest.quest_type == "slay_boss":
                 system_prompt += (
                     f"You asked the player to slay a powerful boss terrorizing the area ({quest.description}). "
@@ -181,7 +224,8 @@ class DialogueManager:
             system_prompt += (
                 "You may have needs or problems. "
                 "The player can help you by fetching a specific item, dealing with dangerous creatures, "
-                "or recovering something that was stolen from you. "
+                "recovering something that was stolen from you, clearing out a bandit camp, carrying "
+                "something to someone who lives far away, or quietly taking something from a neighbour. "
                 "You may offer coins, a specific item you own, or both as a reward. "
                 "You cannot take part in these quests yourself "
                 "(make up an excuse if needed, the player must not know) ! "
@@ -200,17 +244,23 @@ class DialogueManager:
         npc.assign_name(npc_name_generator)
         self._npc_name_generator = npc_name_generator
 
+        # Walking up to the person a parcel is addressed to is the delivery: it happens as
+        # the conversation opens, so they can react to it in their first line.
+        delivered_quest = self.quest_system.on_delivery(npc)
+
         quest_complete = False
         if npc.has_active_quest:
             quest = npc.quest
-            if quest.quest_type in ("kill_mob", "slay_boss"):
+            if quest.quest_type in COUNTED_QUEST_TYPES:
                 quest_complete = quest.kills_done >= quest.kill_count
             else:
                 quest_complete = quest.item in self.quest_system.player.inventory
         if quest_complete:
             self.pending_quest_completion = npc
 
-        self.system_prompt = self._build_system_prompt(npc, world.context, quest_complete)
+        self.system_prompt = self._build_system_prompt(
+            npc, world.context, quest_complete, delivered=delivered_quest.item_name if delivered_quest else ""
+        )
 
         self.current_npc = npc
         self.active = True

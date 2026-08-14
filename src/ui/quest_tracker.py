@@ -21,6 +21,14 @@ def _progress_line(quest: "Quest") -> str:
         return f"Recover {quest.item_name} from {quest.thief_npc_name}"
     if quest.quest_type == "slay_boss":
         return f"Slay {quest.boss_name}" if quest.boss_name else "Slay the boss"
+    if quest.quest_type == "clear_camp":
+        return "Camp cleared" if quest.kills_done >= quest.kill_count else "Wipe out the bandit camp"
+    if quest.quest_type == "steal":
+        return f"Steal {quest.item_name} from the house"
+    if quest.quest_type == "deliver":
+        if quest.kills_done >= quest.kill_count:
+            return f"{quest.item_name} delivered"
+        return f"Take {quest.item_name} to {quest.recipient_npc_name}"
     return f"Fetch: {quest.item_name}"
 
 

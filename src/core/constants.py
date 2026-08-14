@@ -59,6 +59,34 @@ class Death:
     # How long the death screen holds before the player is put back at world spawn.
     RESPAWN_DELAY_S: float = 2.5
 
+    # The death screen mocks the player with an LLM-written line. Generated ahead of time
+    # into a buffer (llm/death_taunts.py), because the screen is blocking and waiting on
+    # the model there would turn a death into a stall; these are what it says if the
+    # buffer is empty (a fresh save, or the model still busy with the first one).
+    TAUNT_BUFFER: int = 3
+    FALLBACK_TAUNTS: tuple = (
+        "The worms send their thanks.",
+        "Even the crows looked away.",
+        "That was over quickly.",
+        "The world will manage without you.",
+    )
+
+
+@dataclass(frozen=True)
+class Crime:
+    """Helping yourself to what a villager owns: their chest, their bed.
+
+    A house is theirs, not loot: taking from the chest or sleeping in the bed is free and
+    silent right up until someone sees it. Whoever catches you turns on you alone (the rest
+    of the village never hears about it), which is the one way a single NPC goes hostile
+    without the whole settlement; swinging back at them is what escalates it, through the
+    usual `World.provoke_village`. Nobody sees through a wall, so what decides it is who is
+    standing outside, which makes an empty street or the dark the way to rob a house."""
+
+    WITNESS_RADIUS: float = 430.0
+    # How much of that radius is left after dark. Night is when a house is worth robbing.
+    NIGHT_WITNESS_MULT: float = 0.4
+
 
 @dataclass(frozen=True)
 class Shield:
@@ -494,6 +522,11 @@ class World:
     # How many rings World.free_spot_near searches before giving up. Each ring is one body
     # diameter farther out, so this covers a building's whole footprint and then some.
     FREE_SPOT_MAX_RINGS: int = 24
+
+    # How many rings of chunks World.find_bandit_camp generates outward looking for a camp
+    # a clear_camp quest can send the player at. Far enough to be a journey, near enough
+    # that the walk out is not the whole quest.
+    CAMP_SEARCH_RINGS: int = 8
 
 
 @dataclass(frozen=True)

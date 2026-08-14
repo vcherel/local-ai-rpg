@@ -112,9 +112,10 @@ class World(WorldCombat, WorldStreaming):
         self.critters: List[Critter] = []
         # Arrows in flight; transient like particles, never saved.
         self.projectiles: List[Projectile] = []
-        # When each camp's fire will serve the player again, by POI id (wall-clock seconds,
-        # so quitting to the menu can't reset a fire the player just used).
-        self.camp_rest_cooldowns: dict = {}
+        # When each place the player rests will serve them again, by POI id for a campfire
+        # and by building id for a villager's bed (wall-clock seconds, so quitting to the
+        # menu can't reset a fire or a bed the player just used).
+        self.rest_cooldowns: dict = {}
         # Places a rumour pointed at, drawn on the minimap until the player gets there.
         # Session-only: a rumour is a lead to follow now, not a pin to keep forever.
         self.rumor_marks: List[dict] = []
@@ -147,8 +148,8 @@ class World(WorldCombat, WorldStreaming):
         # write a dead world's state over the new game's save.
         self.closed = False
 
-        self.camp_rest_cooldowns = {
-            poi_id: until for poi_id, until in self.save_system.load("camp_rest", {}).items() if until > time.time()
+        self.rest_cooldowns = {
+            key: until for key, until in self.save_system.load("camp_rest", {}).items() if until > time.time()
         }
 
         saved_pois = self.save_system.load("pois", {})
@@ -263,13 +264,16 @@ class World(WorldCombat, WorldStreaming):
             y = poi.y + math.sin(angle) * spread
             self.critters.append(Critter(x, y, c.CRITTER_KINDS_BY_NAME["dog"], home=(x, y), camp_id=poi.id))
 
-    def on_guard_killed(self, monster: Monster):
+    def on_guard_killed(self, monster: Monster, quest_system: QuestSystem):
         """Strike a fallen bandit off its camp's roll, which is what decides whether the cache
-        opens and how many stand there when the chunk next loads."""
+        opens and how many stand there when the chunk next loads. Emptying the roll is also
+        what finishes a clear_camp quest, whether or not the camp's chunk is still loaded."""
         poi = next((p for p in self.pois if p.id == monster.camp_id), None)
         if poi is not None:
             poi.guard_killed(monster.camp_leader)
             self.poi_state[poi.id] = poi.state()
+            if poi.guards_defeated:
+                quest_system.on_camp_cleared(poi.id)
             return
         # The camp's chunk unloaded while this guard was still chasing the player: its POI
         # object is gone, so the saved state is the only copy left to edit.
@@ -280,6 +284,37 @@ class World(WorldCombat, WorldStreaming):
             state["leader_alive"] = False
         else:
             state["guards_alive"] = max(0, (state.get("guards_alive") or 0) - 1)
+        if not state.get("guards_alive") and not state.get("leader_alive"):
+            quest_system.on_camp_cleared(monster.camp_id)
+
+    def find_bandit_camp(self, x: float, y: float) -> PointOfInterest | None:
+        """A bandit camp still held, for a clear_camp quest to send the player at.
+
+        Loaded chunks first, then rings of chunks outward, generated from their coordinates
+        exactly as `_load_chunk` would: a camp is a pure function of its chunk, so a quest
+        can name one nobody has walked to yet. Saved state is applied before judging a camp,
+        so one the player already emptied is never handed out as a task."""
+        held = [poi for poi in self.pois if poi.variant == "bandit" and not poi.guards_defeated and not poi.looted]
+        if held:
+            return min(held, key=lambda poi: poi.distance_to_point((x, y)))
+
+        size = c.World.CHUNK_SIZE
+        cx0, cy0 = self._chunk_of(x, y)
+        for ring in range(1, c.World.CAMP_SEARCH_RINGS + 1):
+            for cx in range(cx0 - ring, cx0 + ring + 1):
+                for cy in range(cy0 - ring, cy0 + ring + 1):
+                    if max(abs(cx - cx0), abs(cy - cy0)) != ring:
+                        continue
+                    center = ((cx + 0.5) * size, (cy + 0.5) * size)
+                    for poi in pois_for_chunk(cx, cy, self.buildings_around(*center)):
+                        if poi.variant != "bandit":
+                            continue
+                        state = self.poi_state.get(poi.id)
+                        if state:
+                            poi.apply_state(state)
+                        if not poi.guards_defeated and not poi.looted:
+                            return poi
+        return None
 
     def _spawn_camper(self, poi: PointOfInterest):
         """The trader living at a traveller camp: a merchant like any other, but stocked
@@ -324,9 +359,10 @@ class World(WorldCombat, WorldStreaming):
         ]
         return min(camps, key=lambda poi: poi.distance_to_point(pos), default=None)
 
-    def camp_rest_ready_in(self, poi: PointOfInterest) -> float:
-        """Seconds until this fire will serve the player again; 0 when it's ready now."""
-        return max(0.0, self.camp_rest_cooldowns.get(poi.id, 0.0) - time.time())
+    def rest_ready_in(self, key: str) -> float:
+        """Seconds until this fire or bed will serve the player again; 0 when it's ready now.
+        Keyed by POI id for a campfire, by building id for a villager's bed."""
+        return max(0.0, self.rest_cooldowns.get(key, 0.0) - time.time())
 
     def rest_at_camp(self, player: Player, poi: PointOfInterest):
         """Sit at a camp's fire: some health back, and the post-death weakness shaken off.
@@ -335,12 +371,12 @@ class World(WorldCombat, WorldStreaming):
         REST_COOLDOWN_S afterwards. Otherwise any cleared camp is a health button to stand
         next to, and the walk back to town for a bed or a potion stops meaning anything.
         """
-        remaining = self.camp_rest_ready_in(poi)
+        remaining = self.rest_ready_in(poi.id)
         if remaining > 0:
             if self.notify:
                 self.notify(f"This fire has burned low. Usable again in {int(remaining) + 1}s", c.Colors.MUTED)
             return
-        self.camp_rest_cooldowns[poi.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
+        self.rest_cooldowns[poi.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
         player.heal(player.max_hp * c.PointsOfInterest.REST_HEAL_FRAC)
         player.clear_death_debuff()
         play_sound("rest")
@@ -444,6 +480,49 @@ class World(WorldCombat, WorldStreaming):
             self.notify(f"{name} turns on you!", c.Colors.RED)
         return newly_hostile
 
+    def theft_witness(self, x: float, y: float) -> NPC | None:
+        """Whoever sees the player helping themselves at (x, y), or None if nobody is looking.
+
+        Deliberately a plain distance test rather than a roll: the player can see who is on
+        the street before they open the chest, so getting caught is a decision they made and
+        not luck. Night halves the radius, which is what makes robbing a house something you
+        do after dark. Anyone already hostile is past caring what else the player takes."""
+        radius = c.Crime.WITNESS_RADIUS * (c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0)
+        seen = [npc for npc in self.npcs if not npc.hostile and npc.distance_to_point((x, y)) <= radius]
+        return min(seen, key=lambda npc: npc.distance_to_point((x, y)), default=None)
+
+    def rest_in_house(self, building: Building) -> None:
+        """Note that this household's bed has been slept in, so it isn't a free full heal to
+        stand next to: the same cooldown a campfire gets, kept per building and persisted."""
+        self.rest_cooldowns[building.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
+
+    def catch_thief(self, npc: NPC) -> NPC:
+        """One villager catches the player stealing and comes for them, alone.
+
+        The single exception to violence's all-or-nothing rule: theft is between the player
+        and whoever saw it, so the rest of the village goes on with its day. Swinging back
+        at the one who caught you is what turns the whole place, through the usual
+        `provoke_village`. Like every other way an NPC turns, there is no way back."""
+        npc.hostile = True
+        npc.affinity = c.Affinity.MIN
+        if self.notify:
+            name = npc.name or "A villager"
+            self.notify(f"{name} catches you in the act!", c.Colors.RED)
+        return npc
+
+    def house_to_rob(self, npc: NPC) -> Building | None:
+        """A house in this NPC's village whose chest nobody has emptied yet, for a steal quest
+        to name. None out in the wilds, or in a village already picked clean."""
+        village = self.village_at(npc.x, npc.y)
+        if village is None:
+            return None
+        houses = [
+            building
+            for building in self.buildings
+            if building.kind == "house" and not building.looted and village.contains_point(building.x, building.y)
+        ]
+        return random.choice(houses) if houses else None
+
     def night_damage_mult(self) -> float:
         """How much harder everything hits right now. A property of the hour, not of the
         monster, so anything that damages the player reads it from here."""
@@ -527,7 +606,7 @@ class World(WorldCombat, WorldStreaming):
             "villages": [village.to_dict() for village in self.villages],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
             "pois": self._poi_state_snapshot(),
-            "camp_rest": {poi_id: until for poi_id, until in self.camp_rest_cooldowns.items() if until > time.time()},
+            "camp_rest": {key: until for key, until in self.rest_cooldowns.items() if until > time.time()},
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
@@ -858,8 +937,14 @@ class World(WorldCombat, WorldStreaming):
             return None
 
         giver = next((npc for npc in self.npcs if npc.quest is quest), None)
+        # A parcel is in the player's hands from the moment the quest is given, so a delivery
+        # points at whoever it is for until it has actually been handed over.
+        if quest.quest_type == "deliver" and quest.kills_done < quest.kill_count:
+            recipient = next((npc for npc in self.npcs if npc.name == quest.recipient_npc_name), None)
+            return (recipient.x, recipient.y) if recipient else None
+
         ready_to_hand_in = (quest.item is not None and quest.item in player.inventory) or (
-            quest.quest_type == "kill_mob" and quest.kills_done >= quest.kill_count
+            quest.quest_type in ("kill_mob", "clear_camp", "deliver") and quest.kills_done >= quest.kill_count
         )
         if ready_to_hand_in:
             return (giver.x, giver.y) if giver else None
@@ -872,6 +957,10 @@ class World(WorldCombat, WorldStreaming):
         if quest.quest_type == "recover_stolen":
             thief = next((npc for npc in self.npcs if npc.name == quest.thief_npc_name), None)
             return (thief.x, thief.y) if thief else None
+        # A camp and a house both stand still, so the place was written into the quest when
+        # it was given rather than looked up again here.
+        if quest.quest_type in ("clear_camp", "steal") and quest.target_x is not None:
+            return (quest.target_x, quest.target_y)
         return None
 
     def npc_in_reach(self, player: Player) -> NPC | None:

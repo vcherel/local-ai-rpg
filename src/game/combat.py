@@ -596,7 +596,7 @@ class WorldCombat:
         # A camp guard's death is the camp's business: it is what opens the cache, and the
         # only thing that lowers the garrison it stands back up from on the next chunk load.
         if monster.camp_id:
-            self.on_guard_killed(monster)
+            self.on_guard_killed(monster, quest_system)
         monster_list.remove(monster)
 
     def _apply_on_hit_effects(self, monster, monster_list, damage, player, quest_system, died, ranged: bool = False):
