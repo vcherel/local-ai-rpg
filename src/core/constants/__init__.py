@@ -22,6 +22,7 @@ from core.constants.bestiary import (
     CritterKind,
     Entities,
     Flank,
+    MonsterArt,
     MonsterKind,
     Wildlife,
 )
@@ -83,6 +84,7 @@ __all__ = [
     "MONSTER_KINDS",
     "MONSTER_MAX_SIZE",
     "Minimap",
+    "MonsterArt",
     "MonsterKind",
     "Player",
     "PointsOfInterest",

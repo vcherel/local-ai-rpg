@@ -88,6 +88,18 @@ class MonsterKind:
     # A flanker refuses to walk straight at the player: its approach angle is bent to one
     # side, flipping every few seconds, so it circles in rather than queueing up in front.
     flank_deg: float = 0.0
+    # How it is drawn (game/entities/monster_art.py): one of "humanoid", "goblin", "hulk",
+    # "skeleton", "wraith", "blob", "beast", "robed". A kind's name has to be legible from
+    # its silhouette alone, so this is picked per kind rather than defaulted per stat block.
+    shape: str = "humanoid"
+    # The weapon it visibly carries, as a `WEAPON_ARCHETYPES` name ("bow", "staff", "axe",
+    # "sword", "hammer", "dagger"). Drawn by the same `gear.draw_weapon` the player's gear
+    # goes through, in the hand the swing animation uses, so what it holds is what it hits
+    # with. Empty means bare hands.
+    weapon: str = ""
+    # The colour of its eyes, the one part of a monster that glows. Read at a glance, and
+    # after dark it is the brightest thing on the sprite.
+    eye_color: tuple = (255, 120, 60)
 
 
 # Ordered weakest to strongest, scaling up with distance from the world center so wandering
@@ -96,9 +108,38 @@ class MonsterKind:
 # The archer and the hexer are what stop a fight being won by walking backwards: they hold
 # their distance and shoot, so closing on them is the only answer.
 MONSTER_KINDS: tuple[MonsterKind, ...] = (
-    MonsterKind("Slime", (90, 190, 90), 22, 16, 3, 10, 8, min_distance=0, weight=10),
-    MonsterKind("Goblin", (110, 150, 80), 22, 14, 5, 9, 7, min_distance=600, weight=7, group=(2, 4)),
-    MonsterKind("Wolf", (140, 140, 140), 26, 32, 5, 10, 13, min_distance=1400, weight=6, group=(2, 3)),
+    MonsterKind(
+        "Slime", (90, 190, 90), 22, 16, 3, 10, 8, min_distance=0, weight=10, shape="blob", eye_color=(240, 255, 180)
+    ),
+    MonsterKind(
+        "Goblin",
+        (110, 150, 80),
+        22,
+        14,
+        5,
+        9,
+        7,
+        min_distance=600,
+        weight=7,
+        group=(2, 4),
+        shape="goblin",
+        weapon="axe",
+        eye_color=(255, 210, 70),
+    ),
+    MonsterKind(
+        "Wolf",
+        (140, 140, 140),
+        26,
+        32,
+        5,
+        10,
+        13,
+        min_distance=1400,
+        weight=6,
+        group=(2, 3),
+        shape="beast",
+        eye_color=(255, 235, 130),
+    ),
     MonsterKind(
         "Archer",
         (168, 122, 62),
@@ -112,12 +153,70 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         ranged=True,
         keep_distance=260,
         shot_cooldown_ms=1900,
+        shape="humanoid",
+        weapon="bow",
+        eye_color=(255, 190, 90),
     ),
-    MonsterKind("Skeleton", (215, 210, 195), 26, 42, 3, 11, 16, min_distance=2200, weight=4),
-    MonsterKind("Bandit", (150, 40, 40), 28, 55, 4, 12, 19, min_distance=2800, weight=4),
-    MonsterKind("Wraith", (150, 130, 200), 24, 34, 6, 10, 15, min_distance=3400, weight=3, flank_deg=55),
-    MonsterKind("Troll", (60, 90, 55), 34, 95, 3, 14, 29, min_distance=4200, weight=2),
-    MonsterKind("Ogre", (120, 95, 70), 40, 150, 2, 16, 34, min_distance=5200, weight=2, charge=True),
+    MonsterKind(
+        "Skeleton",
+        (215, 210, 195),
+        26,
+        42,
+        3,
+        11,
+        16,
+        min_distance=2200,
+        weight=4,
+        shape="skeleton",
+        weapon="sword",
+        eye_color=(120, 220, 255),
+    ),
+    MonsterKind(
+        "Bandit",
+        (150, 40, 40),
+        28,
+        55,
+        4,
+        12,
+        19,
+        min_distance=2800,
+        weight=4,
+        shape="humanoid",
+        weapon="dagger",
+        eye_color=(255, 150, 90),
+    ),
+    MonsterKind(
+        "Wraith",
+        (150, 130, 200),
+        24,
+        34,
+        6,
+        10,
+        15,
+        min_distance=3400,
+        weight=3,
+        flank_deg=55,
+        shape="wraith",
+        eye_color=(200, 160, 255),
+    ),
+    MonsterKind(
+        "Troll", (60, 90, 55), 34, 95, 3, 14, 29, min_distance=4200, weight=2, shape="hulk", eye_color=(255, 240, 120)
+    ),
+    MonsterKind(
+        "Ogre",
+        (120, 95, 70),
+        40,
+        150,
+        2,
+        16,
+        34,
+        min_distance=5200,
+        weight=2,
+        charge=True,
+        shape="hulk",
+        weapon="hammer",
+        eye_color=(255, 130, 60),
+    ),
     MonsterKind(
         "Hexer",
         (128, 78, 188),
@@ -131,6 +230,9 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         ranged=True,
         keep_distance=320,
         shot_cooldown_ms=2400,
+        shape="robed",
+        weapon="staff",
+        eye_color=(215, 130, 255),
     ),
 )
 
@@ -180,6 +282,11 @@ class BossKind:
     abilities: tuple
     summon_kind: str  # MonsterKind name spawned as adds by the "summon" ability
     flavor: str  # short hint fed to the LLM when it names this boss
+    # Look, same three fields a MonsterKind carries and drawn by the same code: a boss is a
+    # monster with an aura, so it gets a silhouette rather than a bigger circle.
+    shape: str = "hulk"
+    weapon: str = ""
+    eye_color: tuple = (255, 120, 60)
 
 
 # The three boss archetypes. Stats sit well above the toughest normal monster (Troll, 60 hp)
@@ -197,6 +304,9 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         abilities=("slam", "summon"),
         summon_kind="Bandit",
         flavor="a towering brute that crushes any who come near",
+        shape="hulk",
+        weapon="hammer",
+        eye_color=(255, 100, 70),
     ),
     BossKind(
         "warlock",
@@ -210,6 +320,9 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         abilities=("volley", "summon"),
         summon_kind="Wolf",
         flavor="a dark sorcerer that hurls bolts of ruinous energy",
+        shape="robed",
+        weapon="staff",
+        eye_color=(220, 150, 255),
     ),
     BossKind(
         "colossus",
@@ -223,8 +336,41 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         abilities=("slam",),
         summon_kind="Troll",
         flavor="an ancient stone colossus, slow but earth-shattering",
+        shape="hulk",
+        eye_color=(160, 255, 170),
     ),
 )
+
+
+@dataclass(frozen=True)
+class MonsterArt:
+    """How a hostile thing is drawn (game/entities/monster_art.py), above whatever silhouette
+    its kind picked. Everything here applies to every shape, because a monster is read from
+    three things before its outline: that it stands on the ground, that it is breathing, and
+    that it is looking at you."""
+
+    # The shadow under the body, which is what stops a sprite floating over the grass.
+    SHADOW_ALPHA: int = 70
+    SHADOW_WIDTH: float = 1.05  # as a multiple of the body size
+    SHADOW_HEIGHT: float = 0.42
+    SHADOW_OFFSET: float = 0.22  # pushed down the screen so the body sits in front of it
+    # The idle breath: a slow scale pulse, offset per monster so a pack does not pulse in
+    # unison. A creature standing perfectly still reads as a sprite rather than as alive.
+    BREATH_PERIOD_MS: int = 1900
+    BREATH_AMOUNT: float = 0.045
+    # Eyes. The glow is a soft disc behind the dot; both grow when the thing has noticed the
+    # player, which is the only tell a monster gives that it is coming.
+    EYE_RADIUS: float = 0.055  # multiple of the body size
+    EYE_GLOW_MULT: float = 2.4
+    EYE_GLOW_ALPHA: int = 55
+    AGGRO_EYE_MULT: float = 1.3
+    AGGRO_GLOW_ALPHA: int = 100
+    # A wraith has no solid body: it drifts between these two alphas as it breathes.
+    WRAITH_ALPHA_MIN: int = 120
+    WRAITH_ALPHA_MAX: int = 215
+    # A monster's steel is rusted and plain, never rarity-coloured like the player's.
+    WEAPON_COLOR: tuple = (132, 126, 116)
+    WEAPON_OUTLINE: tuple = (42, 38, 34)
 
 
 @dataclass(frozen=True)

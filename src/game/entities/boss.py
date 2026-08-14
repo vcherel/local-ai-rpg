@@ -11,7 +11,7 @@ import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
 from core.particles import get_particles
-from game.entities.entities import draw_human
+from game.entities.monster_art import draw_monster
 from game.entities.monsters import Monster
 from game.entities.projectile import Projectile
 
@@ -35,6 +35,9 @@ def _kind_from_boss(template: c.BossKind) -> c.MonsterKind:
         damage=template.damage,
         min_distance=0,
         weight=0,
+        shape=template.shape,
+        weapon=template.weapon,
+        eye_color=template.eye_color,
     )
 
 
@@ -236,15 +239,22 @@ class Boss(Monster):
             pygame.draw.circle(ring, (255, 200, 120, 200), (r, r), max(2, int(r * frac)), 3)
             screen.blit(ring, (sx - r, sy - r))
 
-        draw_human(
+        draw_monster(
             screen,
             sx,
             sy,
             size,
             self.flash_color(self.kind.color),
             self.orientation,
-            self.attack_progress,
-            self.attack_hand,
+            self.kind.shape,
+            attack_progress=self.attack_progress,
+            attack_hand=self.attack_hand,
+            weapon=self.kind.weapon,
+            # Enraging brightens its eyes, the one tell that reads from across the arena.
+            eye_color=tuple(min(255, v + 60) for v in self.kind.eye_color) if self.enraged else self.kind.eye_color,
+            # A boss is never idling as far as the player is concerned: its eyes are always lit.
+            aggro=True,
+            phase=self.art_phase,
         )
 
         label = c.Fonts.button.render(self.name, True, c.Colors.WHITE)
