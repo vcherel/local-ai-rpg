@@ -181,41 +181,7 @@ class Game:
                         self.world.handle_attack(self.player, self.dialogue_manager.quest_system, ranged=True)
 
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_e:
-                        self._interact()
-
-                    elif event.key == pygame.K_b:
-                        self._trade_nearby()
-
-                    elif event.key == pygame.K_f:
-                        self._equip_pending_upgrade()
-
-                    elif pygame.K_1 <= event.key <= pygame.K_1 + c.Player.WEAPON_SLOTS - 1:
-                        self._select_weapon(event.key - pygame.K_1)
-
-                    elif event.unicode.lower() in c.Potions.QUICK_KEYS:
-                        self._drink_quick_potion(c.Potions.QUICK_KEYS.index(event.unicode.lower()))
-
-                    elif event.key == pygame.K_i:
-                        self.inventory_menu.toggle()
-
-                    elif event.key == pygame.K_j:
-                        self.quest_menu.toggle()
-
-                    elif event.key == pygame.K_c:
-                        self.stats_menu.toggle()
-
-                    elif event.key == pygame.K_l:
-                        self._show_lore()
-
-                    elif event.key == pygame.K_h:
-                        self.help_menu.toggle()
-
-                    elif event.key == pygame.K_m:
-                        self.game_renderer.minimap.toggle()
-
-                    elif event.key in (pygame.K_p, pygame.K_ESCAPE):
-                        self.pause_menu.toggle()
+                    self._handle_key(event)
 
         if self.dialogue_manager.shop_requested and not self.dialogue_manager.active:
             npc = self.dialogue_manager.current_npc
@@ -224,6 +190,34 @@ class Game:
             self.dialogue_manager.shop_requested = False
 
         return True
+
+    def _handle_key(self, event):
+        """One in-world key press. The two ranges (the weapon bar's number keys, the
+        potion quickbar's letters) are checked first because they read the key rather than
+        name it; everything else is a plain key to a method, and `HelpMenu.CONTROLS` is
+        what tells the player about it."""
+        if pygame.K_1 <= event.key <= pygame.K_1 + c.Player.WEAPON_SLOTS - 1:
+            self._select_weapon(event.key - pygame.K_1)
+            return
+        if event.unicode.lower() in c.Potions.QUICK_KEYS:
+            self._drink_quick_potion(c.Potions.QUICK_KEYS.index(event.unicode.lower()))
+            return
+
+        action = {
+            pygame.K_e: self._interact,
+            pygame.K_b: self._trade_nearby,
+            pygame.K_f: self._equip_pending_upgrade,
+            pygame.K_i: self.inventory_menu.toggle,
+            pygame.K_j: self.quest_menu.toggle,
+            pygame.K_c: self.stats_menu.toggle,
+            pygame.K_l: self._show_lore,
+            pygame.K_h: self.help_menu.toggle,
+            pygame.K_m: self.game_renderer.minimap.toggle,
+            pygame.K_p: self.pause_menu.toggle,
+            pygame.K_ESCAPE: self.pause_menu.toggle,
+        }.get(event.key)
+        if action is not None:
+            action()
 
     def _show_lore(self):
         if self.world.context:
@@ -464,12 +458,20 @@ class Game:
             self.loot_notification.show(f"You take the {stolen.name}", c.Colors.YELLOW)
         self._check_witness()
 
+    def _bed_cooling(self) -> float:
+        """Seconds before this bed is worth lying in again. Only a villager's own bed has a
+        cooldown, so an inn's is always ready as long as the player can pay; the prompt and
+        the key both read it from here so they can't disagree about whether it will work."""
+        if self.interior.kind != "house":
+            return 0.0
+        return self.world.rest_ready_in(self.interior.id)
+
     def _bed_label(self) -> str:
         """What the prompt over a bed says: the inn charges, a villager's bed doesn't, and
         a bed slept in recently says how long until it is worth lying in again."""
         if self.interior.kind != "house":
             return f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
-        cooling = self.world.rest_ready_in(self.interior.id)
+        cooling = self._bed_cooling()
         if cooling > 0:
             return f"E: this bed is still warm ({int(cooling) + 1}s)"
         return "E: sleep in their bed"
@@ -485,7 +487,7 @@ class Game:
 
         stolen_sleep = self.interior.kind == "house"
         if stolen_sleep:
-            remaining = self.world.rest_ready_in(self.interior.id)
+            remaining = self._bed_cooling()
             if remaining > 0:
                 self.loot_notification.show(f"You slept here recently. Again in {int(remaining) + 1}s", c.Colors.MUTED)
                 return

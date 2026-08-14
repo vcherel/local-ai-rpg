@@ -11,7 +11,7 @@ import math
 import pygame
 
 import core.constants as c
-from game.entities.items import draw_shape_with_border
+from game.entities.item_icons import draw_shape_with_border
 
 # Visual length of a weapon as a multiple of the character size. Roughly tracks the
 # archetype's reach so a spear reads as long and a dagger as short.

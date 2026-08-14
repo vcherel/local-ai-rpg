@@ -47,7 +47,7 @@ class WorldStreaming:
 
         self._ensure_village(chunk)
 
-        nearby = self.buildings_around((cx + 0.5) * size, (cy + 0.5) * size)
+        nearby = self.buildings_in_range((cx + 0.5) * size, (cy + 0.5) * size, size)
         chunk_pois = pois_for_chunk(cx, cy, nearby)
         for poi in chunk_pois:
             state = self.poi_state.get(poi.id)

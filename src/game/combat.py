@@ -83,55 +83,37 @@ class WorldCombat:
                 entities, pos, hit_radius, size_of, arch.cleave, origin, arch.min_hit_distance
             )
 
-        if self.bosses:
-            boss_targets = in_reach(self.bosses, lambda b: b.kind.size)
-            if boss_targets:
-                player.stats.train("strength", c.Stats.XP_PER_HIT)
-                for boss in boss_targets:
-                    self._strike_monster(boss, self.bosses, base_damage, arch, player, quest_system, blocked)
-                return
+        def strike_boss(boss):
+            self._strike_monster(boss, self.bosses, base_damage, arch, player, quest_system, blocked)
 
-        monster_targets = in_reach(self.monsters, lambda m: m.kind.size)
-        if monster_targets:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-            for monster in monster_targets:
-                self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
-            return
+        def strike_monster(monster):
+            self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
 
-        # An animal already biting the player is hit before anything peaceful, for the same
-        # reason a monster is: a rabbit standing behind the dog must not soak the blow.
-        biting = in_reach([cr for cr in self.critters if cr.hostile], lambda cr: cr.hit_radius * 2)
-        if biting:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-            for critter in biting:
-                self._strike_critter(critter, base_damage, arch, player)
-            return
+        def strike_critter(critter):
+            self._strike_critter(critter, base_damage, arch, player)
 
-        # A villager already swinging at the player counts as a monster for targeting: they
-        # come before wildlife, so a rabbit can't soak the blow meant for the mob.
-        angry = [npc for npc in self.npcs if npc.hostile]
-        angry_targets = in_reach(angry, lambda n: c.Entities.NPC_SIZE)
-        if angry_targets:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-            for npc in angry_targets:
-                self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
-            return
+        def strike_npc(npc):
+            self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
 
-        # Wildlife is struck before peaceful villagers, so hunting a rabbit in a crowd
-        # doesn't start a brawl, and after monsters, so a fox never soaks a swing meant
-        # for a wolf.
-        critter_targets = in_reach(self.critters, lambda cr: cr.hit_radius * 2)
-        if critter_targets:
+        # Target priority: bosses and monsters, then whatever is already fighting back (an
+        # animal biting, a villager swinging), then the peaceful. A rabbit standing behind
+        # a wolf must never soak the blow meant for the wolf, and hunting one in a crowded
+        # street must not land on a bystander and start a brawl. The swing goes to the
+        # first group with anything in reach and stops there.
+        for group, size_of, strike in (
+            (self.bosses, lambda e: e.kind.size, strike_boss),
+            (self.monsters, lambda e: e.kind.size, strike_monster),
+            ([cr for cr in self.critters if cr.hostile], lambda e: e.hit_radius * 2, strike_critter),
+            ([npc for npc in self.npcs if npc.hostile], lambda e: c.Entities.NPC_SIZE, strike_npc),
+            (self.critters, lambda e: e.hit_radius * 2, strike_critter),
+            (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc),
+        ):
+            targets = in_reach(group, size_of)
+            if not targets:
+                continue
             player.stats.train("strength", c.Stats.XP_PER_HIT)
-            for critter in critter_targets:
-                self._strike_critter(critter, base_damage, arch, player)
-            return
-
-        npc_targets = in_reach(self.npcs, lambda n: c.Entities.NPC_SIZE)
-        if npc_targets:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-            for npc in npc_targets:
-                self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
+            for target in targets:
+                strike(target)
             return
 
         # Nothing living in range: the swing goes into the scenery. Props take the weapon's
@@ -139,7 +121,7 @@ class WorldCombat:
         # blow and a dagger has to work at it.
         prop_damage = max(1, int(round(base_damage * arch.damage_mult)))
 
-        for building in self.buildings_around(*pos):
+        for building in self.buildings_in_range(*pos, c.World.CHUNK_SIZE):
             hit = building.damage_crate_at(pos, hit_radius, prop_damage)
             if hit is not None:
                 crate, destroyed = hit
@@ -195,7 +177,7 @@ class WorldCombat:
         (building, index, rect), or None."""
         px, py = pos
         best = None
-        for building in self.buildings_around(px, py):
+        for building in self.buildings_in_range(px, py, c.World.CHUNK_SIZE):
             for idx, window in enumerate(building.window_rects()):
                 if idx in building.broken_windows:
                     continue
@@ -474,32 +456,18 @@ class WorldCombat:
 
     def _break_breakable(self, player: Player, breakable: Breakable):
         """Smash an outdoor prop. A barrel plays out like a shop crate: juice, coins,
-        and a small chance of a dropped item landing straight in the open world. A
-        pot or bush is pure decoration: a satisfying puff and nothing else, so the
-        world has more to smash without inflating the loot economy. Either way the
-        prop is gone for good, no debris left behind."""
+        and a small chance of a dropped item landing straight in the open world. Anything
+        planted is pure decoration: a satisfying puff and nothing else, so the world has
+        more to smash without inflating the loot economy. Either way the prop is gone for
+        good, no debris left behind."""
         self.breakables.remove(breakable)
 
         if not breakable.loot:
             get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
-            if breakable.kind == "pot":
-                play_sound("crate_break")
-                get_particles().spawn_burst(
-                    breakable.x,
-                    breakable.y,
-                    (170, 100, 60),
-                    count=10,
-                    speed=5,
-                    life=400,
-                    size=3,
-                    gravity=0.4,
-                    shape="shard",
-                )
-            else:  # bush
-                play_sound("bush_rustle")
-                get_particles().spawn_burst(
-                    breakable.x, breakable.y, (80, 150, 65), count=14, speed=4, life=450, size=4, gravity=0.3
-                )
+            play_sound("bush_rustle")
+            get_particles().spawn_burst(
+                breakable.x, breakable.y, (80, 150, 65), count=14, speed=4, life=450, size=4, gravity=0.3
+            )
             return
 
         self._break_effects(breakable.x, breakable.y, (150, 110, 70), 18)
@@ -787,18 +755,25 @@ class WorldCombat:
                 continue
             self._projectile_hits_npc(proj, player, quest_system)
 
-    def _projectile_hits_monster(self, proj: Projectile, targets, player: Player, quest_system: QuestSystem) -> bool:
-        """Resolve a projectile against one list of monsters or bosses (both take hits the
-        same way). Returns True if it struck something, pierced onward or not."""
-        target = next(
+    @staticmethod
+    def _projectile_target(proj: Projectile, entities, radius_of):
+        """The first thing in `entities` this projectile is touching and has not already
+        struck, or None. `radius_of` is how wide that kind of target is: a monster goes by
+        its sprite size, an animal by its own hit radius."""
+        return next(
             (
-                t
-                for t in targets
-                if id(t) not in proj.hit_ids
-                and proj.distance_to_point((t.x, t.y)) < c.Projectile.SIZE + t.kind.size // 2
+                entity
+                for entity in entities
+                if id(entity) not in proj.hit_ids
+                and proj.distance_to_point((entity.x, entity.y)) < c.Projectile.SIZE + radius_of(entity)
             ),
             None,
         )
+
+    def _projectile_hits_monster(self, proj: Projectile, targets, player: Player, quest_system: QuestSystem) -> bool:
+        """Resolve a projectile against one list of monsters or bosses (both take hits the
+        same way). Returns True if it struck something, pierced onward or not."""
+        target = self._projectile_target(proj, targets, lambda t: t.kind.size // 2)
         if target is None:
             return False
 
@@ -823,15 +798,7 @@ class WorldCombat:
     def _projectile_hits_critter(self, proj: Projectile, player: Player) -> bool:
         """Resolve a projectile against wildlife: an arrow is how most animals get hunted,
         since they run long before a swing lands. Returns True if it struck one."""
-        critter = next(
-            (
-                cr
-                for cr in self.critters
-                if id(cr) not in proj.hit_ids
-                and proj.distance_to_point((cr.x, cr.y)) < c.Projectile.SIZE + cr.hit_radius
-            ),
-            None,
-        )
+        critter = self._projectile_target(proj, self.critters, lambda cr: cr.hit_radius)
         if critter is None:
             return False
 
@@ -850,15 +817,7 @@ class WorldCombat:
         return True
 
     def _projectile_hits_npc(self, proj: Projectile, player: Player, quest_system: QuestSystem):
-        npc = next(
-            (
-                n
-                for n in self.npcs
-                if id(n) not in proj.hit_ids
-                and proj.distance_to_point((n.x, n.y)) < c.Projectile.SIZE + c.Entities.NPC_SIZE // 2
-            ),
-            None,
-        )
+        npc = self._projectile_target(proj, self.npcs, lambda n: c.Entities.NPC_SIZE // 2)
         if npc is None:
             return
 
