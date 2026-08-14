@@ -459,7 +459,7 @@ class WorldCombat:
         poi.looted = True
         self._break_effects(poi.x, poi.y, (150, 140, 120), 20)
         coins, loot_item = open_poi_cache()
-        label = "Camp cache" if poi.kind == "camp" else "Ruins searched"
+        label = {"camp": "Camp cache", "farmstead": "Farmstead searched"}.get(poi.kind, "Ruins searched")
         self._break_loot(player, poi.x, poi.y, coins, loot_item, label, self.items.append)
 
     def _hit_breakable(self, player: Player, breakable: Breakable, damage: int):

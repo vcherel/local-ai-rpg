@@ -580,6 +580,30 @@ class Buildings:
         "tavern": (122, 88, 140),
     }
 
+    # Every building rolls a style from its own id, so a village is a row of different
+    # houses instead of the same one repeated. The kind still reads first (a shop keeps
+    # its awning, a tavern its sign); the style only changes the roof and the trim.
+    #
+    # Roof material: the covering drawn over the walls, as (name, weight).
+    ROOF_MATERIALS: tuple = (("tile", 4), ("thatch", 3), ("shingle", 3), ("slate", 2))
+    # Base colour per material. The kind's ROOF_COLORS hue is blended into it so a shop
+    # still reads blue-ish and a tavern purple-ish under any covering.
+    ROOF_MATERIAL_COLORS = {
+        "tile": (168, 84, 62),
+        "thatch": (176, 150, 88),
+        "shingle": (120, 96, 74),
+        "slate": (98, 104, 116),
+    }
+    ROOF_KIND_BLEND: float = 0.45
+    # Roof form: how the covering is drawn. "gable" has a ridge along one axis, "hip"
+    # slopes to a point, "flat" is the plain slab the game had before.
+    ROOF_FORMS: tuple = (("gable", 5), ("hip", 3), ("flat", 2))
+    # Wall colour jitter per building, so two neighbours of the same material differ.
+    WALL_TINT_RANGE: tuple = (0.88, 1.12)
+    # Extras rolled on top, each independently. A building takes at most EXTRA_MAX of them.
+    EXTRAS: tuple = (("chimney", 4), ("porch", 3), ("shutters", 4), ("flowerbox", 3), ("woodpile", 2))
+    EXTRA_MAX: int = 2
+
     # Buildings keep their distance from each other, the spawn point and the world edge.
     MIN_GAP: int = 350
     SPAWN_CLEARANCE: int = 700
@@ -624,15 +648,122 @@ class Breakables:
     "barrel" smashes the same way as an interior crate, with the same coin/item odds;
     "pot" and "bush" are pure decoration, just a satisfying puff with no reward."""
 
-    PER_BUILDING_MIN: int = 1
-    PER_BUILDING_MAX: int = 2
+    PER_BUILDING_MIN: int = 2
+    PER_BUILDING_MAX: int = 4
     SIZE: int = 30
     HIT_RADIUS: int = 20
-    # Relative pick weight among kinds scattered near a building.
-    KIND_WEIGHTS: tuple = (("barrel", 5), ("pot", 3), ("bush", 3))
-    # How much punishment each kind takes before it gives. A bush is cleared in a swipe,
-    # a barrel has to be worked at; the props are scenery you fight through, not confetti.
-    HP = {"barrel": 20, "pot": 8, "bush": 5}
+    # Relative pick weight among kinds scattered near a building. What grows by a door
+    # says more about the people living behind it than a row of clay pots did, so the
+    # decorative half of the list is planted rather than potted.
+    KIND_WEIGHTS: tuple = (
+        ("barrel", 5),
+        ("bush", 3),
+        ("flowerbed", 3),
+        ("herbs", 2),
+        ("sapling", 2),
+    )
+    # How much punishment each kind takes before it gives. A flower bed is cleared in a
+    # swipe, a barrel has to be worked at; the props are scenery you fight through, not
+    # confetti. Anything not listed (an old save's clay pot) falls back to DEFAULT_HP.
+    DEFAULT_HP: int = 8
+    HP = {"barrel": 20, "bush": 5, "flowerbed": 4, "herbs": 4, "sapling": 9, "pot": 8}
+
+
+@dataclass(frozen=True)
+class Scenery:
+    """The wilderness itself: trees, boulders, grass, ponds and the roads between villages
+    (game/entities/scenery.py).
+
+    Streamed per chunk like the floor details and thrown away with them, so none of it is
+    saved and none of it can be changed by the player. A chunk rolls one biome, which is
+    what makes a forest read as a forest instead of an even sprinkle of trees over
+    everything. Trunks and boulders are the only part that stops movement.
+    """
+
+    # Trunk/rock radius per kind that stops movement. A tree's canopy is drawn much wider
+    # than this: what blocks is the trunk, so walking under the leaves still works.
+    BLOCK_RADIUS = {"tree": 15, "pine": 14, "boulder": 30, "stump": 13}
+    # Drawn under the entities with the floor, rather than over it with the props, and in
+    # this order: the broad patches of ground first, then what lies on them, so a road is
+    # never buried under the meadow it crosses.
+    GROUND_KINDS: tuple = ("patch", "pond", "path", "pebbles", "grass", "flowers")
+
+    # Broad soft patches of a different ground colour, laid down before everything else.
+    # They are what stops open country reading as one flat green sheet, so every biome
+    # gets them, in its own shades: (multiplier on the ground green, or an absolute colour).
+    PATCH_RADIUS: tuple = (90, 200)
+    PATCH_COLORS = {
+        "plain": ((0.86, 0.94, 0.72), (1.06, 1.02, 0.9), (0.92, 1.04, 0.86)),
+        "forest": ((0.72, 0.82, 0.66), (0.84, 0.9, 0.7), (0.62, 0.76, 0.6)),
+        "rocky": ((0.86, 0.86, 0.78), (0.94, 0.9, 0.74), (0.78, 0.82, 0.76)),
+        "wetland": ((0.7, 0.88, 0.82), (0.8, 0.92, 0.76), (0.66, 0.8, 0.78)),
+    }
+
+    # Blocking scenery is bucketed on its own fine grid rather than by chunk: a forest
+    # chunk holds dozens of trunks and `World.blocked` runs several times per entity per
+    # frame, so the lookup has to land on a handful of them, not on the whole wood.
+    INDEX_CELL: int = 250
+    # Padding on each bucketed item, comfortably above the biggest radius anything
+    # collides with, so a trunk just over a cell border is still found from next door.
+    INDEX_PAD: int = 80
+
+    # Relative weight per biome, rolled once per chunk.
+    BIOME_WEIGHTS: tuple = (("plain", 5), ("forest", 4), ("rocky", 3), ("wetland", 2))
+    # What one chunk of each biome holds, as (kind, cluster count, members per cluster,
+    # cluster spread). Scenery grows in clumps because scattered singles read as noise:
+    # a copse, a boulder field and a reed bed are places, a uniform dusting is texture.
+    BIOMES = {
+        "plain": (
+            ("patch", (4, 7), (1, 2), 200),
+            ("grass", (10, 14), (4, 7), 140),
+            ("flowers", (3, 6), (3, 7), 100),
+            ("tree", (1, 3), (1, 3), 70),
+            ("pebbles", (1, 3), (2, 4), 90),
+        ),
+        "forest": (
+            ("patch", (5, 8), (1, 2), 200),
+            ("tree", (6, 9), (4, 8), 170),
+            ("pine", (2, 4), (3, 6), 150),
+            ("stump", (1, 3), (1, 2), 60),
+            ("grass", (6, 10), (3, 6), 130),
+            ("flowers", (1, 3), (2, 4), 90),
+        ),
+        "rocky": (
+            ("patch", (4, 7), (1, 2), 200),
+            ("boulder", (3, 5), (2, 4), 140),
+            ("pebbles", (6, 10), (3, 6), 110),
+            ("grass", (4, 7), (2, 5), 120),
+            ("pine", (1, 3), (1, 3), 90),
+        ),
+        "wetland": (
+            ("patch", (5, 8), (1, 2), 210),
+            ("pond", (1, 3), (1, 1), 0),
+            ("reeds", (4, 8), (4, 8), 110),
+            ("grass", (6, 10), (3, 6), 140),
+            ("tree", (1, 3), (1, 2), 80),
+        ),
+    }
+
+    # How far from a building, landmark or plaza anything is kept, so cover never grows
+    # through a wall or over a campfire.
+    CLEARANCE_BUILDING: int = 90
+    CLEARANCE_POI: int = 150
+    CLEARANCE_VILLAGE: int = 260
+
+    # Ponds are the one kind big enough to need its own footprint.
+    POND_RADIUS: tuple = (70, 150)
+
+    # Roads: each village site is joined to its nearest neighbour, and the chunk being
+    # generated lays down the packed earth of whatever passes through it. Nothing that
+    # blocks may stand within CLEARANCE of one, so a road is always walkable.
+    ROAD_SITE_CHUNK_RADIUS: int = 8
+    # Blobs of packed earth laid closer together than they are wide, so the track reads as
+    # one worn line rather than as stepping stones.
+    ROAD_STEP: int = 16
+    ROAD_WIDTH: tuple = (14, 22)
+    ROAD_WOBBLE: int = 90
+    ROAD_CLEARANCE: int = 55
+    ROAD_COLOR: tuple = (128, 106, 76)
 
 
 @dataclass(frozen=True)
@@ -647,11 +778,14 @@ class Villages:
     quests and shop stock, none of which survives being regenerated.
     """
 
-    REGION_CHUNKS: int = 3
-    REGION_CHANCE: float = 0.7
+    # Settlements are meant to be a find, not scenery: a bigger region and a lower chance
+    # put a real stretch of wilderness between one and the next, which only works because
+    # that wilderness has cover, landmarks and roads of its own (Scenery, PointsOfInterest).
+    REGION_CHUNKS: int = 4
+    REGION_CHANCE: float = 0.55
     # Two regions can both settle near their shared border; the later one stands down, so
     # there is always this much empty wilderness between one settlement and the next.
-    MIN_GAP: int = 2200
+    MIN_GAP: int = 3500
     # Kept away from the chunk's own edges so the cluster stays inside its own region.
     CHUNK_MARGIN: int = 380
     # The starting town already sits here; no streamed village crowds it.
@@ -718,7 +852,16 @@ class Minimap:
     GROUND_COLOR: tuple = (58, 74, 48)
     PLAZA_COLOR: tuple = (120, 98, 70)
     PLAYER_COLOR: tuple = (245, 245, 245)
-    POI_COLORS = {"ruins": (150, 148, 140), "camp": (215, 140, 60), "shrine": (200, 195, 145)}
+    POI_COLORS = {
+        "ruins": (150, 148, 140),
+        "camp": (215, 140, 60),
+        "shrine": (200, 195, 145),
+        "farmstead": (176, 148, 92),
+        "graveyard": (130, 140, 150),
+        "watchtower": (170, 160, 145),
+        "stones": (160, 150, 185),
+        "signpost": (196, 168, 110),
+    }
 
     # A rumour is the one thing on the map the player has not walked to: it is drawn
     # wherever it lies, clamped to the panel edge when it is further out than RANGE, and
@@ -740,26 +883,60 @@ class PointsOfInterest:
     blessing that sometimes turns out to be a curse;
     a "camp" rolls into either a bandit camp (guarded cache) or a traveller camp (a camper
     who trades and points the way), and either way its fire can be rested at once the camp
-    is settled.
+    is settled. "farmstead" is a second lootable cache with its own look; "graveyard",
+    "watchtower" and "stones" are places rather than rewards, each saying what it is the
+    first time it is walked up to; "signpost" reads out the way to somewhere unexplored.
     """
 
     # Points of interest stream in per chunk like the floor details, so the wilderness
     # keeps offering something to find however far out the player walks. At most one per
     # chunk, kept CHUNK_MARGIN away from the chunk's edges, which is what spaces
     # neighbouring chunks' landmarks apart without any cross-chunk bookkeeping.
-    PER_CHUNK_CHANCE: float = 0.55
+    PER_CHUNK_CHANCE: float = 0.7
     CHUNK_MARGIN: int = 260
     MIN_DIST_FROM_BUILDING: int = 400
     MIN_DIST_FROM_CENTER: int = 900
     SIZE: int = 46
     HIT_RADIUS: int = 34
-    # Relative pick weight among kinds scattered across the wilderness.
-    KIND_WEIGHTS: tuple = (("ruins", 4), ("camp", 3), ("shrine", 3))
+    # Relative pick weight among kinds scattered across the wilderness. The three that
+    # can be acted on (a cache to force, a camp to clear or trade at, a shrine to pray at)
+    # stay the most common; the rest are there so that walking out finds a place rather
+    # than the same three landmarks over and over.
+    KIND_WEIGHTS: tuple = (
+        ("ruins", 4),
+        ("camp", 3),
+        ("shrine", 3),
+        ("farmstead", 3),
+        ("graveyard", 2),
+        ("watchtower", 2),
+        ("stones", 2),
+        ("signpost", 2),
+    )
 
-    # A shrine shows its flavor line the first time the player gets this close. The line
-    # always ends with what a shrine is for, because a landmark that never says what it
-    # does is a landmark the player walks past forever.
+    # A landmark shows its flavor line the first time the player gets this close. A
+    # shrine's line always ends with what a shrine is for, because a landmark that never
+    # says what it does is a landmark the player walks past forever.
     DISCOVER_DISTANCE: int = 160
+    # What each of the quiet landmarks says the first time it is reached. A signpost says
+    # nothing here: it reads out directions to somewhere unexplored instead, like a camper.
+    LANDMARK_MESSAGES = {
+        "farmstead": (
+            "An abandoned farmstead. Whoever worked this field left in a hurry.",
+            "Fallen fences and a caved-in barn. Something worth taking may still be inside.",
+        ),
+        "graveyard": (
+            "A wilderness graveyard. The names on the stones have worn away.",
+            "Old graves, dug well away from any village. Best not linger after dark.",
+        ),
+        "watchtower": (
+            "A ruined watchtower, its stair long collapsed.",
+            "This tower watched the road once. Nobody has climbed it in years.",
+        ),
+        "stones": (
+            "Standing stones in a rough circle, humming faintly.",
+            "These stones were raised on purpose, a very long time ago.",
+        ),
+    }
     SHRINE_MESSAGES: tuple = (
         "An old shrine, worn smooth by countless hands.",
         "Faded offerings lie at the foot of this shrine.",

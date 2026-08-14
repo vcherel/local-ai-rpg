@@ -24,7 +24,10 @@ class PointOfInterest:
     rolled from the POI's id so it never changes under the player. A bandit camp posts guards
     around a cache that stays shut until they are dead; a traveller camp holds a camper who
     trades and points the way. Either camp's fire can be rested at once nothing hostile is
-    standing near it.
+    standing near it. "farmstead" is a second lootable cache with a look of its own;
+    "graveyard", "watchtower" and "stones" are places rather than rewards, each saying what
+    it is the first time it is reached; "signpost" reads out the way to somewhere the player
+    has never walked and marks it on the map, like a rumour.
     """
 
     def __init__(self, x, y, kind="ruins", poi_id=""):
@@ -62,7 +65,7 @@ class PointOfInterest:
 
     @property
     def has_loot(self) -> bool:
-        return self.kind == "ruins" or self.variant == "bandit"
+        return self.kind in ("ruins", "farmstead") or self.variant == "bandit"
 
     @property
     def has_fire(self) -> bool:
@@ -122,12 +125,111 @@ class PointOfInterest:
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)
         center = (round(sx), round(sy))
-        if self.kind == "camp":
-            self._draw_camp(screen, center)
-        elif self.kind == "shrine":
-            self._draw_shrine(screen, center)
-        else:
-            self._draw_ruins(screen, center)
+        drawer = {
+            "camp": self._draw_camp,
+            "shrine": self._draw_shrine,
+            "farmstead": self._draw_farmstead,
+            "graveyard": self._draw_graveyard,
+            "watchtower": self._draw_watchtower,
+            "stones": self._draw_stones,
+            "signpost": self._draw_signpost,
+        }.get(self.kind, self._draw_ruins)
+        drawer(screen, center)
+
+    def _draw_farmstead(self, screen, center):
+        """A caved-in barn with its fence still half standing. Lootable like a ruins pile,
+        so once emptied the barn is drawn open and the cart is tipped over."""
+        cx, cy = center
+        rng = random.Random(f"farm:{self.x},{self.y}")
+        barn = pygame.Rect(0, 0, 76, 54)
+        barn.center = (cx, cy - 6)
+        pygame.draw.rect(screen, (128, 96, 66), barn, border_radius=3)
+        pygame.draw.rect(screen, (78, 56, 38), barn, 3, border_radius=3)
+        roof = pygame.Rect(barn.left + 6, barn.top + 6, barn.width - 12, barn.height - 14)
+        pygame.draw.rect(screen, (146, 74, 56) if not self.looted else (96, 72, 60), roof)
+        # The collapsed corner: a hole in the roof, wider once the place has been searched.
+        hole = pygame.Rect(0, 0, 26 if not self.looted else 38, 20 if not self.looted else 28)
+        hole.center = (roof.centerx + 8, roof.centery)
+        pygame.draw.ellipse(screen, (52, 40, 32), hole)
+
+        for i in range(5):
+            post_x = cx - 62 + i * 14
+            pygame.draw.line(screen, (110, 88, 60), (post_x, cy + 26), (post_x, cy + 12 + rng.randint(0, 6)), 3)
+        pygame.draw.line(screen, (110, 88, 60), (cx - 62, cy + 18), (cx - 8, cy + 18), 2)
+
+        cart = pygame.Rect(0, 0, 34, 16)
+        cart.center = (cx + 62, cy + 20)
+        pygame.draw.rect(screen, (120, 92, 58), cart, border_radius=3)
+        pygame.draw.circle(screen, (74, 56, 36), (cart.left + 6, cart.bottom), 7)
+        pygame.draw.circle(screen, (74, 56, 36), (cart.right - 6, cart.bottom), 7)
+
+    def _draw_graveyard(self, screen, center):
+        cx, cy = center
+        rng = random.Random(f"grave:{self.x},{self.y}")
+        for _ in range(6):
+            ox = rng.uniform(-58, 58)
+            oy = rng.uniform(-26, 26)
+            stone = pygame.Rect(0, 0, rng.randint(14, 20), rng.randint(20, 28))
+            stone.center = (round(cx + ox), round(cy + oy))
+            grey = rng.randint(126, 152)
+            pygame.draw.rect(screen, (grey, grey, grey - 6), stone, border_top_left_radius=8, border_top_right_radius=8)
+            pygame.draw.rect(screen, (78, 78, 74), stone, 2, border_top_left_radius=8, border_top_right_radius=8)
+            # The mound in front of it, so the stones read as graves rather than as rubble.
+            mound = pygame.Rect(0, 0, stone.width + 8, 8)
+            mound.midtop = stone.midbottom
+            pygame.draw.ellipse(screen, (78, 70, 54), mound)
+
+    def _draw_watchtower(self, screen, center):
+        cx, cy = center
+        pygame.draw.circle(screen, (60, 58, 52), (cx + 6, cy + 8), 40)
+        pygame.draw.circle(screen, (158, 152, 140), (cx, cy), 38)
+        pygame.draw.circle(screen, (96, 92, 84), (cx, cy), 38, 3)
+        pygame.draw.circle(screen, (108, 104, 96), (cx, cy), 22)
+        # Merlons around the rim, with one stretch fallen away.
+        for i in range(10):
+            if i in (3, 4):
+                continue
+            angle = 2 * math.pi * i / 10
+            pos = (round(cx + math.cos(angle) * 32), round(cy + math.sin(angle) * 32))
+            pygame.draw.circle(screen, (178, 172, 160), pos, 7)
+        rng = random.Random(f"tower:{self.x},{self.y}")
+        for _ in range(5):
+            ox, oy = rng.uniform(-70, 70), rng.uniform(-60, 60)
+            if math.hypot(ox, oy) < 44:
+                continue
+            pygame.draw.circle(screen, (140, 136, 126), (round(cx + ox), round(cy + oy)), rng.randint(4, 9))
+
+    def _draw_stones(self, screen, center):
+        cx, cy = center
+        count = 7
+        for i in range(count):
+            angle = 2 * math.pi * i / count
+            px, py = cx + math.cos(angle) * 54, cy + math.sin(angle) * 38
+            stone = pygame.Rect(0, 0, 16, 34)
+            stone.center = (round(px), round(py))
+            pygame.draw.rect(screen, (146, 142, 160), stone, border_radius=5)
+            pygame.draw.rect(screen, (92, 90, 108), stone, 2, border_radius=5)
+        # The ring breathes: enough to say something is still in these stones, no more.
+        pulse = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 900.0)
+        glow = pygame.Surface((140, 110), pygame.SRCALPHA)
+        pygame.draw.ellipse(glow, (170, 160, 220, round(30 * pulse)), glow.get_rect())
+        screen.blit(glow, (cx - 70, cy - 55))
+
+    def _draw_signpost(self, screen, center):
+        cx, cy = center
+        pygame.draw.line(screen, (96, 72, 46), (cx, cy + 26), (cx, cy - 30), 5)
+        rng = random.Random(f"sign:{self.x},{self.y}")
+        for i, side in enumerate((1, -1)):
+            board = pygame.Rect(0, 0, 44, 14)
+            board.center = (cx + side * 22, cy - 20 + i * 18)
+            pygame.draw.rect(screen, (176, 142, 92), board, border_radius=2)
+            pygame.draw.rect(screen, (104, 80, 48), board, 2, border_radius=2)
+            # Weathered lettering, three worn strokes rather than readable words.
+            for stroke in range(3):
+                sx = board.left + 7 + stroke * 11
+                pygame.draw.line(
+                    screen, (104, 80, 48), (sx, board.centery - 2), (sx + rng.randint(3, 6), board.centery + 2), 1
+                )
 
     def _draw_ruins(self, screen, center):
         size = c.PointsOfInterest.SIZE

@@ -94,6 +94,13 @@ class GameRenderer:
             else:
                 pygame.draw.circle(self.screen, (255, 0, 0), (screen_x, screen_y), 2)
 
+        # Roads, ponds, grass and flowers: the ground itself, so they go under everything
+        # standing on it (the props they came with are drawn further down, with the barrels).
+        ground_margin = max(c.Scenery.POND_RADIUS[1], c.Scenery.PATCH_RADIUS[1])
+        for item in world.scenery_ground_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + ground_margin):
+            if self._on_screen(camera, item.x, item.y, margin=ground_margin):
+                item.draw(self.screen, camera)
+
         # The plaza a village is built around, drawn under its buildings.
         for village in world.villages:
             if self._on_screen(camera, village.x, village.y, margin=c.Villages.PLAZA_RADIUS + 40):
@@ -108,6 +115,10 @@ class GameRenderer:
         for breakable in world.breakables:
             if self._on_screen(camera, breakable.x, breakable.y):
                 breakable.draw(self.screen, camera)
+
+        for item in world.scenery_props_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 100):
+            if self._on_screen(camera, item.x, item.y, margin=70):
+                item.draw(self.screen, camera)
 
         for poi in world.pois:
             if self._on_screen(camera, poi.x, poi.y):

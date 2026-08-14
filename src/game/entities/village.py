@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import pygame
@@ -104,6 +105,7 @@ class Village:
         pygame.draw.rect(screen, (120, 86, 52), beam)
 
 
+@lru_cache(maxsize=4096)
 def _region_site(rx: int, ry: int) -> Optional[Tuple[int, int, int, int]]:
     """The chunk one region settles and where in it, as (cx, cy, x, y), or None for an empty
     region. Pure function of the region coordinates."""
@@ -125,6 +127,7 @@ def _region_site(rx: int, ry: int) -> Optional[Tuple[int, int, int, int]]:
     return cx, cy, x, y
 
 
+@lru_cache(maxsize=4096)
 def village_site(cx: int, cy: int) -> Optional[Tuple[int, int]]:
     """Where the village belonging to chunk (cx, cy) stands, or None if it holds none.
 
@@ -132,7 +135,9 @@ def village_site(cx: int, cy: int) -> Optional[Tuple[int, int]]:
     whose site lands too close to a neighbouring region's yields to it, so two settlements
     can't end up back to back across a region border. All of it is a pure function of the
     coordinates: the same chunk always offers the same site, whether or not the village
-    behind it has been generated yet.
+    behind it has been generated yet, which is also why the answer is cached: chunk
+    loading, landmark placement and the roads between settlements all ask it repeatedly
+    for the same coordinates.
     """
     region = c.Villages.REGION_CHUNKS
     rx, ry = math.floor(cx / region), math.floor(cy / region)
@@ -149,6 +154,25 @@ def village_site(cx: int, cy: int) -> Optional[Tuple[int, int]]:
             if other is not None and math.hypot(site[2] - other[2], site[3] - other[3]) < c.Villages.MIN_GAP:
                 return None
     return site[2], site[3]
+
+
+def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> List[Tuple[int, int]]:
+    """Every village site within `chunk_radius` chunks of (cx, cy), generated or not.
+
+    Sites are a pure function of their region, so this answers the same thing from
+    anywhere: what the roads between settlements are drawn from, and cheap enough to ask
+    on every chunk load because it walks regions rather than chunks.
+    """
+    region = c.Villages.REGION_CHUNKS
+    sites: List[Tuple[int, int]] = []
+    for rx in range(math.floor((cx - chunk_radius) / region), math.floor((cx + chunk_radius) / region) + 1):
+        for ry in range(math.floor((cy - chunk_radius) / region), math.floor((cy + chunk_radius) / region) + 1):
+            site = _region_site(rx, ry)
+            # Asked back through village_site so a region that stands down for a neighbour
+            # is left out here too, and no road is drawn to a village that never exists.
+            if site is not None and village_site(site[0], site[1]) is not None:
+                sites.append((site[2], site[3]))
+    return sites
 
 
 def _building_kinds(composition: dict, rng: random.Random) -> List[str]:
