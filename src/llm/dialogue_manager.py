@@ -280,6 +280,7 @@ class DialogueManager:
             "First message",
             max_tokens=c.Hyperparameters.DIALOGUE_MAX_TOKENS,
             stop=DIALOGUE_STOPS,
+            poll=True,
         )
 
     def handle_event(self, event, npc_name_generator: NPCNameGenerator):
@@ -329,7 +330,11 @@ class DialogueManager:
         return True
 
     def handle_text_input(self, event):
-        if not self.active or self.conversation_ended:
+        # The reply still streaming in is the one the player is answering, so the box takes
+        # nothing until it is finished. Before the stream was polled the main thread was
+        # blocked here anyway; now it is not, and sending mid-stream would abandon a reply
+        # halfway through writing itself.
+        if not self.active or self.conversation_ended or self.generator is not None:
             return
 
         message = self.ui.handle_text_input(event)
@@ -346,6 +351,10 @@ class DialogueManager:
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
+                # Nothing generated yet this frame: the stream is polled, not waited on, so
+                # the game keeps running and the spinner keeps saying the NPC is thinking.
+                if partial is None:
+                    return
                 match = END_RE.search(partial)
                 if match:
                     stripped = partial[: match.start()].rstrip()
@@ -489,6 +498,7 @@ class DialogueManager:
             "Continuing conversation",
             max_tokens=c.Hyperparameters.DIALOGUE_MAX_TOKENS,
             stop=DIALOGUE_STOPS,
+            poll=True,
         )
 
     def _execute_quest_analysis(self, npc: NPC, conversation_text: str, log_path):
