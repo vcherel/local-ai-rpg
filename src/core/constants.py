@@ -37,6 +37,10 @@ class Player:
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
+    # Weapons on the number-key bar. Deliberately short: the point is switching between a
+    # couple of answers mid-fight, not carrying an armoury on the HUD.
+    WEAPON_SLOTS: int = 3
+
 
 @dataclass(frozen=True)
 class Death:
@@ -1057,8 +1061,10 @@ class Potions:
         "stoneskin": (172, 172, 188),
     }
 
-    # Potions the player can drink straight from the HUD with the number keys.
+    # Potions the player can drink straight from the HUD. The number row went to the
+    # weapon bar, so the quickbar sits on the letters under the movement hand instead.
     QUICK_SLOTS: int = 4
+    QUICK_KEYS: tuple = ("q", "r", "t", "y")
 
 
 @dataclass(frozen=True)

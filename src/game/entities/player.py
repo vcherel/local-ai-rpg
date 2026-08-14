@@ -28,6 +28,7 @@ EQUIP_SLOT_ATTRS = {
     "offhand": "equipped_offhand_id",
     "armor": "equipped_armor_id",
     "accessory": "equipped_accessory_id",
+    "ammo": "equipped_ammo_id",
 }
 
 # Held down to raise the shield. A hold rather than a toggle, so blocking is something
@@ -48,7 +49,7 @@ def _equip_slot(item) -> str | None:
         return "ranged_weapon" if c.weapon_archetype(item.name).ranged else "melee_weapon"
     if item.item_type == "shield":
         return "offhand"
-    if item.item_type in ("armor", "accessory"):
+    if item.item_type in ("armor", "accessory", "ammo"):
         return item.item_type
     return None
 
@@ -82,6 +83,14 @@ class Player(Entity):
         self.equipped_offhand_id = equipped.get("offhand")
         self.equipped_armor_id = equipped.get("armor")
         self.equipped_accessory_id = equipped.get("accessory")
+        self.equipped_ammo_id = equipped.get("ammo")
+
+        # The weapon bar the number keys switch between. It sits on top of the melee and
+        # ranged slots rather than replacing them: selecting a bar slot routes that weapon
+        # into whichever of the two its archetype belongs to, so a bow and a sword stay
+        # carried at once and combat never has to ask which one is "active".
+        bar = save_system.load("weapon_bar", [])
+        self.weapon_bar = (list(bar) + [None] * c.Player.WEAPON_SLOTS)[: c.Player.WEAPON_SLOTS]
 
         # Shield state, all session-only: whether the shield is up this frame, how much
         # guard is left to absorb hits with, and the moment a broken guard comes back.
@@ -290,7 +299,7 @@ class Player(Entity):
         return item
 
     def quick_potions(self) -> list:
-        """The potions bound to the HUD number keys, in inventory order."""
+        """The potions bound to the HUD quick keys, in inventory order."""
         return [item for item in self.inventory if item.item_type == "potion"][: c.Potions.QUICK_SLOTS]
 
     def equipped_ids(self) -> dict:
@@ -300,6 +309,7 @@ class Player(Entity):
             "offhand": self.equipped_offhand_id,
             "armor": self.equipped_armor_id,
             "accessory": self.equipped_accessory_id,
+            "ammo": self.equipped_ammo_id,
         }
 
     def equipped_item(self, slot: str):
@@ -313,13 +323,91 @@ class Player(Entity):
         slot = _equip_slot(item)
         if slot is None:
             return
-        setattr(self, EQUIP_SLOT_ATTRS[slot], item.id)
+        attr = EQUIP_SLOT_ATTRS[slot]
+        displaced = getattr(self, attr)
+        setattr(self, attr, item.id)
         self.save_system.update("equipped", self.equipped_ids())
+        if slot in ("melee_weapon", "ranged_weapon"):
+            self._add_to_weapon_bar(item.id, displaced)
+
+    # --- weapon bar ------------------------------------------------------------
+    # A short list of weapon ids the number keys switch between. Only the bar is stored;
+    # what a slot does when pressed is decided by the weapon's archetype at the time, so
+    # the bar never has to be kept in step with the melee/ranged slots.
+
+    def _save_weapon_bar(self):
+        self.save_system.update("weapon_bar", self.weapon_bar)
+
+    def _add_to_weapon_bar(self, item_id: str, displaced_id: str | None = None):
+        """Put a newly equipped weapon on the bar: into the slot holding the weapon it
+        just pushed out of its equip slot, else the first free slot, else the last one."""
+        if item_id in self.weapon_bar:
+            return
+        if displaced_id is not None and displaced_id in self.weapon_bar:
+            index = self.weapon_bar.index(displaced_id)
+        elif None in self.weapon_bar:
+            index = self.weapon_bar.index(None)
+        else:
+            index = len(self.weapon_bar) - 1
+        self.weapon_bar[index] = item_id
+        self._save_weapon_bar()
+
+    def _drop_from_weapon_bar(self, item_id: str):
+        if item_id in self.weapon_bar:
+            self.weapon_bar[self.weapon_bar.index(item_id)] = None
+            self._save_weapon_bar()
+
+    def weapon_bar_items(self) -> list:
+        """The bar as items, None per empty slot. An id that no longer resolves (the
+        weapon was sold from another screen) is cleared on the way past."""
+        by_id = {item.id: item for item in self.inventory}
+        items = []
+        for index, item_id in enumerate(self.weapon_bar):
+            item = by_id.get(item_id) if item_id else None
+            if item_id and item is None:
+                self.weapon_bar[index] = None
+            items.append(item)
+        return items
+
+    def cycle_weapon_slot(self, item):
+        """Move a weapon along the bar one slot per call, off the end and back to nothing.
+        This is the manual assignment behind right-clicking a weapon in the inventory."""
+        if item.item_type != "weapon":
+            return
+        if item.id in self.weapon_bar:
+            index = self.weapon_bar.index(item.id)
+            self.weapon_bar[index] = None
+            target = index + 1
+        elif None in self.weapon_bar:
+            # A free slot first, so the common case of filling the bar up never costs
+            # the player a weapon they had already put on it.
+            target = self.weapon_bar.index(None)
+        else:
+            target = 0
+        if target < len(self.weapon_bar):
+            self.weapon_bar[target] = item.id
+        self._save_weapon_bar()
+
+    def select_weapon(self, slot: int):
+        """Equip the weapon on bar slot `slot` into whichever equip slot its archetype
+        belongs to. Returns the item, or None if that slot is empty."""
+        items = self.weapon_bar_items()
+        if slot >= len(items) or items[slot] is None:
+            return None
+        item = items[slot]
+        equip_slot = _equip_slot(item)
+        if getattr(self, EQUIP_SLOT_ATTRS[equip_slot]) == item.id:
+            return item
+        setattr(self, EQUIP_SLOT_ATTRS[equip_slot], item.id)
+        self.save_system.update("equipped", self.equipped_ids())
+        return item
 
     def is_upgrade(self, item) -> bool:
-        """True if the item is equippable and beats (or fills an empty) its slot."""
+        """True if the item is equippable and beats (or fills an empty) its slot. Ammo is
+        equippable but never an upgrade: which quiver is loaded is a choice, not a power
+        level, and prompting "press F to equip" over every bundle of arrows is noise."""
         slot = _equip_slot(item)
-        if slot is None:
+        if slot is None or slot == "ammo":
             return False
         equipped = self.equipped_item(slot)
         return item.bonus > (equipped.bonus if equipped else -1)
@@ -330,8 +418,11 @@ class Player(Entity):
         if slot is None:
             return
         attr = EQUIP_SLOT_ATTRS[slot]
-        setattr(self, attr, None if getattr(self, attr) == item.id else item.id)
-        self.save_system.update("equipped", self.equipped_ids())
+        if getattr(self, attr) == item.id:
+            setattr(self, attr, None)
+            self.save_system.update("equipped", self.equipped_ids())
+        else:
+            self.equip(item)
 
     def unequip_if_equipped(self, item):
         """Clears an item's slot before it leaves the inventory (sold, dropped, etc)."""
@@ -340,6 +431,7 @@ class Player(Entity):
         if attr and getattr(self, attr) == item.id:
             setattr(self, attr, None)
             self.save_system.update("equipped", self.equipped_ids())
+        self._drop_from_weapon_bar(item.id)
 
     def weapon_bonus(self, ranged: bool = False) -> int:
         item = self.equipped_item("ranged_weapon" if ranged else "melee_weapon")

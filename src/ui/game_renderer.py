@@ -22,8 +22,9 @@ if TYPE_CHECKING:
 
 class GameRenderer:
     # Everything below sits inside one permanent panel in the top left corner:
-    # a row of icon buttons, then coin/item/quest counters, then equipped gear.
-    HUD_PANEL_RECT = pygame.Rect(8, 8, 370, 170)
+    # a row of icon buttons, then coin/item/quest counters, then equipped gear, then the
+    # weapon bar the number keys switch between.
+    HUD_PANEL_RECT = pygame.Rect(8, 8, 460, 232)
     HUD_ICON_SIZE = 40
     HUD_ICON_GAP = 8
 
@@ -48,7 +49,7 @@ class GameRenderer:
         # (rect, icon glyph, tooltip label) for the icon dock row, in draw/hit-test order.
         self.dock_buttons = (
             (self.inv_button_rect, "bag", "Inventory (I)"),
-            (self.quest_button_rect, "scroll", "Quests (Q)"),
+            (self.quest_button_rect, "scroll", "Quests (J)"),
             (self.stats_button_rect, "person", "Character (C)"),
             (self.lore_button_rect, "book", "Lore (L)"),
             (self.help_button_rect, "question", "Help (H)"),
@@ -254,7 +255,8 @@ class GameRenderer:
         x = self._draw_stat_chip(x, stats_y, "bag", nb_items)
         self._draw_stat_chip(x, stats_y, "scroll", nb_quests)
 
-        self._draw_equipped(player, top=stats_y + 30)
+        equipped_bottom = self._draw_equipped(player, top=stats_y + 30)
+        self._draw_weapon_bar(player, top=equipped_bottom + 10)
         self._draw_potion_bar(player)
         self._draw_guard_bar(player)
 
@@ -281,7 +283,7 @@ class GameRenderer:
         return [pygame.Rect(left + i * step, top, self.QUICK_SLOT_SIZE, self.QUICK_SLOT_SIZE) for i in range(count)]
 
     def _draw_potion_bar(self, player: Player):
-        """The potion quickbar above the health bar: one slot per number key, with the
+        """The potion quickbar above the health bar: one slot per quick key, with the
         live buff chips floating just over it."""
         potions = player.quick_potions()
         rects = self._quick_slot_rects()
@@ -299,7 +301,7 @@ class GameRenderer:
             else:
                 draw_shape_with_border(self.screen, "flask", rect.center, 14, (60, 60, 70), 2, (84, 84, 98))
 
-            key_label = c.Fonts.small.render(str(i + 1), True, c.Colors.MUTED)
+            key_label = c.Fonts.small.render(c.Potions.QUICK_KEYS[i].upper(), True, c.Colors.MUTED)
             self.screen.blit(key_label, (rect.x + 4, rect.y + 2))
 
         self._draw_buff_chips(player, bottom=rects[0].top - 6)
@@ -356,11 +358,13 @@ class GameRenderer:
             self.screen.blit(label, (rect.x + pad + dot_space, rect.centery - label.get_height() // 2))
             x += width + gap
 
-    def _draw_equipped(self, player: Player, top: int):
-        """A mini paper-doll on the HUD: one captioned slot per equip type."""
+    def _draw_equipped(self, player: Player, top: int) -> int:
+        """A mini paper-doll on the HUD: one captioned slot per equip type. Returns the y
+        the captions end at, so what comes under it doesn't have to guess."""
         slot = 46
-        step = 70
+        step = 72
         left = self.HUD_PANEL_RECT.x + 10
+        bottom = top + slot
         for i, (item_type, caption, glyph) in enumerate(widgets.EQUIP_SLOTS):
             item = player.equipped_item(item_type)
             rect = pygame.Rect(left + i * step, top, slot, slot)
@@ -369,11 +373,38 @@ class GameRenderer:
             widgets.draw_slot(self.screen, rect, border_color=border)
             if item is not None:
                 widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 34)
+                if item.quantity > 1:
+                    count = c.Fonts.small.render(str(item.quantity), True, c.Colors.WHITE)
+                    self.screen.blit(count, (rect.right - count.get_width() - 3, rect.bottom - count.get_height() - 1))
             else:
                 draw_shape_with_border(self.screen, glyph, rect.center, 15, (60, 60, 70), 2, (84, 84, 98))
 
             label = c.Fonts.small.render(caption, True, c.Colors.MUTED)
             self.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 3))
+            bottom = max(bottom, rect.bottom + 3 + label.get_height())
+        return bottom
+
+    def _draw_weapon_bar(self, player: Player, top: int):
+        """The number-key weapon bar. A gold border marks the two weapons currently in the
+        melee and ranged slots, so the bar shows what a key would do and what it already did."""
+        slot = 46
+        step = 72
+        left = self.HUD_PANEL_RECT.x + 10
+        live = {player.equipped_melee_weapon_id, player.equipped_ranged_weapon_id}
+
+        for i, item in enumerate(player.weapon_bar_items()):
+            rect = pygame.Rect(left + i * step, top, slot, slot)
+            active = item is not None and item.id in live
+            border = c.Colors.ACCENT if active else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
+            widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if active else 2)
+
+            if item is not None:
+                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 34)
+            else:
+                draw_shape_with_border(self.screen, "sword", rect.center, 15, (60, 60, 70), 2, (84, 84, 98))
+
+            key = c.Fonts.small.render(str(i + 1), True, c.Colors.ACCENT if active else c.Colors.MUTED)
+            self.screen.blit(key, (rect.x + 4, rect.y + 2))
 
     def _draw_llm_task_panel(self, llm_tasks):
         width = 240

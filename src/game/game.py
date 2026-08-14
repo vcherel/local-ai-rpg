@@ -193,13 +193,16 @@ class Game:
                     elif event.key == pygame.K_f:
                         self._equip_pending_upgrade()
 
-                    elif pygame.K_1 <= event.key <= pygame.K_1 + c.Potions.QUICK_SLOTS - 1:
-                        self._drink_quick_potion(event.key - pygame.K_1)
+                    elif pygame.K_1 <= event.key <= pygame.K_1 + c.Player.WEAPON_SLOTS - 1:
+                        self._select_weapon(event.key - pygame.K_1)
+
+                    elif event.unicode.lower() in c.Potions.QUICK_KEYS:
+                        self._drink_quick_potion(c.Potions.QUICK_KEYS.index(event.unicode.lower()))
 
                     elif event.key == pygame.K_i:
                         self.inventory_menu.toggle()
 
-                    elif event.key == pygame.K_q:
+                    elif event.key == pygame.K_j:
                         self.quest_menu.toggle()
 
                     elif event.key == pygame.K_c:
@@ -280,8 +283,18 @@ class Game:
         self.player.equip(item)
         self.loot_notification.show(f"Equipped {item.name}", rarity_color(item.rarity))
 
+    def _select_weapon(self, slot: int):
+        """Draw the weapon on a number-key bar slot. It goes into the melee or the ranged
+        slot depending on its archetype, so switching a bow never puts your sword away."""
+        item = self.player.select_weapon(slot)
+        if item is None:
+            self.loot_notification.show(f"No weapon on slot {slot + 1}", c.Colors.MUTED)
+            return
+        hand = "ranged" if c.weapon_archetype(item.name).ranged else "melee"
+        self.loot_notification.show(f"{item.name} ready ({hand})", rarity_color(item.rarity))
+
     def _drink_quick_potion(self, slot: int):
-        """Drink the potion bound to a HUD number key, if that slot holds one."""
+        """Drink the potion bound to a HUD quick key, if that slot holds one."""
         potions = self.player.quick_potions()
         if slot >= len(potions):
             return
