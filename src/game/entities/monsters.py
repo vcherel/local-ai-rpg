@@ -8,6 +8,7 @@ import pygame
 
 import core.constants as c
 from game.entities.entities import Entity
+from game.entities.monster_art import draw_monster, weapon_hand
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -57,6 +58,11 @@ class Monster(Entity):
         # when it next switches.
         self.flank_side = random.choice((-1, 1))
         self.flank_flip_ms = 0
+        # Drawing only: whether it has noticed the player (its eyes flare, which is the one
+        # warning it gives before it starts coming), and its own offset into the idle breath
+        # so a pack of them does not pulse as one animal.
+        self.aggro = False
+        self.art_phase = random.random()
 
     def apply_burn(self, damage: int):
         """(Re)ignite this monster: refresh the tick count and take the stronger burn."""
@@ -83,10 +89,21 @@ class Monster(Entity):
         an archer cornered into fighting must not be hitting from across the clearing."""
         return c.Entities.RANGED_MELEE_RANGE if self.kind.ranged else self.kind.attack_range
 
+    @property
+    def shot_readiness(self) -> float:
+        """How far along a ranged kind is toward its next shot, 0 to 1. Drawn as the arrow
+        being pulled back, so a shot is telegraphed rather than arriving out of a still pose."""
+        if not self.kind.ranged or not self.kind.shot_cooldown_ms:
+            return 0.0
+        remaining = self.next_shot_ms - pygame.time.get_ticks()
+        return min(1.0, max(0.0, 1.0 - remaining / self.kind.shot_cooldown_ms))
+
     def start_attack_anim(self, dist):
         """Return True in case of hit to the player"""
         was_attacking = self.attack_in_progress
-        super().start_attack_anim()
+        # The armed hand is the one that swings: an axe hanging off the still arm while the
+        # empty one flails reads as a bug rather than as an attack.
+        super().start_attack_anim(weapon_hand(self.kind.weapon) if self.kind.weapon else None)
         return not was_attacking and dist < self.melee_reach + c.Player.SIZE // 2
 
     # Deflection angles tried when the straight line to the player is blocked, alternating
@@ -240,6 +257,7 @@ class Monster(Entity):
         radius = self.kind.size / 2
 
         aware = dist < senses + c.Player.SIZE // 2
+        self.aggro = aware
         cornered = self.cornered(dist)
         retreating = self.kind.ranged and not cornered and dist < self.kind.keep_distance
 
@@ -290,18 +308,31 @@ class Monster(Entity):
     def draw(self, screen, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         self._draw_charge_telegraph(screen, screen_x, screen_y)
-        super().draw(
+        draw_monster(
             screen,
             screen_x,
             screen_y,
             self.kind.size,
-            self.kind.color,
+            self.flash_color(self.kind.color),
             self.orientation,
-            self.attack_progress,
-            self.attack_hand,
-            bar_width=60,
-            bar_height=8,
-            health_bar_offset=10,
+            self.kind.shape,
+            attack_progress=self.attack_progress,
+            attack_hand=self.attack_hand,
+            weapon=self.kind.weapon,
+            eye_color=self.kind.eye_color,
+            aggro=self.aggro,
+            phase=self.art_phase,
+            nock=self.shot_readiness,
+        )
+        bar_width, bar_height = 60, 8
+        self.draw_health_bar(
+            screen,
+            screen_x - bar_width // 2,
+            screen_y + self.kind.size // 2 + 10,
+            bar_width,
+            bar_height,
+            self.kind.color,
+            2,
         )
 
     def _draw_charge_telegraph(self, screen, screen_x, screen_y):
