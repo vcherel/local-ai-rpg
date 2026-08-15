@@ -81,15 +81,16 @@ class QuestTracker:
 
         return False
 
-    def draw(self, quest_system: "QuestSystem"):
+    def draw(self, quest_system: "QuestSystem", top: int):
+        """`top` is where the minimap's own strips ended (Minimap.content_bottom), not a
+        fixed offset: the clock and the village name under the map change height, and the
+        card used to be laid straight over them."""
         active_quests = quest_system.active_quests
         if not active_quests:
             self.chip_rects = []
             return
 
         right = c.Screen.WIDTH - 10
-        # Below the minimap, which owns the top right corner.
-        top = c.Minimap.MARGIN + c.Minimap.SIZE + 40
 
         if self.collapsed:
             self._draw_collapsed_pill(right, top, len(active_quests))

@@ -530,6 +530,11 @@ class Player(Entity):
     def xp_gain_mult(self) -> float:
         return 1.0 + self.accessory_bonus("xpgain") * c.Stats.ACCESSORY_XP_PER_BONUS
 
+    def loot_luck(self) -> float:
+        """How far the luck accessory leans the rarity ladder up, passed to
+        items.roll_rarity wherever the player's own actions roll loot."""
+        return self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS
+
     def pierce_count(self) -> int:
         """Each point of the pierce accessory's bonus lets a projectile pass through one
         more target, so the bonus is used raw rather than scaled by a per-point constant."""
@@ -592,14 +597,14 @@ class Player(Entity):
 
     def speed_multiplier(self) -> float:
         base = self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
-        weakness = c.Death.DEBUFF_SPEED_MULT if self.is_shaken() else 1.0
+        weakness = c.Death.DEBUFF_SPEED_MULT if self.is_weakened() else 1.0
         return base * weakness * self.buff_magnitude("swiftness", 1.0)
 
     def effective_max_hp(self) -> int:
         """Max health as it stands right now: what vitality has earned, cut back while the
         post-death weakness lasts. Dying takes something off you until you shake it off."""
         base = self.stats.max_hp()
-        return round(base * c.Death.DEBUFF_MAX_HP_MULT) if self.is_shaken() else base
+        return round(base * c.Death.DEBUFF_MAX_HP_MULT) if self.is_weakened() else base
 
     def passive_regen_rate(self) -> float:
         """Regen from vitality and gear, the part held back by the out-of-combat delay.
@@ -608,12 +613,10 @@ class Player(Entity):
         return self.stats.regen_rate() + accessory
 
     def buy_multiplier(self) -> float:
-        luck = self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS
-        return max(c.Stats.BUY_FLOOR, self.stats.buy_multiplier() - luck)
+        return max(c.Stats.BUY_FLOOR, self.stats.buy_multiplier())
 
     def sell_multiplier(self) -> float:
-        luck = self.accessory_bonus("luck") * c.Stats.ACCESSORY_LUCK_PER_BONUS
-        return min(c.Stats.SELL_CEILING, self.stats.sell_multiplier() + luck)
+        return min(c.Stats.SELL_CEILING, self.stats.sell_multiplier())
 
     def add_coins(self, amount):
         self.coins += amount
@@ -704,16 +707,16 @@ class Player(Entity):
         """Add coins from loot, boosted by the coin-find accessory."""
         self.add_coins(round(amount * self.coin_find_mult()))
 
-    def is_shaken(self) -> bool:
+    def is_weakened(self) -> bool:
         """True while the post-death weakness from apply_death_penalty is still active."""
         return time.time() < self.death_debuff_until
 
-    def shaken_remaining(self) -> float:
-        """Seconds left on the post-death weakness, for the HUD chip. 0 when not shaken."""
+    def weakness_remaining(self) -> float:
+        """Seconds left on the post-death weakness, for the HUD chip. 0 when not weakened."""
         return max(0.0, self.death_debuff_until - time.time())
 
     def apply_weakness(self, duration_s: float):
-        """Start (or extend) the weakness the HUD shows as "Shaken". Dying is one source,
+        """Start (or extend) the weakness the HUD shows as "Weakened". Dying is one source,
         an angry shrine is the other; both run through this so there is a single timer."""
         self.death_debuff_until = max(self.death_debuff_until, time.time() + duration_s)
         self.save_system.update("death_debuff_until", self.death_debuff_until)
@@ -725,7 +728,7 @@ class Player(Entity):
         self.save_system.update("death_debuff_until", self.death_debuff_until)
 
     def damage_multiplier(self) -> float:
-        weakness = c.Death.DEBUFF_DAMAGE_MULT if self.is_shaken() else 1.0
+        weakness = c.Death.DEBUFF_DAMAGE_MULT if self.is_weakened() else 1.0
         return weakness * self.buff_magnitude("strength", 1.0) * self.buff_magnitude("bloodlust", 1.0)
 
     def apply_death_penalty(self) -> int:

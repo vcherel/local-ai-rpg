@@ -33,6 +33,10 @@ class Minimap:
         self.visible = True
         size = c.Minimap.SIZE
         self.rect = pygame.Rect(c.Screen.WIDTH - size - c.Minimap.MARGIN, c.Minimap.MARGIN, size, size)
+        # Where the strips under the map actually ended last frame. It moves with the map
+        # being toggled off and with the village strip coming and going, so whatever stacks
+        # under this corner (the quest tracker) reads it instead of assuming a fixed offset.
+        self.content_bottom = self.rect.bottom + c.Minimap.CLOCK_HEIGHT + 8
 
     def toggle(self):
         self.visible = not self.visible
@@ -152,6 +156,7 @@ class Minimap:
             self.screen.blit(label, label.get_rect(center=strip.center))
             y = strip.bottom + 4
         self._draw_clock(world, y)
+        self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
 
     def _draw_clock(self, world: World, top: int):
         """The time of day, as a dial swept once per cycle plus the name of the phase. The

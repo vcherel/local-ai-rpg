@@ -536,10 +536,10 @@ class PointsOfInterest:
         ("swiftness", 1.30, 45.0, "Your feet feel light. The shrine speeds your step."),
         ("stoneskin", 7, 45.0, "Your skin hardens like the shrine's own stone."),
     )
-    # (curse kind, message). "weakness" is the same Shaken timer dying leaves behind,
+    # (curse kind, message). "weakness" is the same Weakened timer dying leaves behind,
     # "tithe" takes coins, "wound" takes health on the spot.
     SHRINE_CURSES: tuple = (
-        ("weakness", "The shrine drinks something out of you. You feel shaken."),
+        ("weakness", "The shrine drinks something out of you. You feel weakened."),
         ("tithe", "The offering bowl empties your purse: {amount} coins gone."),
         ("wound", "Old stone cuts back. Something unseen tears at you."),
     )

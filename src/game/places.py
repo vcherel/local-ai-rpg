@@ -200,7 +200,7 @@ class WorldPlaces:
         return max(0.0, self.rest_cooldowns.get(key, 0.0) - time.time())
 
     def rest_at_camp(self, player: Player, poi: PointOfInterest):
-        """Sit at a camp's fire: some health back, and the post-death weakness shaken off.
+        """Sit at a camp's fire: some health back, and the post-death weakness cleared.
 
         Not a full heal and not repeatable: this particular fire goes cold on the player for
         REST_COOLDOWN_S afterwards. Otherwise any cleared camp is a health button to stand
@@ -237,7 +237,7 @@ class WorldPlaces:
         per shrine ever (`prayed` is persisted), so praying is a gamble rather than a tap.
 
         Blessings are the ordinary potion buffs, read back by the same multipliers, and the
-        curses reuse what the game already does to the player: the Shaken weakness dying
+        curses reuse what the game already does to the player: the Weakened state dying
         leaves behind, a bite out of the purse, a bite out of the health bar.
         """
         if poi.prayed:

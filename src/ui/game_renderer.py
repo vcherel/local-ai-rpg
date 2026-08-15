@@ -25,10 +25,16 @@ if TYPE_CHECKING:
 class GameRenderer:
     # Everything below sits inside one permanent panel in the top left corner:
     # a row of icon buttons, then coin/item/quest counters, then equipped gear, then the
-    # weapon bar the number keys switch between.
-    HUD_PANEL_RECT = pygame.Rect(8, 8, 460, 232)
-    HUD_ICON_SIZE = 40
-    HUD_ICON_GAP = 8
+    # weapon bar the number keys switch between. Kept as small as it can be read at: the
+    # panel is drawn over the world and over anything the screen edge is trying to point
+    # at, so every slot here costs the player a piece of the view.
+    HUD_PANEL_RECT = pygame.Rect(8, 8, 284, 176)
+    HUD_ICON_SIZE = 34
+    HUD_ICON_GAP = 6
+    # Equip and weapon slots. No captions under them: the ghost glyph says what an empty
+    # slot takes, and the captions were what forced the row twice as wide as its icons.
+    HUD_SLOT_SIZE = 38
+    HUD_SLOT_STEP = 44
 
     # Potion quickbar, centred just above the player's health bar (drawn by Player.draw
     # at ORIGIN_Y + SIZE/2 + its health_bar_offset).
@@ -270,8 +276,8 @@ class GameRenderer:
         x = self._draw_stat_chip(x, stats_y, "bag", nb_items)
         self._draw_stat_chip(x, stats_y, "scroll", nb_quests)
 
-        equipped_bottom = self._draw_equipped(player, top=stats_y + 30)
-        self._draw_weapon_bar(player, top=equipped_bottom + 10)
+        equipped_bottom = self._draw_equipped(player, top=stats_y + 28)
+        self._draw_weapon_bar(player, top=equipped_bottom + 8)
         self._draw_potion_bar(player)
         self._draw_guard_bar(player)
 
@@ -344,15 +350,19 @@ class GameRenderer:
 
     def _draw_buff_chips(self, player: Player, bottom: int):
         # (dot colour, rendered label) per chip: the potion buffs, then the post-death
-        # weakness, which is a timed effect like the rest and shouldn't be invisible.
+        # weakness, which is a timed effect like the rest and shouldn't be invisible or
+        # unexplained.
         chips = []
         for effect, remaining, _magnitude in player.active_buffs():
             text = f"{POTION_EFFECT_LABELS.get(effect, effect)} {int(remaining) + 1}s"
             chips.append((c.Potions.COLORS[effect], c.Fonts.small.render(text, True, c.Colors.WHITE)))
 
-        shaken = player.shaken_remaining()
-        if shaken > 0:
-            text = f"Shaken {int(shaken) + 1}s"
+        weakened = player.weakness_remaining()
+        if weakened > 0:
+            # Named for what it does and carrying its worst number: "Shaken 12s" said
+            # nothing, while this is three penalties at once.
+            damage_loss = round((1 - c.Death.DEBUFF_DAMAGE_MULT) * 100)
+            text = f"Weakened {int(weakened) + 1}s  -{damage_loss}% dmg"
             chips.append((c.Colors.RED, c.Fonts.small.render(text, True, c.Colors.WHITE)))
 
         if not chips:
@@ -374,49 +384,42 @@ class GameRenderer:
             x += width + gap
 
     def _draw_equipped(self, player: Player, top: int) -> int:
-        """A mini paper-doll on the HUD: one captioned slot per equip type. Returns the y
-        the captions end at, so what comes under it doesn't have to guess."""
-        slot = 46
-        step = 72
+        """A mini paper-doll on the HUD: one slot per equip type. Returns the y it ends at,
+        so what comes under it doesn't have to guess."""
+        slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
-        bottom = top + slot
-        for i, (item_type, caption, glyph) in enumerate(widgets.EQUIP_SLOTS):
+        for i, (item_type, _caption, glyph) in enumerate(widgets.EQUIP_SLOTS):
             item = player.equipped_item(item_type)
-            rect = pygame.Rect(left + i * step, top, slot, slot)
+            rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
 
             border = rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER
             widgets.draw_slot(self.screen, rect, border_color=border)
             if item is not None:
-                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 34)
+                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 28)
                 if item.quantity > 1:
                     count = c.Fonts.small.render(str(item.quantity), True, c.Colors.WHITE)
-                    self.screen.blit(count, (rect.right - count.get_width() - 3, rect.bottom - count.get_height() - 1))
+                    self.screen.blit(count, (rect.right - count.get_width() - 2, rect.bottom - count.get_height()))
             else:
-                draw_shape_with_border(self.screen, glyph, rect.center, 15, (60, 60, 70), 2, (84, 84, 98))
-
-            label = c.Fonts.small.render(caption, True, c.Colors.MUTED)
-            self.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 3))
-            bottom = max(bottom, rect.bottom + 3 + label.get_height())
-        return bottom
+                draw_shape_with_border(self.screen, glyph, rect.center, 13, (60, 60, 70), 2, (84, 84, 98))
+        return top + slot
 
     def _draw_weapon_bar(self, player: Player, top: int):
         """The number-key weapon bar. A gold border marks the two weapons currently in the
         melee and ranged slots, so the bar shows what a key would do and what it already did."""
-        slot = 46
-        step = 72
+        slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
         live = {player.equipped_melee_weapon_id, player.equipped_ranged_weapon_id}
 
         for i, item in enumerate(player.weapon_bar_items()):
-            rect = pygame.Rect(left + i * step, top, slot, slot)
+            rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
             active = item is not None and item.id in live
             border = c.Colors.ACCENT if active else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
             widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if active else 2)
 
             if item is not None:
-                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 34)
+                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 28)
             else:
-                draw_shape_with_border(self.screen, "sword", rect.center, 15, (60, 60, 70), 2, (84, 84, 98))
+                draw_shape_with_border(self.screen, "sword", rect.center, 13, (60, 60, 70), 2, (84, 84, 98))
 
             key = c.Fonts.small.render(str(i + 1), True, c.Colors.ACCENT if active else c.Colors.MUTED)
             self.screen.blit(key, (rect.x + 4, rect.y + 2))
@@ -495,6 +498,17 @@ class GameRenderer:
         dy /= distance
         arrow_x = max(margin, min(center_x + dx * (center_x - margin), c.Screen.WIDTH - margin))
         arrow_y = max(margin, min(center_y + dy * (center_y - margin), c.Screen.HEIGHT - margin))
+
+        # The HUD panel owns the top left corner and is drawn after this, so an arrow
+        # pointing that way would be painted over. The panel is in a corner, so the only
+        # ways out are right and down; take whichever is the shorter move, which keeps the
+        # arrow as close as it can be to the direction it is actually pointing.
+        blocked = self.HUD_PANEL_RECT.inflate(arrow_size * 2, arrow_size * 2)
+        if blocked.collidepoint(arrow_x, arrow_y):
+            if blocked.right - arrow_x <= blocked.bottom - arrow_y:
+                arrow_x = blocked.right
+            else:
+                arrow_y = blocked.bottom
 
         angle = math.atan2(dy, dx)
         arrow_points = [(arrow_size, 0), (-arrow_size // 2, -arrow_size // 2), (-arrow_size // 2, arrow_size // 2)]

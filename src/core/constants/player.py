@@ -95,7 +95,10 @@ class Stats:
     # Effect per point of an equipped accessory's bonus, on top of trained stats.
     ACCESSORY_SPEED_PER_BONUS: float = 0.01  # +1% move speed per bonus point
     ACCESSORY_REGEN_PER_BONUS: float = 0.0005  # extra HP regen per bonus point
-    ACCESSORY_LUCK_PER_BONUS: float = 0.01  # +1% better prices per bonus point
+    # Luck leans the rarity ladder up (items.roll_rarity): each step is this much more
+    # likely per bonus point, so 5 points roughly doubles the odds of a legendary. It is
+    # deliberately not a price effect any more, that being what bartering is for.
+    ACCESSORY_LUCK_PER_BONUS: float = 0.05
     ACCESSORY_CRIT_PER_BONUS: float = 0.012  # +1.2% crit chance per bonus point
     ACCESSORY_LIFESTEAL_PER_BONUS: float = 0.01  # +1% of damage healed per bonus point
     ACCESSORY_COINFIND_PER_BONUS: float = 0.06  # +6% coins from loot per bonus point

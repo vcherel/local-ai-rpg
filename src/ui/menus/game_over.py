@@ -12,7 +12,14 @@ def run_game_over(screen, clock, coins_lost: int, debuff_duration_s: float, taun
     returns so the game can put them back at world spawn; the run continues, no main menu
     detour. `taunt` is written by the LLM ahead of time (llm/death_taunts.py) and never names
     the killer, so who did it goes on its own line above it."""
-    penalty_text = f"-{coins_lost} coins  ·  Shaken for {int(debuff_duration_s)}s"
+    penalty_text = f"-{coins_lost} coins  ·  Weakened for {int(debuff_duration_s)}s"
+    # The one place with room to say what the weakness actually costs, so the HUD chip
+    # that follows the player around is read as a reminder rather than a mystery.
+    weakness_text = (
+        f"-{round((1 - c.Death.DEBUFF_DAMAGE_MULT) * 100)}% damage  ·  "
+        f"-{round((1 - c.Death.DEBUFF_SPEED_MULT) * 100)}% speed  ·  "
+        f"-{round((1 - c.Death.DEBUFF_MAX_HP_MULT) * 100)}% max HP"
+    )
     end_at = pygame.time.get_ticks() + int(c.Death.RESPAWN_DELAY_S * 1000)
 
     while True:
@@ -45,7 +52,8 @@ def run_game_over(screen, clock, coins_lost: int, debuff_duration_s: float, taun
             centered(line, 402)
 
         centered(c.Fonts.title.render(penalty_text, True, c.Colors.WHITE), 462)
-        centered(c.Fonts.title.render(f"Respawning in {remaining_ms // 1000 + 1}...", True, c.Colors.MUTED), 520)
+        centered(c.Fonts.heading.render(weakness_text, True, c.Colors.MUTED), 502)
+        centered(c.Fonts.title.render(f"Respawning in {remaining_ms // 1000 + 1}...", True, c.Colors.MUTED), 548)
 
         pygame.display.flip()
         clock.tick(60)
