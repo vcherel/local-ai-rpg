@@ -885,9 +885,13 @@ class WorldCombat:
 
         Striking anyone is what turns their village on the player, so it happens here:
         every path that lands a blow on an NPC (swing, arrow, cleave, blast) goes through
-        this. `by_player` False is the one exception, and it exists for exactly one case:
-        a monster's arrow catching a villager. The village has nothing to blame the player
-        for, so it is not provoked and the purse is not theirs to take."""
+        this. `by_player` False is the one exception, and it covers everything the player
+        did not do: a monster's arrow catching a villager, or a monster cutting one down in
+        the street. The village has nothing to blame the player for, so it is not provoked
+        and the purse is not theirs to take.
+
+        A blow turns the settlement for a while; a death turns it for good (`hold_grudge`),
+        which is the one thing no clock ever runs out on."""
         if by_player:
             for provoked in self.provoke_village(npc):
                 # Nobody hands in a task to someone they are trying to kill; drop it rather
@@ -896,6 +900,9 @@ class WorldCombat:
         get_shake().add(shake)
         self._pop_damage(npc.x, npc.y - c.Entities.NPC_SIZE / 2, damage, crit)
         if npc.receive_damage(damage):
+            if by_player:
+                for provoked in self.hold_grudge(npc):
+                    quest_system.remove_quest(provoked)
             stolen_item = quest_system.on_npc_killed(npc)
             if stolen_item is not None:
                 self.items.append(stolen_item)

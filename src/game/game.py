@@ -328,7 +328,8 @@ class Game:
                 if dist <= indoor_reach:
                     # A chest only ever stands in somebody's house, so opening it is theft
                     # and the prompt says so rather than dressing it up as loot.
-                    offer(Interaction("chest", chest, "E: steal from the chest", chest.centerx, chest.top), dist)
+                    label = self._watched_label("E: steal from the chest")
+                    offer(Interaction("chest", chest, label, chest.centerx, chest.top), dist)
 
             for bed in layout["beds"]:
                 dist = reach_of(bed.centerx, bed.centery)
@@ -370,7 +371,11 @@ class Game:
             and self.world.context is not None
             and not (npc.is_merchant and not npc.shop_ready)
         ):
-            if llm_busy():
+            if self._threat_nearby():
+                # Nobody stands in the street making conversation with a wolf twenty paces
+                # off. Kill it or walk away from it first.
+                label = f"{npc.name or 'They'} won't talk with that out there"
+            elif llm_busy():
                 # One model serves the whole game and the call already running cannot be
                 # cut short, so a conversation opened now would sit on an empty box.
                 label = f"{npc.name} is busy..." if npc.name else "Busy..."
@@ -403,8 +408,16 @@ class Game:
         elif interaction.kind == "shrine":
             self.world.pray_at_shrine(self.player, interaction.target)
 
+    def _threat_nearby(self) -> bool:
+        """Whether anything hostile is close enough to make a conversation absurd. Shared by
+        the prompt and the talk key so the two can't disagree, exactly like the busy check."""
+        return bool(self.world.hostiles_near(self.player.x, self.player.y, c.Entities.TALK_SAFE_RADIUS))
+
     def _talk_to(self, npc):
         if self.world.context is None or not npc.can_talk or (npc.is_merchant and not npc.shop_ready):
+            return
+        if self._threat_nearby():
+            self.loot_notification.show(f"{npc.name or 'They'} won't talk with danger this close", c.Colors.MUTED)
             return
         if llm_busy():
             self.loot_notification.show(f"{npc.name or 'They'} looks busy, give it a moment", c.Colors.MUTED)
@@ -488,6 +501,15 @@ class Game:
             return 0.0
         return self.world.rest_ready_in(self.interior.id)
 
+    def _watched_label(self, label: str) -> str:
+        """The prompt over something that isn't the player's, with whoever can see them
+        doing it named on it. The cones on the ground say where the eyes are; this says the
+        theft is being watched right now, which is the part worth reading before pressing E."""
+        witness = self.world.theft_witness(self.player.x, self.player.y)
+        if witness is None:
+            return label
+        return f"{label} ({witness.name or 'someone'} is watching)"
+
     def _bed_label(self) -> str:
         """What the prompt over a bed says: the inn charges, a villager's bed doesn't, and
         a bed slept in recently says how long until it is worth lying in again."""
@@ -496,7 +518,7 @@ class Game:
         cooling = self._bed_cooling()
         if cooling > 0:
             return f"E: this bed is still warm ({int(cooling) + 1}s)"
-        return "E: sleep in their bed"
+        return self._watched_label("E: sleep in their bed")
 
     def _use_door(self, building):
         """Open or shut a door. Shutting one is the only way to put a wall between the player

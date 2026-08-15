@@ -120,6 +120,9 @@ class GameRenderer:
 
         get_decals().draw(self.screen, camera)
 
+        if interaction is not None and interaction.kind in ("chest", "bed"):
+            self._draw_witness_cones(camera, world, player)
+
         for breakable in world.breakables:
             if self._on_screen(camera, breakable.x, breakable.y):
                 breakable.draw(self.screen, camera)
@@ -170,6 +173,38 @@ class GameRenderer:
             self._draw_interaction_prompt(camera, interaction)
         self.draw_offscreen_indicators(camera, quest_target)
         self.draw_boss_bar(world, player)
+
+    def _draw_witness_cones(self, camera: Camera, world: World, player: Player):
+        """What every villager who could catch the player stealing can actually see, drawn on
+        the ground while a chest or a bed is in reach.
+
+        Only up while the player is stood over something that isn't theirs: the cone is the
+        question "is anyone looking right now", and a street permanently full of wedges would
+        be wallpaper. Red is the one that has the player in it. Radius and angle come from
+        `World.witness_radius` and the same constant `NPC.sees` tests, so the picture cannot
+        promise cover the rule doesn't give."""
+        radius = world.witness_radius()
+        half = math.radians(c.Crime.VIEW_CONE_DEG) / 2
+        watchers = world.watchers_near(player.x, player.y)
+        if not watchers:
+            return
+
+        overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        for npc in watchers:
+            seen = npc.sees(player.x, player.y, radius)
+            facing = npc.orientation - math.pi / 2
+            origin = camera.world_to_screen(npc.x, npc.y)
+            steps = 14
+            points = [origin]
+            for step in range(steps + 1):
+                angle = facing - half + (2 * half) * step / steps
+                edge = (npc.x + math.cos(angle) * radius, npc.y + math.sin(angle) * radius)
+                points.append(camera.world_to_screen(*edge))
+            # Kept faint: several of these overlap on a busy street, and they are drawn on
+            # the ground the player is trying to read, not over it.
+            pygame.draw.polygon(overlay, (200, 70, 60, 38) if seen else (230, 225, 200, 16), points)
+            pygame.draw.lines(overlay, (200, 70, 60, 90) if seen else (230, 225, 200, 40), True, points, 1)
+        self.screen.blit(overlay, (0, 0))
 
     def _draw_interaction_prompt(self, camera: Camera, interaction):
         """The one prompt on screen, floating over whatever the interact key would act on.

@@ -25,6 +25,9 @@ class Entities:
     # to their houses. Still hostile, still waiting, just no longer following you across
     # the world in a column of eighteen.
     NPC_HOSTILE_RANGE: int = 1100
+    # Nobody chats with a wolf on the doorstep: an NPC in reach refuses to talk while
+    # anything hostile is standing this close to the player.
+    TALK_SAFE_RADIUS: float = 520.0
     # What a killed villager leaves on the ground (game/loot.py `loot_villager`). Enough
     # that cutting one down is a real choice against losing the village, nowhere near
     # enough to make a street of them worth farming. A merchant carries a merchant's purse.

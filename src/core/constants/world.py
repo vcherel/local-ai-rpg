@@ -164,6 +164,13 @@ class Crime:
     WITNESS_RADIUS: float = 430.0
     # How much of that radius is left after dark. Night is when a house is worth robbing.
     NIGHT_WITNESS_MULT: float = 0.4
+    # Nobody has eyes in the back of their head: a villager only catches what happens inside
+    # this wedge of their facing, which the game draws on the ground while the player is
+    # standing over a chest or a bed. Waiting for someone to turn away is the whole skill.
+    VIEW_CONE_DEG: float = 110.0
+    # How long the one villager who catches the player stays angry about it. Shorter than a
+    # whole settlement's anger: it is their chest, and it is only their business.
+    THEFT_ANGER_S: float = 180.0
 
 
 @dataclass(frozen=True)
@@ -440,6 +447,24 @@ class Villages:
     DISCOVER_DISTANCE: int = 420
     # A wilderness point of interest keeps this far from a village site, generated or not.
     MIN_DIST_FROM_POI: int = 1100
+
+    # How long a settlement stays angry after the player strikes one of its people, and the
+    # ceiling a second offence can push that to. Anger is a countdown now rather than a
+    # permanent state: a scuffle is something a village lives down, so the player is not
+    # locked out of a shop for the rest of the save over one stray swing. Killing someone is
+    # the exception, and it is not on this clock at all (World.hold_grudge).
+    ANGER_S: float = 240.0
+    ANGER_CAP_S: float = 900.0
+
+    # A village defends itself. Only some of its people take up arms (rolled per NPC off
+    # their home, so the same house always sends the same person out); the rest run for the
+    # nearest door and shut it. A monster inside a settlement's grounds plus this margin is
+    # an intruder, a militiaman walks this far from where they stand to meet one, and anyone
+    # else bolts once one is this close.
+    MILITIA_FRACTION: float = 0.45
+    DEFEND_MARGIN: float = 300.0
+    DEFEND_RADIUS: float = 620.0
+    PANIC_RADIUS: float = 520.0
 
 
 @dataclass(frozen=True)

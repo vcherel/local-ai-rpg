@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -55,9 +56,63 @@ class NPC(Entity):
         self.affinity = c.Affinity.START
         # Turned on the player, along with the rest of their village (World.provoke_village).
         # A hostile villager stops wandering, stops trading and comes at the player with
-        # whatever is to hand; nothing calms them down again.
-        self.hostile = False
+        # whatever is to hand. Anger is a countdown (wall clock, so quitting can't wait it
+        # out for free) rather than a state: a scuffle is lived down. A killing is not, and
+        # sets `grudge` instead, which no clock ever clears (World.hold_grudge).
+        self.hostile_until = 0.0
+        self.grudge = False
         self.attack_ready_ms = 0
+        # Whether this one takes up arms when a monster walks into their settlement, rolled
+        # off their home so the same house always sends the same person out. Cached because
+        # it is asked every frame.
+        self._militia: Optional[bool] = None
+
+    @property
+    def hostile(self) -> bool:
+        return self.grudge or time.time() < self.hostile_until
+
+    @property
+    def anger_remaining(self) -> float:
+        """Seconds until this one calms down; 0 when calm, inf on a grudge."""
+        if self.grudge:
+            return math.inf
+        return max(0.0, self.hostile_until - time.time())
+
+    def anger(self, seconds: float, permanent: bool = False):
+        """Turn on the player for a while. A fresh offence adds to whatever is left rather
+        than replacing it, up to a ceiling: keep swinging and they keep hating you, but the
+        clock never runs so long that the settlement is written off for the save."""
+        if permanent:
+            self.grudge = True
+        self.affinity = c.Affinity.MIN
+        self.hostile_until = time.time() + min(self.anger_remaining + seconds, c.Villages.ANGER_CAP_S)
+
+    def _cool_off(self):
+        """Called each frame: the moment the countdown runs out, put a little goodwill back.
+        Not all of it. They will trade with the player again and remember why they stopped."""
+        if self.hostile_until and not self.hostile:
+            self.hostile_until = 0.0
+            self.affinity = max(self.affinity, c.Affinity.FORGIVEN)
+
+    @property
+    def is_militia(self) -> bool:
+        """Whether this one meets a monster in the street or runs from it. Merchants never
+        fight: their stock is their life, and a shopkeeper with a sword is a different game."""
+        if self._militia is None:
+            seed = f"militia:{round(self.home[0])}:{round(self.home[1])}"
+            self._militia = not self.is_merchant and random.Random(seed).random() < c.Villages.MILITIA_FRACTION
+        return self._militia
+
+    def sees(self, x: float, y: float, radius: float) -> bool:
+        """Whether (x, y) falls inside this one's field of view: near enough, and inside the
+        wedge they are actually facing. Sprites face up, so the facing angle is the drawn
+        orientation less a quarter turn."""
+        if self.distance_to_point((x, y)) > radius:
+            return False
+        facing = self.orientation - math.pi / 2
+        bearing = math.atan2(y - self.y, x - self.x)
+        offset = abs((bearing - facing + math.pi) % (2 * math.pi) - math.pi)
+        return offset <= math.radians(c.Crime.VIEW_CONE_DEG) / 2
 
     @property
     def can_talk(self) -> bool:
@@ -90,7 +145,10 @@ class NPC(Entity):
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
             "is_thief": self.is_thief,
-            "hostile": self.hostile,
+            # Absolute wall clock, like the rest cooldowns: quitting while a village is
+            # angry must not be a way of waiting the anger out.
+            "hostile_until": self.hostile_until,
+            "grudge": self.grudge,
             "affinity": self.affinity,
             "shop_ready": self.shop_ready,
             "home": list(self.home),
@@ -108,7 +166,10 @@ class NPC(Entity):
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
         npc.is_thief = data.get("is_thief", False)
-        npc.hostile = data.get("hostile", False)
+        # A save from before anger had a clock recorded it as a plain flag; those villagers
+        # were angry for good, so they load as a grudge rather than silently forgiving.
+        npc.hostile_until = data.get("hostile_until", 0.0)
+        npc.grudge = data.get("grudge", data.get("hostile", False))
         npc.affinity = data.get("affinity", c.Affinity.START)
         npc.shop_ready = data["shop_ready"]
         npc.home = tuple(data["home"])
@@ -137,55 +198,82 @@ class NPC(Entity):
         if self.name is None:
             self.name = npc_name_generator.get_name()
 
-    def update(self, player: Player, dt, blocked=None, waypoint=None):
-        if self.hostile and self.distance_to_point(player.get_pos()) <= c.Entities.NPC_HOSTILE_RANGE:
-            self._hunt(player, dt, blocked, waypoint)
-            return
-        if self.hostile:
-            # Given up the chase for now: back towards home, still furious.
-            moved_angle = self.wander.step(self, dt, self.home, c.Entities.NPC_SIZE / 2, blocked)
-            if moved_angle is not None:
-                self.orientation = moved_angle + math.pi / 2
-            return
+    def update(self, player: Player, dt, blocked=None, waypoint=None, target=None, refuge=None, face_player=True):
+        """One frame of this villager's life, returning the damage their swing just landed
+        on `target` (0 for none) so the world can resolve it: the same villager can be
+        swinging at the player or at a monster in their street, and only the world knows
+        which lists to take the blow off.
 
-        if self.distance_to_point(player.get_pos()) < c.Entities.NPC_WANDER_PAUSE_DISTANCE:
+        The world decides what they are doing and hands it in: `target` is who they are
+        fighting, `refuge` a point to run to (a frightened villager heading for a door), and
+        `face_player` False keeps them looking where they were, which is what stops a vision
+        cone from pointing at the player no matter where they stand."""
+        self._cool_off()
+        if target is not None:
+            return self._hunt(target, dt, blocked, waypoint)
+        if refuge is not None:
+            self._run_to(refuge, dt, blocked)
+            return 0
+
+        if (
+            face_player
+            and not self.hostile
+            and self.distance_to_point(player.get_pos()) < (c.Entities.NPC_WANDER_PAUSE_DISTANCE)
+        ):
             # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
-            return
+            return 0
 
         moved_angle = self.wander.step(self, dt, self.home, c.Entities.NPC_SIZE / 2, blocked)
         # Face the way it actually moved, not the way it wanted to: a slider looks along
         # the wall, and one pinned against a building stops staring straight into it.
         if moved_angle is not None:
             self.orientation = moved_angle + math.pi / 2
+        return 0
 
-    def _hunt(self, player: Player, dt, blocked=None, waypoint=None):
-        """Chase the player down and swing on them. Deliberately simpler than a monster's
-        chase: villagers are farmers with sticks, not hunters. They walk at the player
-        (round a wall when the world hands them a waypoint) and hit whatever is in reach."""
-        dist = self.distance_to_point(player.get_pos())
-        target = waypoint if waypoint is not None else (player.x, player.y)
-        angle = math.atan2(target[1] - self.y, target[0] - self.x)
+    def _step_towards(self, point, dt, blocked, speed_mult: float = 1.0) -> float:
+        """Walk at a point, sliding along whatever is in the way. Returns the heading."""
+        angle = math.atan2(point[1] - self.y, point[0] - self.x)
+        radius = c.Entities.NPC_SIZE / 2
+        speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * dt * c.TARGET_FPS / 1000.0
+        step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
+        if blocked is not None and blocked(self.x + step_x, self.y, radius):
+            step_x = 0
+        self.x += step_x
+        if blocked is not None and blocked(self.x, self.y + step_y, radius):
+            step_y = 0
+        self.y += step_y
+        return angle
+
+    def _run_to(self, refuge, dt, blocked=None):
+        """A villager with no stomach for the fight, making for the nearest door. They stop
+        once they are on the spot rather than jittering on it."""
+        if self.distance_to_point(refuge) <= c.Entities.NPC_ATTACK_RANGE:
+            return
+        self.orientation = self._step_towards(refuge, dt, blocked) + math.pi / 2
+
+    def _hunt(self, target, dt, blocked=None, waypoint=None) -> int:
+        """Walk at whatever this one is fighting and swing when it is in reach, returning the
+        damage landed this frame. Deliberately simpler than a monster's chase: villagers are
+        farmers with sticks, not hunters. They walk at the target (round a wall when the
+        world hands them a waypoint) and hit whatever comes into range."""
+        dist = self.distance_to_point((target.x, target.y))
+        goal = waypoint if waypoint is not None else (target.x, target.y)
+        angle = math.atan2(goal[1] - self.y, goal[0] - self.x)
         self.orientation = angle + math.pi / 2
 
         if dist > c.Entities.NPC_ATTACK_RANGE:
-            radius = c.Entities.NPC_SIZE / 2
-            speed = c.Entities.NPC_HOSTILE_SPEED * dt * c.TARGET_FPS / 1000.0
-            step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
-            if blocked is not None and blocked(self.x + step_x, self.y, radius):
-                step_x = 0
-            self.x += step_x
-            if blocked is not None and blocked(self.x, self.y + step_y, radius):
-                step_y = 0
-            self.y += step_y
+            self._step_towards(goal, dt, blocked)
 
+        damage = 0
         now = pygame.time.get_ticks()
-        if dist <= c.Entities.NPC_ATTACK_RANGE + c.Player.SIZE // 2 and now >= self.attack_ready_ms:
+        if dist <= c.Entities.NPC_ATTACK_RANGE + target.size // 2 and now >= self.attack_ready_ms:
             self.attack_ready_ms = now + c.Entities.NPC_ATTACK_COOLDOWN_MS
             self.start_attack_anim()
-            player.receive_damage(c.Entities.NPC_DAMAGE, source=self)
+            damage = c.Entities.NPC_DAMAGE
 
         self.update_attack_anim(dt)
+        return damage
 
     def _badge(self) -> Optional[tuple]:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""

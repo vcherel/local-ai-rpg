@@ -138,6 +138,9 @@ class Affinity:
     START: float = 50.0
     MIN: float = 0.0
     MAX: float = 100.0
+    # Where an NPC's affinity lands once their anger runs out. Well short of START: the
+    # village stops swinging, it does not forget who swung first.
+    FORGIVEN: float = 15.0
 
     # Affinity gained from completing this NPC's quest, and from each trade at
     # a merchant's shop.

@@ -4,6 +4,7 @@ import math
 import random
 import threading
 import time
+from collections import namedtuple
 from typing import TYPE_CHECKING, List
 
 import pygame
@@ -34,6 +35,11 @@ if TYPE_CHECKING:
     from llm.name_generator import NPCNameGenerator
     from llm.quest_system import QuestSystem
     from ui.menus.context_menu import ContextMenu
+
+
+# A bare coordinate to route towards. `chase_waypoint` only ever reads an x and a y off
+# whoever is being chased, and a villager running for a door is chasing a spot on the floor.
+_Point = namedtuple("_Point", "x y")
 
 
 class World(WorldCombat, WorldStreaming, WorldPlaces):
@@ -861,6 +867,106 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             if same_pack or (critter.village_key and other.village_key == critter.village_key):
                 other.aggro()
 
+    def _monster_target(self, monster: Monster, player: Player):
+        """Who this monster is coming for. The player, unless it has walked onto a
+        settlement's grounds and a villager is nearer: a village is something monsters
+        attack, not scenery they file past on their way to the player.
+
+        A camp guard is left out of it. It holds a piece of ground rather than raiding, and
+        a garrison drifting off to fight the nearest farmer would empty its own camp."""
+        if monster.camp_id or not self.npcs:
+            return player
+        if self.village_at(monster.x, monster.y, c.Villages.DEFEND_MARGIN) is None:
+            return player
+        reach = min(monster.distance_to_point(player.get_pos()), c.Villages.DEFEND_RADIUS)
+        victims = [npc for npc in self.npcs if monster.distance_to_point((npc.x, npc.y)) < reach]
+        if not victims:
+            return player
+        return min(victims, key=lambda npc: monster.distance_to_point((npc.x, npc.y)))
+
+    def _land_monster_blow(self, monster: Monster, target, damage: int, player: Player, quest_system: QuestSystem):
+        """A monster's swing connecting, on the player or on whoever it caught instead. A
+        villager cut down by a monster is nothing the player did, so it resolves as friendly
+        fire: no provoked village, no purse, and the body stays down for good."""
+        if target is player:
+            player.receive_damage(damage, source=monster)
+            return
+        self._resolve_npc_hit(
+            target,
+            damage,
+            player,
+            quest_system,
+            kb_dir=self._dir_from(monster.x, monster.y, target.x, target.y),
+            blocked=self.blocked,
+            by_player=False,
+        )
+
+    def _update_npcs(self, player: Player, dt, quest_system: QuestSystem):
+        """Every villager's frame: fighting off an intruder, running for a door, hunting the
+        player, or wandering their street.
+
+        The world picks what each of them is doing and hands it to `NPC.update`, which gives
+        back whatever its swing landed so the blow can be taken off the right list. A
+        villager only ever fights one thing at a time, and defending the settlement comes
+        first: a monster in the street is more pressing than a grudge."""
+        player_pos = player.get_pos()
+        indoors = self.building_at(player.x, player.y) is not None
+        fight, flee = self.militia_orders()
+
+        for npc in self.npcs:
+            enemy = fight.get(id(npc))
+            # The orders were worked out once for the whole street, so the neighbour who
+            # went first may already have finished this one off.
+            if enemy is not None and enemy.hp <= 0:
+                enemy = None
+            if enemy is not None:
+                waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
+                damage = npc.update(player, dt, self.blocked, waypoint, target=enemy)
+                if damage:
+                    self._resolve_monster_hit(
+                        enemy,
+                        self.monsters,
+                        damage,
+                        player,
+                        quest_system,
+                        kb_dir=self._dir_from(npc.x, npc.y, enemy.x, enemy.y),
+                        blocked=self.blocked,
+                        by_player=False,
+                    )
+                continue
+
+            shelter = flee.get(id(npc))
+            if shelter is not None:
+                self.open_door_for(npc)
+                inside = (shelter.x, shelter.interior_rect().centery)
+                waypoint = self.chase_waypoint(npc, _Point(*inside), c.Entities.NPC_SIZE / 2)
+                npc.update(player, dt, self.blocked, refuge=waypoint or inside)
+                if shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
+                    # Behind the door and shutting it. The player can be shut out or shut in
+                    # with them; either way the street is emptier than it was.
+                    shelter.door_open = False
+                continue
+
+            # Only an angry villager actually closing on the player needs a route round
+            # the houses; everyone else is wandering and steers for itself.
+            chasing = npc.hostile and npc.distance_to_point(player_pos) <= c.Entities.NPC_HOSTILE_RANGE
+            if chasing:
+                self.open_door_for(npc)
+            waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
+            # A villager turns to greet the player in the street, but not through the wall of
+            # a house they are standing in: a vision cone that always points at the player is
+            # not a cone, and the whole of stealing is choosing a moment nobody is looking.
+            damage = npc.update(
+                player,
+                dt,
+                self.blocked,
+                waypoint,
+                target=player if chasing else None,
+                face_player=not indoors,
+            )
+            if damage:
+                player.receive_damage(damage, source=npc)
+
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of
         # here, so they keep animating even while a menu pauses the rest of this update.
@@ -886,10 +992,13 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             m for m in self.monsters if abs(m.x - player.x) <= update_radius and abs(m.y - player.y) <= update_radius
         ]
         for monster in nearby:
-            waypoint = self.chase_waypoint(monster, player, monster.kind.size / 2)
+            target = self._monster_target(monster, player)
+            waypoint = self.chase_waypoint(monster, target, monster.kind.size / 2)
             # `nearby` doubles as the crowd each monster shoulders its way out of: the ones
             # converging on the player are exactly the ones that pile up on each other.
-            monster.move(player, dt, self.blocked, waypoint, damage_mult, detection, crowd=nearby)
+            damage = monster.move(target, dt, self.blocked, waypoint, damage_mult, detection, crowd=nearby)
+            if damage:
+                self._land_monster_blow(monster, target, damage, player, quest_system)
         self.fire_monster_shots(player, damage_mult)
         self.bash_doors(player, damage_mult)
 
@@ -916,14 +1025,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
 
         self.update_projectiles(player, quest_system, dt)
 
-        for npc in self.npcs:
-            # Only an angry villager actually closing on the player needs a route round
-            # the houses; everyone else is wandering and steers for itself.
-            chasing = npc.hostile and npc.distance_to_point(player_pos) <= c.Entities.NPC_HOSTILE_RANGE
-            if chasing:
-                self.open_door_for(npc)
-            waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
-            npc.update(player, dt, self.blocked, waypoint)
+        self._update_npcs(player, dt, quest_system)
 
         for critter in self.critters:
             # Only an animal actually coming for the player needs a route round the houses;
