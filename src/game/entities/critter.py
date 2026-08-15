@@ -130,9 +130,13 @@ class Critter:
         self.y += step_y
         self.orientation = angle
 
-    def update(self, player: Player, dt, blocked=None, damage_mult: float = 1.0, waypoint=None):
+    def update(
+        self, player: Player, dt, blocked=None, damage_mult: float = 1.0, waypoint=None, terrain_mult: float = 1.0
+    ):
         radius = self.size / 2
-        move_factor = dt * c.TARGET_FPS / 1000.0
+        # An animal in water is slowed like everything else: a deer that bolts across a
+        # river is easier to catch there than on the bank, which is the point of the bank.
+        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult
         now = pygame.time.get_ticks()
         dist = self.distance_to_point((player.x, player.y))
 
@@ -146,7 +150,7 @@ class Critter:
 
         self.flee_heading = None
         anchor = self.home if self.anchored else (self.x, self.y)
-        moved_angle = self.wander.step(self, dt, anchor, radius, blocked)
+        moved_angle = self.wander.step(self, dt * terrain_mult, anchor, radius, blocked)
         if moved_angle is not None:
             self.orientation = moved_angle
 

@@ -8,6 +8,7 @@ import pygame
 
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
+from game.entities.scenery import river_points_for_chunk
 from game.entities.village import village_site
 
 if TYPE_CHECKING:
@@ -360,6 +361,12 @@ def pois_for_chunk(cx: int, cy: int, buildings: List["Building"]) -> List[PointO
             site = village_site(nx, ny)
             if site is not None and math.hypot(x - site[0], y - site[1]) < c.Villages.MIN_DIST_FROM_POI:
                 return []
+
+    # Nothing is built in the water. The river's course is a pure function of the chunk
+    # like everything else here, so it can be asked about before the landmark exists.
+    river, _ = river_points_for_chunk(cx, cy)
+    if any(math.hypot(x - wx, y - wy) < radius + c.PointsOfInterest.MIN_DIST_FROM_WATER for wx, wy, radius in river):
+        return []
 
     kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
     kind = rng.choices(kinds, weights=weights)[0]

@@ -106,6 +106,8 @@ class Player(Entity):
         self.guard = c.Shield.GUARD_MAX
         self.guard_broken_until_ms = 0
         self.last_guard_use_ms = 0
+        # Whether the player is in water this frame, set by move() and read by the renderer.
+        self.swimming = False
 
         saved = save_system.load("player", None)
         if saved:
@@ -155,7 +157,7 @@ class Player(Entity):
             return (attack_x, attack_y)
         return (self.x, self.y)
 
-    def move(self, camera_pos, dt, blocked=None):
+    def move(self, camera_pos, dt, blocked=None, in_water=False):
         keys = pygame.key.get_pressed()
 
         self._update_guard(keys, dt)
@@ -165,6 +167,11 @@ class Player(Entity):
         actual_speed = base_speed * self.speed_multiplier()
         if self.blocking:
             actual_speed *= c.Shield.SPEED_MULT
+        # Water is crossed, not walked over: the penalty is heavy at first and eases off as
+        # the swimming stat trains, never quite to walking pace, so a bridge keeps its job.
+        self.swimming = in_water
+        if in_water:
+            actual_speed *= self.stats.swim_multiplier()
 
         forward = keys[pygame.K_z] or keys[pygame.K_w]
         moving = forward or keys[pygame.K_s]
@@ -196,9 +203,12 @@ class Player(Entity):
                 step_y = 0
             self.y += step_y
 
-            # Running is what trains speed; plain walking does not.
+            # Running is what trains speed; plain walking does not. Swimming is trained by
+            # the only thing anyone ever learns it from: being in the water.
             if running:
                 self.stats.train("speed", c.Stats.XP_PER_RUN_FRAME * move_factor)
+            if in_water:
+                self.stats.train("swimming", c.Stats.XP_PER_SWIM_FRAME * move_factor)
 
         mouse_x, mouse_y = pygame.mouse.get_pos()
         dx = mouse_x - c.Screen.ORIGIN_X
@@ -583,6 +593,12 @@ class Player(Entity):
         self.buffs[effect] = {"until": time.time() + duration_s, "magnitude": magnitude}
         self.save_system.update("buffs", self.buffs)
 
+    def clear_buffs(self):
+        """Drop every timed buff at once. Death ends them, and so does a night's sleep:
+        neither is a way to carry a potion into the next fight."""
+        self.buffs = {}
+        self.save_system.update("buffs", self.buffs)
+
     def buff_magnitude(self, effect: str, default: float = 0.0) -> float:
         data = self.buffs.get(effect)
         if data is None or data["until"] <= time.time():
@@ -737,8 +753,7 @@ class Player(Entity):
         loss = int(self.coins * c.Death.COIN_LOSS_PCT)
         self.add_coins(-loss)
         # Whatever was coursing through the player's veins died with them.
-        self.buffs = {}
-        self.save_system.update("buffs", self.buffs)
+        self.clear_buffs()
         self.apply_weakness(c.Death.DEBUFF_DURATION_S)
         self.guard = c.Shield.GUARD_MAX
         self.guard_broken_until_ms = 0

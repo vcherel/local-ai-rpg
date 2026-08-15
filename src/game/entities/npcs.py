@@ -198,7 +198,17 @@ class NPC(Entity):
         if self.name is None:
             self.name = npc_name_generator.get_name()
 
-    def update(self, player: Player, dt, blocked=None, waypoint=None, target=None, refuge=None, face_player=True):
+    def update(
+        self,
+        player: Player,
+        dt,
+        blocked=None,
+        waypoint=None,
+        target=None,
+        refuge=None,
+        face_player=True,
+        terrain_mult: float = 1.0,
+    ):
         """One frame of this villager's life, returning the damage their swing just landed
         on `target` (0 for none) so the world can resolve it: the same villager can be
         swinging at the player or at a monster in their street, and only the world knows
@@ -207,7 +217,11 @@ class NPC(Entity):
         The world decides what they are doing and hands it in: `target` is who they are
         fighting, `refuge` a point to run to (a frightened villager heading for a door), and
         `face_player` False keeps them looking where they were, which is what stops a vision
-        cone from pointing at the player no matter where they stand."""
+        cone from pointing at the player no matter where they stand.
+
+        `terrain_mult` is the ground: a villager wading a river is as slow in it as anything
+        else, so the frame is simply shortened for them."""
+        dt *= terrain_mult
         self._cool_off()
         if target is not None:
             return self._hunt(target, dt, blocked, waypoint)

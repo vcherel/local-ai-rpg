@@ -126,7 +126,15 @@ class Boss(Monster):
             waypoint = world.chase_waypoint(self, player, self.kind.size / 2)
             # A boss only ever wants the player; the villagers a plain monster would turn on
             # are beneath it. Monster.move hands its swing back rather than landing it.
-            damage = self.move(player, dt, world.blocked, waypoint, world.night_damage_mult(), c.Boss.AGGRO_RANGE)
+            damage = self.move(
+                player,
+                dt,
+                world.blocked,
+                waypoint,
+                world.night_damage_mult(),
+                c.Boss.AGGRO_RANGE,
+                terrain_mult=world.terrain_speed(self.x, self.y),
+            )
             if damage:
                 player.receive_damage(damage, source=self)
             self.ability_cd -= dt

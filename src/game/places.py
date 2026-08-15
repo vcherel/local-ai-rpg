@@ -362,6 +362,23 @@ class WorldPlaces:
         stand next to: the same cooldown a campfire gets, kept per building and persisted."""
         self.rest_cooldowns[building.id] = time.time() + c.PointsOfInterest.REST_COOLDOWN_S
 
+    def pass_time(self, seconds: float) -> None:
+        """Run the world forward by `seconds` without anything in it taking a step.
+
+        Sleeping is the only thing that calls this. The day cycle is the visible half; the
+        other half is every deadline held as a wall-clock time, which would otherwise sit
+        untouched through a skipped night and leave a fire still cold and a village still
+        furious at dawn. A grudge is deliberately not one of them: no amount of sleeping
+        makes a village forget who killed one of them."""
+        self.daynight.update(seconds * 1000)
+        now = time.time()
+        self.rest_cooldowns = {
+            key: ready - seconds for key, ready in self.rest_cooldowns.items() if ready - seconds > now
+        }
+        for npc in self.npcs:
+            if npc.hostile_until:
+                npc.hostile_until = max(0.0, npc.hostile_until - seconds)
+
     def catch_thief(self, npc: NPC) -> NPC:
         """One villager catches the player stealing and comes for them, alone.
 

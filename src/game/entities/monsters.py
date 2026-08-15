@@ -232,7 +232,15 @@ class Monster(Entity):
         return False
 
     def move(
-        self, target, dt, blocked=None, waypoint=None, damage_mult: float = 1.0, detection=None, crowd=None
+        self,
+        target,
+        dt,
+        blocked=None,
+        waypoint=None,
+        damage_mult: float = 1.0,
+        detection=None,
+        crowd=None,
+        terrain_mult: float = 1.0,
     ) -> int:
         """Chase `target`, or `waypoint` when one is given: a door the monster has to walk
         through first because its target is on the other side of a wall (see World.chase_waypoint).
@@ -255,10 +263,14 @@ class Monster(Entity):
         side so a group of them comes in from several angles at once.
 
         `crowd` is the other chasers nearby: whoever is standing where this one wants to be
-        gets shouldered aside, which is what keeps a pack a ring rather than a single body."""
+        gets shouldered aside, which is what keeps a pack a ring rather than a single body.
+
+        `terrain_mult` is what the ground under it costs: nothing in the world swims well,
+        so a monster that follows the player into a river is slowed for as long as it is in
+        the water, which is what makes crossing one a real answer to being chased."""
         dist = math.hypot(target.x - self.x, target.y - self.y)
         senses = c.World.DETECTION_RANGE if detection is None else detection
-        move_factor = dt * c.TARGET_FPS / 1000.0
+        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult
         radius = self.kind.size / 2
 
         aware = dist < senses + target.size // 2

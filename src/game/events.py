@@ -42,6 +42,19 @@ class EventSystem:
     def blood_night_active(self) -> bool:
         return self.blood_night_timer > 0
 
+    @property
+    def blood_intensity(self) -> float:
+        """How far into the blood night the world is, 0 to 1, ramped at both ends.
+
+        The one number behind everything the event changes: the sky tint, how fast monsters
+        respawn and how freely loot drops all read it, so the night comes on and bleeds back
+        out instead of snapping. Held at 1 through the middle of its duration."""
+        if self.blood_night_timer <= 0:
+            return 0.0
+        fade = c.Events.BLOOD_NIGHT_FADE_MS
+        elapsed = c.Events.BLOOD_NIGHT_DURATION_MS - self.blood_night_timer
+        return max(0.0, min(1.0, elapsed / fade, self.blood_night_timer / fade))
+
     def notify(self, message: str, color: tuple):
         """Toast, unless the session is over. An event that waits on the LLM (every presage
         does) can finish long after the player has quit to the menu, and the toast widget it

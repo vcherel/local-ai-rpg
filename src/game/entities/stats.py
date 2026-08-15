@@ -53,6 +53,12 @@ class Stats:
     def speed_multiplier(self) -> float:
         return 1.0 + (self.level["speed"] - 1) * c.Stats.SPEED_PER_LEVEL
 
+    def swim_multiplier(self) -> float:
+        """How fast the player crosses water, from the standing penalty everything else in
+        the world is stuck with up to a ceiling that still never matches walking."""
+        gained = (self.level["swimming"] - 1) * c.Stats.SWIM_PER_LEVEL
+        return min(c.Scenery.SWIM_SPEED_MAX, c.Scenery.SWIM_SPEED + gained)
+
     def max_hp(self) -> int:
         return c.Player.HP + (self.level["vitality"] - 1) * c.Stats.VITALITY_HP_PER_LEVEL
 

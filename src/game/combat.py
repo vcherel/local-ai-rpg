@@ -793,8 +793,7 @@ class WorldCombat:
             if quest_item is not None:
                 self.items.append(quest_item)
             drop_chance = c.LootBox.DROP_CHANCE
-            if self.events.blood_night_active:
-                drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
+            drop_chance *= 1.0 + (c.Events.BLOOD_NIGHT_DROP_MULT - 1.0) * self.events.blood_intensity
             if random.random() < drop_chance:
                 rarity = roll_rarity(luck=player.loot_luck())
                 self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox", rarity=rarity))
