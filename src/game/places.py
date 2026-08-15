@@ -281,28 +281,30 @@ class WorldPlaces:
             if math.hypot(mark["x"] - player.x, mark["y"] - player.y) > c.Minimap.RUMOR_CLEAR_DISTANCE
         ]
 
+    def _village_crowd(self, npc: NPC) -> tuple:
+        """The settlement this NPC belongs to and everyone standing on its grounds. A camper
+        or a wandering merchant out in the wilds has no village behind them, only themselves."""
+        village = self.village_at(npc.x, npc.y)
+        if village is None:
+            return None, [npc]
+        return village, [other for other in self.npcs if village.contains_point(other.x, other.y)]
+
     def provoke_village(self, npc: NPC) -> List[NPC]:
         """Turn a settlement on the player after one of its people is struck, returning
         everyone who just went hostile (so the caller can strike their quests off).
 
         Everyone whose home village this is drops what they were doing and comes for the
         player, their goodwill gone and any quest they were offering with it. Violence in
-        town is a decision, not a stray click: the whole place remembers it, and nothing
-        here ever calms them back down.
+        town is a decision, not a stray click, but it is one the place eventually lives down:
+        the anger runs on a clock (`Villages.ANGER_S`), and swinging again while they are
+        still furious pushes that clock further out. Killing someone is what makes it
+        permanent, and that goes through `hold_grudge` instead.
         """
-        village = self.village_at(npc.x, npc.y)
-        if village is None:
-            # A camper or a wandering merchant out in the wilds has no village behind them.
-            crowd = [npc]
-        else:
-            crowd = [other for other in self.npcs if village.contains_point(other.x, other.y)]
+        village, crowd = self._village_crowd(npc)
 
         newly_hostile = [other for other in crowd if not other.hostile]
-        if not newly_hostile:
-            return newly_hostile
-        for other in newly_hostile:
-            other.hostile = True
-            other.affinity = c.Affinity.MIN
+        for other in crowd:
+            other.anger(c.Villages.ANGER_S)
         # The dogs go with their people. A settlement turning on the player turns everything
         # it keeps on the player, and a dog is faster than a villager.
         if village is not None:
@@ -310,20 +312,49 @@ class WorldPlaces:
             for dog in self.critters:
                 if dog.village_key == key:
                     dog.aggro()
-        if self.notify:
+        if newly_hostile and self.notify:
             name = village.name if village is not None and village.name else "The locals"
             self.notify(f"{name} turns on you!", c.Colors.RED)
         return newly_hostile
 
+    def hold_grudge(self, npc: NPC) -> List[NPC]:
+        """A villager is dead by the player's hand, and that one is never forgiven.
+
+        Anger is a countdown; a killing is not. Everyone on this settlement's grounds is
+        turned for good, with no clock left to run out, which is what keeps a death heavier
+        than a brawl now that a brawl can be waited out."""
+        village, crowd = self._village_crowd(npc)
+        newly_hostile = [other for other in crowd if not other.hostile]
+        for other in crowd:
+            if other is not npc:
+                other.anger(c.Villages.ANGER_S, permanent=True)
+        if self.notify:
+            name = village.name if village is not None and village.name else "The locals"
+            self.notify(f"{name} will never forgive you", c.Colors.RED)
+        return newly_hostile
+
+    def witness_radius(self) -> float:
+        """How far a villager notices a theft right now. Night cuts it, which is what makes
+        robbing a house something you do after dark. Shared by the check and the cones the
+        renderer draws, so what the player is shown is exactly what is tested."""
+        return c.Crime.WITNESS_RADIUS * (c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0)
+
+    def watchers_near(self, x: float, y: float) -> List[NPC]:
+        """Everyone close enough to (x, y) that their field of view is worth drawing, whether
+        or not (x, y) actually falls inside it."""
+        radius = self.witness_radius()
+        return [npc for npc in self.npcs if not npc.hostile and npc.distance_to_point((x, y)) <= radius]
+
     def theft_witness(self, x: float, y: float) -> NPC | None:
         """Whoever sees the player helping themselves at (x, y), or None if nobody is looking.
 
-        Deliberately a plain distance test rather than a roll: the player can see who is on
-        the street before they open the chest, so getting caught is a decision they made and
-        not luck. Night halves the radius, which is what makes robbing a house something you
-        do after dark. Anyone already hostile is past caring what else the player takes."""
-        radius = c.Crime.WITNESS_RADIUS * (c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0)
-        seen = [npc for npc in self.npcs if not npc.hostile and npc.distance_to_point((x, y)) <= radius]
+        Deliberately no roll: near enough and facing the right way is the whole test, so
+        getting caught is a decision the player made and not luck. The cone is what the
+        renderer draws on the ground while a chest or a bed is in reach, so waiting for
+        somebody to turn their back is a real answer rather than a guess. Anyone already
+        hostile is past caring what else the player takes."""
+        radius = self.witness_radius()
+        seen = [npc for npc in self.watchers_near(x, y) if npc.sees(x, y, radius)]
         return min(seen, key=lambda npc: npc.distance_to_point((x, y)), default=None)
 
     def rest_in_house(self, building: Building) -> None:
@@ -337,13 +368,49 @@ class WorldPlaces:
         The single exception to violence's all-or-nothing rule: theft is between the player
         and whoever saw it, so the rest of the village goes on with its day. Swinging back
         at the one who caught you is what turns the whole place, through the usual
-        `provoke_village`. Like every other way an NPC turns, there is no way back."""
-        npc.hostile = True
-        npc.affinity = c.Affinity.MIN
+        `provoke_village`. They cool off on their own clock like anyone else, a while after
+        the player has stopped taking their things."""
+        npc.anger(c.Crime.THEFT_ANGER_S)
         if self.notify:
             name = npc.name or "A villager"
             self.notify(f"{name} catches you in the act!", c.Colors.RED)
         return npc
+
+    def militia_orders(self) -> tuple[dict, dict]:
+        """What each villager is doing about the monsters inside their settlement: who is
+        going to meet one, and who is running for a door.
+
+        Two dicts keyed by `id(npc)`: the monster to fight, and the building to hide in. A
+        settlement is not a crowd of identical people, so the roll is per villager and made
+        once from their home (`NPC.is_militia`): the same house always sends the same person
+        out, and the rest bolt. Worked out once a frame for the whole world rather than per
+        NPC, since the intruders are the short list and the villagers are the long one."""
+        fight: dict = {}
+        flee: dict = {}
+        intruders = [m for m in self.monsters if self.village_at(m.x, m.y, c.Villages.DEFEND_MARGIN) is not None]
+        if not intruders:
+            return fight, flee
+
+        for npc in self.npcs:
+            if npc.hostile:
+                # Already coming for the player: the monster is the least of their problems.
+                continue
+            nearest = min(intruders, key=lambda m: npc.distance_to_point((m.x, m.y)))
+            distance = npc.distance_to_point((nearest.x, nearest.y))
+            if npc.is_militia:
+                if distance <= c.Villages.DEFEND_RADIUS:
+                    fight[id(npc)] = nearest
+            elif distance <= c.Villages.PANIC_RADIUS:
+                refuge = self._refuge_for(npc)
+                if refuge is not None:
+                    flee[id(npc)] = refuge
+        return fight, flee
+
+    def _refuge_for(self, npc: NPC) -> Building | None:
+        """The nearest building this one can get behind a door of. Any door will do: a
+        frightened person takes the nearest one, not their own."""
+        shelters = [b for b in self.buildings_near(npc.x, npc.y) if b.has_door and not b.door_broken]
+        return min(shelters, key=lambda b: npc.distance_to_point((b.x, b.y)), default=None)
 
     def house_to_rob(self, npc: NPC) -> Building | None:
         """A house in this NPC's village whose chest nobody has emptied yet, for a steal quest

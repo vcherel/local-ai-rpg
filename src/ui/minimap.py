@@ -150,13 +150,28 @@ class Minimap:
         y = top + 4
         village = world.village_at(player.x, player.y)
         if village is not None and village.name and village.discovered:
-            label = c.Fonts.small.render(village.name, True, c.Colors.WHITE)
+            text, color = self._village_mood(world, village)
+            label = c.Fonts.small.render(text, True, color)
             strip = pygame.Rect(self.rect.left, y, self.rect.width, label.get_height() + 8)
             widgets.draw_panel(self.screen, strip)
             self.screen.blit(label, label.get_rect(center=strip.center))
             y = strip.bottom + 4
         self._draw_clock(world, y)
         self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
+
+    @staticmethod
+    def _village_mood(world: World, village) -> tuple:
+        """What this settlement's strip says: its name, or its name and how much longer it
+        wants the player dead. Anger runs out now, so the player needs somewhere to read how
+        long is left; the strip that already names the place they are standing in is it. A
+        grudge (somebody was killed here) has no countdown to show, and never will."""
+        angry = [npc for npc in world.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
+        if not angry:
+            return village.name, c.Colors.WHITE
+        if any(npc.grudge for npc in angry):
+            return f"{village.name}: never forgiven", c.Colors.RED
+        remaining = max(npc.anger_remaining for npc in angry)
+        return f"{village.name}: furious ({int(remaining) // 60}:{int(remaining) % 60:02d})", c.Colors.RED
 
     def _draw_clock(self, world: World, top: int):
         """The time of day, as a dial swept once per cycle plus the name of the phase. The

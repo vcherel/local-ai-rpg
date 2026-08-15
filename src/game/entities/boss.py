@@ -124,7 +124,11 @@ class Boss(Monster):
         if dist <= c.Boss.AGGRO_RANGE:
             # Monster.move handles the chase and the basic melee swing.
             waypoint = world.chase_waypoint(self, player, self.kind.size / 2)
-            self.move(player, dt, world.blocked, waypoint, world.night_damage_mult(), c.Boss.AGGRO_RANGE)
+            # A boss only ever wants the player; the villagers a plain monster would turn on
+            # are beneath it. Monster.move hands its swing back rather than landing it.
+            damage = self.move(player, dt, world.blocked, waypoint, world.night_damage_mult(), c.Boss.AGGRO_RANGE)
+            if damage:
+                player.receive_damage(damage, source=self)
             self.ability_cd -= dt
             if self.ability_cd <= 0 and self.slam_windup <= 0:
                 self._use_ability(world, player)

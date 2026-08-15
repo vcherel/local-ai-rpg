@@ -235,8 +235,23 @@ class EventSystem:
 
     # ------------------------------------------------------------------ village crisis
 
+    def _village_angry(self, npc: NPC) -> bool:
+        """Whether the settlement this one lives in has turned on the player. One furious
+        neighbour is enough: the quest would send the player into a street that attacks them."""
+        village = self.world.village_at(npc.x, npc.y)
+        if village is None:
+            return False
+        return any(other.hostile for other in self.world.npcs if village.contains_point(other.x, other.y))
+
     def _generate_crisis(self, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
-        candidates = [npc for npc in self.world.npcs if not npc.is_merchant and not npc.has_active_quest]
+        # Nobody who wants the player dead asks them for a favour, and neither does anyone
+        # whose whole street has turned: a crisis quest from an angry village is a task that
+        # can't be handed in, and this event was the last path that still handed one out.
+        candidates = [
+            npc
+            for npc in self.world.npcs
+            if not npc.is_merchant and not npc.has_active_quest and npc.can_talk and not self._village_angry(npc)
+        ]
         if not candidates:
             return
         npc = random.choice(candidates)
