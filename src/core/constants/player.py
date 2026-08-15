@@ -67,7 +67,7 @@ class Stats:
     # Character progression is use-based: every stat starts at level 1 and gains XP
     # from a matching action. Effects are pure functions of the level, so growing a
     # stat never touches the save format.
-    NAMES: tuple = ("strength", "resistance", "speed", "vitality", "bartering", "persuasion")
+    NAMES: tuple = ("strength", "resistance", "speed", "vitality", "bartering", "persuasion", "swimming")
 
     # XP needed for level 1 -> 2, scaled by XP_GROWTH for each further level.
     BASE_XP: float = 35.0
@@ -85,6 +85,10 @@ class Stats:
     VITALITY_HP_PER_LEVEL: int = 15  # extra max HP
     VITALITY_REGEN_PER_LEVEL: float = 0.0001
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
+    # How much of the water penalty each level of swimming buys back, from Scenery.SWIM_SPEED
+    # toward SWIM_SPEED_MAX. The only stat with no effect on land: it turns a river from a
+    # barrier into a shortcut, and it never quite matches walking, so a bridge keeps its job.
+    SWIM_PER_LEVEL: float = 0.05
 
     # Quest reward weight shifted from "rare" to "legendary" per level above 1, capped so
     # even a maxed-out persuasion character still sees a legendary reward well under a
@@ -115,6 +119,7 @@ class Stats:
     XP_PER_DAMAGE_TAKEN: float = 2.0
     XP_PER_KILL: float = 8.0
     XP_PER_RUN_FRAME: float = 0.015
+    XP_PER_SWIM_FRAME: float = 0.06  # swimming, per frame moved in water
     XP_PER_TALK: float = 6.0  # persuasion
     XP_PER_TALK_BARTERING: float = 1.5  # small bartering trickle from talking
     XP_PER_TRADE: float = 8.0  # bartering, per shop buy/sell
@@ -128,6 +133,7 @@ STAT_LABELS: dict[str, str] = {
     "vitality": "Vitality",
     "bartering": "Bartering",
     "persuasion": "Persuasion",
+    "swimming": "Swimming",
 }
 
 

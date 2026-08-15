@@ -34,6 +34,11 @@ class DayNightCycle:
             return 1.0
         return 1.0 - (p - d.NIGHT_END) / (1.0 - d.NIGHT_END)
 
+    def time_until(self, target_progress: float) -> float:
+        """Milliseconds from now until the cycle next reaches that point, going forward.
+        What sleeping through to dawn has to skip."""
+        return ((target_progress - self.progress) % 1.0) * c.DayNight.CYCLE_LENGTH_MS
+
     @property
     def is_night(self) -> bool:
         return self.darkness > 0.5
@@ -51,16 +56,19 @@ class DayNightCycle:
             return "Night"
         return "Dawn"
 
-    def draw(self, surface: pygame.Surface, blood_night_active: bool):
-        if blood_night_active:
-            color = c.DayNight.BLOOD_NIGHT_COLOR
-            alpha = c.DayNight.BLOOD_NIGHT_ALPHA
-        else:
-            darkness = self.darkness
-            if darkness <= 0.0:
-                return
-            color = c.DayNight.NIGHT_COLOR
-            alpha = int(c.DayNight.NIGHT_MAX_ALPHA * darkness)
+    def draw(self, surface: pygame.Surface, blood_intensity: float = 0.0):
+        """Overlay the ambient tint. `blood_intensity` (0..1) blends the ordinary sky toward
+        the blood night's red, so the event comes on and bleeds out rather than snapping."""
+        darkness = self.darkness
+        color = c.DayNight.NIGHT_COLOR
+        alpha = c.DayNight.NIGHT_MAX_ALPHA * darkness
+        if blood_intensity > 0:
+            blood = c.DayNight.BLOOD_NIGHT_COLOR
+            color = tuple(round(v + (b - v) * blood_intensity) for v, b in zip(color, blood))
+            alpha += (c.DayNight.BLOOD_NIGHT_ALPHA - alpha) * blood_intensity
+        alpha = int(alpha)
+        if alpha <= 0:
+            return
         overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
         overlay.fill((*color, alpha))
         surface.blit(overlay, (0, 0))

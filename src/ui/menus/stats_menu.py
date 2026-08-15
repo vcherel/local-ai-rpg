@@ -16,7 +16,7 @@ ROW_HEIGHT = 78
 
 class StatsMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=620, height=608)
+        super().__init__(screen, width=620, height=686)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -53,6 +53,7 @@ class StatsMenu(BaseMenu):
                 f"+{round(stats.quest_reward_weights()[4] - c.Rarity.QUEST_REWARD_WEIGHTS[4])}pt "
                 "legendary quest reward odds, NPCs more receptive",
             ),
+            ("swimming", f"cross water at {round(stats.swim_multiplier() * 100)}% of walking pace"),
         ]
 
         bar_w = self.width - self.padding * 2

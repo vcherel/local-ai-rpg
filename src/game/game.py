@@ -513,6 +513,8 @@ class Game:
     def _bed_label(self) -> str:
         """What the prompt over a bed says: the inn charges, a villager's bed doesn't, and
         a bed slept in recently says how long until it is worth lying in again."""
+        if self._sleep_threat():
+            return "Too dangerous to sleep with that out there"
         if self.interior.kind != "house":
             return f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
         cooling = self._bed_cooling()
@@ -533,11 +535,13 @@ class Game:
 
     def _sleep_in_bed(self):
         # A bed is the one full night's rest in the game: unlike a campfire it heals
-        # everything and shakes off the post-death weakness. The inn charges coins for it;
-        # a villager's own bed asks nothing but that nobody sees you climb into it, and
-        # that household won't have it slept in again for a while.
-        if self.player.hp >= self.player.max_hp and not self.player.is_weakened():
-            self.loot_notification.show("You are already fully rested", c.Colors.WHITE)
+        # everything, shakes off the post-death weakness and puts the night behind the
+        # player. The inn charges coins for it; a villager's own bed asks nothing but that
+        # nobody sees you climb into it, and that household won't have it slept in again
+        # for a while. Nobody sleeps with something hostile in the street, the same refusal
+        # a campfire makes through `camp_is_clear`.
+        if self._sleep_threat():
+            self.loot_notification.show("Too dangerous to sleep with that out there", c.Colors.RED)
             return
 
         stolen_sleep = self.interior.kind == "house"
@@ -553,13 +557,52 @@ class Game:
                 return
             self.player.add_coins(-c.Buildings.TAVERN_SLEEP_COST)
 
+        play_sound("quest_complete")
+        self._sleep_until_dawn()
         self.player.clear_death_debuff()
         self.player.max_hp = self.player.effective_max_hp()
         self.player.hp = self.player.max_hp
-        self.loot_notification.show("You rest and recover fully", c.Colors.GREEN)
-        play_sound("quest_complete")
+        self.loot_notification.show("You sleep until dawn and wake fully rested", c.Colors.GREEN)
         if stolen_sleep:
             self._check_witness()
+
+    def _sleep_threat(self) -> bool:
+        """Whether anything hostile is close enough to make lying down absurd. Shared by the
+        prompt and the key, like every other refusal."""
+        return bool(self.world.hostiles_near(self.player.x, self.player.y, c.Buildings.SLEEP_SAFE_RADIUS))
+
+    def _sleep_until_dawn(self):
+        """Fade out, run the world forward to just after dawn, fade back in.
+
+        Deliberately not instant: the tint moving under the fade is the only thing that says
+        hours went by. Nothing in the world takes a step while it runs (`World.update` is not
+        called), but every clock in it moves, and whatever was coursing through the player's
+        veins at bedtime has worn off by morning."""
+        skip_ms = self.world.daynight.time_until(c.Buildings.SLEEP_WAKE_PROGRESS)
+        duration = c.Buildings.SLEEP_FADE_MS
+        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT))
+        overlay.fill((0, 0, 0))
+
+        elapsed = 0.0
+        while elapsed < duration:
+            # Input is swallowed for the second and a half this lasts; the pump is only
+            # there so the window keeps answering the OS.
+            pygame.event.pump()
+            step = min(self.clock.tick(60), duration - elapsed)
+            elapsed += step
+            self.world.pass_time(skip_ms * (step / duration) / 1000)
+
+            self.game_renderer.draw_world(self.camera, self.world, self.player, self.interior, None, None)
+            self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
+            # Full black at the halfway mark, clear at both ends.
+            overlay.set_alpha(int(255 * math.sin(math.pi * elapsed / duration)))
+            self.screen.blit(overlay, (0, 0))
+            pygame.display.flip()
+
+        # Whatever was pressed while the screen was black is not an instruction about the
+        # morning, so it is dropped rather than replayed the moment the player can see.
+        pygame.event.clear()
+        self.player.clear_buffs()
 
     def _check_witness(self):
         """See whether anyone caught the player helping themselves in someone's house.
@@ -663,7 +706,8 @@ class Game:
                 # camera shake/particles/damage numbers below, so the impact reads as a
                 # freeze-frame rather than the whole game stuttering.
                 gameplay_dt = get_hitstop().apply(dt)
-                self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked)
+                in_water = self.world.water_at(self.player.x, self.player.y)
+                self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked, in_water)
                 self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
                 self._pop_levelups()
                 # A building's interior is just its own footprint; re-derive which one (if
@@ -687,7 +731,7 @@ class Game:
                 None if self.active_menu else self.interaction,
                 quest_target,
             )
-            self.world.daynight.draw(self.screen, self.world.events.blood_night_active)
+            self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
             get_vignette().draw(self.screen)
             if not self.active_menu:
                 self.game_renderer.draw_ui(

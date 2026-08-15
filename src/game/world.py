@@ -66,6 +66,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         self._ground_by_chunk: dict = {}
         self._props_by_chunk: dict = {}
         self._scenery_by_cell: dict = {}
+        self._water_by_cell: dict = {}
         self._loaded_chunks = set()
         self._current_chunk = None
 
@@ -394,6 +395,29 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         runs several times per entity per frame."""
         cell = c.Scenery.INDEX_CELL
         return self._scenery_by_cell.get((int(x // cell), int(y // cell)), [])
+
+    def water_at(self, x, y) -> bool:
+        """Whether that point is in a river, a pond or a lake, with nothing bridging it.
+
+        Water is the one piece of terrain that neither blocks nor is walked over: everything
+        crosses it slowly (the player less slowly the more they swim), which is what makes a
+        river worth running to and a bridge worth walking to. A deck over the water takes it
+        back to ordinary ground, so a crossing is a crossing."""
+        cell = c.Scenery.INDEX_CELL
+        pieces = self._water_by_cell.get((int(x // cell), int(y // cell)), ())
+        wet = False
+        for piece in pieces:
+            if not piece.covers(x, y):
+                continue
+            if piece.kind == "bridge":
+                return False
+            wet = True
+        return wet
+
+    def terrain_speed(self, x, y) -> float:
+        """What the ground under something costs it. Everything but the player swims badly
+        and never gets better at it, which is the whole reason a river is worth crossing."""
+        return c.Scenery.SWIM_SPEED if self.water_at(x, y) else 1.0
 
     def free_spot_near(self, x, y, radius) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
@@ -921,7 +945,9 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 enemy = None
             if enemy is not None:
                 waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
-                damage = npc.update(player, dt, self.blocked, waypoint, target=enemy)
+                damage = npc.update(
+                    player, dt, self.blocked, waypoint, target=enemy, terrain_mult=self.terrain_speed(npc.x, npc.y)
+                )
                 if damage:
                     self._resolve_monster_hit(
                         enemy,
@@ -940,7 +966,13 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 self.open_door_for(npc)
                 inside = (shelter.x, shelter.interior_rect().centery)
                 waypoint = self.chase_waypoint(npc, _Point(*inside), c.Entities.NPC_SIZE / 2)
-                npc.update(player, dt, self.blocked, refuge=waypoint or inside)
+                npc.update(
+                    player,
+                    dt,
+                    self.blocked,
+                    refuge=waypoint or inside,
+                    terrain_mult=self.terrain_speed(npc.x, npc.y),
+                )
                 if shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
                     # Behind the door and shutting it. The player can be shut out or shut in
                     # with them; either way the street is emptier than it was.
@@ -963,6 +995,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 waypoint,
                 target=player if chasing else None,
                 face_player=not indoors,
+                terrain_mult=self.terrain_speed(npc.x, npc.y),
             )
             if damage:
                 player.receive_damage(damage, source=npc)
@@ -996,7 +1029,16 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             waypoint = self.chase_waypoint(monster, target, monster.kind.size / 2)
             # `nearby` doubles as the crowd each monster shoulders its way out of: the ones
             # converging on the player are exactly the ones that pile up on each other.
-            damage = monster.move(target, dt, self.blocked, waypoint, damage_mult, detection, crowd=nearby)
+            damage = monster.move(
+                target,
+                dt,
+                self.blocked,
+                waypoint,
+                damage_mult,
+                detection,
+                crowd=nearby,
+                terrain_mult=self.terrain_speed(monster.x, monster.y),
+            )
             if damage:
                 self._land_monster_blow(monster, target, damage, player, quest_system)
         self.fire_monster_shots(player, damage_mult)
@@ -1032,7 +1074,9 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             # everything else is wandering or running and steers for itself.
             chasing = critter.hostile and critter.distance_to_point(player_pos) <= critter.kind.detection
             waypoint = self.chase_waypoint(critter, player, critter.size / 2) if chasing else None
-            critter.update(player, dt, self.blocked, damage_mult, waypoint)
+            critter.update(
+                player, dt, self.blocked, damage_mult, waypoint, terrain_mult=self.terrain_speed(critter.x, critter.y)
+            )
         self._ensure_village_dogs(player)
         self.critters = [
             critter for critter in self.critters if critter.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE
@@ -1049,8 +1093,10 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         if roaming < self.roaming_cap(player):
             self.respawn_timer += dt
             respawn_interval = c.World.RESPAWN_INTERVAL_MS
-            if self.events.blood_night_active:
-                respawn_interval /= c.Events.BLOOD_NIGHT_RESPAWN_MULT
+            blood = self.events.blood_intensity
+            if blood > 0:
+                # Ramped like the sky, so the wilds fill up as the night reddens.
+                respawn_interval /= 1.0 + (c.Events.BLOOD_NIGHT_RESPAWN_MULT - 1.0) * blood
             elif self.daynight.is_night:
                 respawn_interval /= c.DayNight.NIGHT_RESPAWN_MULT
             if self.respawn_timer >= respawn_interval:

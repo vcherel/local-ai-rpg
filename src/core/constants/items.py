@@ -65,8 +65,10 @@ class Potions:
     SWIFTNESS_MULT: tuple = (1.12, 1.20, 1.30, 1.45, 1.60)  # move speed multiplier
     STONESKIN_REDUCTION: tuple = (2, 4, 6, 9, 13)  # flat damage reduction on top of armour
 
-    # How long a buff lasts, in seconds. Unused by "heal", which is instant.
-    DURATION_S: tuple = (12.0, 15.0, 18.0, 22.0, 26.0)
+    # How long a buff lasts, in seconds. Unused by "heal", which is instant. Long enough
+    # that a potion is drunk in preparation rather than in a panic: a common flask covers
+    # one skirmish, a legendary one covers a boss fight and the walk into it.
+    DURATION_S: tuple = (45.0, 70.0, 100.0, 140.0, 190.0)
 
     # Worth before the rarity multiplier, used by items.base_value for shop pricing.
     BASE_VALUE: int = 15

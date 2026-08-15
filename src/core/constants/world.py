@@ -118,6 +118,11 @@ class Events:
     BLOOD_NIGHT_DURATION_MS: int = 120_000
     BLOOD_NIGHT_RESPAWN_MULT: float = 3.0
     BLOOD_NIGHT_DROP_MULT: float = 2.0
+    # How long the blood night takes to come on and to bleed back out, at each end of its
+    # duration. Everything it changes (the sky, the respawn rate, the loot) is scaled by
+    # that ramp, so the world visibly boils up instead of the pressure arriving a frame
+    # before the colour does.
+    BLOOD_NIGHT_FADE_MS: int = 12_000
 
 
 @dataclass(frozen=True)
@@ -241,6 +246,14 @@ class Buildings:
     TAVERN_SLEEP_COST: int = 15
     INTERACT_DISTANCE: int = 120
 
+    # Sleeping. Nobody climbs into a bed with something hostile this close, and the night
+    # is not skipped instantly: the screen fades out and back over SLEEP_FADE_MS while the
+    # sky and every clock in the world run forward to just after dawn, so hours passing is
+    # something the player watches rather than something they infer from the tint.
+    SLEEP_SAFE_RADIUS: int = 420
+    SLEEP_FADE_MS: int = 1500
+    SLEEP_WAKE_PROGRESS: float = 0.02
+
     # Nothing breaks in one tap: a crate takes a few blows, each one splintering it a
     # little further, and only the last one spills what's inside.
     CRATE_HP: int = 22
@@ -312,7 +325,10 @@ class Scenery:
     # Drawn under the entities with the floor, rather than over it with the props, and in
     # this order: the broad patches of ground first, then what lies on them, so a road is
     # never buried under the meadow it crosses.
-    GROUND_KINDS: tuple = ("patch", "pond", "path", "pebbles", "grass", "flowers")
+    GROUND_KINDS: tuple = ("patch", "pond", "lake", "river", "path", "bridge", "pebbles", "grass", "flowers")
+    # The kinds the player wades through rather than walks over. A bridge sits on top of
+    # them in the draw order for the same reason it does in the world.
+    WATER_KINDS: tuple = ("pond", "lake", "river")
 
     # Broad soft patches of a different ground colour, laid down before everything else.
     # They are what stops open country reading as one flat green sheet, so every biome
@@ -363,7 +379,6 @@ class Scenery:
         ),
         "wetland": (
             ("patch", (5, 8), (1, 2), 210),
-            ("pond", (1, 3), (1, 1), 0),
             ("reeds", (4, 8), (4, 8), 110),
             ("grass", (6, 10), (3, 6), 140),
             ("tree", (1, 3), (1, 2), 80),
@@ -378,6 +393,47 @@ class Scenery:
 
     # Ponds are the one kind big enough to need its own footprint.
     POND_RADIUS: tuple = (70, 150)
+    # A lake is a pond big enough to be worth walking round, rolled in the biomes that
+    # hold water. Same drawing, same swim rules: only the scale differs.
+    LAKE_RADIUS: tuple = (200, 380)
+    LAKE_CHANCE = {"wetland": 0.55, "plain": 0.12, "forest": 0.1, "rocky": 0.06}
+
+    # Rivers. Nothing about water blocks: it is crossed slowly (see SWIM_SPEED), so a river
+    # is a delay and an exposure rather than a wall, and a bridge is worth walking to.
+    # Lanes run on a coarse multiple of the chunk grid, each one a pure function of its
+    # index like everything else streamed, so a chunk lays down its own stretch of river
+    # with no idea what its neighbours did.
+    RIVER_LANE_CHUNKS: int = 9  # one river every this many chunk columns/rows
+    RIVER_LANE_CHANCE: float = 0.7  # not every lane carries one, so the map isn't a grid
+    # Blobs laid well inside each other's width, so the channel reads as running water
+    # rather than as a string of beads.
+    RIVER_STEP: int = 12
+    RIVER_WIDTH: tuple = (52, 78)
+    RIVER_WOBBLE: int = 420  # how far the course wanders off a straight line
+    RIVER_BANK_CLEARANCE: int = 30  # no trunk or boulder stands this close to the water
+    # A river bends around a settlement's centre by this much rather than running through
+    # its plaza: a village's radius plus a margin of dry ground.
+    RIVER_VILLAGE_CLEARANCE: int = 820
+
+    # Crossings. One is laid at fixed intervals along a river whatever else is nearby, so a
+    # bridge is always findable; another wherever a road meets the water, since that is
+    # where anyone would have built one.
+    BRIDGE_INTERVAL: int = 2400
+    BRIDGE_LENGTH: int = 130  # along the river; comfortably wider than the water itself
+    BRIDGE_WIDTH: int = 76
+    BRIDGE_COLOR: tuple = (132, 100, 66)
+    BRIDGE_PLANK_COLOR: tuple = (108, 80, 52)
+    BRIDGE_RAIL_COLOR: tuple = (92, 66, 42)
+
+    # Water is drawn from the bank inward: shallow edge, body, deep middle.
+    WATER_COLORS: tuple = ((70, 96, 96), (58, 106, 122), (96, 148, 158))
+
+    # What crossing water costs. The player wades at SWIM_SPEED, climbing toward
+    # SWIM_SPEED_MAX as the swimming stat levels; everything else in the world is stuck at
+    # SWIM_SPEED for good, which is what makes a river an answer to a chase and keeps a
+    # bridge the fast way over for the whole game.
+    SWIM_SPEED: float = 0.35
+    SWIM_SPEED_MAX: float = 0.75
 
     # Roads: each village site is joined to its nearest neighbour, and the chunk being
     # generated lays down the packed earth of whatever passes through it. Nothing that
@@ -501,6 +557,8 @@ class PointsOfInterest:
     CHUNK_MARGIN: int = 260
     MIN_DIST_FROM_BUILDING: int = 400
     MIN_DIST_FROM_CENTER: int = 900
+    # Nobody pitches a camp or raises a shrine in a river.
+    MIN_DIST_FROM_WATER: int = 120
     SIZE: int = 46
     HIT_RADIUS: int = 34
     # Relative pick weight among kinds scattered across the wilderness. The three that
