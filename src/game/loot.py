@@ -117,7 +117,7 @@ def break_crate() -> tuple[int, Item | None]:
     return coins, item
 
 
-def loot_villager(merchant: bool = False) -> tuple[int, Item | None]:
+def loot_villager(merchant: bool = False, luck: float = 0.0) -> tuple[int, Item | None]:
     """What a killed villager was carrying: their purse, and sometimes one of their own
     possessions.
 
@@ -134,12 +134,12 @@ def loot_villager(merchant: bool = False) -> tuple[int, Item | None]:
 
     item = None
     if random.random() < chance:
-        item = _roll_loot_item(0, 0, roll_rarity() if merchant else "common", (6, 12))
+        item = _roll_loot_item(0, 0, roll_rarity(luck=luck) if merchant else "common", (6, 12))
 
     return coins, item
 
 
-def open_poi_cache() -> tuple[int, Item | None]:
+def open_poi_cache(luck: float = 0.0) -> tuple[int, Item | None]:
     """Contents of a wilderness point-of-interest cache (ruins or camp): better coins,
     a better chance of an item, and the item's rarity is rolled properly instead of
     staying pinned to common, since these take more effort to find than a house's crate.
@@ -148,6 +148,6 @@ def open_poi_cache() -> tuple[int, Item | None]:
 
     item = None
     if random.random() < c.PointsOfInterest.CACHE_ITEM_CHANCE:
-        item = _roll_loot_item(0, 0, roll_rarity(), (10, 20))
+        item = _roll_loot_item(0, 0, roll_rarity(luck=luck), (10, 20))
 
     return coins, item

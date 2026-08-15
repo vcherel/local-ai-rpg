@@ -166,9 +166,14 @@ def rarity_tier(rarity: str) -> c.RarityTier:
     raise ValueError(f"Unknown rarity: {rarity}")
 
 
-def roll_rarity(weights: tuple = None) -> str:
+def roll_rarity(weights: tuple = None, luck: float = 0.0) -> str:
+    """Roll an item's rarity. `luck` (Player.loot_luck) makes every step up the ladder
+    (1 + luck) times as likely as the one below it, so a lucky player finds better things
+    rather than more of them; the shape of the curve is unchanged, it just leans up."""
     if weights is None:
         weights = tuple(tier.weight for tier in c.Rarity.TIERS)
+    if luck:
+        weights = tuple(weight * (1.0 + luck) ** i for i, weight in enumerate(weights))
     return random.choices(c.Rarity.TIERS, weights)[0].name
 
 
@@ -275,7 +280,7 @@ def affix_label(affix: str, magnitude) -> str:
 ACCESSORY_FLAVOR_LABELS = {
     "speed": "speed",
     "regen": "regen",
-    "luck": "luck",
+    "luck": "luck (rarer loot)",
     "crit": "crit",
     "lifesteal": "lifesteal",
     "coinfind": "coin find",

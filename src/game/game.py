@@ -474,7 +474,7 @@ class Game:
         and whoever happens to be standing outside."""
         building = self.interior
         building.looted = True
-        self._award_loot(roll_rarity(), "Stolen goods")
+        self._award_loot(roll_rarity(luck=self.player.loot_luck()), "Stolen goods")
         stolen = self.dialogue_manager.quest_system.on_theft(building.id)
         if stolen is not None:
             self.loot_notification.show(f"You take the {stolen.name}", c.Colors.YELLOW)
@@ -514,7 +514,7 @@ class Game:
         # everything and shakes off the post-death weakness. The inn charges coins for it;
         # a villager's own bed asks nothing but that nobody sees you climb into it, and
         # that household won't have it slept in again for a while.
-        if self.player.hp >= self.player.max_hp and not self.player.is_shaken():
+        if self.player.hp >= self.player.max_hp and not self.player.is_weakened():
             self.loot_notification.show("You are already fully rested", c.Colors.WHITE)
             return
 
@@ -681,7 +681,9 @@ class Game:
 
             self.dialogue_manager.draw()
             if not self.active_menu:
-                self.dialogue_manager.quest_tracker.draw(self.dialogue_manager.quest_system)
+                self.dialogue_manager.quest_tracker.draw(
+                    self.dialogue_manager.quest_system, self.game_renderer.minimap.content_bottom + 10
+                )
                 self.loot_notification.draw()
             self.inventory_menu.draw(self.player)
             self.quest_menu.draw(self.dialogue_manager.quest_system)

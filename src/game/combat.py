@@ -20,7 +20,7 @@ from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
 from game.entities.entities import Entity
-from game.entities.items import Item, rarity_color, rarity_tier
+from game.entities.items import Item, rarity_color, rarity_tier, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
@@ -569,7 +569,7 @@ class WorldCombat:
         the camp, not for running past it."""
         poi.looted = True
         self._break_effects(poi.x, poi.y, (150, 140, 120), 20)
-        coins, loot_item = open_poi_cache()
+        coins, loot_item = open_poi_cache(player.loot_luck())
         label = {"camp": "Camp cache", "farmstead": "Farmstead searched"}.get(poi.kind, "Ruins searched")
         self._break_loot(player, poi.x, poi.y, coins, loot_item, label, self.items.append)
 
@@ -796,7 +796,8 @@ class WorldCombat:
             if self.events.blood_night_active:
                 drop_chance *= c.Events.BLOOD_NIGHT_DROP_MULT
             if random.random() < drop_chance:
-                self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox"))
+                rarity = roll_rarity(luck=player.loot_luck())
+                self.items.append(Item(monster.x, monster.y, "Lootbox", "lootbox", rarity=rarity))
         # A camp guard's death is the camp's business: it is what opens the cache, and the
         # only thing that lowers the garrison it stands back up from on the next chunk load.
         if monster.camp_id:
@@ -920,7 +921,7 @@ class WorldCombat:
         labourer, since a merchant's whole day is coins. The coins only reach the player
         when the player did the killing; the item is lying on the ground either way, and
         anyone is welcome to pick it up."""
-        coins, loot_item = loot_villager(bool(npc.shop_items))
+        coins, loot_item = loot_villager(bool(npc.shop_items), player.loot_luck() if by_player else 0.0)
         if loot_item is not None:
             loot_item.x, loot_item.y = npc.x, npc.y
             loot_item.start_pop_anim(npc.x, npc.y - c.Entities.NPC_SIZE)
