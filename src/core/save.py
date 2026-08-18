@@ -32,6 +32,15 @@ class SaveSystem:
         - pois: What the player changed about a wilderness point of interest, by POI id:
           {"cx:cy": {"looted": bool, "discovered": bool, "npc_spawned": bool}}. POIs themselves
           are regenerated from their chunk, so only touched ones appear here (dict)
+        - traps: Which hunters' bear traps have already shut, by trap id: {"cx:cy:x,y": True}.
+          Traps themselves are regenerated from their chunk, so springing one is all there is
+          to save (dict)
+        - tunnels: What is left of each village well's tunnel, by tunnel id:
+          {"tunnel:cx:cy": {"guards_alive": int, "hoard_placed": bool}}. The layout itself is
+          rebuilt from the village's chunk (dict)
+        - underground: The tunnel the player was standing in when the game was saved and the
+          spot to put them back at, or None on the surface:
+          {"id": "tunnel:cx:cy", "return": [x, y]} (dict | None)
         - explored: Grid cells the player has walked through, as "gx:gy" strings (Fog.CELL
           wide). The minimap draws these and blacks out everything else (list[str])
         - camp_rest: When each place the player rested will serve them again, by POI id for a

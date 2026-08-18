@@ -158,8 +158,11 @@ class Monster(Entity):
     def _separate(self, crowd, blocked, radius: float):
         """Push out of anything standing in the same place. Chasers stop moving once they
         are in reach, which is exactly when they pile into one body; this runs whether the
-        monster is walking or swinging, so the pile comes apart on its own."""
-        if not crowd:
+        monster is walking or swinging, so the pile comes apart on its own.
+
+        One held in a trap is not shoved out of it: the jaws are what keep it there, and a
+        pack piling in behind would otherwise carry it free."""
+        if not crowd or self.rooted:
             return
         push_x = push_y = 0.0
         for other in crowd:
@@ -271,6 +274,10 @@ class Monster(Entity):
         dist = math.hypot(target.x - self.x, target.y - self.y)
         senses = c.World.DETECTION_RANGE if detection is None else detection
         move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult
+        # Caught in a bear trap: every step below is scaled by this, so it turns, swings and
+        # shoots from where it stands and simply cannot cross the ground to the player.
+        if self.rooted:
+            move_factor = 0.0
         radius = self.kind.size / 2
 
         aware = dist < senses + target.size // 2

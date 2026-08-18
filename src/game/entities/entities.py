@@ -20,6 +20,17 @@ class Entity:
         self.attack_progress = 0.0
         self.attack_hand = "left"
         self.last_damage_ms = 0
+        # Held where it stands until this tick (a bear trap's jaws, the only thing that
+        # roots). Session-only and shared by everything that moves, since the trap does not
+        # care what it caught: whoever is rooted still turns, still swings, still bleeds.
+        self.rooted_until_ms = 0
+
+    def root(self, duration_ms: int):
+        self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)
+
+    @property
+    def rooted(self) -> bool:
+        return pygame.time.get_ticks() < self.rooted_until_ms
 
     def receive_damage(self, damage):
         """Returns True if the entity died"""

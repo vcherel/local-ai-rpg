@@ -174,7 +174,9 @@ class Player(Entity):
             actual_speed *= self.stats.swim_multiplier()
 
         forward = keys[pygame.K_z] or keys[pygame.K_w]
-        moving = forward or keys[pygame.K_s]
+        # Caught in a bear trap: still aiming, still swinging, still being hit, just not
+        # going anywhere until the jaws let go.
+        moving = (forward or keys[pygame.K_s]) and not self.rooted
 
         if moving:
             mouse_x, mouse_y = pygame.mouse.get_pos()

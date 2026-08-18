@@ -698,6 +698,60 @@ class WorldCombat:
                 self.breakables.remove(keg)
                 self.explode(keg.x, keg.y, player, quest_system, depth + 1)
 
+    def snap_traps(self, player: Player, quest_system: QuestSystem):
+        """Whatever has just put a foot in a set bear trap, and what it costs them.
+
+        A trap is not aimed at anyone: the first thing to stand on it springs it, whether
+        that is the player, a wolf, a villager or the monster chasing all three. Nothing it
+        catches pays the player anything (`by_player=False`), since the player did not set
+        it; what they get out of one is the seconds it holds something still.
+        """
+        for trap in self.traps:
+            if trap.sprung:
+                continue
+            if trap.catches(player.x, player.y, c.Player.SIZE / 2):
+                self._spring_trap(trap, player, player, quest_system)
+                continue
+            monster = next((m for m in self.monsters if trap.catches(m.x, m.y, m.kind.size / 2)), None)
+            if monster is not None:
+                self._spring_trap(trap, monster, player, quest_system)
+                continue
+            critter = next((cr for cr in self.critters if trap.catches(cr.x, cr.y, cr.hit_radius)), None)
+            if critter is not None:
+                self._spring_trap(trap, critter, player, quest_system)
+                continue
+            npc = next((n for n in self.npcs if trap.catches(n.x, n.y, c.Entities.NPC_SIZE / 2)), None)
+            if npc is not None:
+                self._spring_trap(trap, npc, player, quest_system)
+
+    def _spring_trap(self, trap, victim, player: Player, quest_system: QuestSystem):
+        """Shut the jaws on whoever stood in them: a bite of health off, and held where they
+        are for as long as it takes to work a foot free. Bosses are deliberately not checked
+        by the caller, for the same reason nothing knocks them back."""
+        trap.sprung = True
+        play_sound("hit")
+        get_shake().add(c.Combat.CRATE_SHAKE)
+        get_particles().spawn_burst(trap.x, trap.y, c.Traps.JAW_COLOR, count=14, speed=5, life=450, size=4)
+        damage = c.Traps.DAMAGE
+        victim.root(c.Traps.HOLD_MS)
+
+        if victim is player:
+            player.receive_damage(damage, source=trap)
+            if self.notify:
+                self.notify("A bear trap snaps shut on your leg", c.Colors.RED)
+            return
+        if isinstance(victim, Critter):
+            self._pop_damage(victim.x, victim.y - victim.size / 2, damage, False)
+            if victim.receive_damage(damage):
+                self._kill_critter(victim, player, by_player=False)
+            else:
+                victim.startle()
+            return
+        if isinstance(victim, NPC):
+            self._resolve_npc_hit(victim, damage, player, quest_system, blocked=self.blocked, by_player=False)
+            return
+        self._resolve_monster_hit(victim, self.monsters, damage, player, quest_system, by_player=False)
+
     def _resolve_monster_hit(
         self,
         monster: Monster,

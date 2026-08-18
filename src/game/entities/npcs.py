@@ -238,6 +238,8 @@ class NPC(Entity):
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
             return 0
 
+        if self.rooted:
+            return 0
         moved_angle = self.wander.step(self, dt, self.home, c.Entities.NPC_SIZE / 2, blocked)
         # Face the way it actually moved, not the way it wanted to: a slider looks along
         # the wall, and one pinned against a building stops staring straight into it.
@@ -246,8 +248,13 @@ class NPC(Entity):
         return 0
 
     def _step_towards(self, point, dt, blocked, speed_mult: float = 1.0) -> float:
-        """Walk at a point, sliding along whatever is in the way. Returns the heading."""
+        """Walk at a point, sliding along whatever is in the way. Returns the heading.
+
+        A villager caught in a bear trap still faces where they were going and still swings
+        at whatever comes into reach; they just don't get there."""
         angle = math.atan2(point[1] - self.y, point[0] - self.x)
+        if self.rooted:
+            return angle
         radius = c.Entities.NPC_SIZE / 2
         speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * dt * c.TARGET_FPS / 1000.0
         step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
@@ -302,7 +309,9 @@ class NPC(Entity):
             return c.Fonts.badge_small, "$", color
         return None
 
-    def draw(self, screen: pygame.Surface, camera: Camera):
+    def draw(self, screen: pygame.Surface, camera: Camera, health_bar: bool = True):
+        """`health_bar` off is the title screen's village, where nobody is fighting anyone
+        and a row of full green bars would read as HUD rather than as people."""
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         super().draw(
             screen,
@@ -311,8 +320,8 @@ class NPC(Entity):
             c.Entities.NPC_SIZE,
             self.color,
             self.orientation,
-            bar_width=60,
-            bar_height=8,
+            bar_width=60 if health_bar else 0,
+            bar_height=8 if health_bar else 0,
             health_bar_offset=10,
         )
 

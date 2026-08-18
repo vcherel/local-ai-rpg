@@ -9,9 +9,11 @@ import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
 from game.entities.critter import Critter
+from game.entities.items import Item, roll_rarity
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest, pois_for_chunk
-from game.entities.village import village_site
+from game.entities.tunnel import Tunnel, has_tunnel
+from game.entities.village import Village, village_site
 from game.loot import roll_shop_stock
 
 if TYPE_CHECKING:
@@ -102,7 +104,15 @@ class WorldPlaces:
     def on_guard_killed(self, monster: Monster, quest_system: QuestSystem):
         """Strike a fallen bandit off its camp's roll, which is what decides whether the cache
         opens and how many stand there when the chunk next loads. Emptying the roll is also
-        what finishes a clear_camp quest, whether or not the camp's chunk is still loaded."""
+        what finishes a clear_camp quest, whether or not the camp's chunk is still loaded.
+
+        A tunnel's garrison is held the same way and for the same reason, so it is answered
+        here rather than in a routine of its own."""
+        tunnel = self.tunnels.get(monster.camp_id)
+        if tunnel is not None:
+            tunnel.guard_killed()
+            self.tunnel_state[tunnel.id] = tunnel.state()
+            return
         poi = next((p for p in self.pois if p.id == monster.camp_id), None)
         if poi is not None:
             poi.guard_killed(monster.camp_leader)
@@ -218,6 +228,125 @@ class WorldPlaces:
         get_particles().spawn_burst(poi.x + 40, poi.y + 12, (255, 170, 60), count=18, speed=3, life=700, size=4)
         if self.notify:
             self.notify("You rest at the fire. Some wounds close, nerves steadied.", (255, 190, 110))
+
+    # ------------------------------------------------------------------ under the well
+
+    def well_in_reach(self, player: Player) -> Village | None:
+        """The village well the player is standing at, or None. Every settlement has one and
+        every one of them can be looked down; only some of them go anywhere."""
+        pos = player.get_pos()
+        reach = c.Villages.WELL_RADIUS + c.Buildings.INTERACT_DISTANCE
+        near = [village for village in self.villages if village.distance_to_point(pos) <= reach]
+        return min(near, key=lambda village: village.distance_to_point(pos), default=None)
+
+    def tunnel_for(self, village: Village) -> Tunnel | None:
+        """The dug-out under this village's well, built on first use and kept from then on.
+        None for a well that is only a well."""
+        if not has_tunnel(village.chunk):
+            return None
+        tunnel = Tunnel(village.chunk)
+        cached = self.tunnels.get(tunnel.id)
+        if cached is not None:
+            return cached
+        state = self.tunnel_state.get(tunnel.id)
+        if state:
+            tunnel.apply_state(state)
+        self.tunnels[tunnel.id] = tunnel
+        return tunnel
+
+    def enter_tunnel(self, player: Player, village: Village) -> bool:
+        """Climb down the well. Returns False when it leads nowhere, which is most of them.
+
+        Nothing is loaded or unloaded: the tunnel is already part of the world, just a very
+        long way from the ground the player was standing on, so this is a change of position
+        and of what `World.update` bothers doing. What is waiting down there is stood up now
+        rather than streamed, because nothing streams underground."""
+        tunnel = self.tunnel_for(village)
+        if tunnel is None:
+            if self.notify:
+                self.notify("You look down the well. Water, and a long way down to it.", c.Colors.MUTED)
+            return False
+
+        self.surface_return = (player.x, player.y)
+        self.underground = tunnel
+        player.x, player.y = tunnel.entrance
+        self.projectiles.clear()
+        self._populate_tunnel(tunnel)
+        play_sound("door")
+        if self.notify:
+            self.notify("You climb down into the dark under the well", (170, 160, 200))
+        return True
+
+    def leave_tunnel(self, player: Player):
+        """Back up the ladder, to the well the player climbed down. The garrison stays where
+        it is: a tunnel is emptied by killing what is in it, not by walking out."""
+        if self.underground is None:
+            return
+        x, y = self.surface_return or (c.World.WORLD_SIZE // 2, c.World.WORLD_SIZE // 2)
+        self.abandon_tunnel()
+        player.x, player.y = self.safe_spot_near(x, y, c.Player.SIZE / 2)
+        play_sound("door")
+        if self.notify:
+            self.notify("You climb back out into the open air", c.Colors.WHITE)
+
+    def abandon_tunnel(self):
+        """Be somewhere else, without climbing out: what dying underground does. The player's
+        own placing is the caller's business, since a death sends them to the world spawn and
+        the ladder sends them back to the well."""
+        tunnel = self.underground
+        if tunnel is None:
+            return
+        self.tunnel_state[tunnel.id] = tunnel.state()
+        self.underground = None
+        self.surface_return = None
+        self._clear_tunnel_monsters(tunnel)
+        self.projectiles.clear()
+
+    def _clear_tunnel_monsters(self, tunnel: Tunnel):
+        """Take the tunnel's occupants off the world's lists. They are held as a count like a
+        camp's garrison, so they are stood back up from it the next time anyone climbs down;
+        left on the list they would be a pack of monsters milling about a million paces from
+        anywhere, still being updated every frame."""
+        self.monsters = [m for m in self.monsters if m.camp_id != tunnel.id]
+        self.critters = [cr for cr in self.critters if cr.camp_id != tunnel.id]
+
+    def _populate_tunnel(self, tunnel: Tunnel):
+        """What is waiting down there: the survivors of its garrison, and its hoard the first
+        time anyone gets this far.
+
+        The garrison is a number exactly as a bandit camp's is (`camp_id` tags each one, which
+        keeps them out of the save, out of the despawn and out of the roaming cap), so four of
+        five killed survives climbing out, quitting and coming back."""
+        if tunnel.guards_alive is None:
+            tunnel.guards_alive = random.randint(*c.Tunnels.GUARDS)
+        rng = random.Random(f"tunnel-fill:{tunnel.id}")
+
+        for x, y in tunnel.floor_spots(tunnel.guards_alive, rng):
+            guard = self._new_monster(x, y, danger_bonus=c.Tunnels.GUARD_DANGER_BONUS)
+            guard.camp_id = tunnel.id
+            self.monsters.append(guard)
+
+        if not tunnel.hoard_placed:
+            tunnel.hoard_placed = True
+            for x, y in tunnel.floor_spots(random.randint(*c.Tunnels.HOARD), rng):
+                self.items.append(Item(x, y, "Lootbox", "lootbox", rarity=roll_rarity()))
+        self.tunnel_state[tunnel.id] = tunnel.state()
+
+    def _restore_underground(self, saved: dict | None):
+        """Put the player back in the tunnel a save was made in. Without this a game saved
+        underground would load with the player standing in the middle of a million paces of
+        nothing, with no rock around them and no way back."""
+        if not saved:
+            return
+        village = next((v for v in self.villages if Tunnel(v.chunk).id == saved.get("id")), None)
+        if village is None:
+            return
+        tunnel = self.tunnel_for(village)
+        if tunnel is None:
+            return
+        self.underground = tunnel
+        self.surface_return = tuple(saved.get("return") or tunnel.entrance)
+        self._populate_tunnel(tunnel)
 
     def shrine_in_reach(self, player: Player) -> PointOfInterest | None:
         """The shrine the player could pray at right now: near enough, and not yet answered.
