@@ -66,6 +66,9 @@ class Critter:
         self.flee_heading: Optional[float] = None
         self.flee_started_ms = 0
         self.bolt_until_ms = 0
+        # Held in a bear trap's jaws until this tick. An animal caught in one still turns
+        # and still bites whatever comes within reach; it just cannot leave.
+        self.rooted_until_ms = 0
         # A dog belongs somewhere and strolls around it; wildlife roams from wherever it
         # happens to be standing, so its anchor moves with it.
         self.anchored = home is not None
@@ -100,6 +103,13 @@ class Critter:
             self.hostile = True
             self.flee_heading = None
 
+    def root(self, duration_ms: int):
+        self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)
+
+    @property
+    def rooted(self) -> bool:
+        return pygame.time.get_ticks() < self.rooted_until_ms
+
     def startle(self):
         """Wounded but alive: run flat out for a while, wherever the player is."""
         self.bolt_until_ms = pygame.time.get_ticks() + c.Wildlife.BOLT_DURATION_MS
@@ -121,6 +131,11 @@ class Critter:
         return heading
 
     def _step(self, angle, speed, radius, blocked):
+        # Everything an animal does with its legs comes through here, so a trap holding it
+        # is one check: it still faces where it was going, it just doesn't get there.
+        if self.rooted:
+            self.orientation = angle
+            return
         step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
         if blocked is not None and blocked(self.x + step_x, self.y, radius):
             step_x = 0
@@ -149,6 +164,8 @@ class Critter:
             return
 
         self.flee_heading = None
+        if self.rooted:
+            return
         anchor = self.home if self.anchored else (self.x, self.y)
         moved_angle = self.wander.step(self, dt * terrain_mult, anchor, radius, blocked)
         if moved_angle is not None:

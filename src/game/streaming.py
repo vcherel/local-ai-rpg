@@ -9,6 +9,7 @@ from core.audio import play_sound
 from game.entities.breakables import generate_breakables
 from game.entities.poi import pois_for_chunk
 from game.entities.scenery import blocking_index, generate_chunk_scenery, water_index
+from game.entities.traps import traps_for_chunk
 from game.entities.village import generate_village, village_site
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
@@ -60,7 +61,14 @@ class WorldStreaming:
         # standing here: the settlement, its buildings and this chunk's landmark.
         center = ((cx + 0.5) * size, (cy + 0.5) * size)
         villages = [v for v in self.villages if v.distance_to_point(center) < v.radius + size * 2]
-        self.scenery.extend(generate_chunk_scenery(cx, cy, nearby, villages, chunk_pois))
+        chunk_scenery = generate_chunk_scenery(cx, cy, nearby, villages, chunk_pois)
+        self.scenery.extend(chunk_scenery)
+
+        # The hunters' traps, laid last: they need the wilderness this chunk just grew, so
+        # none of them ends up under a trunk or in the water where nothing could step on it.
+        for trap in traps_for_chunk(cx, cy, nearby, chunk_scenery):
+            trap.sprung = self.trap_state.get(trap.id, False)
+            self.traps.append(trap)
 
         self._loaded_chunks.add(chunk)
 
@@ -107,6 +115,9 @@ class WorldStreaming:
         # Filtered on the chunk that generated it rather than the one it stands in: a copse
         # rolled at a chunk's edge spills over the border, and it leaves with its own chunk.
         self.scenery = [s for s in self.scenery if s.chunk != chunk]
+        # A trap is rebuilt from its chunk seed like everything else here; only the fact
+        # that one has already shut is worth carrying away with it.
+        self.traps = [t for t in self.traps if t.chunk != chunk]
         dropped = set()
         for poi in self.pois:
             if self._chunk_of(poi.x, poi.y) != chunk:

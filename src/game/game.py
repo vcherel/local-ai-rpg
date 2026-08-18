@@ -41,7 +41,8 @@ class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
 
-    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed" | "camp" | "shrine"
+    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed" | "door" | "camp" |
+    # "shrine" | "well" (climb down into the tunnel) | "ladder" (climb back out)
     target: object
     label: str
     x: float
@@ -345,6 +346,25 @@ class Game:
                 label = "E: close the door" if building.door_open else "E: open the door"
                 offer(Interaction("door", building, label, door.centerx, door.top - 10), dist)
 
+        if self.world.underground is not None:
+            # The one way back up, and the only thing to interact with down there besides
+            # what is lying on the floor.
+            tunnel = self.world.underground
+            if tunnel.at_exit(self.player.x, self.player.y):
+                offer(
+                    Interaction("ladder", tunnel, "E: climb back up", *tunnel.entrance),
+                    reach_of(*tunnel.entrance),
+                )
+        else:
+            village = self.world.well_in_reach(self.player)
+            if village is not None:
+                # Deliberately not "climb down": which wells go anywhere is what walking over
+                # to one is for, and a prompt that already knew would answer the question.
+                offer(
+                    Interaction("well", village, "E: look down the well", village.x, village.y - 40),
+                    reach_of(village.x, village.y),
+                )
+
         item = self.world.item_in_reach(self.player)
         if item is not None:
             offer(Interaction("item", item, f"E: pick up {item.name}", item.x, item.y), reach_of(item.x, item.y))
@@ -403,6 +423,10 @@ class Game:
             self._sleep_in_bed()
         elif interaction.kind == "door":
             self._use_door(interaction.target)
+        elif interaction.kind == "well":
+            self.world.enter_tunnel(self.player, interaction.target)
+        elif interaction.kind == "ladder":
+            self.world.leave_tunnel(self.player)
         elif interaction.kind == "camp":
             self.world.rest_at_camp(self.player, interaction.target)
         elif interaction.kind == "shrine":
@@ -635,6 +659,9 @@ class Game:
         self.player.last_hit_by = ""
         self.player.hp = self.player.max_hp
         center = c.World.WORLD_SIZE // 2
+        # Dying underground puts the player back on the surface like any other death: the
+        # tunnel keeps whatever is left of its garrison, and the walk back down is the price.
+        self.world.abandon_tunnel()
         # Nothing that was after the player is waiting for them at the spawn point: the pack
         # is sent back out into the wilds (the respawn loop restocks it soon enough, further
         # out), the player is placed clear of whatever is left, and the window they arrive in
@@ -674,9 +701,11 @@ class Game:
     def run(self):
         running = True
         last_save_time = pygame.time.get_ticks()
-        # Started here rather than in __init__ so the window covers the first seconds the
-        # player is actually playing, not the model loading and the world being built.
-        self.player.grant_spawn_grace()
+        # Opened on the first frame the player can actually see the world rather than here,
+        # for the same reason it is granted after the death screen: the opening lore holds
+        # for as long as the model takes and as long as the player reads, and a window spent
+        # staring at black text is no window at all.
+        granted_grace = False
 
         while running:
             self.active_menu = (
@@ -701,6 +730,9 @@ class Game:
             # rendering the world every frame so menus show it behind their dim overlay
             # instead of it going stale (and progressively darker as the overlay restacks).
             if not self.active_menu:
+                if not granted_grace:
+                    granted_grace = True
+                    self.player.grant_spawn_grace()
                 dt = self.clock.get_time()
                 # A heavy hit freezes gameplay motion for a few frames without slowing the
                 # camera shake/particles/damage numbers below, so the impact reads as a
@@ -731,7 +763,9 @@ class Game:
                 None if self.active_menu else self.interaction,
                 quest_target,
             )
-            self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
+            # No sky underground: the tunnel draws its own darkness around the player instead.
+            if self.world.underground is None:
+                self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
             get_vignette().draw(self.screen)
             if not self.active_menu:
                 self.game_renderer.draw_ui(
@@ -758,6 +792,9 @@ class Game:
             self.help_menu.draw()
             self.pause_menu.draw()
             self.context_window.draw()
+            # The world coming up out of the black the opening lore was written on. Last of
+            # all, so it covers the HUD as well: nothing should be readable before the world.
+            self.context_window.draw_fade()
 
             if not self.active_menu:
                 fps = self.clock.get_fps()

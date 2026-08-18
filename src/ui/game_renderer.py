@@ -91,6 +91,16 @@ class GameRenderer:
         `interaction` is what the interact key would act on right now (Game.current_interaction),
         drawn as the one prompt on screen; `quest_target` is where the tracked quest points,
         the only thing that still gets an offscreen arrow."""
+        # Underground the ground is the tunnel and there is nothing else: no sky, no
+        # wilderness, no buildings, because none of it is generated where a tunnel is dug.
+        # Everything that walks, flies or lies on the floor keeps drawing below exactly as
+        # it does on the surface, which is the whole point of a tunnel being world space.
+        if world.underground is not None:
+            world.underground.draw(self.screen, camera)
+            get_decals().draw(self.screen, camera)
+            self._draw_entities(camera, world, player, interior, interaction, quest_target, underground=True)
+            return
+
         self.screen.fill(c.Colors.GREEN)
 
         for x, y, kind in world.floor_details:
@@ -123,6 +133,12 @@ class GameRenderer:
         if interaction is not None and interaction.kind in ("chest", "bed"):
             self._draw_witness_cones(camera, world, player)
 
+        # Lying on the ground and under everything that walks over it: a trap is meant to be
+        # caught sight of, not read off the top of whoever is about to step in it.
+        for trap in world.traps:
+            if self._on_screen(camera, trap.x, trap.y):
+                trap.draw(self.screen, camera)
+
         for breakable in world.breakables:
             if self._on_screen(camera, breakable.x, breakable.y):
                 breakable.draw(self.screen, camera)
@@ -134,6 +150,14 @@ class GameRenderer:
         for poi in world.pois:
             if self._on_screen(camera, poi.x, poi.y):
                 poi.draw(self.screen, camera)
+
+        self._draw_entities(camera, world, player, interior, interaction, quest_target)
+
+    def _draw_entities(
+        self, camera: Camera, world: World, player: Player, interior, interaction, quest_target, underground=False
+    ):
+        """Everything standing on whatever was drawn under it: the same pass indoors, outdoors
+        and underground, since all three are the one world and the one set of entity lists."""
 
         def visible(x, y, margin=60) -> bool:
             return self._on_screen(camera, x, y, margin) and not self._hidden_indoors(world, x, y, interior)
@@ -168,6 +192,11 @@ class GameRenderer:
         get_floating_text().draw(self.screen, camera)
 
         player.draw(self.screen)
+
+        # Over everything alive and under the prompt: what is out past the lantern is not
+        # seen at all, which is the tunnel's real difficulty and the reason to go back up.
+        if underground:
+            world.underground.draw_dark(self.screen, camera, player)
 
         if interaction is not None:
             self._draw_interaction_prompt(camera, interaction)

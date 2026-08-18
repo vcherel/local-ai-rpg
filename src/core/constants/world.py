@@ -309,6 +309,86 @@ class Breakables:
 
 
 @dataclass(frozen=True)
+class Tunnels:
+    """The dug-out under a village well (game/entities/tunnel.py).
+
+    Not a separate game: a tunnel is a handful of rooms carved out of the same world space
+    everything else stands in, only a very long way from any ground that is ever walked on,
+    which is what lets movement, collision, combat and loot work down there without knowing
+    they have gone underground. What makes it feel like somewhere else is that nothing
+    streams in around it: no sky, no wilderness, no wandering monsters, and no light except
+    what the player carries.
+    """
+
+    # Not every well goes anywhere. A well that is only a well is what makes finding one
+    # that isn't worth the walk over to look.
+    CHANCE: float = 0.55
+    # The corner of world space the tunnels are laid out in, one grid slot per village
+    # chunk. Far enough out that nothing generated on the surface can ever reach it.
+    ORIGIN: int = 1_000_000
+    SPACING: int = 20_000
+
+    ROOMS: tuple = (3, 5)
+    ROOM_SIZE: tuple = (420, 640)
+    ROOM_GAP: tuple = (640, 900)
+    # Comfortably wider than the broadest thing that walks: a corridor nothing fits down is
+    # a wall, and collision here is the floor rectangles rather than the walls between them.
+    CORRIDOR_WIDTH: int = 170
+
+    # What lives down there, rolled once per tunnel and kept like a bandit camp's garrison:
+    # the dark is a place to clear, and clearing it has to stay cleared.
+    GUARDS: tuple = (3, 5)
+    # They roll their kind as if the tunnel stood this much deeper into the wilds, so what
+    # is waiting under a village is not what is wandering the fields above it.
+    GUARD_DANGER_BONUS: int = 1600
+    HOARD: tuple = (2, 3)
+
+    # How far the player can see down there, and how black it is past that.
+    LIGHT_RADIUS: int = 340
+    DARKNESS: int = 240
+    # How close to the shaft the player has to be to climb back out.
+    EXIT_RADIUS: int = 90
+
+    # Light enough to read as floor once the player's own light is on it: everything down
+    # here is seen through the dark overlay, so the stone has to start well above black.
+    FLOOR_COLOR: tuple = (124, 110, 94)
+    ROCK_COLOR: tuple = (30, 27, 24)
+    LADDER_COLOR: tuple = (126, 92, 56)
+
+
+@dataclass(frozen=True)
+class Traps:
+    """Bear traps set by hunters in the woods around a settlement (game/entities/traps.py).
+
+    Nobody laid them for the player and nobody is watching them: a trap shuts on whatever
+    stands on it first, a deer, a wolf chasing something of its own, a monster chasing the
+    player, or the player. Most of what it costs is the seconds it holds you still, which
+    is the only thing in the world that stops something moving without a wall in the way.
+    """
+
+    # The hunting ground of a settlement: past its own fields, inside a morning's walk.
+    # Nothing is trapped out in the deep wilds, where nobody lives to come and check it.
+    MIN_FROM_VILLAGE: int = 900
+    MAX_FROM_VILLAGE: int = 2400
+    # About half the chunks of that band hold one, which works out at a handful of traps
+    # ringing a settlement: enough that the woods around a village have to be watched,
+    # few enough that walking out of one is not a minefield.
+    PER_CHUNK: tuple = (0, 1)
+    # Off the doorstep of anything already standing there, and out of the water.
+    CLEARANCE: int = 150
+
+    # Half hidden in the grass, so it is caught sight of rather than read at a glance: what
+    # gives it away is the ring of jaws, and only from about as far off as it can be avoided.
+    SIZE: int = 26
+    TRIGGER_RADIUS: int = 26
+    DAMAGE: int = 16
+    HOLD_MS: int = 2400
+    JAW_COLOR: tuple = (118, 116, 112)
+    PLATE_COLOR: tuple = (86, 84, 80)
+    SPRUNG_COLOR: tuple = (96, 92, 86)
+
+
+@dataclass(frozen=True)
 class Scenery:
     """The wilderness itself: trees, boulders, grass, ponds and the roads between villages
     (game/entities/scenery.py).

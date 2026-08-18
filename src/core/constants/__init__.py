@@ -50,6 +50,8 @@ from core.constants.world import (
     Fog,
     PointsOfInterest,
     Scenery,
+    Traps,
+    Tunnels,
     Villages,
     World,
 )
@@ -98,6 +100,8 @@ __all__ = [
     "Shield",
     "Stats",
     "TARGET_FPS",
+    "Traps",
+    "Tunnels",
     "UNARMED",
     "Villages",
     "WEAPON_ARCHETYPES",

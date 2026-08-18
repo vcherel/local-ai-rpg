@@ -22,6 +22,7 @@ from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
 from game.entities.projectile import Projectile
 from game.entities.scenery import Scenery
+from game.entities.traps import BearTrap
 from game.entities.village import Village, generate_starting_world
 from game.events import EventSystem
 from game.places import WorldPlaces
@@ -88,6 +89,21 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         self.villages: List[Village] = []
         # Only the POIs of the chunks currently loaded around the player; see _load_chunk.
         self.pois: List[PointOfInterest] = []
+        # The hunters' bear traps of those same chunks, streamed and dropped with them. The
+        # one thing a player changes about a trap is springing it, so that is all that is
+        # saved (`trap_state`, by trap id), exactly like a POI.
+        self.traps: List[BearTrap] = []
+        self.trap_state: dict = {}
+        # The tunnel the player is standing in, or None on the surface. A tunnel is ordinary
+        # world space a long way from anywhere (game/entities/tunnel.py); this is what tells
+        # the world to stop streaming ground, stop spawning wildlife and stop drawing a sky
+        # while the player is down there. `tunnels` caches the ones built so far and
+        # `tunnel_state` is what each of them has left (garrison, hoard), persisted.
+        self.underground = None
+        self.tunnels: dict = {}
+        self.tunnel_state: dict = {}
+        # Where the player climbed down from, so the ladder puts them back at that well.
+        self.surface_return = None
         # What the player did to a POI (looted, discovered, camper spawned), by POI id.
         # Everything else about a POI comes back from its chunk seed, so this is all that
         # needs saving.
@@ -141,6 +157,8 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         }
 
         self.poi_state = self.save_system.load("pois", {})
+        self.trap_state = self.save_system.load("traps", {})
+        self.tunnel_state = self.save_system.load("tunnels", {})
         self.explored = {
             tuple(int(part) for part in key.split(":")) for key in self.save_system.load("explored", []) if ":" in key
         }
@@ -148,6 +166,12 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         saved_npcs = self.save_system.load("npcs", None)
         if saved_npcs is not None:
             self._restore(saved_npcs)
+            # A game saved underground is loaded underground: the player's position is
+            # already down there, so the tunnel has to be back around it before anything
+            # else runs, background generation threads included. One of those persisting a
+            # world that had not yet remembered where it was would write the tunnel out of
+            # the save.
+            self._restore_underground(self.save_system.load("underground", None))
             # Fills in quests saved before boss names were tracked, and quests whose boss
             # was still unnamed when the game was last closed.
             self.sync_quest_boss_names()
@@ -172,7 +196,9 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             self.context_window.start_streaming()
             threading.Thread(target=self._generate_context, daemon=True).start()
         else:
-            self.context_window.show(self.context)
+            # A continued game opens on its lore the same way a new one does: on black,
+            # before anything in the world moves, rather than as a panel over a street.
+            self.context_window.show(self.context, intro=True)
             self._start_landmark_naming()
             self._start_village_naming()
 
@@ -273,6 +299,23 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 snapshot[poi.id] = poi.state()
         return snapshot
 
+    def _trap_state_snapshot(self) -> dict:
+        """Which bear traps have already shut, loaded chunks included. Everything else about
+        a trap comes back from its chunk seed, so this is the whole of what needs saving."""
+        snapshot = dict(self.trap_state)
+        for trap in self.traps:
+            if trap.sprung:
+                snapshot[trap.id] = True
+        return snapshot
+
+    def _tunnel_state_snapshot(self) -> dict:
+        """What is left of every tunnel visited so far: its garrison and whether its hoard
+        has been put out. The layout itself comes back from the village's chunk."""
+        snapshot = dict(self.tunnel_state)
+        for tunnel_id, tunnel in self.tunnels.items():
+            snapshot[tunnel_id] = tunnel.state()
+        return snapshot
+
     def serialize(self) -> dict:
         # A wandering merchant is a transient event; drop it rather than saving it as permanent.
         npcs = [npc for npc in self.npcs if npc is not self.events.wandering_merchant]
@@ -289,6 +332,13 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             "villages": [village.to_dict() for village in self.villages],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
             "pois": self._poi_state_snapshot(),
+            "traps": self._trap_state_snapshot(),
+            "tunnels": self._tunnel_state_snapshot(),
+            "underground": (
+                None
+                if self.underground is None
+                else {"id": self.underground.id, "return": list(self.surface_return or self.underground.entrance)}
+            ),
             "camp_rest": {key: until for key, until in self.rest_cooldowns.items() if until > time.time()},
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
@@ -341,6 +391,11 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         return list(found.values())
 
     def blocked(self, x, y, radius) -> bool:
+        # Underground the answer is the rock, and nothing else: a tunnel is carved out of a
+        # part of the world no chunk ever streams into, so there is nothing else down there
+        # to collide with.
+        if self.underground is not None:
+            return self.underground.blocks(x, y, radius)
         if any(village.blocks(x, y, radius) for village in self._wells_by_chunk.get(self._chunk_of(x, y), ())):
             return True
         if any(building.blocks(x, y, radius) for building in self.buildings_near(x, y)):
@@ -1003,13 +1058,18 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of
         # here, so they keep animating even while a menu pauses the rest of this update.
-        self._sync_chunks(player)
-        self._reveal_around(player)
         self.daynight.update(dt)
-        self.events.update(dt, player, quest_system, npc_name_generator)
-        self._check_poi_discovery(player)
-        self._check_village_discovery(player)
-        self._clear_reached_rumors(player)
+        # None of this happens underground, and that absence is most of what makes a tunnel
+        # somewhere else: no ground streams in around the player, nothing is discovered, no
+        # event finds them, and the map remembers nothing of a place with no landmarks.
+        # What is down there was put there when they climbed down, and that is all.
+        if self.underground is None:
+            self._sync_chunks(player)
+            self._reveal_around(player)
+            self.events.update(dt, player, quest_system, npc_name_generator)
+            self._check_poi_discovery(player)
+            self._check_village_discovery(player)
+            self._clear_reached_rumors(player)
 
         player_pos = player.get_pos()
 
@@ -1047,10 +1107,13 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         # Camp guards are the exception: they hold a place rather than roam, and their camp
         # would look abandoned while its chunk is still loaded. They leave with the chunk
-        # instead (see WorldStreaming._unload_chunk).
-        self.monsters = [
-            m for m in self.monsters if m.camp_id or m.distance_to_point(player_pos) <= c.World.DESPAWN_DISTANCE
-        ]
+        # instead (see WorldStreaming._unload_chunk). Nothing despawns while the player is
+        # underground: every monster on the surface is a world away from a tunnel, and the
+        # whole map would empty out and refill itself over one climb down.
+        if self.underground is None:
+            self.monsters = [
+                m for m in self.monsters if m.camp_id or m.distance_to_point(player_pos) <= c.World.DESPAWN_DISTANCE
+            ]
 
         # Burn (weapon affix) ticks over time and can finish a wounded target off.
         self._tick_burns(self.monsters, player, quest_system)
@@ -1061,7 +1124,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             boss.update_boss(self, player, dt, quest_system)
 
         self.boss_roam_timer += dt
-        if self.boss_roam_timer >= c.Boss.ROAM_CHECK_INTERVAL_MS:
+        if self.underground is None and self.boss_roam_timer >= c.Boss.ROAM_CHECK_INTERVAL_MS:
             self.boss_roam_timer = 0.0
             self._maybe_spawn_roaming_boss(player)
 
@@ -1077,6 +1140,16 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             critter.update(
                 player, dt, self.blocked, damage_mult, waypoint, terrain_mult=self.terrain_speed(critter.x, critter.y)
             )
+        # Checked once everything has taken its step, so a trap shuts on where things
+        # actually ended up this frame rather than on where they set off from.
+        self.snap_traps(player, quest_system)
+
+        # Everything below this line stocks the surface around the player, so none of it runs
+        # while they are underground: a tunnel holds what was put in it when they climbed
+        # down, and nothing wanders in after them.
+        if self.underground is not None:
+            return
+
         self._ensure_village_dogs(player)
         self.critters = [
             critter for critter in self.critters if critter.distance_to_point(player_pos) <= c.Wildlife.DESPAWN_DISTANCE
