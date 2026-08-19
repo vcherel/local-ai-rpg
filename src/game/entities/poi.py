@@ -176,9 +176,13 @@ class PointOfInterest:
     def _draw_graveyard(self, screen, center):
         cx, cy = center
         rng = random.Random(f"grave:{self.x},{self.y}")
-        for _ in range(6):
-            ox = rng.uniform(-58, 58)
-            oy = rng.uniform(-26, 26)
+        # Laid out on rows rather than scattered: six stones dropped at random in a plot
+        # this size land on top of each other more often than not, and a graveyard is read
+        # from its rows. The jitter is what keeps them from being a spreadsheet.
+        columns, rows = 4, 2
+        for slot in range(columns * rows):
+            ox = -58 + (slot % columns) * (116 / (columns - 1)) + rng.uniform(-9, 9)
+            oy = -24 + (slot // columns) * 48 + rng.uniform(-4, 4)
             stone = pygame.Rect(0, 0, rng.randint(14, 20), rng.randint(20, 28))
             stone.center = (round(cx + ox), round(cy + oy))
             grey = rng.randint(126, 152)

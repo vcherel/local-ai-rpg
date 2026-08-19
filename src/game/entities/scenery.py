@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from functools import lru_cache
 from typing import TYPE_CHECKING, Iterable, List, Sequence, Tuple
 
 import pygame
@@ -54,7 +55,7 @@ class Scenery:
 
     def _water_reach(self) -> float:
         if self.kind in c.Scenery.WATER_KINDS:
-            return self._shape["rx"] if "rx" in self._shape else self.size
+            return self._shape.get("reach", self.size)
         if self.kind == "bridge":
             return max(c.Scenery.BRIDGE_LENGTH, c.Scenery.BRIDGE_WIDTH) / 2
         return 0.0
@@ -72,8 +73,11 @@ class Scenery:
         if self.kind == "river":
             reach = self.size
             return dx * dx + dy * dy < reach * reach
-        rx, ry = self._shape["rx"], self._shape["ry"]
-        return (dx / rx) ** 2 + (dy / ry) ** 2 < 1.0
+        if self.kind not in ("pond", "lake"):
+            return False
+        # A pond is a clutch of overlapping ellipses rather than one: the shape that is
+        # swum in has to be the shape that was drawn, so every lobe is asked.
+        return any(((dx - ox) / rx) ** 2 + ((dy - oy) / ry) ** 2 < 1.0 for ox, oy, rx, ry in self._shape["lobes"])
 
     def blocks(self, x: float, y: float, radius: float) -> bool:
         # Squared distance rather than hypot: this runs for every solid thing near every
@@ -178,11 +182,20 @@ class Scenery:
             lobes.append((rng.uniform(-rx * 0.6, rx * 0.6), rng.uniform(-ry * 0.6, ry * 0.6), rng.uniform(0.4, 0.7)))
         return {"rx": rx, "ry": ry, "color": color, "lobes": lobes}
 
-    @staticmethod
-    def _roll_pond(rng: random.Random, radius: tuple) -> dict:
+    def _roll_pond(self, rng: random.Random, radius: tuple) -> dict:
+        """Still water as a clutch of overlapping ellipses. One clean ellipse gave every
+        pond and every lake on the map the same egg, which reads as a decal dropped on the
+        ground rather than as a shore."""
+        lake = self.kind == "lake"
         rx = rng.randint(*radius)
-        ry = round(rx * rng.uniform(0.55, 0.8))
-        return {"rx": rx, "ry": ry}
+        ry = round(rx * rng.uniform(0.55, 0.85))
+        lobes = [(0.0, 0.0, float(rx), float(ry))]
+        for _ in range(rng.randint(2, 4) if lake else rng.randint(1, 3)):
+            lx = rx * rng.uniform(0.4, 0.75)
+            ly = ry * rng.uniform(0.45, 0.9)
+            lobes.append((rng.uniform(-rx * 0.7, rx * 0.7), rng.uniform(-ry * 0.7, ry * 0.7), lx, ly))
+        reach = max(max(abs(ox) + lx, abs(oy) + ly) for ox, oy, lx, ly in lobes)
+        return {"lobes": lobes, "reach": reach}
 
     def _roll_bridge(self, rng: random.Random) -> dict:
         planks = [(t, rng.uniform(-2, 2)) for t in range(-4, 5)]
@@ -208,24 +221,31 @@ class Scenery:
             pygame.draw.ellipse(screen, self._shape["color"], rect)
 
     def _draw_pond(self, screen, center):
-        bank, body, deep = c.Scenery.WATER_COLORS
-        rect = pygame.Rect(0, 0, self._shape["rx"] * 2, self._shape["ry"] * 2)
-        rect.center = center
-        pygame.draw.ellipse(screen, bank, rect)
-        pygame.draw.ellipse(screen, body, rect.inflate(-10, -8))
-        pygame.draw.ellipse(screen, deep, rect.inflate(-rect.width // 2, -rect.height // 2))
+        # Bank, then body, then deep, each in one pass over every lobe. Drawing all three
+        # per lobe would let the next lobe's bank paint over the last lobe's middle, which
+        # is the artefact that made a river read as a row of scales.
+        cx, cy = center
+        for color, scale in zip(c.Scenery.WATER_COLORS, (1.0, 0.9, 0.5)):
+            for ox, oy, rx, ry in self._shape["lobes"]:
+                rect = pygame.Rect(0, 0, max(2, round(rx * 2 * scale)), max(2, round(ry * 2 * scale)))
+                rect.center = (round(cx + ox), round(cy + oy))
+                pygame.draw.ellipse(screen, color, rect)
 
     def _draw_lake(self, screen, center):
         self._draw_pond(screen, center)
 
     def _draw_river(self, screen, center):
-        # One blob of the course. They are laid closer together than they are wide, so the
-        # overlapping circles read as a running channel rather than as a row of pools.
-        bank, body, deep = c.Scenery.WATER_COLORS
-        radius = round(self.size)
-        pygame.draw.circle(screen, bank, center, radius)
-        pygame.draw.circle(screen, body, center, round(radius * 0.84))
-        pygame.draw.circle(screen, deep, center, round(radius * 0.52))
+        # One blob of the course, and only its bank: the body and the deep middle stand at
+        # the same points as their own kinds and are laid down in their own passes (see
+        # c.Scenery.GROUND_KINDS). Blobs sit well inside each other's width, so a blob that
+        # drew all three layers itself would paint its bank over its neighbour's middle.
+        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[0], center, round(self.size))
+
+    def _draw_river_body(self, screen, center):
+        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[1], center, round(self.size * 0.84))
+
+    def _draw_river_deep(self, screen, center):
+        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[2], center, round(self.size * 0.52))
 
     def _draw_bridge(self, screen, center):
         cx, cy = center
@@ -340,12 +360,21 @@ def road_points_for_chunk(cx: int, cy: int) -> List[Tuple[float, float, float]]:
             continue
         rng = random.Random(f"road:{start}:{end}")
         phase = rng.uniform(0, 2 * math.pi)
-        waves = rng.uniform(1.0, 2.5)
-        amplitude = rng.uniform(0.4, 1.0) * c.Scenery.ROAD_WOBBLE
+        waves = rng.uniform(0.8, 1.8)
+        # How far a road may wander follows how far it is going: two sites a chunk apart
+        # have no room to bend, and a road crossing several has to earn its length or it
+        # reads as a ruler laid between two villages.
+        amplitude = rng.uniform(0.55, 1.0) * c.Scenery.ROAD_WOBBLE * min(1.0, length / c.Scenery.ROAD_WOBBLE_FULL)
+        detail_phase = rng.uniform(0, 2 * math.pi)
+        detail_waves = rng.uniform(4.0, 7.0)
         dx, dy = (end[0] - start[0]) / length, (end[1] - start[1]) / length
         for step in range(0, int(length), c.Scenery.ROAD_STEP):
             t = step / length
-            bend = math.sin(phase + t * waves * 2 * math.pi) * amplitude * math.sin(math.pi * t)
+            # One long wave for where the road goes, a shorter one over it for how it got
+            # there, both pinched back to nothing at each end so it still meets its village.
+            bend = math.sin(phase + t * waves * 2 * math.pi) * amplitude
+            bend += math.sin(detail_phase + t * detail_waves * 2 * math.pi) * amplitude * c.Scenery.ROAD_DETAIL
+            bend *= math.sin(math.pi * t)
             x = start[0] + dx * step - dy * bend
             y = start[1] + dy * step + dx * bend
             if not bounds.collidepoint(x, y):
@@ -479,6 +508,22 @@ def _road_heading(roads, i: int) -> float | None:
     return None
 
 
+@lru_cache(maxsize=256)
+def _chunk_terrain(cx: int, cy: int) -> Tuple[tuple, tuple, tuple]:
+    """One chunk's roads, river and crossings, as (road blobs, water blobs, bridges).
+
+    Kept because a chunk needs its neighbours' bridges as well as its own: nothing solid
+    may stand at the end of a deck, and a deck laid near a chunk seam is walked onto from
+    the chunk next door, so nine of these are asked per chunk loaded and each answer is
+    reused by eight of them. All of it is a pure function of the coordinates like the
+    scenery it feeds, so a chunk streaming back in costs the lookup and nothing more.
+    """
+    roads = tuple(road_points_for_chunk(cx, cy))
+    river, lane_bridges = river_points_for_chunk(cx, cy)
+    bridges = tuple(lane_bridges) + tuple(_road_crossings(roads, river, lane_bridges))
+    return roads, tuple(river), bridges
+
+
 def generate_chunk_scenery(
     cx: int,
     cy: int,
@@ -499,8 +544,17 @@ def generate_chunk_scenery(
     chunk = (cx, cy)
 
     biome = _pick(c.Scenery.BIOME_WEIGHTS, rng)
-    roads = road_points_for_chunk(cx, cy)
-    river, bridges = river_points_for_chunk(cx, cy)
+    roads, river, bridges = _chunk_terrain(cx, cy)
+    # Every deck within reach of this chunk, its own and its neighbours', as ground no
+    # trunk or boulder may stand on: a crossing walled in at the end of it is worse than
+    # no crossing at all, because the player walked over to use it.
+    bridge_reach = math.hypot(c.Scenery.BRIDGE_LENGTH, c.Scenery.BRIDGE_WIDTH) / 2 + c.Scenery.BRIDGE_CLEARANCE
+    bridge_zones = [
+        (bx, by, bridge_reach)
+        for ox in (-1, 0, 1)
+        for oy in (-1, 0, 1)
+        for bx, by, _ in _chunk_terrain(cx + ox, cy + oy)[2]
+    ]
 
     # Circles nothing at all may stand in, and circles only solid things are kept out of.
     solid_zones = [(b.x, b.y, max(b.w, b.h) / 2 + c.Scenery.CLEARANCE_BUILDING) for b in buildings]
@@ -530,11 +584,16 @@ def generate_chunk_scenery(
         return any(math.hypot(x - wx, y - wy) < radius + margin for wx, wy, radius in water)
 
     items = [Scenery(x, y, "path", chunk, size=width, biome=biome) for x, y, width in roads if not in_water(x, y)]
-    items += [Scenery(x, y, "river", chunk, size=radius, biome=biome) for x, y, radius in river]
+    # Three pieces per blob of river: the water itself, and the two layers of colour that
+    # are drawn in their own passes over it, since one blob painting all three would paint
+    # over its neighbour (see Scenery._draw_river).
+    for kind in ("river", "river_body", "river_deep"):
+        items += [Scenery(x, y, kind, chunk, size=radius, biome=biome) for x, y, radius in river]
     items += still
     # A crossing wherever the lane says so, plus one wherever a road runs into the water:
     # that is where anybody would have built one, and it keeps a road from stopping dead.
-    for bx, by, angle in bridges + _road_crossings(roads, river, bridges):
+    # Both kinds are already in `bridges`, rolled by `_chunk_terrain`.
+    for bx, by, angle in bridges:
         items.append(Scenery(bx, by, "bridge", chunk, biome=biome, angle=angle))
 
     def free(x: float, y: float, solid: bool) -> bool:
@@ -547,6 +606,9 @@ def generate_chunk_scenery(
             return False
         if not solid:
             return True
+        for zx, zy, radius in bridge_zones:
+            if math.hypot(x - zx, y - zy) < radius:
+                return False
         for zx, zy, radius in open_zones:
             if math.hypot(x - zx, y - zy) < radius:
                 return False

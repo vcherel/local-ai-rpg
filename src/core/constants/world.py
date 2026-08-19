@@ -405,7 +405,23 @@ class Scenery:
     # Drawn under the entities with the floor, rather than over it with the props, and in
     # this order: the broad patches of ground first, then what lies on them, so a road is
     # never buried under the meadow it crosses.
-    GROUND_KINDS: tuple = ("patch", "pond", "lake", "river", "path", "bridge", "pebbles", "grass", "flowers")
+    # A river is laid down in three passes rather than three circles per blob: the blobs
+    # overlap each other, so a per-blob bank ring paints over its neighbour's deep middle
+    # and the course reads as a row of scales. "river" carries the water itself and draws
+    # the bank; the other two are decoration standing at the same points, nothing more.
+    GROUND_KINDS: tuple = (
+        "patch",
+        "pond",
+        "lake",
+        "river",
+        "river_body",
+        "river_deep",
+        "path",
+        "bridge",
+        "pebbles",
+        "grass",
+        "flowers",
+    )
     # The kinds the player wades through rather than walks over. A bridge sits on top of
     # them in the draw order for the same reason it does in the world.
     WATER_KINDS: tuple = ("pond", "lake", "river")
@@ -504,6 +520,9 @@ class Scenery:
     BRIDGE_COLOR: tuple = (132, 100, 66)
     BRIDGE_PLANK_COLOR: tuple = (108, 80, 52)
     BRIDGE_RAIL_COLOR: tuple = (92, 66, 42)
+    # Nothing solid stands this close to a deck. A crossing walled in by a trunk at the end
+    # of it is worse than no crossing at all, since the player walked to it.
+    BRIDGE_CLEARANCE: int = 45
 
     # Water is drawn from the bank inward: shallow edge, body, deep middle.
     WATER_COLORS: tuple = ((70, 96, 96), (58, 106, 122), (96, 148, 158))
@@ -523,7 +542,11 @@ class Scenery:
     # one worn line rather than as stepping stones.
     ROAD_STEP: int = 16
     ROAD_WIDTH: tuple = (14, 22)
-    ROAD_WOBBLE: int = 90
+    # A road runs thousands of pixels between two settlements, so the bend has to be worth
+    # that length: one long wave that grows with the distance, plus a shorter one over it.
+    ROAD_WOBBLE: int = 260
+    ROAD_WOBBLE_FULL: int = 4000  # the length at which a road wanders by the full wobble
+    ROAD_DETAIL: float = 0.22  # amplitude of the shorter wave, as a fraction of the wobble
     ROAD_CLEARANCE: int = 55
     ROAD_COLOR: tuple = (128, 106, 76)
 
