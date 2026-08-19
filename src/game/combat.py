@@ -537,6 +537,8 @@ class WorldCombat:
         temperament's business: a rabbit bolts, a boar turns round, a pack all turns round
         at once (`World.aggro_pack`). No quest system involvement, no loot table, nothing to
         burn or chain into."""
+        if critter.dead:
+            return
         damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
         get_shake().add(arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0))
         self._pop_damage(critter.x, critter.y - critter.size / 2, damage, crit)
@@ -748,6 +750,8 @@ class WorldCombat:
                 )
 
         for critter, distance in caught(self.critters, lambda cr: cr.hit_radius):
+            if critter.dead:
+                continue
             hurt = blast_damage(distance)
             kb_dir = self._dir_from(x, y, critter.x, critter.y)
             self._pop_damage(critter.x, critter.y - critter.size / 2, hurt, False)
@@ -866,6 +870,8 @@ class WorldCombat:
                 self.notify("A bear trap snaps shut on your leg", c.Colors.RED)
             return
         if isinstance(victim, Critter):
+            if victim.dead:
+                return
             self._pop_damage(victim.x, victim.y - victim.size / 2, damage, False)
             if victim.receive_damage(damage):
                 self._kill_critter(victim, player, by_player=False)
@@ -892,6 +898,8 @@ class WorldCombat:
         by_player: bool = True,
     ) -> bool:
         """Applies damage to a monster and its kill rewards. Returns True if it died."""
+        if monster.dead:
+            return True
         get_shake().add(shake)
         self._pop_damage(monster.x, monster.y - monster.kind.size / 2, damage, crit)
         if monster.receive_damage(damage):
@@ -1126,6 +1134,8 @@ class WorldCombat:
 
         A blow turns the settlement for a while; a death turns it for good (`hold_grudge`),
         which is the one thing no clock ever runs out on."""
+        if npc.dead:
+            return True
         if by_player:
             for provoked in self.provoke_village(npc):
                 # Nobody hands in a task to someone they are trying to kill; drop it rather
@@ -1217,7 +1227,7 @@ class WorldCombat:
     def _tick_burns(self, monster_list: list[Monster], player: Player, quest_system: QuestSystem):
         now = pygame.time.get_ticks()
         for monster in list(monster_list):
-            if monster.burn_ticks_remaining <= 0 or now < monster.burn_next_ms:
+            if monster.dead or monster.burn_ticks_remaining <= 0 or now < monster.burn_next_ms:
                 continue
             monster.burn_ticks_remaining -= 1
             monster.burn_next_ms = now + c.Affixes.BURN_INTERVAL_MS

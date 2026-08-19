@@ -226,7 +226,7 @@ class WorldProjectiles:
         A shot that was not the player's still wounds the animal, but the pack it belongs
         to has no reason to blame the player for it, so `aggro_pack` is skipped."""
         critter = self._projectile_target(proj, self.critters, lambda cr: cr.hit_radius)
-        if critter is None:
+        if critter is None or critter.dead:
             return False
 
         if by_player:
