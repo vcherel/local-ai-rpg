@@ -102,6 +102,12 @@ class Critter:
         self.last_damage_ms = pygame.time.get_ticks()
         return self.hp <= 0
 
+    @property
+    def dead(self) -> bool:
+        """Down and awaiting removal, exactly as `Entity.dead`: a `Critter` is not an
+        `Entity`, so it carries its own copy the way it carries its own `root` and `Gait`."""
+        return self.hp <= 0
+
     def aggro(self):
         """Turn on the player: what a struck retaliator does, what a provoked village dog
         does, and what the rest of the pack does when one of them is attacked."""

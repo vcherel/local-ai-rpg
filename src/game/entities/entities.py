@@ -88,6 +88,17 @@ class Entity:
         self.last_damage_ms = pygame.time.get_ticks()
         return self.hp <= 0
 
+    @property
+    def dead(self) -> bool:
+        """Down and awaiting removal from whatever list holds it.
+
+        A blow can be resolved against something already killed earlier in the same frame
+        (a cleave and the explosion it set off, an arrow arriving after the swing that
+        finished the target), and every death path ends in a `list.remove`, which raises
+        the second time. Everything that resolves a hit checks this first, so a corpse
+        takes no further damage, drops no second purse and is removed exactly once."""
+        return self.hp <= 0
+
     def flash_color(self, color):
         """Blend toward white briefly after taking a hit, for visual feedback."""
         if not self.last_damage_ms:
