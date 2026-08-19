@@ -115,6 +115,12 @@ class ShopMenu(BaseMenu):
             pygame.Rect(left + width + 10, y, width, BULK_BUTTON_HEIGHT),
         )
 
+    def _auto_equip_rect(self) -> pygame.Rect:
+        """The Equip best button, under the buy column: what you just bought is worn on the
+        spot rather than after a trip to the inventory."""
+        y = self.height - FOOTER_HEIGHT + 6
+        return pygame.Rect(self._buy_panel_x(), y, (self._panel_width() - 10) // 2, BULK_BUTTON_HEIGHT)
+
     def _sell_all(self, items: List[Item]):
         """Sell a whole batch through the normal per-item path, so each one still trains
         bartering and warms the merchant exactly as it would clicked by hand."""
@@ -174,6 +180,9 @@ class ShopMenu(BaseMenu):
                 return True
             if gear_rect.collidepoint(rx, ry):
                 self._sell_all(self._unused_gear())
+                return True
+            if self._auto_equip_rect().collidepoint(rx, ry):
+                self.player.auto_equip_best()
                 return True
 
         return True
@@ -279,9 +288,26 @@ class ShopMenu(BaseMenu):
             )
         self._draw_scrollbar(surface, sx + pw + 4, len(sell_items), self.sell_scroll)
         self._draw_bulk_buttons(surface)
+        self._draw_auto_equip_button(surface)
 
         self.draw_hint(surface, "Click an item to buy or sell. Scroll for more. ESC or B to close")
         self.blit_panel(surface)
+
+    def _draw_auto_equip_button(self, surface: pygame.Surface):
+        menu_x, menu_y = self.get_centered_position()
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        rel = (mouse_x - menu_x, mouse_y - menu_y)
+
+        rect = self._auto_equip_rect()
+        pending = self.player.pending_upgrades()
+        widgets.draw_button(
+            surface,
+            rect,
+            f"Equip best ({pending})" if pending else "Equip best",
+            c.Fonts.small,
+            hovered=bool(pending) and rect.collidepoint(rel),
+            text_color=c.Colors.WHITE if pending else c.Colors.MUTED,
+        )
 
     def _draw_bulk_buttons(self, surface: pygame.Surface):
         """The two sell-everything buttons under the sell column, each labelled with what

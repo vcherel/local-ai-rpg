@@ -18,9 +18,11 @@ if TYPE_CHECKING:
 
 # The equip slots as the UI shows them: (Player equip slot, caption, ghost glyph drawn when
 # empty). Shared by the HUD strip and the inventory paper-doll so the two can't disagree.
-# Melee and ranged are separate slots, so a sword and a bow are carried and equipped at once.
+# Melee and ranged are separate slots, so a sword and a bow are carried and equipped at once,
+# and melee has two of them: both are worn, `Player.active_melee` says which one swings.
 EQUIP_SLOTS = (
-    ("melee_weapon", "Melee", "sword"),
+    ("melee_weapon", "Melee 1", "sword"),
+    ("melee_weapon_2", "Melee 2", "sword"),
     ("ranged_weapon", "Ranged", "bow"),
     ("offhand", "Shield", "shield"),
     ("armor", "Armor", "cuirass"),

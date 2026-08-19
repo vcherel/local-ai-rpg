@@ -66,6 +66,10 @@ class Game:
         self.loot_notification = ToastNotification(self.screen)
         # id of the last picked-up item flagged as a gear upgrade; F equips it.
         self.pending_upgrade_id = None
+        # When the game last wrote itself to disk: the autosave interval counts from here,
+        # and the HUD marks it briefly so a save is something the player sees happen. Backdated
+        # past the marker's lifetime so entering the world doesn't flash "Saved" on arrival.
+        self.last_save_ms = pygame.time.get_ticks() - GameRenderer.SAVE_MARKER_MS
 
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window, self.loot_notification.show)
@@ -82,6 +86,9 @@ class Game:
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
         # slay_boss quests spawn their target through the world.
         self.dialogue_manager.quest_system.world = self.world
+        # A quest handed in is worth a save of its own: it is the one thing in a session
+        # that can't be earned back by walking the same ground again.
+        self.dialogue_manager.quest_system.on_complete = self.save_data
         self.npc_name_generator = NPCNameGenerator(self.save_system)
         self.death_taunts = DeathTauntGenerator(self.save_system)
         self.active_menu = False
@@ -109,6 +116,8 @@ class Game:
             item = items_by_id.get(item_id)
             if item is not None:
                 self.player.inventory.append(item)
+
+        self.player.restock_bars()
 
         quest_system = self.dialogue_manager.quest_system
         for npc in self.world.npcs:
@@ -211,6 +220,7 @@ class Game:
             pygame.K_e: self._interact,
             pygame.K_b: self._trade_nearby,
             pygame.K_f: self._equip_pending_upgrade,
+            pygame.K_x: self._swap_melee,
             pygame.K_i: self.inventory_menu.toggle,
             pygame.K_j: self.quest_menu.toggle,
             pygame.K_c: self.stats_menu.toggle,
@@ -288,10 +298,18 @@ class Game:
         hand = "ranged" if c.weapon_archetype(item.name).ranged else "melee"
         self.loot_notification.show(f"{item.name} ready ({hand})", rarity_color(item.rarity))
 
+    def _swap_melee(self):
+        """Switch to the other melee weapon. Both are worn; this is which one swings."""
+        item = self.player.swap_melee()
+        if item is None:
+            self.loot_notification.show("No second melee weapon", c.Colors.MUTED)
+            return
+        self.loot_notification.show(f"{item.name} in hand", rarity_color(item.rarity))
+
     def _drink_quick_potion(self, slot: int):
         """Drink the potion bound to a HUD quick key, if that slot holds one."""
         potions = self.player.quick_potions()
-        if slot >= len(potions):
+        if slot >= len(potions) or potions[slot] is None:
             return
         potion = potions[slot]
         result = self.player.use_potion(potion)
@@ -425,8 +443,10 @@ class Game:
             self._use_door(interaction.target)
         elif interaction.kind == "well":
             self.world.enter_tunnel(self.player, interaction.target)
+            self.save_data()
         elif interaction.kind == "ladder":
             self.world.leave_tunnel(self.player)
+            self.save_data()
         elif interaction.kind == "camp":
             self.world.rest_at_camp(self.player, interaction.target)
         elif interaction.kind == "shrine":
@@ -589,6 +609,8 @@ class Game:
         self.loot_notification.show("You sleep until dawn and wake fully rested", c.Colors.GREEN)
         if stolen_sleep:
             self._check_witness()
+        # A night is hours of world clocks moved on; nobody wants to sleep it twice.
+        self.save_data()
 
     def _sleep_threat(self) -> bool:
         """Whether anything hostile is close enough to make lying down absurd. Shared by the
@@ -697,10 +719,12 @@ class Game:
             self.save_system.update(key, value)
 
         self.save_system.save_all()
+        # What the corner marker counts down from, and what the autosave interval is
+        # measured against, so a save from any other path pushes the periodic one back.
+        self.last_save_ms = pygame.time.get_ticks()
 
     def run(self):
         running = True
-        last_save_time = pygame.time.get_ticks()
         # Opened on the first frame the player can actually see the world rather than here,
         # for the same reason it is granted after the death screen: the opening lore holds
         # for as long as the model takes and as long as the player reads, and a window spent
@@ -775,6 +799,7 @@ class Game:
                     get_llm_tasks(),
                     self.player,
                     self.world,
+                    self.last_save_ms,
                 )
 
             self.context_window.update()
@@ -800,10 +825,8 @@ class Game:
                 fps = self.clock.get_fps()
                 self.game_renderer.draw_fps(fps)
 
-            current_time = pygame.time.get_ticks()
-            if current_time - last_save_time >= 60_000:
+            if pygame.time.get_ticks() - self.last_save_ms >= c.World.AUTOSAVE_INTERVAL_S * 1000:
                 self.save_data()
-                last_save_time = current_time
 
             if self.player.hp <= 0:
                 self._respawn()

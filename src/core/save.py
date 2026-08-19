@@ -19,6 +19,9 @@ class SaveSystem:
         - weapon_bar: Item ids on the number-key weapon bar, None per empty slot. Separate
           from `equipped`: the bar is what the keys reach for, the equip slots are what is
           drawn right now (list[str | None])
+        - potion_bar: Item ids on the HUD potion quickbar, None per empty slot. Chosen the
+          way the weapon bar is, so which potion a quick key drinks survives a pickup (list)
+        - active_melee: Which of the two melee slots holds the weapon that swings (int)
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
         - monsters: Monster positions, hp and kind (list[dict])

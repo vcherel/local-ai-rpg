@@ -20,7 +20,7 @@ from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
 from game.entities.entities import Entity
-from game.entities.items import Item, rarity_color, rarity_tier, roll_rarity
+from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
@@ -61,7 +61,7 @@ class WorldCombat:
             self._fire_ranged(player, c.weapon_archetype(weapon.name))
             return
 
-        weapon = player.equipped_item("melee_weapon")
+        weapon = player.active_melee_weapon()
         arch = c.weapon_archetype(weapon.name if weapon else None)
 
         now = pygame.time.get_ticks()
@@ -349,18 +349,10 @@ class WorldCombat:
         if now < player.attack_ready_ms:
             return
         if arch.uses_ammo:
-            # The quiver in the ammo slot is what gets fired. With nothing chosen (or the
-            # chosen stack spent) it falls back to the cheapest one carried: rarity only
-            # changes what a stack sells for, and nobody wants to fire legendary arrows at
-            # slimes while common ones sit in the bag. The fallback matters, since running
-            # a chosen quiver dry should not leave a stocked player unable to shoot.
-            ammo = player.equipped_item("ammo")
-            if ammo is None:
-                ammo = min(
-                    (item for item in player.inventory if item.item_type == "ammo"),
-                    key=lambda item: rarity_tier(item.rarity).price_mult,
-                    default=None,
-                )
+            # `Player.ready_ammo` is the quiver in the ammo slot, or the cheapest carried
+            # once that one is empty, and it is what the HUD counts too, so the number on
+            # screen is always the stack the next shot spends.
+            ammo = player.ready_ammo()
             if ammo is None:
                 return
             ammo.quantity -= 1

@@ -21,6 +21,7 @@ CONTROLS = [
     ("B", "Trade with a merchant you are next to"),
     ("F", "Equip the last picked-up upgrade"),
     ("1 - 3", "Draw the weapon in that bar slot"),
+    ("X", "Swap to your other melee weapon"),
     ("Q R T Y", "Drink the potion in that quickbar slot"),
     ("I", "Inventory"),
     ("J", "Quests"),

@@ -36,6 +36,8 @@ class QuestSystem:
         self.active_quests: List[Quest] = []
         # Set by Game once the world exists; slay_boss quests need it to spawn the boss.
         self.world = None
+        # Set by Game too: a finished quest is worth writing to disk on the spot.
+        self.on_complete = None
 
     @staticmethod
     def _strip_article(name: str) -> str:
@@ -452,3 +454,6 @@ class QuestSystem:
 
         if quest in self.active_quests:
             self.active_quests.remove(quest)
+
+        if self.on_complete is not None:
+            self.on_complete()

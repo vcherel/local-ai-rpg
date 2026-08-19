@@ -150,6 +150,26 @@ def item_type_from_name(name: str) -> str:
     return "misc"
 
 
+# The inventory's blocks, in the order the bag reads: what you fight with (melee, then
+# ranged), what you wear, then supplies and the junk you are carrying to a merchant.
+INVENTORY_SECTIONS = ("Melee", "Ranged", "Shields", "Armour", "Trinkets", "Supplies", "Valuables")
+
+
+def inventory_section(item: "Item") -> str:
+    """Which block of the inventory an item belongs in. Melee and ranged are the same
+    `item_type` and are told apart by archetype, which is why this is a function rather
+    than a table keyed by type."""
+    if item.item_type == "weapon":
+        return "Ranged" if c.weapon_archetype(item.name).ranged else "Melee"
+    return {
+        "shield": "Shields",
+        "armor": "Armour",
+        "accessory": "Trinkets",
+        "potion": "Supplies",
+        "ammo": "Supplies",
+    }.get(item.item_type, "Valuables")
+
+
 def roll_accessory_flavor(rarity: str) -> str:
     """Which single effect an accessory grants. A legendary has a real chance at the
     exclusive "avarice" flavor instead of the usual pool, on top of already rolling the

@@ -33,11 +33,15 @@ class GameRenderer:
     HUD_ICON_GAP = 6
     # Equip and weapon slots. No captions under them: the ghost glyph says what an empty
     # slot takes, and the captions were what forced the row twice as wide as its icons.
-    HUD_SLOT_SIZE = 38
-    HUD_SLOT_STEP = 44
+    HUD_SLOT_SIZE = 34
+    HUD_SLOT_STEP = 38
 
     # Potion quickbar, centred just above the player's health bar (drawn by Player.draw
     # at ORIGIN_Y + SIZE/2 + its health_bar_offset).
+    # How long the corner save marker stays up, and how much of that is spent fading out.
+    SAVE_MARKER_MS = 2200
+    SAVE_MARKER_FADE_MS = 900
+
     QUICK_SLOT_SIZE = 52
     QUICK_SLOT_GAP = 8
     QUICK_BAR_BOTTOM = c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + 360 - 12
@@ -322,7 +326,7 @@ class GameRenderer:
         self.screen.blit(label, (text_x, y + icon_size - label.get_height() // 2))
         return text_x + label.get_width() + 22
 
-    def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player, world: World):
+    def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player, world: World, saved_ms: int = 0):
         active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
 
@@ -348,6 +352,8 @@ class GameRenderer:
         # Last, so the panel's own contents can't cover it.
         if hovered_dock is not None:
             self._draw_tooltip(*hovered_dock)
+
+        self._draw_save_marker(saved_ms)
 
         self.loading_indicator.update()
         if active_task_count > 0:
@@ -390,6 +396,25 @@ class GameRenderer:
             self.screen.blit(key_label, (rect.x + 4, rect.y + 2))
 
         self._draw_buff_chips(player, bottom=rects[0].top - 6)
+
+    def _draw_save_marker(self, saved_ms: int):
+        """A small disc and the word "Saved" in the bottom right corner, fading out over a
+        couple of seconds after every save. The game saves itself on a clock and at the
+        moments worth not replaying; without this, none of that is visible to the player."""
+        left = self.SAVE_MARKER_MS - (pygame.time.get_ticks() - saved_ms)
+        if left <= 0:
+            return
+        alpha = int(255 * min(1.0, left / self.SAVE_MARKER_FADE_MS))
+
+        label = c.Fonts.small.render("Saved", True, c.Colors.MUTED)
+        label.set_alpha(alpha)
+        x = c.Screen.WIDTH - 16 - label.get_width()
+        y = c.Screen.HEIGHT - 16 - label.get_height()
+        self.screen.blit(label, (x, y))
+
+        disc = pygame.Surface((12, 12), pygame.SRCALPHA)
+        pygame.draw.circle(disc, (*c.Colors.ACCENT, alpha), (6, 6), 5)
+        self.screen.blit(disc, (x - 18, y + label.get_height() // 2 - 6))
 
     def _draw_guard_bar(self, player: Player):
         """The shield's guard, drawn just under the health bar and only while a shield is
@@ -450,31 +475,50 @@ class GameRenderer:
             x += width + gap
 
     def _draw_equipped(self, player: Player, top: int) -> int:
-        """A mini paper-doll on the HUD: one slot per equip type. Returns the y it ends at,
-        so what comes under it doesn't have to guess."""
+        """A mini paper-doll on the HUD: one slot per equip type. The melee weapon that
+        would actually swing is gold-bordered, since both melee slots are worn at once, and
+        the ammo slot carries the count of the quiver the next shot would spend, in red once
+        it is empty. Returns the y it ends at, so what comes under it doesn't have to guess."""
         slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
+        active_melee = player.active_melee_slot()
+
         for i, (item_type, _caption, glyph) in enumerate(widgets.EQUIP_SLOTS):
             item = player.equipped_item(item_type)
+            if item_type == "ammo" and item is None:
+                # Nothing loaded still fires the cheapest quiver carried, so that is what
+                # the slot shows rather than an empty socket over a full bag of arrows.
+                item = player.ready_ammo()
             rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
 
-            border = rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER
-            widgets.draw_slot(self.screen, rect, border_color=border)
+            in_hand = item is not None and item_type == active_melee
+            border = c.Colors.ACCENT if in_hand else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
+            widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if in_hand else 2)
             if item is not None:
-                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 28)
-                if item.quantity > 1:
-                    count = c.Fonts.small.render(str(item.quantity), True, c.Colors.WHITE)
-                    self.screen.blit(count, (rect.right - count.get_width() - 2, rect.bottom - count.get_height()))
+                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 26)
             else:
-                draw_shape_with_border(self.screen, glyph, rect.center, 13, (60, 60, 70), 2, (84, 84, 98))
+                draw_shape_with_border(self.screen, glyph, rect.center, 12, (60, 60, 70), 2, (84, 84, 98))
+
+            if item_type == "ammo":
+                left_over = player.ammo_count()
+                label = c.Fonts.small.render(str(left_over), True, c.Colors.WHITE if left_over else c.Colors.RED)
+                self.screen.blit(label, (rect.right - label.get_width() - 2, rect.bottom - label.get_height()))
+            elif item is not None and item.quantity > 1:
+                count = c.Fonts.small.render(str(item.quantity), True, c.Colors.WHITE)
+                self.screen.blit(count, (rect.right - count.get_width() - 2, rect.bottom - count.get_height()))
         return top + slot
 
     def _draw_weapon_bar(self, player: Player, top: int):
-        """The number-key weapon bar. A gold border marks the two weapons currently in the
-        melee and ranged slots, so the bar shows what a key would do and what it already did."""
+        """The number-key weapon bar. A gold border marks the weapons currently in the two
+        melee slots and the ranged one, so the bar shows what a key would do and what it
+        already did."""
         slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
-        live = {player.equipped_melee_weapon_id, player.equipped_ranged_weapon_id}
+        live = {
+            player.equipped_melee_weapon_id,
+            player.equipped_melee_weapon_2_id,
+            player.equipped_ranged_weapon_id,
+        }
 
         for i, item in enumerate(player.weapon_bar_items()):
             rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
