@@ -56,12 +56,29 @@ def _item_outline(item) -> tuple:
     return c.Colors.BLACK if item.rarity == "common" else rarity_color(item.rarity)
 
 
+# What to call an attacker that has nothing to be called: a villager the name generator
+# has not reached yet, or anything else that lands a blow without a name of its own. Keyed
+# by class name rather than by the classes themselves, which `player.py` does not import.
+_GENERIC_SOURCE_NAMES = {
+    "NPC": "a villager",
+    "Monster": "a monster",
+    "Boss": "a monster",
+    "Critter": "an animal",
+    "Projectile": "a stray shot",
+    "BearTrap": "a bear trap",
+}
+
+
 def _damage_source_name(source) -> str:
     """What to call whatever just hit the player, on the death screen. A boss goes by its
     full title, a villager by their name, anything else by its species. An arrow goes by
     its shooter (`source_name`) rather than by nothing at all, which used to leave the death
     screen blaming whatever last touched the player in melee; damage with no attacker behind
-    it (a shrine's curse, a burn) names nobody and leaves the last one."""
+    it (a shrine's curse, a burn) names nobody and leaves the last one.
+
+    Anything that *is* an attacker always answers with something, even when it has no name:
+    a nameless villager returning "" used to leave the last name standing, so the death
+    screen blamed the dog the player had fought earlier for a blow the farmer landed."""
     if source is None:
         return ""
     if isinstance(source, str):
@@ -70,7 +87,8 @@ def _damage_source_name(source) -> str:
         value = getattr(source, attr, None)
         if value:
             return str(value)
-    return getattr(getattr(source, "kind", None), "name", "") or ""
+    kind_name = getattr(getattr(source, "kind", None), "name", "")
+    return str(kind_name) if kind_name else _GENERIC_SOURCE_NAMES.get(type(source).__name__, "something")
 
 
 def _equip_slot(item) -> str | None:

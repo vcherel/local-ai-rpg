@@ -373,9 +373,17 @@ class Game:
                 continue
             door = building.door_rect()
             dist = reach_of(door.centerx, door.centery)
-            if dist <= c.Buildings.INTERACT_DISTANCE:
+            if dist > c.Buildings.INTERACT_DISTANCE:
+                continue
+            if building.door_overlaps(self.player.x, self.player.y, c.Player.SIZE / 2):
+                # Standing in the doorway: the only thing E may do here is open it. Offering
+                # to close a door around oneself is how one used to end up sealed in it.
+                if building.door_open:
+                    continue
+                label = "E: open the door"
+            else:
                 label = "E: close the door" if building.door_open else "E: open the door"
-                offer(Interaction("door", building, label, door.centerx, door.top - 10), dist)
+            offer(Interaction("door", building, label, door.centerx, door.top - 10), dist)
 
         if self.world.underground is not None:
             # The one way back up, and the only thing to interact with down there besides
@@ -611,12 +619,20 @@ class Game:
         """Open or shut a door. Shutting one is the only way to put a wall between the player
         and whatever is chasing them, which is the point: a monster can beat a door down, but
         it takes it several swings and they are audible."""
+        radius = c.Player.SIZE / 2
+        in_doorway = building.door_overlaps(self.player.x, self.player.y, radius)
+        if in_doorway and building.door_open:
+            # The prompt refuses this too; the key must not disagree with it.
+            return
         building.toggle_door()
         play_sound("door")
-        if building.door_closed:
-            # Never shut a door on oneself: standing in the gap when it swings to would wall
-            # the player into the doorframe.
-            self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, c.Player.SIZE / 2)
+        if building.door_closed and in_doorway:
+            # Never shut a door on oneself. One step in or one step out along the wall's own
+            # normal, not a ring search: the doorway is the only gap in that wall, so a
+            # search for somewhere free can come back with nowhere and leave the player
+            # standing in the leaf that just swung shut.
+            self.player.x, self.player.y = building.clear_of_door(self.player.x, self.player.y, radius)
+            self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, radius)
 
     def _sleep_in_bed(self):
         # A bed is the one full night's rest in the game: unlike a campfire it heals

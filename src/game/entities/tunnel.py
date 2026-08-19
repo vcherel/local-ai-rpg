@@ -82,12 +82,25 @@ class Tunnel:
         return [across, down]
 
     def blocks(self, x: float, y: float, radius: float) -> bool:
-        """Solid rock everywhere the floor is not. Something of `radius` is in the clear only
-        where it fits inside one of the floor rectangles with room to spare."""
-        for rect in self._floor:
-            if rect.left + radius <= x <= rect.right - radius and rect.top + radius <= y <= rect.bottom - radius:
-                return False
-        return True
+        """Solid rock everywhere the floor is not. Something of `radius` is in the clear where
+        its whole footprint lies on floor, the *union* of the rectangles rather than any one
+        of them.
+
+        Testing each rectangle on its own is what put invisible walls across every doorway:
+        a body straddling the seam where a corridor opens onto a room fits inside neither,
+        even though the floor under it is unbroken. The footprint is tested at its centre and
+        its four corners, which is enough for axis-aligned rectangles that overlap by far
+        more than a body is wide."""
+        for px, py in (
+            (x, y),
+            (x - radius, y - radius),
+            (x + radius, y - radius),
+            (x - radius, y + radius),
+            (x + radius, y + radius),
+        ):
+            if not any(rect.left <= px <= rect.right and rect.top <= py <= rect.bottom for rect in self._floor):
+                return True
+        return False
 
     def contains_point(self, x: float, y: float) -> bool:
         return any(rect.collidepoint(x, y) for rect in self._floor)

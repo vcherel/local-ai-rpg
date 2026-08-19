@@ -207,6 +207,30 @@ class Building:
         """Identity of this door for `core.damage_fx`, which is keyed by string."""
         return f"{self.id}:door"
 
+    def door_overlaps(self, x, y, radius: float) -> bool:
+        """Whether a body of `radius` standing at (x, y) is in the doorway. The one question
+        behind both halves of never shutting a door on somebody: the prompt only ever offers
+        to *open* the door somebody is standing in, and shutting one steps them out of it."""
+        if not self.has_door:
+            return False
+        return self.door_rect().inflate(radius * 2, radius * 2).collidepoint(x, y)
+
+    def clear_of_door(self, x, y, radius: float) -> tuple:
+        """(x, y) stepped out of the doorway along the front wall's own normal, to whichever
+        side of it the body is already nearer.
+
+        Searching outward in rings for somewhere free (`World.free_spot_near`) finds nothing
+        when the doorway is the only gap in the wall and the room behind it is furnished,
+        which is how a door used to shut with the player sealed inside its frame. The way
+        out of a doorway is never a search: it is one step in or one step out."""
+        nx, ny = self.outward()
+        door = self.door_rect()
+        depth = c.Buildings.WALL_THICKNESS / 2 + radius + 1
+        side = 1.0 if (x - door.centerx) * nx + (y - door.centery) * ny >= 0 else -1.0
+        if nx:
+            return door.centerx + nx * side * depth, y
+        return x, door.centery + ny * side * depth
+
     def toggle_door(self) -> bool:
         """Open a shut door or shut an open one. Returns the new open state; a door that has
         been beaten down is past opening or closing and stays as it is."""
