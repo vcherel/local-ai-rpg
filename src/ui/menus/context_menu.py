@@ -20,6 +20,10 @@ class ContextMenu(BaseMenu):
 
     # How long the world takes to come up once the opening text is dismissed.
     FADE_MS = 900
+    # How long the finished opening text stays up before any key will take it away. The
+    # lore is the one thing in the game that is only ever shown once, and a player already
+    # holding a key down from the main menu used to skip it without seeing a word of it.
+    MIN_DISPLAY_MS = 2200
 
     def __init__(self, screen):
         super().__init__(screen, width=0, height=0)
@@ -33,6 +37,8 @@ class ContextMenu(BaseMenu):
         # lore looked up mid-game (panel), and when the opening was dismissed.
         self.intro = False
         self._faded_in_at = 0
+        # When the text was last complete on screen, which is what MIN_DISPLAY_MS runs from.
+        self._ready_at = 0
 
     def start_streaming(self):
         """Open on black and start receiving streamed chunks. Always the opening of a new
@@ -43,6 +49,7 @@ class ContextMenu(BaseMenu):
             self._ready = False
             self.active = True
             self.intro = True
+            self._ready_at = 0
 
     def push_chunk(self, accumulated: str):
         """Called from background thread with the latest accumulated text."""
@@ -62,6 +69,7 @@ class ContextMenu(BaseMenu):
             self.active = True
             self.just_active = True
             self.intro = intro
+            self._ready_at = pygame.time.get_ticks()
             self._calculate_dimensions()
 
     def update(self):
@@ -78,6 +86,7 @@ class ContextMenu(BaseMenu):
                 elif kind == "done":
                     self._generating = False
                     self._ready = True
+                    self._ready_at = pygame.time.get_ticks()
                     changed = True
         except queue.Empty:
             pass
@@ -99,11 +108,27 @@ class ContextMenu(BaseMenu):
         self.width = max(max_line_width + 60, 300)
         self.height = max(len(lines) * 25 + 130, 180)
 
+    @property
+    def hold_progress(self) -> float:
+        """How far through the minimum display time the finished opening text is, 0 to 1.
+
+        Only the opening is held: the same lore looked up mid-game with L is a reference and
+        closes the instant it is asked to."""
+        if not self._ready:
+            return 0.0
+        if not self.intro or not self._ready_at:
+            return 1.0
+        return min(1.0, (pygame.time.get_ticks() - self._ready_at) / self.MIN_DISPLAY_MS)
+
+    @property
+    def dismissible(self) -> bool:
+        return self._ready and self.hold_progress >= 1.0
+
     def handle_event(self, event):
         if not self.active:
             return False
 
-        if self._ready and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+        if self.dismissible and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
             if self.intro:
                 self._faded_in_at = pygame.time.get_ticks()
             self.close()
@@ -154,10 +179,11 @@ class ContextMenu(BaseMenu):
 
         if self._ready:
             # Pulsed rather than static: it is the only thing on screen once the reading is
-            # done, and it has to say the game is waiting on the player, not on itself.
+            # done, and it has to say the game is waiting on the player, not on itself. It
+            # fades in over the hold, so the prompt appearing is what says the key will work.
             alpha = 150 + round(105 * abs(math.sin(pygame.time.get_ticks() / 700.0)))
             hint = c.Fonts.text.render("Press any key to enter the world", True, c.Colors.ACCENT)
-            hint.set_alpha(alpha)
+            hint.set_alpha(round(alpha * self.hold_progress))
         else:
             hint = c.Fonts.text.render("The world is taking shape...", True, c.Colors.MUTED)
         self.screen.blit(hint, ((c.Screen.WIDTH - hint.get_width()) // 2, y + block_height + 60))
