@@ -10,6 +10,7 @@ from core.audio import play_sound
 from core.camera import Camera, get_shake
 from core.decals import get_decals
 from core.floating_text import get_floating_text
+from core.impact_fx import get_impacts
 from core.particles import get_particles
 from core.screen_fx import get_hitstop, get_vignette
 from core.swing_arcs import get_swings
@@ -800,6 +801,7 @@ class Game:
                 get_shake().update(dt)
                 get_particles().update(dt)
                 get_swings().update(dt)
+                get_impacts().update(dt)
                 get_floating_text().update(dt)
                 get_decals().update(dt)
                 get_vignette().update(dt)

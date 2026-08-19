@@ -5,7 +5,20 @@ import random
 import core.constants as c
 from game.entities.items import Item, rarity_tier, roll_bonus, roll_rarity
 
-WEAPON_LOOT_NAMES = ["Rusty Dagger", "Notched Axe", "Old Bow", "Wooden Club", "Bent Spear"]
+# One name per weapon family, since the family is what the weapon plays like: the name is
+# what `constants.weapon_archetype` reads the whole feel profile back out of.
+WEAPON_LOOT_NAMES = [
+    "Rusty Dagger",
+    "Notched Axe",
+    "Old Bow",
+    "Wooden Club",
+    "Bent Spear",
+    "Iron Cudgel",
+    "Carved Boomerang",
+    "Ember Staff",
+    "Rime Staff",
+    "Storm Staff",
+]
 ARMOR_LOOT_NAMES = ["Leather Vest", "Battered Helmet", "Chainmail Scraps", "Tattered Cloak", "Padded Jerkin"]
 SHIELD_LOOT_NAMES = ["Worn Shield", "Oak Buckler", "Banded Targe", "Dented Kite Shield", "Iron Pavise"]
 # Share of armour rolls that come up as an offhand shield instead of body armour, so a

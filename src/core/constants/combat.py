@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -80,6 +80,15 @@ class Combat:
     SWING_ARC_COLOR: tuple = (235, 235, 220)
     SWING_ARC_CLEAVE_COLOR: tuple = (255, 210, 130)
 
+    # A thrust is a lane, not a wedge (`WeaponArchetype.pierce_melee`). Anything whose
+    # centre is within this far of the line the weapon is pointed along, out to its reach
+    # and past its blind spot, is skewered, so a spear standing off a pack is rewarded for
+    # lining two of them up. Each body behind the first takes this much less of the blow.
+    THRUST_LANE_WIDTH: float = 26.0
+    THRUST_FALLOFF: float = 0.7
+    THRUST_TRAIL_COLOR: tuple = (215, 230, 245)
+    THRUST_TRAIL_WIDTH: int = 5
+
 
 @dataclass(frozen=True)
 class Explosion:
@@ -117,6 +126,20 @@ class DamageFx:
 
 
 @dataclass(frozen=True)
+class ImpactFx:
+    """The ring an area effect draws as it goes out (core/impact_fx.py)."""
+
+    RING_MS: float = 320.0
+    RING_WIDTH: int = 6
+    # The bolts naming what the pulse caught only last the first part of the ring's life.
+    BOLT_LIFE_FRAC: float = 0.55
+    BOLT_SEGMENTS: int = 4
+    BOLT_JITTER: float = 9.0
+    BOLT_WIDTH: int = 3
+    CHAINSTRIKE_COLOR: tuple = (140, 200, 255)
+
+
+@dataclass(frozen=True)
 class WeaponArchetype:
     """Feel profile for a weapon family, resolved from the weapon name's keyword.
 
@@ -145,6 +168,81 @@ class WeaponArchetype:
     # promises a reach the swing does not have. A cleaving weapon sweeps wide; a thrust
     # or a poke covers a narrow slice of the same disc.
     arc_deg: float = 100.0
+    # A thrust runs down a lane instead of sweeping a wedge: everything standing along the
+    # shaft is skewered, each body behind the first for a little less (`Combat.THRUST_*`).
+    # It is what the spear's blind spot buys, and the reason to hold a pack off in a line.
+    pierce_melee: bool = False
+    # What a ranged weapon puts in the air, and what that shot does beyond damage.
+    # `element` is only ever set on a staff, resolved from the weapon's own name below.
+    projectile_style: str = "arrow"
+    element: str = ""
+
+
+@dataclass(frozen=True)
+class Staffs:
+    """What an elemental staff's bolt does on top of its damage (game/combat.py).
+
+    A staff used to be one weapon painted purple: every bolt was identical, so carrying a
+    staff instead of a bow was a question of ammo and nothing else. An element is read out
+    of the weapon's own name and each one maps onto a mechanic the game already has, so
+    the family differs in what it does to a fight rather than in its damage number.
+    """
+
+    # Fire: the burn affix's ticker, applied by the shot rather than by an affix roll.
+    BURN_DAMAGE: int = 3
+    # Frost: whatever it hits walks at this share of its speed for a moment. It never
+    # roots (a bear trap is the only thing that does), it buys ground.
+    CHILL_MULT: float = 0.55
+    CHILL_MS: int = 1800
+    # Storm: the bolt jumps to the nearest other enemy, the same idea as the Chain Strike
+    # legendary but weaker, and on a weapon anyone can find.
+    CHAIN_FRAC: float = 0.4
+    CHAIN_RADIUS: float = 170.0
+
+
+STAFF_BOLT_COLORS = {
+    "": (150, 90, 230),
+    "fire": (255, 145, 55),
+    "frost": (140, 215, 255),
+    "storm": (225, 210, 255),
+}
+
+# Name words that make a staff elemental. Read only once a weapon has already resolved to
+# the staff archetype, so a "Flameblade" stays a sword instead of picking up a bolt.
+STAFF_ELEMENT_WORDS = {
+    "fire": "fire",
+    "flame": "fire",
+    "ember": "fire",
+    "inferno": "fire",
+    "frost": "frost",
+    "ice": "frost",
+    "rime": "frost",
+    "winter": "frost",
+    "storm": "storm",
+    "shock": "storm",
+    "thunder": "storm",
+    "lightning": "storm",
+}
+
+
+@dataclass(frozen=True)
+class Boomerang:
+    """The thrown weapon that comes back (game/entities/projectile.py).
+
+    A bow costs arrows and a staff costs nothing, which left nothing between them. A
+    boomerang costs no ammo and only one is ever in the air: the wait for it to come home
+    is the price, so it is a weapon of rhythm rather than of supply. It strikes on the way
+    out and again on the way back, and a wall turns it early rather than eating it.
+    """
+
+    OUT_RANGE: int = 460
+    # How many bodies one pass carries through before it turns for home.
+    PIERCE: int = 3
+    # The return leg is a little quicker than the throw, so the weapon is not dead time.
+    RETURN_SPEED_MULT: float = 1.25
+    # Close enough to the hand to be caught.
+    CATCH_DISTANCE: float = 26.0
+    COLOR: tuple = (205, 165, 95)
 
 
 UNARMED = WeaponArchetype("unarmed", 1.0, 0.0, 1.0, 1.0, 350, 8, 0.08, False, 1.0, 2.0, False, False, 90.0)
@@ -158,13 +256,32 @@ WEAPON_ARCHETYPES: dict[str, WeaponArchetype] = {
     "hammer": WeaponArchetype("hammer", 0.9, 0.0, 0.55, 1.6, 620, 26, 0.05, True, 1.5, 14.0, False, False, 150.0),
     # The spear trades the whole close range for reach and a heavy thrust: nothing within
     # 46px of the player is hit at all, and the ring it does cover runs out past 85px.
-    "spear": WeaponArchetype("spear", 2.2, 46.0, 0.9, 1.35, 380, 14, 0.12, False, 1.0, 5.0, False, False, 75.0),
-    "staff": WeaponArchetype("staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False, 90.0),
+    # What it buys back is a lane rather than a point (`pierce_melee`, so a line of chasers
+    # is skewered two at a time) and a shove hard enough to put whatever closed back out at
+    # the end of the shaft, which is the range the weapon actually works at.
+    "spear": WeaponArchetype(
+        "spear", 2.2, 46.0, 0.9, 1.35, 380, 24, 0.12, False, 1.0, 5.0, False, False, 75.0, pierce_melee=True
+    ),
+    # The pole is a control weapon: it barely hurts and it moves people. What it is for is
+    # the ground rather than the health bar, since the world is full of things worth being
+    # shoved into (a river, a bear trap, a powder keg) and off (a pack that has surrounded
+    # the player).
+    "pole": WeaponArchetype("pole", 1.5, 0.0, 1.2, 0.45, 300, 62, 0.02, True, 1.3, 6.0, False, False, 140.0),
+    "staff": WeaponArchetype(
+        "staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False, 90.0, projectile_style="bolt"
+    ),
+    # Costs nothing to throw and only one is ever in the air: the flight is the cooldown.
+    "boomerang": WeaponArchetype(
+        "boomerang", 1.0, 0.0, 1.3, 0.9, 260, 8, 0.10, False, 1.0, 2.0, True, False, 90.0, projectile_style="boomerang"
+    ),
     "bow": WeaponArchetype("bow", 1.0, 0.0, 1.0, 1.0, 400, 4, 0.10, False, 1.0, 1.0, True, True, 90.0),
 }
 
-# Weapon-name keyword -> archetype key. Keywords mirror items.WEAPON_KEYWORDS.
+# Weapon-name keyword -> archetype key. Keywords mirror items.WEAPON_KEYWORDS. Matched by
+# substring in this order, so anything whose name contains another family's word (a
+# "quarterstaff" holding "staff") has to be listed above the word it would be caught by.
 _KEYWORD_TO_ARCHETYPE = {
+    "quarterstaff": "pole",
     "dagger": "dagger",
     "knife": "dagger",
     "sword": "sword",
@@ -175,9 +292,28 @@ _KEYWORD_TO_ARCHETYPE = {
     "hammer": "hammer",
     "spear": "spear",
     "lance": "spear",
+    "cudgel": "pole",
+    "pole": "pole",
+    "boomerang": "boomerang",
+    "chakram": "boomerang",
     "staff": "staff",
     "bow": "bow",
 }
+
+# Elemental staffs are variants of the one staff profile rather than families of their
+# own, built once and kept: the archetype is a frozen dataclass asked for on every swing,
+# every icon and every tooltip.
+_ELEMENTAL_STAFFS: dict[str, WeaponArchetype] = {}
+
+
+def _staff_variant(lower: str) -> WeaponArchetype:
+    """The staff profile for a name, carrying whichever element the name spells out."""
+    element = next((el for word, el in STAFF_ELEMENT_WORDS.items() if word in lower), "")
+    if not element:
+        return WEAPON_ARCHETYPES["staff"]
+    if element not in _ELEMENTAL_STAFFS:
+        _ELEMENTAL_STAFFS[element] = replace(WEAPON_ARCHETYPES["staff"], element=element)
+    return _ELEMENTAL_STAFFS[element]
 
 
 def weapon_archetype(name: str | None) -> WeaponArchetype:
@@ -187,7 +323,7 @@ def weapon_archetype(name: str | None) -> WeaponArchetype:
     lower = name.lower()
     for keyword, key in _KEYWORD_TO_ARCHETYPE.items():
         if keyword in lower:
-            return WEAPON_ARCHETYPES[key]
+            return _staff_variant(lower) if key == "staff" else WEAPON_ARCHETYPES[key]
     return WEAPON_ARCHETYPES["sword"]
 
 

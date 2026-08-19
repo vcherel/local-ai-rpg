@@ -23,6 +23,8 @@ WEAPON_LENGTH = {
     "spear": 2.4,
     "staff": 1.55,
     "bow": 1.0,
+    "pole": 1.9,
+    "boomerang": 0.8,
 }
 
 GRIP_COLOR = (85, 62, 40)
@@ -82,6 +84,38 @@ def _weapon_parts(kind: str, length: float) -> list:
         return [
             ("lines", ((0, L * 0.12), (0, -L * 0.86)), "grip"),
             ("circle", ((0, -L * 0.9), L * 0.14), "metal"),
+        ]
+    if kind == "pole":
+        # A long shaft capped at both ends: what it hits with is its weight, so nothing on
+        # it comes to a point.
+        return [
+            ("lines", ((0, L * 0.34), (0, -L * 0.82)), "grip"),
+            (
+                "poly",
+                [(-L * 0.16, -L * 0.78), (L * 0.16, -L * 0.78), (L * 0.16, -L), (-L * 0.16, -L)],
+                "metal",
+            ),
+            (
+                "poly",
+                [(-L * 0.14, L * 0.3), (L * 0.14, L * 0.3), (L * 0.14, L * 0.44), (-L * 0.14, L * 0.44)],
+                "metal",
+            ),
+        ]
+    if kind == "boomerang":
+        # Held out at the elbow of the blade, the way it is thrown.
+        return [
+            (
+                "poly",
+                [
+                    (-L * 0.15, L * 0.1),
+                    (-L * 0.55, -L * 0.75),
+                    (-L * 0.2, -L * 0.95),
+                    (L * 0.1, -L * 0.2),
+                    (L * 0.85, L * 0.15),
+                    (L * 0.7, L * 0.5),
+                ],
+                "metal",
+            ),
         ]
     if kind == "spear":
         return [

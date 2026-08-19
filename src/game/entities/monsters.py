@@ -317,7 +317,9 @@ class Monster(Entity):
         the water, which is what makes crossing one a real answer to being chased."""
         dist = math.hypot(target.x - self.x, target.y - self.y)
         senses = c.World.DETECTION_RANGE if detection is None else detection
-        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult
+        # Chilled by a frost bolt: it still turns, still swings and still shoots, it just
+        # covers less ground doing it, exactly like the water and unlike a trap.
+        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult * self.chill_mult
         # Caught in a bear trap: every step below is scaled by this, so it turns, swings and
         # shoots from where it stands and simply cannot cross the ground to the player.
         if self.rooted:
