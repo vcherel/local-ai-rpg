@@ -419,14 +419,16 @@ class GameRenderer:
         chips = []
         for effect, remaining, _magnitude in player.active_buffs():
             text = f"{POTION_EFFECT_LABELS.get(effect, effect)} {int(remaining) + 1}s"
-            chips.append((c.Potions.COLORS[effect], c.Fonts.small.render(text, True, c.Colors.WHITE)))
+            # Not every buff comes out of a flask: a weapon affix (bloodlust) has no
+            # liquid colour of its own, and used to crash the HUD looking for one.
+            color = c.Potions.COLORS.get(effect, c.Colors.RED)
+            chips.append((color, c.Fonts.small.render(text, True, c.Colors.WHITE)))
 
         weakened = player.weakness_remaining()
         if weakened > 0:
-            # Named for what it does and carrying its worst number: "Shaken 12s" said
-            # nothing, while this is three penalties at once.
-            damage_loss = round((1 - c.Death.DEBUFF_DAMAGE_MULT) * 100)
-            text = f"Weakened {int(weakened) + 1}s  -{damage_loss}% dmg"
+            # Just the state and how long is left: what it costs is spelled out on the death
+            # screen, and three penalties do not fit in a chip.
+            text = f"Weakened {int(weakened) + 1}s"
             chips.append((c.Colors.RED, c.Fonts.small.render(text, True, c.Colors.WHITE)))
 
         if not chips:

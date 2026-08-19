@@ -29,6 +29,7 @@ class Projectile:
         shake=0.0,
         hostile=False,
         owner_id=None,
+        source_name="",
     ):
         self.x = x
         self.y = y
@@ -50,6 +51,9 @@ class Projectile:
         # Whoever fired it, already counted as struck so a shot can never hit its own
         # shooter on the frame it leaves them.
         self.owner_id = owner_id
+        # What killed the player, on the death screen: an arrow is named for whoever fired
+        # it, since the projectile itself has no name to give.
+        self.source_name = source_name
         self.hit_ids = set() if owner_id is None else {owner_id}
         self.traveled = 0.0
         self.dead = False

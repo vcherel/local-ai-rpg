@@ -213,6 +213,7 @@ class Boss(Monster):
                     shake=4.0,
                     hostile=True,
                     owner_id=id(self),
+                    source_name=self.display_name,
                 )
             )
 

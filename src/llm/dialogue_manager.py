@@ -47,6 +47,10 @@ SENTENCE_END_RE = re.compile(r"[.!?…]['\"]?(?=\s|$)")
 # nothing. The stream itself drops everything past the first line break instead.
 DIALOGUE_STOPS = ["Player:", "player:"]
 
+# A bracketed fill-in the model left in a reply ("[amount] coins", "{item}"). Never
+# something an NPC says out loud, so it is cut from what reaches the screen.
+PLACEHOLDER_RE = re.compile(r"\s*[\[{][^\]}]{0,60}[\]}]")
+
 
 # What an NPC is told about the quest they gave, per quest type: the line for a task just
 # finished, the line reminding them what they asked for, and the line saying how far the
@@ -95,6 +99,17 @@ def _ware_effect(item) -> str:
     if item.item_type == "potion":
         return potion_description(item).lower()
     return f"+{item.bonus} bonus"
+
+
+def _strip_placeholders(text: str) -> str:
+    """Drop a fill-in the model left in the reply, e.g. "here is [describe coins]".
+
+    Asked to hand over a reward, the model sometimes writes the instruction back instead of
+    a number, in the bracket style [END] taught it. Nothing in a spoken line is ever meant
+    to be in brackets, so they come out whatever is inside them.
+    """
+    text = PLACEHOLDER_RE.sub(" ", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 def _trim_partial_marker(text: str) -> str:
@@ -209,7 +224,7 @@ class DialogueManager:
     def _quest_lines(self, quest, quest_complete: bool) -> str:
         """What to tell an NPC about the quest they gave: that the player has just finished
         it and is owed a reward, or what was asked for and how far they have got with it."""
-        carrying = quest.item is not None and quest.item in self.quest_system.player.inventory
+        carrying = self.quest_system.carried_item(quest) is not None
         fields = {
             "description": quest.description,
             "item_name": quest.item_name,
@@ -230,7 +245,12 @@ class DialogueManager:
                 if quest.reward_item_name
                 else " in coins"
             )
-            return done_line.format(**fields) + "Thank them and give them their reward" + reward + ". "
+            return (
+                done_line.format(**fields)
+                + "Thank them and give them their reward"
+                + reward
+                + ". Say the exact number of coins yourself; never write a placeholder in brackets. "
+            )
 
         # A quest that is neither one of the known types nor about a named item has nothing
         # to remind the NPC of, so it is left out of the prompt entirely.
@@ -254,7 +274,7 @@ class DialogueManager:
             if quest.quest_type in COUNTED_QUEST_TYPES:
                 quest_complete = quest.kills_done >= quest.kill_count
             else:
-                quest_complete = quest.item in self.quest_system.player.inventory
+                quest_complete = self.quest_system.carried_item(quest) is not None
         if quest_complete:
             self.pending_quest_completion = npc
 
@@ -366,7 +386,7 @@ class DialogueManager:
                     partial = stripped
                 else:
                     partial = _trim_partial_marker(partial)
-                self.conversation.update_last_assistant_message(partial)
+                self.conversation.update_last_assistant_message(_strip_placeholders(partial))
                 self.ui.auto_scroll(self.conversation, self.current_npc.name)
                 self.waiting_for_llm = False
             except StopIteration:
@@ -390,7 +410,7 @@ class DialogueManager:
                     content = content[: match.start()].rstrip()
                     if not was_first_message and not content.endswith("?"):
                         self.conversation_ended = True
-                content = _trim_to_sentence(content)
+                content = _trim_to_sentence(_strip_placeholders(content))
 
                 self.conversation.update_last_assistant_message(content)
                 self.ui.auto_scroll(self.conversation, self.current_npc.name)

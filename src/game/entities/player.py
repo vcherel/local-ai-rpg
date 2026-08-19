@@ -46,11 +46,15 @@ def _item_outline(item) -> tuple:
 
 def _damage_source_name(source) -> str:
     """What to call whatever just hit the player, on the death screen. A boss goes by its
-    full title, a villager by their name, anything else by its species; damage with no
-    attacker behind it (a shrine's curse, a burn) names nobody and leaves the last one."""
+    full title, a villager by their name, anything else by its species. An arrow goes by
+    its shooter (`source_name`) rather than by nothing at all, which used to leave the death
+    screen blaming whatever last touched the player in melee; damage with no attacker behind
+    it (a shrine's curse, a burn) names nobody and leaves the last one."""
     if source is None:
         return ""
-    for attr in ("display_name", "name"):
+    if isinstance(source, str):
+        return source
+    for attr in ("display_name", "name", "source_name"):
         value = getattr(source, attr, None)
         if value:
             return str(value)

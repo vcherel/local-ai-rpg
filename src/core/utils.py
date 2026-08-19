@@ -78,7 +78,7 @@ def parse_shop_inventories(response: str, shop_count: int) -> list:
         item_type = item_type.lower()
         # An invented type ("consumable", "drink") is dropped so the shop falls back
         # to reading the type out of the item's name instead.
-        if item_type not in ("weapon", "armor", "accessory", "ammo", "potion", "misc"):
+        if item_type not in ("weapon", "armor", "shield", "accessory", "ammo", "potion", "misc"):
             item_type = ""
         rarity = rarity.lower()
         if rarity not in (tier.name for tier in c.Rarity.TIERS):

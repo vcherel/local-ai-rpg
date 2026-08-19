@@ -383,7 +383,9 @@ class WorldPlaces:
                 amount = int(player.coins * c.PointsOfInterest.SHRINE_CURSE_TITHE_FRAC)
                 player.add_coins(-amount)
             else:
-                player.receive_damage(round(player.max_hp * c.PointsOfInterest.SHRINE_CURSE_WOUND_FRAC))
+                player.receive_damage(
+                    round(player.max_hp * c.PointsOfInterest.SHRINE_CURSE_WOUND_FRAC), source="an angry shrine"
+                )
             get_particles().spawn_burst(poi.x, poi.y - 20, (120, 40, 140), count=22, speed=4, life=800, size=4)
             play_sound("player_hurt")
             if self.notify:

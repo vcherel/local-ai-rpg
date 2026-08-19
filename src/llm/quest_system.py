@@ -266,6 +266,21 @@ class QuestSystem:
         npc.quest = quest
         self.active_quests.append(quest)
 
+    def carried_item(self, quest: Quest) -> Optional[Item]:
+        """The item in the player's bag that hands this quest in, or None.
+
+        The exact object the quest spawned counts, and so does anything else by that name:
+        the NPC asked for a thing, not for one particular instance of it, and matching on
+        identity alone meant a player who brought back the right item was told about the
+        job all over again.
+        """
+        if quest.item is not None and quest.item in self.player.inventory:
+            return quest.item
+        name = (quest.item_name or "").strip().lower()
+        if not name:
+            return None
+        return next((item for item in self.player.inventory if item.name.strip().lower() == name), None)
+
     def on_monster_killed(self, monster_kind_name: str, x: float, y: float) -> Optional[Item]:
         """Progress kill_mob quests and drop a matching loot_mob quest's item, if any."""
         dropped_item = None
@@ -397,13 +412,20 @@ class QuestSystem:
             if quest.kills_done < quest.kill_count:
                 return
         else:
-            if not quest.item:
+            handed_in = self.carried_item(quest)
+            if handed_in is None:
                 return
-            if quest.item in self.player.inventory:
-                self.player.inventory.remove(quest.item)
+            # A stack (potions, arrows) gives up one unit rather than the whole pile.
+            if handed_in.quantity > 1:
+                handed_in.quantity -= 1
+            else:
+                self.player.inventory.remove(handed_in)
+                if handed_in in self.items:
+                    self.items.remove(handed_in)
 
-            # Remove item from world (in case it wasn't picked up yet)
-            if quest.item in self.items:
+            # The one the quest spawned is gone from the world too, wherever it was lying,
+            # so a fetch handed in with another copy doesn't leave a duplicate out there.
+            if quest.item is not None and quest.item is not handed_in and quest.item in self.items:
                 self.items.remove(quest.item)
 
         if quest.reward_item_name:

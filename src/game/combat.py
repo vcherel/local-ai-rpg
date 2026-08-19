@@ -685,7 +685,9 @@ class WorldCombat:
 
         player_distance = math.hypot(player.x - x, player.y - y)
         if player_distance < c.Explosion.RADIUS:
-            player.receive_damage(round(blast_damage(player_distance) * c.Explosion.PLAYER_DAMAGE_MULT))
+            player.receive_damage(
+                round(blast_damage(player_distance) * c.Explosion.PLAYER_DAMAGE_MULT), source="a powder keg"
+            )
 
         if depth >= 3:
             return
@@ -1066,6 +1068,7 @@ class WorldCombat:
                     shake=c.Combat.PLAYER_HURT_SHAKE,
                     hostile=True,
                     owner_id=id(monster),
+                    source_name=monster.kind.name,
                 )
             )
 
