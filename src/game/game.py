@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, NamedTuple
 
 import pygame
 
@@ -65,6 +65,18 @@ class Game:
         self.stats_menu = StatsMenu(self.screen)
         self.help_menu = HelpMenu(self.screen)
         self.pause_menu = PauseMenu(self.screen)
+        # Every full-screen menu, for the one question asked of all of them at once: is any
+        # open, and therefore is the world paused. Their input and draw calls stay written
+        # out one by one below, since each takes its own arguments and the order matters.
+        self.menus = (
+            self.context_window,
+            self.quest_menu,
+            self.inventory_menu,
+            self.shop_menu,
+            self.stats_menu,
+            self.help_menu,
+            self.pause_menu,
+        )
         self.loot_notification = ToastNotification(self.screen)
         # id of the last picked-up item flagged as a gear upgrade; F equips it.
         self.pending_upgrade_id = None
@@ -110,7 +122,7 @@ class Game:
         self.interior = None
         # What E would act on this frame (Game.current_interaction), recomputed each update
         # and drawn as the single on-screen prompt.
-        self.interaction: Optional[Interaction] = None
+        self.interaction: Interaction | None = None
 
         self._restore_player_state()
 
@@ -324,12 +336,12 @@ class Game:
         else:
             self.loot_notification.show(f"{potion.name}: {result}", potion.color)
 
-    def current_interaction(self) -> Optional[Interaction]:
+    def current_interaction(self) -> Interaction | None:
         """The single thing the interact key acts on right now: the nearest interactable in
         reach, indoors or out. The prompt drawn on screen comes from the same call, so a
         tavern full of beds can't stack labels and the prompt can never point at something
         other than what the key does."""
-        best: Optional[tuple] = None  # (distance, Interaction)
+        best: tuple | None = None  # (distance, Interaction)
 
         def offer(interaction: Interaction, dist: float):
             nonlocal best
@@ -746,30 +758,16 @@ class Game:
         self.last_save_ms = pygame.time.get_ticks()
 
     def run(self):
-        running = True
-        # Opened on the first frame the player can actually see the world rather than here,
-        # for the same reason it is granted after the death screen: the opening lore holds
-        # for as long as the model takes and as long as the player reads, and a window spent
-        # staring at black text is no window at all.
+        # The spawn grace opens on the first frame the player can actually see the world
+        # rather than here, for the same reason it is granted after the death screen: the
+        # opening lore holds for as long as the model takes and as long as the player
+        # reads, and a window spent staring at black text is no window at all.
         granted_grace = False
 
-        while running:
-            self.active_menu = (
-                self.context_window.active
-                or self.dialogue_manager.active
-                or self.quest_menu.active
-                or self.inventory_menu.active
-                or self.shop_menu.active
-                or self.stats_menu.active
-                or self.help_menu.active
-                or self.pause_menu.active
-            )
+        while True:
+            self.active_menu = self.dialogue_manager.active or any(menu.active for menu in self.menus)
 
-            running = self.handle_input()
-            if not running:
-                break
-
-            if self.quit_to_menu:
+            if not self.handle_input() or self.quit_to_menu:
                 break
 
             # Skip world simulation while a menu is open to save computation, but keep
@@ -779,75 +777,9 @@ class Game:
                 if not granted_grace:
                     granted_grace = True
                     self.player.grant_spawn_grace()
-                dt = self.clock.get_time()
-                # A heavy hit freezes gameplay motion for a few frames without slowing the
-                # camera shake/particles/damage numbers below, so the impact reads as a
-                # freeze-frame rather than the whole game stuttering.
-                gameplay_dt = get_hitstop().apply(dt)
-                in_water = self.world.water_at(self.player.x, self.player.y)
-                self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked, in_water)
-                self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
-                self._pop_levelups()
-                # A building's interior is just its own footprint; re-derive which one (if
-                # any) the player is standing in rather than tracking a separate mode.
-                self.interior = self.world.building_at(self.player.x, self.player.y)
-                self._sweep_loot(gameplay_dt)
-                self.interaction = self.current_interaction()
-                self.update_camera()
-                get_shake().update(dt)
-                get_particles().update(dt)
-                get_swings().update(dt)
-                get_impacts().update(dt)
-                get_floating_text().update(dt)
-                get_decals().update(dt)
-                get_vignette().update(dt)
+                self._update_frame()
 
-            quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
-            self.game_renderer.draw_world(
-                self.camera,
-                self.world,
-                self.player,
-                self.interior,
-                None if self.active_menu else self.interaction,
-                quest_target,
-            )
-            # No sky underground: the tunnel draws its own darkness around the player instead.
-            if self.world.underground is None:
-                self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
-            get_vignette().draw(self.screen)
-            if not self.active_menu:
-                self.game_renderer.draw_ui(
-                    len(self.player.inventory),
-                    self.player.coins,
-                    len(self.dialogue_manager.quest_system.active_quests),
-                    get_llm_tasks(),
-                    self.player,
-                    self.world,
-                    self.last_save_ms,
-                )
-
-            self.context_window.update()
-
-            self.dialogue_manager.draw()
-            if not self.active_menu:
-                self.dialogue_manager.quest_tracker.draw(
-                    self.dialogue_manager.quest_system, self.game_renderer.minimap.content_bottom + 10
-                )
-                self.loot_notification.draw()
-            self.inventory_menu.draw(self.player)
-            self.quest_menu.draw(self.dialogue_manager.quest_system)
-            self.shop_menu.draw()
-            self.stats_menu.draw(self.player)
-            self.help_menu.draw()
-            self.pause_menu.draw()
-            self.context_window.draw()
-            # The world coming up out of the black the opening lore was written on. Last of
-            # all, so it covers the HUD as well: nothing should be readable before the world.
-            self.context_window.draw_fade()
-
-            if not self.active_menu:
-                fps = self.clock.get_fps()
-                self.game_renderer.draw_fps(fps)
+            self._draw_frame()
 
             if pygame.time.get_ticks() - self.last_save_ms >= c.World.AUTOSAVE_INTERVAL_S * 1000:
                 self.save_data()
@@ -856,12 +788,8 @@ class Game:
                 self._respawn()
 
             pygame.display.flip()
-
-            # Increase fps when we are typing
-            if self.dialogue_manager.active:
-                self.clock.tick(180)
-            else:
-                self.clock.tick(60)
+            # The typing in a conversation wants the extra frames; nothing else does.
+            self.clock.tick(180 if self.dialogue_manager.active else 60)
 
         self.save_data()
         # Generation threads can still be queued behind other LLM calls; from here on they
@@ -869,3 +797,74 @@ class Game:
         self.world.close()
         self.npc_name_generator.close()
         self.death_taunts.close()
+
+    def _update_frame(self):
+        """One step of the world. Only runs with no menu open, which is what pausing is."""
+        dt = self.clock.get_time()
+        # A heavy hit freezes gameplay motion for a few frames without slowing the camera
+        # shake/particles/damage numbers below, so the impact reads as a freeze-frame
+        # rather than the whole game stuttering.
+        gameplay_dt = get_hitstop().apply(dt)
+        in_water = self.world.water_at(self.player.x, self.player.y)
+        self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked, in_water)
+        self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
+        self._pop_levelups()
+        # A building's interior is just its own footprint; re-derive which one (if any) the
+        # player is standing in rather than tracking a separate mode.
+        self.interior = self.world.building_at(self.player.x, self.player.y)
+        self._sweep_loot(gameplay_dt)
+        self.interaction = self.current_interaction()
+        self.update_camera()
+        for system in (get_shake(), get_particles(), get_swings(), get_impacts()):
+            system.update(dt)
+        for system in (get_floating_text(), get_decals(), get_vignette()):
+            system.update(dt)
+
+    def _draw_frame(self):
+        """The world, then the sky over it, then the HUD, then whatever menu is open. Drawn
+        every frame whether or not the world moved, so a menu never sits over a stale view."""
+        quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
+        self.game_renderer.draw_world(
+            self.camera,
+            self.world,
+            self.player,
+            self.interior,
+            None if self.active_menu else self.interaction,
+            quest_target,
+        )
+        # No sky underground: the tunnel draws its own darkness around the player instead.
+        if self.world.underground is None:
+            self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
+        get_vignette().draw(self.screen)
+
+        if not self.active_menu:
+            self.game_renderer.draw_ui(
+                len(self.player.inventory),
+                self.player.coins,
+                len(self.dialogue_manager.quest_system.active_quests),
+                get_llm_tasks(),
+                self.player,
+                self.world,
+                self.last_save_ms,
+            )
+
+        self.context_window.update()
+        self.dialogue_manager.draw()
+        if not self.active_menu:
+            self.dialogue_manager.quest_tracker.draw(
+                self.dialogue_manager.quest_system, self.game_renderer.minimap.content_bottom + 10
+            )
+            self.loot_notification.draw()
+        self.inventory_menu.draw(self.player)
+        self.quest_menu.draw(self.dialogue_manager.quest_system)
+        self.shop_menu.draw()
+        self.stats_menu.draw(self.player)
+        self.help_menu.draw()
+        self.pause_menu.draw()
+        self.context_window.draw()
+        # The world coming up out of the black the opening lore was written on. Last of all,
+        # so it covers the HUD as well: nothing should be readable before the world.
+        self.context_window.draw_fade()
+
+        if not self.active_menu:
+            self.game_renderer.draw_fps(self.clock.get_fps())

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import re
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import core.constants as c
 from core.utils import parse_response_quest_analysis
@@ -17,24 +17,13 @@ if TYPE_CHECKING:
     from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
 
-QUEST_TYPES = (
-    "fetch",
-    "kill_mob",
-    "loot_mob",
-    "recover_stolen",
-    "slay_boss",
-    "clear_camp",
-    "steal",
-    "deliver",
-)
-
 
 class QuestSystem:
     def __init__(self, items, player, npcs):
-        self.items: List[Item] = items
+        self.items: list[Item] = items
         self.player: Player = player
-        self.npcs: List[NPC] = npcs
-        self.active_quests: List[Quest] = []
+        self.npcs: list[NPC] = npcs
+        self.active_quests: list[Quest] = []
         # Set by Game once the world exists; slay_boss quests need it to spawn the boss.
         self.world = None
         # Set by Game too: a finished quest is worth writing to disk on the spot.
@@ -56,7 +45,7 @@ class QuestSystem:
                 return kind
         return random.choices(c.MONSTER_KINDS, weights=[kind.weight for kind in c.MONSTER_KINDS])[0]
 
-    def _pick_recipient(self, giver: NPC) -> Optional[NPC]:
+    def _pick_recipient(self, giver: NPC) -> NPC | None:
         """Who a delivery is for: someone else already living in the world, named, still on
         speaking terms with the player, and as far from the giver as the world allows, so a
         delivery is a journey rather than a walk across the plaza."""
@@ -111,165 +100,152 @@ class QuestSystem:
         return parse_response_quest_analysis(response)
 
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict, npc_name_generator: NPCNameGenerator):
+        """Turn the model's reading of the conversation into a real quest, or into nothing.
+
+        Each type is built by its own method below; any of them may return None, which is
+        how a quest with no target left in the world (no camp still held, nobody to deliver
+        to, a boss that can't be placed) is dropped rather than handed over unfinishable."""
         if not quest_info["has_quest"]:
             return
 
         quest_type = quest_info.get("quest_type") or "fetch"
-        if quest_type not in QUEST_TYPES:
-            quest_type = "fetch"
+        build = _QUEST_BUILDERS.get(quest_type, QuestSystem._build_fetch)
 
-        reward_item_name = self._strip_article(quest_info.get("reward_item", ""))
-        description = quest_info["quest_description"]
-
-        if quest_type == "kill_mob":
-            if not quest_info.get("monster_hint"):
-                return
-            kind = self._resolve_monster_kind(quest_info["monster_hint"])
-            try:
-                kill_count = int(quest_info.get("kill_count") or 0)
-            except ValueError:
-                kill_count = 0
-            if kill_count <= 0:
-                kill_count = random.randint(3, 5)
-
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name="",
-                quest_type="kill_mob",
-                target_monster_kind=kind.name,
-                kill_count=kill_count,
-                reward_item_name=reward_item_name,
-            )
-
-        elif quest_type == "loot_mob":
-            if not quest_info.get("item_name") or not quest_info.get("monster_hint"):
-                return
-            kind = self._resolve_monster_kind(quest_info["monster_hint"])
-
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name=self._strip_article(quest_info["item_name"]),
-                quest_type="loot_mob",
-                target_monster_kind=kind.name,
-                reward_item_name=reward_item_name,
-            )
-
-        elif quest_type == "slay_boss":
-            # No world reference means we can't place the boss; drop the quest rather than
-            # leave an untargetable objective.
-            if self.world is None:
-                return
-            boss = self.world.spawn_boss_for_quest()
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name="",
-                quest_type="slay_boss",
-                target_monster_kind=boss.quest_tag,
-                boss_name=boss.display_name,
-                kill_count=1,
-                reward_item_name=reward_item_name,
-            )
-
-        elif quest_type == "clear_camp":
-            # No world to look through, or no camp still held anywhere near: drop the quest
-            # rather than send the player after a place that doesn't exist.
-            camp = self.world.find_bandit_camp(npc.x, npc.y) if self.world else None
-            if camp is None:
-                return
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name="",
-                quest_type="clear_camp",
-                target_poi_id=camp.id,
-                target_x=camp.x,
-                target_y=camp.y,
-                kill_count=1,
-                reward_item_name=reward_item_name,
-            )
-
-        elif quest_type == "steal":
-            if not quest_info.get("item_name"):
-                return
-            house = self.world.house_to_rob(npc) if self.world else None
-            if house is None:
-                return
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name=self._strip_article(quest_info["item_name"]),
-                quest_type="steal",
-                target_building_id=house.id,
-                target_x=house.x,
-                target_y=house.y,
-                reward_item_name=reward_item_name,
-            )
-
-        elif quest_type == "deliver":
-            if not quest_info.get("item_name"):
-                return
-            recipient = self._pick_recipient(npc)
-            if recipient is None:
-                return
-            # The parcel is handed over as the quest is given, so the player is carrying it
-            # from the first step: a delivery is a walk, not a hunt for the thing to deliver.
-            item_name = self._strip_article(quest_info["item_name"])
-            parcel = Item(self.player.x, self.player.y, item_name)
-            parcel.picked_up = True
-            if self.player.add_item(parcel) is parcel:
-                self.items.append(parcel)
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name=item_name,
-                item=parcel,
-                quest_type="deliver",
-                recipient_npc_name=recipient.name,
-                kill_count=1,
-                reward_item_name=reward_item_name,
-            )
-
-        elif quest_type == "recover_stolen":
-            if not quest_info.get("item_name"):
-                return
-            # A fresh NPC, not one the player may have already met, so turning them
-            # into a target on sight doesn't retroactively make a friendly NPC hostile.
-            thief = NPC(*random_open_coordinates())
-            thief.assign_name(npc_name_generator)
-            thief.is_thief = True
-            self.npcs.append(thief)
-
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name=self._strip_article(quest_info["item_name"]),
-                quest_type="recover_stolen",
-                thief_npc_name=thief.name,
-                reward_item_name=reward_item_name,
-            )
-
-        else:
-            if not quest_info.get("item_name"):
-                return
-            item_name = self._strip_article(quest_info["item_name"])
-            quest_item = Item(*random_open_coordinates(), item_name)
-            self.items.append(quest_item)
-
-            quest = Quest(
-                npc_name=npc.name,
-                description=description,
-                item_name=item_name,
-                item=quest_item,
-                reward_item_name=reward_item_name,
-            )
+        common = {
+            "npc_name": npc.name,
+            "description": quest_info["quest_description"],
+            "reward_item_name": self._strip_article(quest_info.get("reward_item", "")),
+        }
+        quest = build(self, npc, quest_info, common, npc_name_generator)
+        if quest is None:
+            return
 
         npc.quest = quest
         self.active_quests.append(quest)
 
-    def carried_item(self, quest: Quest) -> Optional[Item]:
+    def _build_kill_mob(self, npc, quest_info, common, _names) -> Quest | None:
+        if not quest_info.get("monster_hint"):
+            return None
+        kind = self._resolve_monster_kind(quest_info["monster_hint"])
+        try:
+            kill_count = int(quest_info.get("kill_count") or 0)
+        except ValueError:
+            kill_count = 0
+        if kill_count <= 0:
+            kill_count = random.randint(3, 5)
+        return Quest(
+            item_name="",
+            quest_type="kill_mob",
+            target_monster_kind=kind.name,
+            kill_count=kill_count,
+            **common,
+        )
+
+    def _build_loot_mob(self, npc, quest_info, common, _names) -> Quest | None:
+        if not quest_info.get("item_name") or not quest_info.get("monster_hint"):
+            return None
+        kind = self._resolve_monster_kind(quest_info["monster_hint"])
+        return Quest(
+            item_name=self._strip_article(quest_info["item_name"]),
+            quest_type="loot_mob",
+            target_monster_kind=kind.name,
+            **common,
+        )
+
+    def _build_slay_boss(self, npc, quest_info, common, _names) -> Quest | None:
+        # No world reference means we can't place the boss; drop the quest rather than
+        # leave an untargetable objective.
+        if self.world is None:
+            return None
+        boss = self.world.spawn_boss_for_quest()
+        return Quest(
+            item_name="",
+            quest_type="slay_boss",
+            target_monster_kind=boss.quest_tag,
+            boss_name=boss.display_name,
+            kill_count=1,
+            **common,
+        )
+
+    def _build_clear_camp(self, npc, quest_info, common, _names) -> Quest | None:
+        # No world to look through, or no camp still held anywhere near: drop the quest
+        # rather than send the player after a place that doesn't exist.
+        camp = self.world.find_bandit_camp(npc.x, npc.y) if self.world else None
+        if camp is None:
+            return None
+        return Quest(
+            item_name="",
+            quest_type="clear_camp",
+            target_poi_id=camp.id,
+            target_x=camp.x,
+            target_y=camp.y,
+            kill_count=1,
+            **common,
+        )
+
+    def _build_steal(self, npc, quest_info, common, _names) -> Quest | None:
+        if not quest_info.get("item_name"):
+            return None
+        house = self.world.house_to_rob(npc) if self.world else None
+        if house is None:
+            return None
+        return Quest(
+            item_name=self._strip_article(quest_info["item_name"]),
+            quest_type="steal",
+            target_building_id=house.id,
+            target_x=house.x,
+            target_y=house.y,
+            **common,
+        )
+
+    def _build_deliver(self, npc, quest_info, common, _names) -> Quest | None:
+        if not quest_info.get("item_name"):
+            return None
+        recipient = self._pick_recipient(npc)
+        if recipient is None:
+            return None
+        # The parcel is handed over as the quest is given, so the player is carrying it
+        # from the first step: a delivery is a walk, not a hunt for the thing to deliver.
+        item_name = self._strip_article(quest_info["item_name"])
+        parcel = Item(self.player.x, self.player.y, item_name)
+        parcel.picked_up = True
+        if self.player.add_item(parcel) is parcel:
+            self.items.append(parcel)
+        return Quest(
+            item_name=item_name,
+            item=parcel,
+            quest_type="deliver",
+            recipient_npc_name=recipient.name,
+            kill_count=1,
+            **common,
+        )
+
+    def _build_recover_stolen(self, npc, quest_info, common, npc_name_generator) -> Quest | None:
+        if not quest_info.get("item_name"):
+            return None
+        # A fresh NPC, not one the player may have already met, so turning them
+        # into a target on sight doesn't retroactively make a friendly NPC hostile.
+        thief = NPC(*random_open_coordinates())
+        thief.assign_name(npc_name_generator)
+        thief.is_thief = True
+        self.npcs.append(thief)
+        return Quest(
+            item_name=self._strip_article(quest_info["item_name"]),
+            quest_type="recover_stolen",
+            thief_npc_name=thief.name,
+            **common,
+        )
+
+    def _build_fetch(self, npc, quest_info, common, _names) -> Quest | None:
+        """Also the fallback for a type the model invented or one since removed."""
+        if not quest_info.get("item_name"):
+            return None
+        item_name = self._strip_article(quest_info["item_name"])
+        quest_item = Item(*random_open_coordinates(), item_name)
+        self.items.append(quest_item)
+        return Quest(item_name=item_name, item=quest_item, **common)
+
+    def carried_item(self, quest: Quest) -> Item | None:
         """The item in the player's bag that hands this quest in, or None.
 
         The exact object the quest spawned counts, and so does anything else by that name:
@@ -284,7 +260,7 @@ class QuestSystem:
             return None
         return next((item for item in self.player.inventory if item.name.strip().lower() == name), None)
 
-    def on_monster_killed(self, monster_kind_name: str, x: float, y: float) -> Optional[Item]:
+    def on_monster_killed(self, monster_kind_name: str, x: float, y: float) -> Item | None:
         """Progress kill_mob quests and drop a matching loot_mob quest's item, if any."""
         dropped_item = None
         for quest in self.active_quests:
@@ -309,7 +285,7 @@ class QuestSystem:
             if quest.quest_type == "clear_camp" and quest.target_poi_id == poi_id:
                 quest.kills_done = quest.kill_count
 
-    def on_theft(self, building_id: str) -> Optional[Item]:
+    def on_theft(self, building_id: str) -> Item | None:
         """Hand over the item a steal quest was after, if this is the house it named. The
         item only exists once the chest it was supposed to be in has actually been opened."""
         for quest in self.active_quests:
@@ -325,7 +301,7 @@ class QuestSystem:
             return stolen
         return None
 
-    def on_delivery(self, npc: NPC) -> Optional[Quest]:
+    def on_delivery(self, npc: NPC) -> Quest | None:
         """Hand a parcel over to the person it was for, when the player talks to them. The
         quest itself is still handed in to whoever gave it: the reward is theirs to pay."""
         for quest in self.active_quests:
@@ -342,7 +318,7 @@ class QuestSystem:
             return quest
         return None
 
-    def on_npc_killed(self, npc: NPC) -> Optional[Item]:
+    def on_npc_killed(self, npc: NPC) -> Item | None:
         """Drop the stolen item this NPC was carrying, if they're the thief of an active quest."""
         for quest in self.active_quests:
             if quest.quest_type == "recover_stolen" and quest.thief_npc_name == npc.name and quest.item is None:
@@ -408,7 +384,7 @@ class QuestSystem:
         )
         return (common, uncommon, max(0.0, rare - shift), epic, legendary + shift)
 
-    def _reward_item(self, quest: Quest, npc: NPC) -> Optional[Item]:
+    def _reward_item(self, quest: Quest, npc: NPC) -> Item | None:
         """The gear a finished quest hands over: the thing the NPC named, or a rolled piece
         of it for the quest types that always pay in more than coins (`Quests.ALWAYS_ITEM_TYPES`),
         since emptying a camp or killing a boss is the run's work rather than an errand."""
@@ -469,3 +445,19 @@ class QuestSystem:
 
         if self.on_complete is not None:
             self.on_complete()
+
+
+# Every quest type and the method that builds one, which is what
+# `create_quest_from_analysis` dispatches on: adding a type means one builder above and one
+# row here. A type the model invents falls back to fetch, the only one that needs nothing
+# from the world but a name.
+_QUEST_BUILDERS = {
+    "fetch": QuestSystem._build_fetch,
+    "kill_mob": QuestSystem._build_kill_mob,
+    "loot_mob": QuestSystem._build_loot_mob,
+    "recover_stolen": QuestSystem._build_recover_stolen,
+    "slay_boss": QuestSystem._build_slay_boss,
+    "clear_camp": QuestSystem._build_clear_camp,
+    "steal": QuestSystem._build_steal,
+    "deliver": QuestSystem._build_deliver,
+}

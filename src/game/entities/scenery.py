@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Iterable, Sequence
 from functools import lru_cache
-from typing import TYPE_CHECKING, Iterable, List, Sequence, Tuple
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -29,7 +30,7 @@ class Scenery:
         x: float,
         y: float,
         kind: str,
-        chunk: Tuple[int, int],
+        chunk: tuple[int, int],
         size: float = 0.0,
         biome: str = "plain",
         angle: float = 0.0,
@@ -206,9 +207,9 @@ class Scenery:
     def draw(self, screen: pygame.Surface, camera: Camera):
         sx, sy = camera.world_to_screen(self.x, self.y)
         center = (round(sx), round(sy))
-        drawer = getattr(self, f"_draw_{self.kind}", None)
+        drawer = _DRAWERS.get(self.kind)
         if drawer is not None:
-            drawer(screen, center)
+            drawer(self, screen, center)
 
     def _draw_path(self, screen, center):
         pygame.draw.circle(screen, c.Scenery.ROAD_COLOR, center, round(self.size))
@@ -271,12 +272,6 @@ class Scenery:
         for side in (-half_wid, half_wid):
             pygame.draw.line(screen, c.Scenery.BRIDGE_RAIL_COLOR, point(-half_len, side), point(half_len, side), 4)
 
-    def _draw_grass(self, screen, center):
-        self._draw_blades(screen, center)
-
-    def _draw_reeds(self, screen, center):
-        self._draw_blades(screen, center)
-
     def _draw_blades(self, screen, center):
         cx, cy = center
         for ox, height, lean, color in self._shape["blades"]:
@@ -312,12 +307,6 @@ class Scenery:
         highlight = [(cx + px * 0.45 - 4, cy + py * 0.45 - 5) for px, py in self._shape["points"]]
         pygame.draw.polygon(screen, tuple(min(255, round(v * 1.16)) for v in self._shape["color"]), highlight)
 
-    def _draw_tree(self, screen, center):
-        self._draw_canopy(screen, center)
-
-    def _draw_pine(self, screen, center):
-        self._draw_canopy(screen, center)
-
     def _draw_canopy(self, screen, center):
         cx, cy = center
         radius = self._shape["radius"]
@@ -329,12 +318,36 @@ class Scenery:
             pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
 
 
-def _pick(weights: Sequence[Tuple[str, int]], rng: random.Random) -> str:
+# What draws each kind of scenery. An explicit table rather than a name looked up off the
+# kind, so a search for "_draw_boulder" finds both where it is written and where it is
+# used, and a kind with nothing to draw is simply absent. Grass and reeds are the same
+# blades, a tree and a pine the same canopy: only the shape rolled for them differs.
+_DRAWERS = {
+    "path": Scenery._draw_path,
+    "patch": Scenery._draw_patch,
+    "pond": Scenery._draw_pond,
+    "lake": Scenery._draw_lake,
+    "river": Scenery._draw_river,
+    "river_body": Scenery._draw_river_body,
+    "river_deep": Scenery._draw_river_deep,
+    "bridge": Scenery._draw_bridge,
+    "grass": Scenery._draw_blades,
+    "reeds": Scenery._draw_blades,
+    "flowers": Scenery._draw_flowers,
+    "pebbles": Scenery._draw_pebbles,
+    "stump": Scenery._draw_stump,
+    "boulder": Scenery._draw_boulder,
+    "tree": Scenery._draw_canopy,
+    "pine": Scenery._draw_canopy,
+}
+
+
+def _pick(weights: Sequence[tuple[str, int]], rng: random.Random) -> str:
     names, values = zip(*weights)
     return rng.choices(names, weights=values)[0]
 
 
-def road_points_for_chunk(cx: int, cy: int) -> List[Tuple[float, float, float]]:
+def road_points_for_chunk(cx: int, cy: int) -> list[tuple[float, float, float]]:
     """The packed earth of every road crossing this chunk, as (x, y, width) blobs.
 
     Each village site is joined to its nearest neighbour, both sites being pure functions
@@ -353,7 +366,7 @@ def road_points_for_chunk(cx: int, cy: int) -> List[Tuple[float, float, float]]:
 
     size = c.World.CHUNK_SIZE
     bounds = pygame.Rect(cx * size, cy * size, size, size).inflate(c.Scenery.ROAD_WOBBLE * 2, c.Scenery.ROAD_WOBBLE * 2)
-    points: List[Tuple[float, float, float]] = []
+    points: list[tuple[float, float, float]] = []
     for start, end in edges:
         length = math.dist(start, end)
         if length < 1:
@@ -384,10 +397,10 @@ def road_points_for_chunk(cx: int, cy: int) -> List[Tuple[float, float, float]]:
     return points
 
 
-Blobs = List[Tuple[float, float, float]]
+Blobs = list[tuple[float, float, float]]
 
 
-def river_points_for_chunk(cx: int, cy: int) -> Tuple[Blobs, Blobs]:
+def river_points_for_chunk(cx: int, cy: int) -> tuple[Blobs, Blobs]:
     """The stretch of every river crossing this chunk, as (water blobs, bridge decks).
 
     Rivers run on lanes: a fixed multiple of the chunk grid, each lane a pure function of
@@ -404,8 +417,8 @@ def river_points_for_chunk(cx: int, cy: int) -> Tuple[Blobs, Blobs]:
     reach = c.Scenery.RIVER_WOBBLE + max(c.Scenery.RIVER_WIDTH)
     sites = sites_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS)
 
-    water: List[Tuple[float, float, float]] = []
-    bridges: List[Tuple[float, float, float]] = []
+    water: list[tuple[float, float, float]] = []
+    bridges: list[tuple[float, float, float]] = []
     for axis in (0, 1):  # 0: the river runs north-south, 1: east-west
         # The chunk's extent along the river's own direction, snapped to a global step grid
         # so both sides of a chunk border sample the very same points.
@@ -447,7 +460,7 @@ def river_points_for_chunk(cx: int, cy: int) -> Tuple[Blobs, Blobs]:
     return water, bridges
 
 
-def _dodge_villages(x: float, y: float, axis: int, sites: Sequence[Tuple[int, int]]) -> Tuple[float, float]:
+def _dodge_villages(x: float, y: float, axis: int, sites: Sequence[tuple[int, int]]) -> tuple[float, float]:
     """Push a point of river out of any settlement it would run through, sideways.
 
     A river that stops at the village wall and starts again past it reads as two rivers;
@@ -469,7 +482,7 @@ def _dodge_villages(x: float, y: float, axis: int, sites: Sequence[Tuple[int, in
     return x, y
 
 
-def _road_crossings(roads, river, bridges) -> List[Tuple[float, float, float]]:
+def _road_crossings(roads, river, bridges) -> list[tuple[float, float, float]]:
     """A bridge wherever a road runs into a river, one per crossing.
 
     A road that stops at the bank and picks up on the far side is a road nobody built, so
@@ -477,7 +490,7 @@ def _road_crossings(roads, river, bridges) -> List[Tuple[float, float, float]]:
     cover is left alone."""
     if not roads or not river:
         return []
-    found: List[Tuple[float, float, float]] = []
+    found: list[tuple[float, float, float]] = []
     taken = list(bridges)
     for i, (rx, ry, _) in enumerate(roads):
         wet = min(river, key=lambda blob: math.hypot(rx - blob[0], ry - blob[1]))
@@ -509,7 +522,7 @@ def _road_heading(roads, i: int) -> float | None:
 
 
 @lru_cache(maxsize=256)
-def _chunk_terrain(cx: int, cy: int) -> Tuple[tuple, tuple, tuple]:
+def _chunk_terrain(cx: int, cy: int) -> tuple[tuple, tuple, tuple]:
     """One chunk's roads, river and crossings, as (road blobs, water blobs, bridges).
 
     Kept because a chunk needs its neighbours' bridges as well as its own: nothing solid
@@ -530,7 +543,7 @@ def generate_chunk_scenery(
     buildings: Iterable,
     villages: Iterable,
     pois: Iterable,
-) -> List[Scenery]:
+) -> list[Scenery]:
     """Everything growing or lying in one chunk, rolled from its coordinates alone.
 
     The chunk picks a single biome first, which is what makes a wood a wood: scattering
@@ -612,10 +625,7 @@ def generate_chunk_scenery(
         for zx, zy, radius in open_zones:
             if math.hypot(x - zx, y - zy) < radius:
                 return False
-        for rx, ry, width in roads:
-            if math.hypot(x - rx, y - ry) < width + c.Scenery.ROAD_CLEARANCE:
-                return False
-        return True
+        return all(math.hypot(x - rx, y - ry) >= width + c.Scenery.ROAD_CLEARANCE for rx, ry, width in roads)
 
     for kind, clusters, members, spread in c.Scenery.BIOMES[biome]:
         solid = kind in c.Scenery.BLOCK_RADIUS

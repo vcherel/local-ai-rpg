@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 import uuid
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -17,10 +17,10 @@ if TYPE_CHECKING:
 
 # The world's buildings, registered so systems without a World reference
 # (e.g. quest item placement) can avoid dropping things inside a footprint.
-_active_buildings: List["Building"] = []
+_active_buildings: list[Building] = []
 
 
-def set_active_buildings(buildings: List["Building"]):
+def set_active_buildings(buildings: list[Building]):
     global _active_buildings
     _active_buildings = buildings
 
@@ -49,6 +49,54 @@ def draw_label(screen: pygame.Surface, text: str, center: tuple):
 # still an axis-aligned rect: what turns is the facade, so a street can face the plaza from
 # both sides instead of every house in the world opening south.
 FACING_NORMALS = {"S": (0, 1), "N": (0, -1), "E": (1, 0), "W": (-1, 0)}
+
+
+class _RoomSpace:
+    """The room a `Building.interior_layout` is laid out in, and what has been put in it.
+
+    Everything is in the canonical room whose door is in the bottom wall; `Building._place`
+    turns it onto the wall the door is actually in afterwards. Furniture is added through
+    `add` so it keeps its placement order, which is what `broken_props` indexes."""
+
+    def __init__(self, rng: random.Random, floor: pygame.Rect, door_path: pygame.Rect):
+        self.rng = rng
+        self.floor = floor
+        # Kept clear of furniture, so the way in from the door is never walled off.
+        self.door_path = door_path
+        self.solids: list = []
+        self.beds: list[pygame.Rect] = []
+        self.crates: list[pygame.Rect] = []
+        self.chest: pygame.Rect | None = None
+
+    def add(self, rect: pygame.Rect, kind: str):
+        self.solids.append((rect, kind))
+
+    def fits(self, rect: pygame.Rect) -> bool:
+        if not self.floor.contains(rect) or rect.colliderect(self.door_path):
+            return False
+        return all(not rect.colliderect(other.inflate(40, 40)) for other, _ in self.solids)
+
+    def try_place(self, w: int, h: int) -> pygame.Rect | None:
+        """A free spot for a piece this size, or None once fifty tries have failed."""
+        for _ in range(50):
+            rect = pygame.Rect(
+                self.rng.randint(self.floor.left + 10, self.floor.right - 10 - w),
+                self.rng.randint(self.floor.top + 10, self.floor.bottom - 10 - h),
+                w,
+                h,
+            )
+            if self.fits(rect):
+                return rect
+        return None
+
+    def add_crates(self, count: int):
+        """Crates are always placed so their indices stay the same across saves; the broken
+        ones are dropped from the collision set later but keep their place in the list."""
+        for _ in range(count):
+            crate = self.try_place(40, 40)
+            if crate:
+                self.add(crate, "crate")
+                self.crates.append(crate)
 
 
 class Building:
@@ -83,7 +131,7 @@ class Building:
         self.door_hp = c.Buildings.DOOR_HP
         # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
         # persisted: it lives only for the current play session, same as indoor monsters.
-        self.dropped_items: List["Item"] = []
+        self.dropped_items: list[Item] = []
         self._layout = None
         self._ruin = None
         # How this one is built (roof material and form, wall tint, extras). Rolled from
@@ -128,7 +176,7 @@ class Building:
             slot.center = (round(self.x + offset), band.centery)
         return slot
 
-    def door_zone(self) -> Optional[pygame.Rect]:
+    def door_zone(self) -> pygame.Rect | None:
         """Trigger area straddling the front wall; walking into it enters the building."""
         if not self.has_door:
             return None
@@ -179,7 +227,7 @@ class Building:
         self.door_broken = True
         return True
 
-    def window_rects(self) -> List[pygame.Rect]:
+    def window_rects(self) -> list[pygame.Rect]:
         """Two windows flanking the door on the front facade, in world coordinates.
         The landmark has no facade at all, so it gets none."""
         if not self.has_door:
@@ -189,7 +237,7 @@ class Building:
         offset = c.Buildings.DOOR_WIDTH / 2 + c.Buildings.WINDOW_X_FROM_DOOR + long_side / 2
         return [self._facade_slot(long_side, depth, side * offset, inset) for side in (-1, 1)]
 
-    def _wall_segments(self) -> List[pygame.Rect]:
+    def _wall_segments(self) -> list[pygame.Rect]:
         """The building's solid shell as a few thin rects, with a permanent door-sized
         gap cut from the front wall. The landmark ruin has no door, so its whole
         footprint stays one solid block."""
@@ -307,90 +355,23 @@ class Building:
         room = self.interior_rect()
         # The same room seen with the door at the bottom: a facade on the long side swaps
         # the two dimensions.
-        floor = pygame.Rect(room.left, room.top, room.width, room.height)
+        floor = room.copy()
         if self.facing in ("E", "W"):
             floor.size = (room.height, room.width)
-        solids: list = []
-        beds: List[pygame.Rect] = []
-        crates: List[pygame.Rect] = []
-        chest = None
 
         # Keep a corridor from the door to the middle of the room clear of furniture.
         corridor_w = c.Buildings.DOOR_WIDTH + 40
         door_path = pygame.Rect(
             round(floor.centerx - corridor_w / 2), floor.centery, corridor_w, floor.bottom - floor.centery
         )
-
-        def fits(rect: pygame.Rect) -> bool:
-            if not floor.contains(rect) or rect.colliderect(door_path):
-                return False
-            return all(not rect.colliderect(other.inflate(40, 40)) for other, _ in solids)
-
-        def try_place(w, h) -> Optional[pygame.Rect]:
-            for _ in range(50):
-                rect = pygame.Rect(
-                    rng.randint(floor.left + 10, floor.right - 10 - w),
-                    rng.randint(floor.top + 10, floor.bottom - 10 - h),
-                    w,
-                    h,
-                )
-                if fits(rect):
-                    return rect
-            return None
+        space = _RoomSpace(rng, floor, door_path)
 
         if self.kind == "house":
-            bed_left = rng.random() < 0.5
-            bed_x = floor.left + 20 if bed_left else floor.right - 90
-            # The household's own bed, which the player can sleep in for nothing at all,
-            # provided nobody outside sees them do it (Game._sleep_in_bed).
-            house_bed = pygame.Rect(bed_x, floor.top + 15, 70, 100)
-            solids.append((house_bed, "bed"))
-            beds.append(house_bed)
-            solids.append((pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf"))
-            chest_x = floor.right - 55 if bed_left else floor.left + 20
-            chest = pygame.Rect(chest_x, floor.bottom - 70, 40, 32)
-            solids.append((chest, "chest"))
-            table = try_place(80, 60)
-            if table:
-                solids.append((table, "table"))
-                for chair_x in (table.left - 30, table.right + 8):
-                    chair = pygame.Rect(chair_x, table.centery - 13, 26, 26)
-                    if floor.contains(chair) and not chair.colliderect(door_path):
-                        solids.append((chair, "chair"))
-
+            self._lay_out_house(space)
         elif self.kind == "shop":
-            counter = pygame.Rect(round(floor.centerx - 85), floor.top + 90, 170, 32)
-            solids.append((counter, "counter"))
-            solids.append((pygame.Rect(floor.left + 25, floor.top + 6, 100, 22), "shelf"))
-            solids.append((pygame.Rect(floor.right - 125, floor.top + 6, 100, 22), "shelf"))
-            for _ in range(3):
-                crate = try_place(40, 40)
-                if crate:
-                    # Always placed (so positions stay deterministic across saves); broken
-                    # ones are dropped from the collision set below but keep their index.
-                    solids.append((crate, "crate"))
-                    crates.append(crate)
-
+            self._lay_out_shop(space)
         elif self.kind == "tavern":
-            nb_beds = rng.randint(3, 4)
-            bed_w, bed_h = 60, 95
-            span = floor.width - 80 - bed_w
-            for i in range(nb_beds):
-                bed = pygame.Rect(floor.left + 40 + round(span * i / (nb_beds - 1)), floor.top + 15, bed_w, bed_h)
-                solids.append((bed, "bed"))
-                beds.append(bed)
-            solids.append((pygame.Rect(floor.right - 190, floor.bottom - 80, 170, 32), "counter"))
-            for _ in range(2):
-                table = try_place(80, 60)
-                if table:
-                    solids.append((table, "table"))
-            for _ in range(2):
-                crate = try_place(40, 40)
-                if crate:
-                    # Same deal as the shop: always placed for deterministic indices, dropped
-                    # from the collision set once broken (see the broken-crate filter below).
-                    solids.append((crate, "crate"))
-                    crates.append(crate)
+            self._lay_out_tavern(space)
 
         rug = pygame.Rect(0, 0, 130, 80)
         rug.center = (round(floor.centerx), round(floor.centery - 25))
@@ -398,24 +379,71 @@ class Building:
         # Everything in the room that can be taken apart, in placement order: that order is
         # what `broken_props` indexes, so it has to be built before anything is dropped for
         # having been smashed already.
-        props = [(rect, kind) for rect, kind in solids if kind in c.Buildings.FURNITURE_HP]
+        props = [(rect, kind) for rect, kind in space.solids if kind in c.Buildings.FURNITURE_HP]
         broken = {id(props[i][0]) for i in self.broken_props if i < len(props)}
         # Wreckage no longer blocks movement, but stays in `props` so its debris still draws
         # and its index keeps matching the saved broken set.
-        solids = [(rect, kind) for rect, kind in solids if id(rect) not in broken]
+        solids = [(rect, kind) for rect, kind in space.solids if id(rect) not in broken]
 
         def place(rect: pygame.Rect) -> pygame.Rect:
             return self._place(rect, floor, room)
 
         self._layout = {
             "solids": [(place(rect), kind) for rect, kind in solids],
-            "beds": [place(bed) for bed in beds],
-            "crates": [place(crate) for crate in crates],
+            "beds": [place(bed) for bed in space.beds],
+            "crates": [place(crate) for crate in space.crates],
             "props": [(place(rect), kind) for rect, kind in props],
-            "chest": place(chest) if chest is not None else None,
+            "chest": place(space.chest) if space.chest is not None else None,
             "rug": place(rug),
         }
         return self._layout
+
+    @staticmethod
+    def _lay_out_house(space: _RoomSpace):
+        floor = space.floor
+        bed_left = space.rng.random() < 0.5
+        bed_x = floor.left + 20 if bed_left else floor.right - 90
+        # The household's own bed, which the player can sleep in for nothing at all,
+        # provided nobody outside sees them do it (Game._sleep_in_bed).
+        house_bed = pygame.Rect(bed_x, floor.top + 15, 70, 100)
+        space.add(house_bed, "bed")
+        space.beds.append(house_bed)
+        space.add(pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf")
+        chest_x = floor.right - 55 if bed_left else floor.left + 20
+        space.chest = pygame.Rect(chest_x, floor.bottom - 70, 40, 32)
+        space.add(space.chest, "chest")
+        table = space.try_place(80, 60)
+        if table:
+            space.add(table, "table")
+            for chair_x in (table.left - 30, table.right + 8):
+                chair = pygame.Rect(chair_x, table.centery - 13, 26, 26)
+                if floor.contains(chair) and not chair.colliderect(space.door_path):
+                    space.add(chair, "chair")
+
+    @staticmethod
+    def _lay_out_shop(space: _RoomSpace):
+        floor = space.floor
+        space.add(pygame.Rect(round(floor.centerx - 85), floor.top + 90, 170, 32), "counter")
+        space.add(pygame.Rect(floor.left + 25, floor.top + 6, 100, 22), "shelf")
+        space.add(pygame.Rect(floor.right - 125, floor.top + 6, 100, 22), "shelf")
+        space.add_crates(3)
+
+    @staticmethod
+    def _lay_out_tavern(space: _RoomSpace):
+        floor = space.floor
+        nb_beds = space.rng.randint(3, 4)
+        bed_w, bed_h = 60, 95
+        span = floor.width - 80 - bed_w
+        for i in range(nb_beds):
+            bed = pygame.Rect(floor.left + 40 + round(span * i / max(1, nb_beds - 1)), floor.top + 15, bed_w, bed_h)
+            space.add(bed, "bed")
+            space.beds.append(bed)
+        space.add(pygame.Rect(floor.right - 190, floor.bottom - 80, 170, 32), "counter")
+        for _ in range(2):
+            table = space.try_place(80, 60)
+            if table:
+                space.add(table, "table")
+        space.add_crates(2)
 
     def prop_key(self, index: int) -> str:
         """Identity of one piece of furniture for `core.damage_fx`. A table is an index into
@@ -423,7 +451,7 @@ class Building:
         remembers recent blows needs a string to hang them on."""
         return f"{self.id}:prop:{index}"
 
-    def damage_prop_at(self, pos, hit_radius, damage: int) -> Optional[tuple]:
+    def damage_prop_at(self, pos, hit_radius, damage: int) -> tuple | None:
         """Land a blow on the nearest intact piece of furniture a swing reaches.
 
         Returns (index, rect, kind, destroyed), or None if the swing reached nothing. Every
@@ -624,7 +652,7 @@ class Building:
                     wx, wy = camera.world_to_screen(window.left, window.top)
                     frame = pygame.Rect(round(wx), round(wy), window.width, window.height)
                     # Flanking the opening along the wall, whichever way the wall runs.
-                    for shift in (-8, frame.width if frame.width > frame.height else frame.height):
+                    for shift in (-8, max(frame.width, frame.height)):
                         shutter = (
                             pygame.Rect(frame.left + shift, frame.top, 8, frame.height)
                             if frame.width > frame.height

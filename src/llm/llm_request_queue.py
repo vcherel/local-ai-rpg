@@ -115,7 +115,7 @@ class LLMRequestQueue:
                 continue
 
     def generate_response(
-        self, prompt: str, system_prompt: str, category: str, max_tokens: int = None, raw: bool = False
+        self, prompt: str, system_prompt: str, category: str, max_tokens: int | None = None, raw: bool = False
     ) -> str:
         result_queue = Queue()
 
@@ -131,7 +131,13 @@ class LLMRequestQueue:
         return result
 
     def generate_response_stream(
-        self, prompt: str, system_prompt: str, category: str, max_tokens: int = None, stop: list = None, poll=False
+        self,
+        prompt: str,
+        system_prompt: str,
+        category: str,
+        max_tokens: int | None = None,
+        stop: list | None = None,
+        poll=False,
     ):
         result_queue = Queue()
         stream_queue = Queue()
@@ -142,7 +148,6 @@ class LLMRequestQueue:
             ):
                 stream_queue.put(("chunk", partial))
             stream_queue.put(("done", None))
-            return None
 
         task_id = self._register_task(category)
         self._submit({"func": request_func, "result_queue": result_queue, "task_id": task_id}, category)
@@ -268,7 +273,7 @@ def generate_response_stream_internal(prompt, system_prompt, category, max_token
         temperature=c.Hyperparameters.TEMPERATURE,
         repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
         stream=True,
-        stop=["<|im_end|>", "<|im_start|>"] + list(stop or []),
+        stop=["<|im_end|>", "<|im_start|>", *list(stop or [])],
     )
 
     accumulated_text = ""

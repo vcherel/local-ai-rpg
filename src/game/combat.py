@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -25,7 +25,6 @@ from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
-from game.entities.projectile import ARROW_COLOR, BOLT_COLOR, Projectile
 from game.loot import break_crate, loot_villager, open_poi_cache
 
 if TYPE_CHECKING:
@@ -52,8 +51,6 @@ class WorldCombat:
 
         `ranged` selects the ranged weapon slot (right click) instead of the melee one (left
         click), so a bow/staff and a melee weapon can be carried and used independently."""
-        blocked = self.blocked
-
         if ranged:
             weapon = player.equipped_item("ranged_weapon")
             if weapon is None:
@@ -97,23 +94,17 @@ class WorldCombat:
         else:
             get_swings().spawn(origin[0], origin[1], player.orientation, reach, arch.arc_deg, arch.cleave)
 
+        if self._swing_at_bodies(player, quest_system, arch, origin, pos, hit_radius, base_damage):
+            return
+        self._swing_at_scenery(player, quest_system, arch, pos, hit_radius, base_damage)
+
+    def _swing_at_bodies(self, player, quest_system, arch, origin, pos, hit_radius, base_damage) -> bool:
+        """Land the swing on whatever living thing it covers. Returns whether it hit anything,
+        which is what decides between a fight and a swing into the furniture."""
+        blocked = self.blocked
         # A thrust's share per target: the first body on the shaft takes it all and every
         # one behind it a little less, filled in as each group is found.
         lane_share: dict = {}
-
-        def in_reach(entities, size_of):
-            return self._targets_in_reach(
-                entities,
-                pos,
-                hit_radius,
-                size_of,
-                arch.cleave,
-                origin,
-                arch.min_hit_distance,
-                player.orientation,
-                arch.arc_deg,
-                arch.pierce_melee,
-            )
 
         def falloff(target):
             """What this particular target takes of the swing. Full damage for anything the
@@ -145,25 +136,36 @@ class WorldCombat:
         # street must not land on a bystander and start a brawl. The swing goes to the
         # first group with anything in reach.
         #
-        # A cleaving weapon then carries on through the hostile groups under that one: a
-        # sweep that catches a goblin and the villager swinging beside it hits both, since a
-        # wide blade does not stop at a species. It never reaches the peaceful groups, so
-        # hunting a rabbit in a crowded street still cannot start a brawl.
-        hostile_groups = 4
+        # A cleaving weapon then carries on through the groups still marked hostile: a sweep
+        # that catches a goblin and the villager swinging beside it hits both, since a wide
+        # blade does not stop at a species. It never reaches the peaceful groups, so hunting
+        # a rabbit in a crowded street still cannot start a brawl. That flag is the whole of
+        # what a cleave carries into, so reordering the table can never quietly widen it.
+        groups = (
+            (self.bosses, lambda e: e.kind.size, strike_boss, True),
+            (self.monsters, lambda e: e.kind.size, strike_monster, True),
+            ([cr for cr in self.critters if cr.hostile], lambda e: e.hit_radius * 2, strike_critter, True),
+            ([npc for npc in self.npcs if npc.hostile], lambda e: c.Entities.NPC_SIZE, strike_npc, True),
+            (self.critters, lambda e: e.hit_radius * 2, strike_critter, False),
+            (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc, False),
+        )
+        carries_on = arch.cleave or arch.pierce_melee
         engaged = False
-        for index, (group, size_of, strike) in enumerate(
-            (
-                (self.bosses, lambda e: e.kind.size, strike_boss),
-                (self.monsters, lambda e: e.kind.size, strike_monster),
-                ([cr for cr in self.critters if cr.hostile], lambda e: e.hit_radius * 2, strike_critter),
-                ([npc for npc in self.npcs if npc.hostile], lambda e: c.Entities.NPC_SIZE, strike_npc),
-                (self.critters, lambda e: e.hit_radius * 2, strike_critter),
-                (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc),
-            )
-        ):
-            if engaged and not ((arch.cleave or arch.pierce_melee) and index < hostile_groups):
+        for group, size_of, strike, hostile in groups:
+            if engaged and not (carries_on and hostile):
                 break
-            targets = in_reach(group, size_of)
+            targets = self._targets_in_reach(
+                group,
+                pos,
+                hit_radius,
+                size_of,
+                arch.cleave,
+                origin,
+                arch.min_hit_distance,
+                player.orientation,
+                arch.arc_deg,
+                arch.pierce_melee,
+            )
             if not targets:
                 continue
             if arch.pierce_melee:
@@ -173,13 +175,13 @@ class WorldCombat:
             engaged = True
             for target in targets:
                 strike(target)
-        if engaged:
-            return
+        return engaged
 
-        # Nothing living in range: the swing goes into the scenery. Props take the weapon's
-        # damage rather than breaking on contact, so a heavy hammer clears a barrel in one
-        # blow and a dagger has to work at it.
-        prop_damage = max(1, int(round(base_damage * arch.damage_mult)))
+    def _swing_at_scenery(self, player, quest_system, arch, pos, hit_radius, base_damage):
+        """Nothing living in range: the swing goes into the scenery. Props take the weapon's
+        damage rather than breaking on contact, so a heavy hammer clears a barrel in one blow
+        and a dagger has to work at it."""
+        prop_damage = max(1, round(base_damage * arch.damage_mult))
         blow = player.orientation
 
         for building in self.buildings_in_range(*pos, c.World.CHUNK_SIZE):
@@ -442,67 +444,6 @@ class WorldCombat:
             shape="shard",
         )
 
-    def _fire_ranged(self, player: Player, arch: c.WeaponArchetype):
-        now = pygame.time.get_ticks()
-        if now < player.attack_ready_ms:
-            return
-        # A boomerang is thrown, not fired: there is only ever one of them in the air, and
-        # waiting for it to come home is what it costs instead of ammo.
-        if arch.projectile_style == "boomerang" and any(
-            proj.style == "boomerang" and proj.owner_id == id(player) for proj in self.projectiles
-        ):
-            return
-        if arch.uses_ammo:
-            # `Player.ready_ammo` is the quiver in the ammo slot, or the cheapest carried
-            # once that one is empty, and it is what the HUD counts too, so the number on
-            # screen is always the stack the next shot spends.
-            ammo = player.ready_ammo()
-            if ammo is None:
-                return
-            ammo.quantity -= 1
-            if ammo.quantity <= 0:
-                player.unequip_if_equipped(ammo)
-                player.inventory.remove(ammo)
-
-        player.attack_ready_ms = now + arch.cooldown_ms
-        player.attack_swing_mult = arch.swing_mult
-        player.start_attack_anim("left")
-        play_sound("shoot")
-
-        base_damage = (
-            c.Player.ATTACK_DAMAGE + player.weapon_bonus(ranged=True) + player.stats.attack_bonus()
-        ) * player.damage_multiplier()
-        # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
-        # Rampage forces every Nth shot to crit and amplifies it further.
-        rampage = player.rampage_trigger(ranged=True)
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(ranged=True), rampage=rampage)
-        crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
-        rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
-        style = arch.projectile_style
-        color = c.STAFF_BOLT_COLORS[arch.element] if style == "bolt" else ARROW_COLOR
-        if style == "boomerang":
-            color = c.Boomerang.COLOR
-        proj = Projectile(
-            player.x,
-            player.y,
-            player.orientation,
-            damage,
-            style=style,
-            color=color,
-            knockback=arch.knockback,
-            shake=arch.shake + crit_shake + rampage_shake,
-            owner_id=id(player),
-            max_range=c.Boomerang.OUT_RANGE if style == "boomerang" else None,
-        )
-        # What the shot does beyond damage, carried by the projectile rather than looked up
-        # again when it lands: the weapon that threw it may well have been swapped by then.
-        proj.element = arch.element
-        proj.pierce = player.pierce_count()
-        if style == "boomerang":
-            proj.owner = player
-            proj.pierce += c.Boomerang.PIERCE
-        self.projectiles.append(proj)
-
     def _roll_hit(
         self, base_damage: float, arch: c.WeaponArchetype, crit_bonus: float = 0.0, rampage: bool = False
     ) -> tuple[int, bool]:
@@ -514,7 +455,7 @@ class WorldCombat:
             damage *= c.Combat.CRIT_MULT
         if rampage:
             damage *= c.Affixes.RAMPAGE_BONUS_MULT
-        return max(1, int(round(damage))), crit
+        return max(1, round(damage)), crit
 
     @staticmethod
     def _dir_from(x0, y0, x1, y1):
@@ -939,7 +880,7 @@ class WorldCombat:
     def _resolve_monster_hit(
         self,
         monster: Monster,
-        monster_list: List[Monster],
+        monster_list: list[Monster],
         damage: int,
         player: Player,
         quest_system: QuestSystem,
@@ -1108,7 +1049,9 @@ class WorldCombat:
         player's, and nothing happens to something the hit already killed."""
         if not proj.element or died:
             return
-        if proj.element == "fire" and hasattr(target, "apply_burn"):
+        # Only a monster carries a burn ticker: an NPC and an animal are hit by the bolt
+        # and lit by nothing, which is deliberate rather than an oversight.
+        if proj.element == "fire" and isinstance(target, Monster):
             target.apply_burn(c.Staffs.BURN_DAMAGE)
             get_particles().spawn_burst(target.x, target.y, (255, 150, 60), count=8, speed=4, life=320, size=3)
             return
@@ -1271,208 +1214,7 @@ class WorldCombat:
         color = (255, 210, 90) if crit else c.Colors.WHITE
         get_floating_text().spawn(x, y, text, color, big=crit)
 
-    def fire_monster_shots(self, player: Player, damage_mult: float = 1.0):
-        """Let every ranged monster in range loose an arrow at the player.
-
-        Kept here rather than on `Monster` because the shot is the world's, not the
-        monster's: it goes in the same `projectiles` list the player's arrows do, and
-        it is stopped by the same walls. A shot is aimed where the player stands now,
-        so sidestepping it is a real answer.
-
-        Nothing shoots through a wall: the arrow was always stopped by one, but the archer
-        used to keep loosing into it at a player it had no way of seeing, so breaking line
-        of sight is now a real answer too. Nothing shoots point blank either: an archer with
-        the player on top of it is cornered (Monster.cornered) and has to use its knife."""
-        now = pygame.time.get_ticks()
-        for monster in self.monsters:
-            if not monster.kind.ranged or now < monster.next_shot_ms:
-                continue
-            dx, dy = player.x - monster.x, player.y - monster.y
-            distance = math.hypot(dx, dy)
-            if distance > monster.kind.attack_range or monster.cornered(distance):
-                continue
-            if not self.line_of_sight(monster.x, monster.y, player.x, player.y):
-                continue
-            monster.next_shot_ms = now + monster.kind.shot_cooldown_ms
-            # Monster.start_attack_anim takes a distance and resolves a melee hit from it;
-            # a shot wants the animation only, so it goes to the plain Entity one.
-            Entity.start_attack_anim(monster)
-            play_sound("shoot")
-            style, color = ("bolt", BOLT_COLOR) if monster.kind.name == "Hexer" else ("arrow", ARROW_COLOR)
-            self.projectiles.append(
-                Projectile(
-                    monster.x,
-                    monster.y,
-                    # Projectile angles are measured from straight up, clockwise.
-                    math.atan2(dx, -dy),
-                    round(monster.kind.damage * damage_mult),
-                    style=style,
-                    color=color,
-                    shake=c.Combat.PLAYER_HURT_SHAKE,
-                    hostile=True,
-                    owner_id=id(monster),
-                    source_name=monster.kind.name,
-                    max_range=c.Projectile.MONSTER_RANGE,
-                )
-            )
-
-    def update_projectiles(self, player: Player, quest_system: QuestSystem, dt):
-        for proj in list(self.projectiles):
-            proj.update(dt, self.blocked)
-            if proj.dead:
-                self.projectiles.remove(proj)
-                continue
-
-            # A hostile shot is aimed at the player, but it is an arrow, not a guided one:
-            # anything standing in the way takes it instead. What that hits is nobody's
-            # doing, so it is uncredited (`by_player=False`): no xp, no loot, no quest
-            # progress, and a villager felled by a goblin's stray arrow does not turn the
-            # village on the player who was only walking past.
-            if proj.hostile:
-                if proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
-                    # Passed as the source so a raised shield can catch it: an arrow is
-                    # blocked by where it came from, like any other blow.
-                    player.receive_damage(proj.damage, source=proj)
-                    get_shake().add(proj.shake)
-                    self.projectiles.remove(proj)
-                    continue
-
-            by_player = not proj.hostile
-            if self._projectile_hits_monster(proj, self.monsters, player, quest_system, by_player):
-                continue
-            if self._projectile_hits_monster(proj, self.bosses, player, quest_system, by_player):
-                continue
-            if self._projectile_hits_critter(proj, player, by_player):
-                continue
-            if self._projectile_hits_npc(proj, player, quest_system, by_player):
-                continue
-            self._projectile_hits_keg(proj, player, quest_system)
-
-    @staticmethod
-    def _projectile_target(proj: Projectile, entities, radius_of):
-        """The first thing in `entities` this projectile is touching and has not already
-        struck, or None. `radius_of` is how wide that kind of target is: a monster goes by
-        its sprite size, an animal by its own hit radius."""
-        return next(
-            (
-                entity
-                for entity in entities
-                if id(entity) not in proj.hit_ids
-                and proj.distance_to_point((entity.x, entity.y)) < c.Projectile.SIZE + radius_of(entity)
-            ),
-            None,
-        )
-
-    def _projectile_hits_monster(
-        self, proj: Projectile, targets, player: Player, quest_system: QuestSystem, by_player: bool = True
-    ) -> bool:
-        """Resolve a projectile against one list of monsters or bosses (both take hits the
-        same way). Returns True if it struck something, pierced onward or not.
-
-        `by_player` is False for a monster's own arrow catching another monster: it still
-        dies, but none of the player's affixes fire on a shot they did not loose and none
-        of the reward is theirs."""
-        target = self._projectile_target(proj, targets, lambda t: t.kind.size // 2)
-        if target is None:
-            return False
-
-        if by_player:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-        kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-        died = self._resolve_monster_hit(
-            target,
-            targets,
-            proj.damage,
-            player,
-            quest_system,
-            shake=proj.shake if by_player else 0.0,
-            knockback=proj.knockback,
-            kb_dir=kb_dir,
-            blocked=self.blocked,
-            by_player=by_player,
-        )
-        if by_player:
-            self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
-            self._apply_element(proj, target, targets, player, quest_system, died)
-            self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
-        self._projectile_after_hit(proj, target)
-        return True
-
-    def _projectile_hits_critter(self, proj: Projectile, player: Player, by_player: bool = True) -> bool:
-        """Resolve a projectile against wildlife: an arrow is how most animals get hunted,
-        since they run long before a swing lands. Returns True if it struck one.
-
-        A shot that was not the player's still wounds the animal, but the pack it belongs
-        to has no reason to blame the player for it, so `aggro_pack` is skipped."""
-        critter = self._projectile_target(proj, self.critters, lambda cr: cr.hit_radius)
-        if critter is None:
-            return False
-
-        if by_player:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-            get_shake().add(proj.shake)
-        kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
-        self._pop_damage(critter.x, critter.y - critter.size / 2, proj.damage, False)
-        if critter.receive_damage(proj.damage):
-            self._kill_critter(critter, player, kb_dir, by_player=by_player)
-        else:
-            if by_player:
-                self._apply_element(proj, critter, None, player, None, died=False)
-            self._hit_feedback(critter.x, critter.y, False, kb_dir)
-            self._knockback(critter, critter.size / 2, kb_dir, proj.knockback, self.blocked)
-            critter.startle()
-            if by_player:
-                self.aggro_pack(critter)
-        self._projectile_after_hit(proj, critter)
-        return True
-
-    def _projectile_hits_npc(
-        self, proj: Projectile, player: Player, quest_system: QuestSystem, by_player: bool = True
-    ) -> bool:
-        npc = self._projectile_target(proj, self.npcs, lambda n: c.Entities.NPC_SIZE // 2)
-        if npc is None:
-            return False
-
-        if by_player:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
-        self._resolve_npc_hit(
-            npc,
-            proj.damage,
-            player,
-            quest_system,
-            shake=proj.shake if by_player else 0.0,
-            knockback=proj.knockback,
-            kb_dir=self._dir_from(0, 0, proj.vx, proj.vy),
-            blocked=self.blocked,
-            by_player=by_player,
-        )
-        frac = player.lifesteal_frac(ranged=True) if by_player else 0.0
-        if frac > 0:
-            player.heal(proj.damage * frac)
-        if by_player and npc.hp > 0:
-            self._apply_element(proj, npc, None, player, quest_system, died=False)
-        self._projectile_after_hit(proj, npc)
-        return True
-
-    def _projectile_hits_keg(self, proj: Projectile, player: Player, quest_system: QuestSystem) -> bool:
-        """A shot that reaches a powder keg sets it off. Kegs are the only prop an arrow
-        interacts with, deliberately: shooting one from across a clearing is a way to kill
-        a crowd, where shooting a flower bed would just be loot at no risk."""
-        keg = next(
-            (
-                b
-                for b in self.breakables
-                if b.kind == "powder" and b.distance_to_point((proj.x, proj.y)) < c.Breakables.POWDER_HIT_RADIUS
-            ),
-            None,
-        )
-        if keg is None:
-            return False
-        self.projectiles.remove(proj)
-        self._break_breakable(player, keg, quest_system)
-        return True
-
-    def _tick_burns(self, monster_list: List[Monster], player: Player, quest_system: QuestSystem):
+    def _tick_burns(self, monster_list: list[Monster], player: Player, quest_system: QuestSystem):
         now = pygame.time.get_ticks()
         for monster in list(monster_list):
             if monster.burn_ticks_remaining <= 0 or now < monster.burn_next_ms:
@@ -1485,14 +1227,3 @@ class WorldCombat:
             )
             if monster.receive_damage(monster.burn_damage):
                 self._kill_monster(monster, monster_list, player, quest_system)
-
-    def _projectile_after_hit(self, proj: Projectile, target):
-        """Record the target and either pierce onward (arrow-pierce) or stop the projectile.
-
-        A boomerang that has gone through everything it can carry turns for home instead of
-        stopping: it is thrown rather than fired, and it always comes back."""
-        proj.hit_ids.add(id(target))
-        if proj.pierce > 0:
-            proj.pierce -= 1
-        elif not proj.turn_back():
-            self.projectiles.remove(proj)

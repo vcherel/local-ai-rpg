@@ -256,7 +256,6 @@ class Buildings:
 
     # Buildings keep their distance from each other, the spawn point and the world edge.
     MIN_GAP: int = 350
-    SPAWN_CLEARANCE: int = 700
     EDGE_MARGIN: int = 250
 
     DOOR_WIDTH: int = 70
@@ -285,9 +284,6 @@ class Buildings:
     SLEEP_FADE_MS: int = 1500
     SLEEP_WAKE_PROGRESS: float = 0.02
 
-    # Nothing breaks in one tap: a crate takes a few blows, each one splintering it a
-    # little further, and only the last one spills what's inside.
-    CRATE_HP: int = 22
     # Everything in a room that can be taken apart, and what it costs to do it. A bed and a
     # chest are deliberately absent: both are mechanics (the one full rest in the game, and
     # somebody's savings) rather than props, and a player who smashed either would only have

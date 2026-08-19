@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -46,8 +46,8 @@ class InventoryMenu(BaseMenu):
 
         self.scroll_row = 0
         # The grouped entry under the cursor (not an index: the rows are rebuilt per frame).
-        self.hovered_entry: Optional[dict] = None
-        self.hovered_equip: Optional[str] = None
+        self.hovered_entry: dict | None = None
+        self.hovered_equip: str | None = None
 
     def close(self):
         self.active = False
@@ -178,7 +178,7 @@ class InventoryMenu(BaseMenu):
         width, height = AUTO_EQUIP_SIZE
         return pygame.Rect(self.width - self.padding - width, self.height - self.footer_height + 4, width, height)
 
-    def _entry_at(self, rel_x: int, rel_y: int, rows: list[tuple]) -> Optional[dict]:
+    def _entry_at(self, rel_x: int, rel_y: int, rows: list[tuple]) -> dict | None:
         g = self._grid_geom()
         for row, y in self._visible_rows(rows):
             if row[0] == "header" or not (y <= rel_y < y + self.cell_size):
@@ -190,7 +190,7 @@ class InventoryMenu(BaseMenu):
             return row[1][col] if cell_x <= rel_x < cell_x + self.cell_size else None
         return None
 
-    def _equip_at(self, rel_x: int, rel_y: int) -> Optional[str]:
+    def _equip_at(self, rel_x: int, rel_y: int) -> str | None:
         for item_type, _label, _glyph, rect in self._paperdoll_rects():
             if rect.collidepoint(rel_x, rel_y):
                 return item_type
@@ -424,7 +424,7 @@ class InventoryMenu(BaseMenu):
             text = text[:-1]
         return c.Fonts.small.render(text + "…", True, color)
 
-    def _draw_tooltip(self, item: "Item", mouse_pos, is_equipped):
+    def _draw_tooltip(self, item: Item, mouse_pos, is_equipped):
         if item.item_type == "weapon" and item.bonus > 0:
             text = f"{item.name}  (+{item.bonus} attack)"
         elif item.item_type == "armor" and item.bonus > 0:
@@ -435,9 +435,7 @@ class InventoryMenu(BaseMenu):
         elif item.item_type == "accessory" and item.bonus > 0:
             flavor = ACCESSORY_FLAVOR_LABELS.get(item.accessory_flavor, item.accessory_flavor)
             text = f"{item.name}  (+{item.bonus} {flavor})"
-        elif item.item_type == "ammo":
-            text = f"{item.name}  (x{item.quantity})"
-        elif item.item_type == "potion":
+        elif item.item_type in ("ammo", "potion"):
             text = f"{item.name}  (x{item.quantity})"
         elif item.item_type == "misc":
             text = f"{item.name}  (valuable, sells for ~{base_value(item)}g)"
