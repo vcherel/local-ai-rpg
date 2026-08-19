@@ -1338,6 +1338,9 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             )
             if damage:
                 self._land_monster_blow(monster, target, damage, player, quest_system)
+            # A creeper's fuse has burned out: it leaves the map and takes the ground with it.
+            if monster.fuse_expired():
+                self.detonate_creeper(monster, player, quest_system)
         self.fire_monster_shots(player, damage_mult)
         self.bash_doors(player, damage_mult)
 

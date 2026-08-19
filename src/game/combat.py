@@ -739,36 +739,57 @@ class WorldCombat:
         coins, loot_item = break_crate()
         self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
 
-    def explode(self, x, y, player: Player, quest_system: QuestSystem, depth: int = 0):
+    def explode(
+        self,
+        x,
+        y,
+        player: Player,
+        quest_system: QuestSystem,
+        depth: int = 0,
+        *,
+        radius: float = c.Explosion.RADIUS,
+        damage: int = c.Explosion.DAMAGE,
+        edge_frac: float = c.Explosion.EDGE_DAMAGE_FRAC,
+        knockback: float = c.Explosion.KNOCKBACK,
+        shake: float = c.Explosion.SHAKE,
+        player_mult: float = c.Explosion.PLAYER_DAMAGE_MULT,
+        by_player: bool = True,
+        message: str = "The powder keg goes off!",
+    ):
         """A powder keg going off: the one thing in the world that kills a crowd without a
         swing.
 
-        Everything alive inside `Explosion.RADIUS` takes damage falling off toward the rim,
-        the player included, and any other keg caught in it goes off in turn. That is the
-        whole design: a keg is not loot, it is a piece of ground the player can decide to
-        fight over, and shooting one from across a clearing is a plan rather than a lucky
-        swing. Kills count as the player's, since setting it off is what killed them.
+        Everything alive inside `radius` takes damage falling off toward the rim, the player
+        included, and any keg caught in it goes off in turn. That is the whole design: a keg
+        is not loot, it is a piece of ground the player can decide to fight over, and shooting
+        one from across a clearing is a plan rather than a lucky swing. Kills count as the
+        player's, since setting it off is what killed them.
+
+        The keyword arguments are the same blast pointed at something else: a creeper's fuse
+        burning out (`detonate_creeper`) is this call with its own numbers and `by_player`
+        off, since the player did not light it. Nothing here knows which it is.
 
         `depth` caps a chain so a shipment of kegs cannot recurse without end.
         """
-        get_shake().add(c.Explosion.SHAKE)
+        get_shake().add(shake)
         play_sound("crate_break")
         get_particles().spawn_burst(x, y, (255, 170, 60), count=40, speed=11, life=650, size=7, gravity=0.2)
         get_particles().spawn_burst(x, y, (90, 80, 75), count=22, speed=6, life=900, size=8, gravity=0.05)
+        get_impacts().pulse(x, y, radius, (255, 170, 60))
         get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
-        if self.notify and depth == 0:
-            self.notify("The powder keg goes off!", (255, 170, 60))
+        if self.notify and depth == 0 and message:
+            self.notify(message, (255, 170, 60))
 
         def blast_damage(distance: float) -> int:
-            frac = max(0.0, 1.0 - distance / c.Explosion.RADIUS)
-            scale = c.Explosion.EDGE_DAMAGE_FRAC + (1.0 - c.Explosion.EDGE_DAMAGE_FRAC) * frac
-            return max(1, round(c.Explosion.DAMAGE * scale))
+            frac = max(0.0, 1.0 - distance / radius)
+            scale = edge_frac + (1.0 - edge_frac) * frac
+            return max(1, round(damage * scale))
 
         def caught(entities, radius_of):
             return [
                 (e, math.hypot(e.x - x, e.y - y))
                 for e in list(entities)
-                if math.hypot(e.x - x, e.y - y) < c.Explosion.RADIUS + radius_of(e)
+                if math.hypot(e.x - x, e.y - y) < radius + radius_of(e)
             ]
 
         for group in (self.bosses, self.monsters):
@@ -779,21 +800,23 @@ class WorldCombat:
                     blast_damage(distance),
                     player,
                     quest_system,
-                    knockback=c.Explosion.KNOCKBACK,
+                    knockback=knockback,
                     kb_dir=self._dir_from(x, y, monster.x, monster.y),
                     blocked=self.blocked,
+                    by_player=by_player,
                 )
 
         for critter, distance in caught(self.critters, lambda cr: cr.hit_radius):
-            damage = blast_damage(distance)
+            hurt = blast_damage(distance)
             kb_dir = self._dir_from(x, y, critter.x, critter.y)
-            self._pop_damage(critter.x, critter.y - critter.size / 2, damage, False)
-            if critter.receive_damage(damage):
-                self._kill_critter(critter, player, kb_dir)
+            self._pop_damage(critter.x, critter.y - critter.size / 2, hurt, False)
+            if critter.receive_damage(hurt):
+                self._kill_critter(critter, player, kb_dir, by_player=by_player)
             else:
-                self._knockback(critter, critter.size / 2, kb_dir, c.Explosion.KNOCKBACK, self.blocked)
+                self._knockback(critter, critter.size / 2, kb_dir, knockback, self.blocked)
                 critter.startle()
-                self.aggro_pack(critter)
+                if by_player:
+                    self.aggro_pack(critter)
 
         for npc, distance in caught(self.npcs, lambda n: c.Entities.NPC_SIZE / 2):
             self._resolve_npc_hit(
@@ -801,15 +824,16 @@ class WorldCombat:
                 blast_damage(distance),
                 player,
                 quest_system,
-                knockback=c.Explosion.KNOCKBACK,
+                knockback=knockback,
                 kb_dir=self._dir_from(x, y, npc.x, npc.y),
                 blocked=self.blocked,
+                by_player=by_player,
             )
 
         player_distance = math.hypot(player.x - x, player.y - y)
-        if player_distance < c.Explosion.RADIUS:
+        if player_distance < radius:
             player.receive_damage(
-                round(blast_damage(player_distance) * c.Explosion.PLAYER_DAMAGE_MULT), source="a powder keg"
+                round(blast_damage(player_distance) * player_mult), source=self._blast_source(by_player)
             )
 
         if depth >= 3:
@@ -821,7 +845,42 @@ class WorldCombat:
         ]:
             if keg in self.breakables:
                 self.breakables.remove(keg)
-                self.explode(keg.x, keg.y, player, quest_system, depth + 1)
+                # A keg is still a keg whatever lit it, but the credit follows the hand that
+                # started the chain: nothing a creeper set off pays the player.
+                self.explode(keg.x, keg.y, player, quest_system, depth + 1, by_player=by_player)
+
+    @staticmethod
+    def _blast_source(by_player: bool) -> str:
+        """What the death screen names when a blast is what killed the player. The keg is the
+        player's own doing; the creeper is somebody else's."""
+        return "a powder keg" if by_player else "a creeper"
+
+    def detonate_creeper(self, monster: Monster, player: Player, quest_system: QuestSystem):
+        """A creeper's fuse burning out: it comes off the map and the blast goes off where it
+        stood.
+
+        It is taken out of the list first, so it is not caught in its own explosion and its
+        death is never credited to anyone. Nothing the blast kills pays the player either
+        (`by_player=False`, the bear trap's rule): the reward for a creeper is killing it
+        before the fuse runs out, not standing next to one when it does.
+        """
+        if monster in self.monsters:
+            self.monsters.remove(monster)
+        self._spill_blood(monster.x, monster.y, monster.kind.color)
+        self.explode(
+            monster.x,
+            monster.y,
+            player,
+            quest_system,
+            radius=c.Creeper.RADIUS,
+            damage=c.Creeper.DAMAGE,
+            edge_frac=c.Creeper.EDGE_DAMAGE_FRAC,
+            knockback=c.Creeper.KNOCKBACK,
+            shake=c.Creeper.SHAKE,
+            player_mult=1.0,
+            by_player=False,
+            message="The creeper bursts!",
+        )
 
     def snap_traps(self, player: Player, quest_system: QuestSystem):
         """Whatever has just put a foot in a set bear trap, and what it costs them.
