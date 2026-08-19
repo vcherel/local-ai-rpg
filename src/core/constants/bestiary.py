@@ -28,6 +28,13 @@ class Entities:
     # Nobody chats with a wolf on the doorstep: an NPC in reach refuses to talk while
     # anything hostile is standing this close to the player.
     TALK_SAFE_RADIUS: float = 520.0
+    # How a kind's share of the spawn roll fades once the player walks past the ground it
+    # belongs to: its weight halves every DEPTH_HALF_LIFE beyond its own `min_distance`,
+    # never falling below DEPTH_MIN_WEIGHT_FRAC of what it started at, so a slime is still
+    # possible in the deep wilds but is no longer what the deep wilds are made of. This is
+    # the whole difficulty curve: without it, walking out only added kinds to the roll.
+    DEPTH_HALF_LIFE: float = 1500.0
+    DEPTH_MIN_WEIGHT_FRAC: float = 0.012
     # What a killed villager leaves on the ground (game/loot.py `loot_villager`). Enough
     # that cutting one down is a real choice against losing the village, nowhere near
     # enough to make a street of them worth farming. A merchant carries a merchant's purse.
@@ -152,7 +159,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         5,
         9,
         7,
-        min_distance=600,
+        min_distance=1000,
         weight=7,
         group=(2, 4),
         shape="goblin",
@@ -167,7 +174,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         5,
         10,
         13,
-        min_distance=1400,
+        min_distance=2000,
         weight=6,
         group=(2, 3),
         shape="beast",
@@ -181,7 +188,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         4,
         420,
         11,
-        min_distance=1800,
+        min_distance=2800,
         weight=4,
         ranged=True,
         keep_distance=260,
@@ -198,7 +205,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         3,
         11,
         16,
-        min_distance=2200,
+        min_distance=3600,
         weight=4,
         shape="skeleton",
         weapon="sword",
@@ -212,7 +219,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         4,
         12,
         19,
-        min_distance=2800,
+        min_distance=4500,
         weight=4,
         shape="humanoid",
         weapon="dagger",
@@ -226,14 +233,14 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         6,
         10,
         15,
-        min_distance=3400,
+        min_distance=5400,
         weight=3,
         flank_deg=55,
         shape="wraith",
         eye_color=(200, 160, 255),
     ),
     MonsterKind(
-        "Troll", (60, 90, 55), 34, 95, 3, 14, 29, min_distance=4200, weight=2, shape="hulk", eye_color=(255, 240, 120)
+        "Troll", (60, 90, 55), 34, 95, 3, 14, 29, min_distance=7200, weight=2, shape="hulk", eye_color=(255, 240, 120)
     ),
     MonsterKind(
         "Ogre",
@@ -243,7 +250,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         2,
         16,
         34,
-        min_distance=5200,
+        min_distance=8400,
         weight=2,
         charge=True,
         shape="hulk",
@@ -258,7 +265,7 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         3,
         480,
         17,
-        min_distance=4600,
+        min_distance=6400,
         weight=2,
         ranged=True,
         keep_distance=320,
@@ -442,7 +449,15 @@ class Boss:
     # No more than this many bosses exist at once (the landmark guardian counts).
     MAX_ACTIVE: int = 3
     # Wandering far from the world center can spawn a roaming boss, rolled on this cadence.
-    ROAM_MIN_DISTANCE: int = 3500
+    # Deliberately well past the settled ring: a boss is what the deep wilds hold, not
+    # something met on the walk to the second village.
+    ROAM_MIN_DISTANCE: int = 5500
+    # How wide a band past that a quest's hunt target is placed in.
+    QUEST_SPAWN_BAND: int = 2500
+    # The landmark guardian is the one boss standing on the settled ring from the first
+    # frame, so it gets its own floor: far enough out that finding it is a journey rather
+    # than something walked into on the way out of the starting town.
+    LANDMARK_MIN_DISTANCE: int = 2200
     ROAM_CHECK_INTERVAL_MS: int = 45_000
     ROAM_CHANCE: float = 0.25
     ROAM_SPAWN_MIN_DIST: int = 900

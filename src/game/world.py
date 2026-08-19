@@ -205,8 +205,13 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             set_active_buildings(self.buildings)
             self.breakables = generate_breakables(self.buildings)
             self._populate_npcs(self.buildings)
+            # A new world is stocked to the *near* cap, not the far one. Everything placed
+            # here lands inside the settled ring, which is within despawn range of the
+            # spawn point, so seeding the far cap put the deep wilds' population on the
+            # starting town's doorstep and no amount of capping took it back off again.
+            # The wilds thicken as the player walks out, through the ordinary respawn.
             self.monsters = [
-                self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.ROAMING_CAP_FAR)
+                self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.ROAMING_CAP_NEAR)
             ]
             self._spawn_landmark_boss()
         self._index_buildings()
@@ -761,19 +766,20 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         self.spawn_boss(landmark.x, landmark.y + landmark.h / 2 + 90)
 
     def spawn_boss_for_quest(self) -> Boss:
-        """Spawn a boss out in the dangerous outer ring as a quest hunt target."""
+        """Spawn a boss out in the dangerous outer wilds as a quest hunt target.
+
+        The band starts where roaming bosses start and runs outward from there. The world
+        has no edge, so it is deliberately not clamped to the settled ring: hunting one
+        is meant to be a walk past everything the player already knows.
+        """
         center = c.World.WORLD_SIZE // 2
         x = y = center
         for _ in range(20):
             angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(c.Boss.ROAM_MIN_DISTANCE, c.World.WORLD_SIZE // 2)
+            dist = random.uniform(c.Boss.ROAM_MIN_DISTANCE, c.Boss.ROAM_MIN_DISTANCE + c.Boss.QUEST_SPAWN_BAND)
             x = center + math.cos(angle) * dist
             y = center + math.sin(angle) * dist
-            if (
-                0 <= x <= c.World.WORLD_SIZE
-                and 0 <= y <= c.World.WORLD_SIZE
-                and not self.blocked(x, y, c.MONSTER_MAX_SIZE)
-            ):
+            if not self.blocked(x, y, c.MONSTER_MAX_SIZE):
                 break
         # A boss never despawns, so unlike a monster it can't be left standing in a wall
         # if every roll was blocked: whatever came out of the loop is stepped clear first.
@@ -920,11 +926,12 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         """How many roaming monsters the world holds around the player right now. A ramp
         from the near cap on the starting town's doorstep to the far cap out in the wilds,
         rather than one world-wide number: the early game shouldn't be as crowded as the
-        ground the player reaches an hour later."""
+        ground the player reaches an hour later. The ramp is eased (ROAMING_CAP_CURVE) so
+        the near ground stays near-empty for a good walk rather than filling up at once."""
         center = c.World.WORLD_SIZE // 2
         distance = math.hypot(player.x - center, player.y - center)
         span = max(c.World.ROAMING_CAP_FAR_DISTANCE - c.World.SAFE_RADIUS, 1)
-        ratio = min(max((distance - c.World.SAFE_RADIUS) / span, 0.0), 1.0)
+        ratio = min(max((distance - c.World.SAFE_RADIUS) / span, 0.0), 1.0) ** c.World.ROAMING_CAP_CURVE
         return round(c.World.ROAMING_CAP_NEAR + (c.World.ROAMING_CAP_FAR - c.World.ROAMING_CAP_NEAR) * ratio)
 
     def _spawn_monster_away_from(self, player: Player):
@@ -941,8 +948,18 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             if self._spawn_is_sheltered(x, y):
                 continue
             if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
-                # What crawls out after dark is what lives much deeper in the wilds.
-                bonus = c.DayNight.NIGHT_DANGER_BONUS if self.daynight.is_night else 0
+                # What crawls out after dark is what lives deeper in the wilds, but only
+                # proportionally so: a flat bonus put bandits on the starting town's
+                # doorstep every night, which is the one piece of ground that has to stay
+                # survivable. Out past the settled ring the whole bonus applies.
+                bonus = 0
+                if self.daynight.is_night:
+                    center = c.World.WORLD_SIZE // 2
+                    from_center = math.hypot(x - center, y - center)
+                    bonus = min(
+                        c.DayNight.NIGHT_DANGER_BONUS,
+                        from_center * c.DayNight.NIGHT_DANGER_DISTANCE_FRAC,
+                    )
                 # A pack kind (wolves, goblins) is rolled once and then stood up as a group,
                 # so the wilds hold a few real fights rather than a scatter of single mobs.
                 leader = self._new_monster(x, y, danger_bonus=bonus)

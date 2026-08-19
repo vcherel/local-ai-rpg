@@ -237,14 +237,16 @@ def generate_starting_world() -> Tuple[Village, List[Building]]:
 
 
 def _place_landmark(village: Village, buildings: List[Building]) -> Optional[Building]:
-    """The ancient ruin: somewhere in the settled ring, well clear of the village and of
-    the spawn point, since its guardian shouldn't be waiting on the doorstep."""
+    """The ancient ruin: out on the far side of the settled ring, well clear of the village
+    and a long way from the spawn point, since its guardian is a boss and shouldn't be
+    waiting on the doorstep (Boss.LANDMARK_MIN_DISTANCE, its own floor rather than the
+    ordinary building clearance)."""
     center = c.World.WORLD_SIZE // 2
     margin = c.Buildings.EDGE_MARGIN
-    for _ in range(60):
+    for _ in range(120):
         x = random.randint(margin, c.World.WORLD_SIZE - margin)
         y = random.randint(margin, c.World.WORLD_SIZE - margin)
-        if math.hypot(x - center, y - center) < c.Buildings.SPAWN_CLEARANCE:
+        if math.hypot(x - center, y - center) < c.Boss.LANDMARK_MIN_DISTANCE:
             continue
         if village.distance_to_point((x, y)) < village.radius + c.Buildings.MIN_GAP:
             continue
