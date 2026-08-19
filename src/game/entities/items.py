@@ -71,6 +71,8 @@ ACCESSORY_COLOR = (230, 200, 60)
 LOOTBOX_COLOR = (150, 100, 50)
 AMMO_COLOR = (180, 140, 90)
 VALUABLE_COLOR = (235, 205, 80)
+# A dropped purse, drawn brighter than a valuable so a pile of coins reads as money.
+COIN_COLOR = (255, 215, 60)
 
 ACCESSORY_FLAVORS = ("speed", "regen", "luck", "crit", "lifesteal", "coinfind", "xpgain", "pierce")
 # Legendary-only accessory flavor: a chance to combine coin find and xp gain into one
@@ -368,9 +370,12 @@ def potion_description(item: "Item") -> str:
 
 
 def base_value(item: "Item") -> int:
-    """Base sell/worth value before shop multipliers, used by the shop and inventory tooltip."""
+    """Base sell/worth value before shop multipliers, used by the shop and inventory tooltip.
+
+    Kept low against how much gear the world drops: a bag of salvage is pocket money, and
+    a quest, a cache or a boss is what actually pays."""
     if item.item_type in ("weapon", "armor", "shield", "accessory"):
-        base = max(5, item.bonus * 10)
+        base = max(4, item.bonus * 6)
     elif item.item_type == "ammo":
         base = 2
     elif item.item_type == "potion":
@@ -415,6 +420,10 @@ class Item:
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ACCESSORY_COLOR)
         elif item_type == "lootbox":
             self.color = LOOTBOX_COLOR
+        elif item_type == "coins":
+            # A purse lying on the ground. Never enters the inventory: walking into it
+            # credits the coins, which is what "quantity" holds.
+            self.color = COIN_COLOR
         elif item_type == "ammo":
             self.color = AMMO_COLOR
         elif item_type == "potion":
@@ -431,11 +440,36 @@ class Item:
         # crate, say) and settle into place instead of just appearing.
         self.pop_start_ms = None
         self.pop_from = (0.0, 0.0)
+        # How fast the magnet is currently dragging this item at the player, ramped up by
+        # magnet_toward while they are close and reset the moment they walk out of range.
+        self.magnet_speed = 0.0
 
     def start_pop_anim(self, from_x, from_y):
         """Animate the item hopping out from (from_x, from_y) to its resting spot at (self.x, self.y)."""
         self.pop_start_ms = pygame.time.get_ticks()
         self.pop_from = (from_x - self.x, from_y - self.y)
+
+    def magnet_toward(self, px, py, dt) -> bool:
+        """Drag the item at the player and report whether it has reached them. The caller
+        has already decided the item is in range, so this is only the pull itself: loot is
+        collected by walking near it, and nothing on the ground answers a key any more.
+
+        An item still hopping out of whatever dropped it is left alone until it settles,
+        so a purse reads as falling off the body before it flies at you."""
+        if self.pop_start_ms is not None:
+            return False
+        dx, dy = px - self.x, py - self.y
+        distance = math.hypot(dx, dy)
+        if distance <= c.Player.MAGNET_CATCH:
+            return True
+        self.magnet_speed = min(
+            c.Player.MAGNET_SPEED_MAX,
+            max(self.magnet_speed, c.Player.MAGNET_SPEED_START) + c.Player.MAGNET_ACCEL * dt,
+        )
+        step = min(distance, self.magnet_speed * dt * c.TARGET_FPS / 1000.0)
+        self.x += dx / distance * step
+        self.y += dy / distance * step
+        return distance - step <= c.Player.MAGNET_CATCH
 
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])

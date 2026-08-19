@@ -85,6 +85,14 @@ def roll_shop_stock(count: int) -> list[dict]:
     return stock
 
 
+def roll_reward_item(x, y, rarity: str) -> Item:
+    """A piece of gear for a quest whose NPC promised no item of their own. Public where
+    _roll_loot_item is not, because the harder quest types pay in gear whatever the
+    conversation happened to say.
+    """
+    return _roll_loot_item(x, y, rarity, (10, 20))
+
+
 def open_lootbox(x, y, rarity: str) -> tuple[int, Item | None]:
     """Roll a lootbox's contents: coins plus a chance at a weapon, armor, accessory, ammo or potion.
 

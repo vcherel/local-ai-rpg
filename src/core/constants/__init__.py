@@ -38,7 +38,7 @@ from core.constants.combat import (
     WeaponArchetype,
     weapon_archetype,
 )
-from core.constants.items import Affixes, LootBox, Potions, Rarity, RarityTier
+from core.constants.items import QUEST_COIN_BANDS, Affixes, LootBox, Potions, Quests, Rarity, RarityTier
 from core.constants.player import STAT_LABELS, Affinity, Death, Player, Stats
 from core.constants.ui import TARGET_FPS, Colors, Fonts, Hyperparameters, Minimap, Screen
 from core.constants.world import (
@@ -91,6 +91,8 @@ __all__ = [
     "Player",
     "PointsOfInterest",
     "Potions",
+    "QUEST_COIN_BANDS",
+    "Quests",
     "Projectile",
     "Rarity",
     "RarityTier",

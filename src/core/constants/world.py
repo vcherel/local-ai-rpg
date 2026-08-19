@@ -249,7 +249,7 @@ class Buildings:
     # walkable floor is the footprint inset by this on every side.
     WALL_THICKNESS: int = 16
 
-    TAVERN_SLEEP_COST: int = 15
+    TAVERN_SLEEP_COST: int = 25
     INTERACT_DISTANCE: int = 120
 
     # Sleeping. Nobody climbs into a bed with something hostile this close, and the night
@@ -266,7 +266,7 @@ class Buildings:
     WINDOW_HP: int = 10
     # Smashing a shop crate always yields a few coins and sometimes a common item.
     CRATE_COIN_MIN: int = 1
-    CRATE_COIN_MAX: int = 6
+    CRATE_COIN_MAX: int = 3
     CRATE_ITEM_CHANCE: float = 0.2
 
     # Two windows flank the door on every non-landmark building's front facade;
@@ -741,8 +741,8 @@ class PointsOfInterest:
 
     # A cache is stone and iron banding, not a barrel: it takes real work to open.
     CACHE_HP: int = 45
-    CACHE_COIN_MIN: int = 8
-    CACHE_COIN_MAX: int = 22
+    CACHE_COIN_MIN: int = 6
+    CACHE_COIN_MAX: int = 16
     CACHE_ITEM_CHANCE: float = 0.5
 
     # Which kind of camp this one is, rolled from its id so it never changes under the

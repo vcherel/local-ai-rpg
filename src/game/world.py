@@ -818,14 +818,6 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         in_reach = [npc for npc in self.npcs if npc.distance_to_point(pos) < reach]
         return min(in_reach, key=lambda npc: npc.distance_to_point(pos), default=None)
 
-    def item_in_reach(self, player: Player) -> Item | None:
-        """The loot the player can pick up right now, nearest first."""
-        pos = player.get_pos()
-        in_reach = [
-            item for item in self.items if not item.picked_up and item.distance_to_point(pos) < c.Player.PICKUP_DISTANCE
-        ]
-        return min(in_reach, key=lambda item: item.distance_to_point(pos), default=None)
-
     def village_at(self, x, y, margin: float = 0) -> Village | None:
         """The village whose grounds (x, y) stands on, or None out in the wilds. `margin`
         widens the grounds, which is what keeps a spawn off a settlement's doorstep."""

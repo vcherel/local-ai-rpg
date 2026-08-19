@@ -16,9 +16,15 @@ class Player:
     RUN_SPEED: int = 7
 
     INTERACTION_DISTANCE: int = 30
-    # Loot is picked up from a bit farther out than an NPC is talked to: the prompt over a
-    # dropped item should show while walking past it, not only when standing on it.
-    PICKUP_DISTANCE: int = 70
+    # Loot is not picked up by a key at all: anything lying within MAGNET_RADIUS flies to
+    # the player and is collected on contact. It starts slow and accelerates well past
+    # running pace, so it always catches up rather than trailing behind for ever, and the
+    # speeds are per-frame pixels at TARGET_FPS like every other movement number.
+    MAGNET_RADIUS: int = 130
+    MAGNET_SPEED_START: float = 1.5
+    MAGNET_SPEED_MAX: float = 14.0
+    MAGNET_ACCEL: float = 0.03  # per millisecond
+    MAGNET_CATCH: int = 16  # close enough to count as collected
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
@@ -109,10 +115,13 @@ class Stats:
     ACCESSORY_XP_PER_BONUS: float = 0.04  # +4% xp from all actions per bonus point
 
     # Shops buy loot below its worth; bartering raises the fraction toward SELL_CEILING.
-    SELL_BASE: float = 0.6
-    # Prices can move at most this far from their base value.
+    # Deliberately punishing: hoovering every rusty dagger into the nearest shop used to be
+    # the fattest income in the game, which made quests, caches and risk pointless.
+    SELL_BASE: float = 0.35
+    # Prices can move at most this far from their base value. A shop never pays what a
+    # thing is worth, however good a haggler the player becomes.
     BUY_FLOOR: float = 0.5
-    SELL_CEILING: float = 1.4
+    SELL_CEILING: float = 0.8
 
     # XP granted per action.
     XP_PER_HIT: float = 4.0
