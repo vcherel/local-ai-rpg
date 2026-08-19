@@ -14,11 +14,17 @@ class World:
     # How many monsters roam is not world-wide either: it follows where the player is
     # standing, ramping from the near cap on the starting town's doorstep to the far cap
     # out past ROAMING_CAP_FAR_DISTANCE. The safest ground in the game shouldn't be
-    # stocked like the deep wilds. The far cap is also how many the world is created with,
-    # since those are scattered across the whole settled ring rather than around anyone.
-    ROAMING_CAP_NEAR: int = 60
-    ROAMING_CAP_FAR: int = 120
-    ROAMING_CAP_FAR_DISTANCE: int = 2500
+    # stocked like the deep wilds. A new world is created holding the *near* cap, since
+    # everything placed at creation lands within despawn range of the spawn point.
+    #
+    # The ramp is deliberately long and eased (ROAMING_CAP_CURVE, an exponent on the
+    # distance fraction): the first walk out of town is meant to be quiet enough to learn
+    # the game in, and the crowding is meant to arrive at the same depth the tougher kinds
+    # do, not a thousand pixels out.
+    ROAMING_CAP_NEAR: int = 16
+    ROAMING_CAP_FAR: int = 150
+    ROAMING_CAP_FAR_DISTANCE: int = 6500
+    ROAMING_CAP_CURVE: float = 2.0
 
     # Slain monsters are replenished over time so the world never empties out.
     RESPAWN_INTERVAL_MS: int = 2200
@@ -167,7 +173,11 @@ class DayNight:
     NIGHT_RESPAWN_MULT: float = 2.2
     NIGHT_DAMAGE_MULT: float = 1.35
     NIGHT_DETECTION_MULT: float = 1.4
-    NIGHT_DANGER_BONUS: int = 1500
+    # The danger bonus is capped at a fraction of how far out the spawn already is, so
+    # night deepens the wilds instead of importing them: on the starting ring's edge it is
+    # worth a few hundred, out past the settled ring it is worth all of NIGHT_DANGER_BONUS.
+    NIGHT_DANGER_BONUS: int = 1800
+    NIGHT_DANGER_DISTANCE_FRAC: float = 0.35
     NIGHT_BOSS_ROAM_MULT: float = 2.0
 
 
@@ -356,7 +366,7 @@ class Tunnels:
     GUARDS: tuple = (3, 5)
     # They roll their kind as if the tunnel stood this much deeper into the wilds, so what
     # is waiting under a village is not what is wandering the fields above it.
-    GUARD_DANGER_BONUS: int = 1600
+    GUARD_DANGER_BONUS: int = 2800
     HOARD: tuple = (2, 3)
 
     # How far the player can see down there, and how black it is past that.
@@ -775,7 +785,7 @@ class PointsOfInterest:
     CAMP_GUARD_MIN: int = 2
     CAMP_GUARD_MAX: int = 3
     CAMP_GUARD_SPREAD: int = 130
-    CAMP_LEADER_DANGER_BONUS: int = 1400
+    CAMP_LEADER_DANGER_BONUS: int = 2400
     # Nothing hostile within this far of the fire: the bandit cache can be broken open and
     # either camp can be rested at. This is the whole gate, so despawns and reloads can't
     # leave a camp permanently locked.

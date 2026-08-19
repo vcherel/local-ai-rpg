@@ -15,9 +15,21 @@ if TYPE_CHECKING:
 
 
 def pick_monster_kind(distance_from_center: float) -> c.MonsterKind:
-    """Pick a kind unlocked at this distance from the world center; weaker kinds stay more common."""
+    """Pick a kind for this distance from the world center.
+
+    A kind unlocks at its `min_distance` and then fades out again: its weight halves every
+    `Entities.DEPTH_HALF_LIFE` past that point, down to `DEPTH_MIN_WEIGHT_FRAC` of what it
+    started at. Without the fade, walking out only ever *added* kinds to the roll, so the
+    deep wilds stayed mostly slimes with the occasional troll: more variety rather than
+    more danger. With it, the weak things thin out behind the player.
+    """
     eligible = [kind for kind in c.MONSTER_KINDS if distance_from_center >= kind.min_distance]
-    return random.choices(eligible, weights=[kind.weight for kind in eligible])[0]
+    weights = []
+    for kind in eligible:
+        depth = distance_from_center - kind.min_distance
+        fade = 0.5 ** (depth / c.Entities.DEPTH_HALF_LIFE)
+        weights.append(kind.weight * max(fade, c.Entities.DEPTH_MIN_WEIGHT_FRAC))
+    return random.choices(eligible, weights=weights)[0]
 
 
 class Monster(Entity):
