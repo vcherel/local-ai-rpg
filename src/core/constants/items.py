@@ -33,8 +33,10 @@ class Rarity:
 class LootBox:
     # Chance a slain monster drops a lootbox.
     DROP_CHANCE: float = 0.2
-    COIN_MIN: int = 3
-    COIN_MAX: int = 12
+    # Small on purpose: killing things is how gear and arrows are found, not how a purse
+    # is filled. Coins come from quests and from caches somebody had to walk to.
+    COIN_MIN: int = 2
+    COIN_MAX: int = 7
     # Chance the box also contains an item on top of coins, indexed by rarity tier
     # (common..legendary), so a legendary box is far less likely to be coins only.
     ITEM_CHANCE_BY_TIER: tuple = (0.35, 0.45, 0.60, 0.80, 1.0)
@@ -48,6 +50,34 @@ class LootBox:
         (4, 4, 4, 1, 1),
         (5, 5, 5, 1, 1),
     )
+
+
+# What handing a quest in is worth in coins, per quest type: (floor, ceiling). The number
+# the NPC names in conversation is honoured, only clamped into its type's band, because the
+# model has no sense of the economy and would send the player across the map for three
+# coins. The harder the errand, the higher the band.
+QUEST_COIN_BANDS: dict[str, tuple] = {
+    "fetch": (60, 140),
+    "deliver": (70, 160),
+    "kill_mob": (90, 200),
+    "loot_mob": (90, 200),
+    "recover_stolen": (110, 240),
+    "steal": (120, 260),
+    "clear_camp": (200, 420),
+    "slay_boss": (300, 650),
+}
+
+
+@dataclass(frozen=True)
+class Quests:
+    """What a quest pays. Quests are meant to be the best coins in the game: everything
+    else (selling loot, breaking barrels, robbing a purse) was trimmed around this."""
+
+    # Used for a quest type with no band of its own.
+    DEFAULT_COIN_BAND: tuple = (60, 150)
+    # Types that always hand over a piece of gear, even when the NPC promised only coins:
+    # emptying a camp or killing a boss is the run's work, not an errand.
+    ALWAYS_ITEM_TYPES: tuple = ("clear_camp", "slay_boss", "steal")
 
 
 @dataclass(frozen=True)

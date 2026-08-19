@@ -245,11 +245,15 @@ class DialogueManager:
                 if quest.reward_item_name
                 else " in coins"
             )
+            # The band the payout is clamped into anyway (QuestSystem.extract_and_give_reward),
+            # told to the NPC so the figure they say out loud is the figure the player is paid.
+            low, high = c.QUEST_COIN_BANDS.get(quest.quest_type, c.Quests.DEFAULT_COIN_BAND)
             return (
                 done_line.format(**fields)
                 + "Thank them and give them their reward"
                 + reward
-                + ". Say the exact number of coins yourself; never write a placeholder in brackets. "
+                + f". A job like this is worth between {low} and {high} coins."
+                + " Say the exact number of coins yourself; never write a placeholder in brackets. "
             )
 
         # A quest that is neither one of the known types nor about a named item has nothing
@@ -534,7 +538,7 @@ class DialogueManager:
 
     def _execute_quest_completion(self, npc: NPC, last_msg, log_path):
         if last_msg and npc.quest:
-            reward = self.quest_system.extract_and_give_reward(last_msg["content"])
+            reward = self.quest_system.extract_and_give_reward(last_msg["content"], npc.quest)
             npc.quest.reward_coins = reward
             dialogue_log.append_section(log_path, "Quest completion", f"Reward: {reward} coins")
 

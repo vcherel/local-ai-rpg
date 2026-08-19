@@ -41,8 +41,9 @@ class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
 
-    kind: str  # "item" | "npc" | "dropped_item" | "chest" | "bed" | "door" | "camp" |
-    # "shrine" | "well" (climb down into the tunnel) | "ladder" (climb back out)
+    kind: str  # "npc" | "chest" | "bed" | "door" | "camp" | "shrine" |
+    # "well" (climb down into the tunnel) | "ladder" (climb back out). Loot is not on this
+    # list: it is collected by the magnet in Game._sweep_loot, never by a key.
     target: object
     label: str
     x: float
@@ -335,11 +336,6 @@ class Game:
 
         if self.interior is not None:
             indoor_reach = c.Buildings.INTERACT_DISTANCE
-            for item in self.interior.dropped_items:
-                dist = reach_of(item.x, item.y)
-                if dist <= indoor_reach:
-                    offer(Interaction("dropped_item", item, f"E: pick up {item.name}", item.x, item.y), dist)
-
             layout = self.interior.interior_layout()
             chest = layout["chest"]
             if chest and not self.interior.looted:
@@ -382,10 +378,6 @@ class Game:
                     Interaction("well", village, "E: look down the well", village.x, village.y - 40),
                     reach_of(village.x, village.y),
                 )
-
-        item = self.world.item_in_reach(self.player)
-        if item is not None:
-            offer(Interaction("item", item, f"E: pick up {item.name}", item.x, item.y), reach_of(item.x, item.y))
 
         camp = self.world.camp_in_reach(self.player)
         if camp is not None:
@@ -431,10 +423,6 @@ class Game:
             return
         if interaction.kind == "npc":
             self._talk_to(interaction.target)
-        elif interaction.kind == "item":
-            self._pickup_world_item(interaction.target)
-        elif interaction.kind == "dropped_item":
-            self._pickup_dropped_item(interaction.target)
         elif interaction.kind == "chest":
             self._open_interior_chest()
         elif interaction.kind == "bed":
@@ -477,8 +465,45 @@ class Game:
             return
         self.shop_menu.open(npc, self.player, self.world.items)
 
+    def _sweep_loot(self, dt):
+        """The whole of picking things up. Anything lying within the magnet's reach flies at
+        the player and is collected on contact, so loot is taken by walking over it and the
+        interact key is left for doors, beds, chests and people.
+
+        Loot standing on another building's floor is left alone, the same rule the renderer
+        draws by: nothing is dragged out through a wall."""
+        pos = (self.player.x, self.player.y)
+        for item in list(self.world.items):
+            if item.picked_up:
+                continue
+            if item.distance_to_point(pos) > c.Player.MAGNET_RADIUS:
+                item.magnet_speed = 0.0
+                continue
+            if self.world.building_at(item.x, item.y) is not self.interior:
+                continue
+            if item.magnet_toward(self.player.x, self.player.y, dt):
+                self._pickup_world_item(item)
+
+        if self.interior is not None:
+            for item in list(self.interior.dropped_items):
+                if item.distance_to_point(pos) > c.Player.MAGNET_RADIUS:
+                    item.magnet_speed = 0.0
+                    continue
+                if item.magnet_toward(self.player.x, self.player.y, dt):
+                    self._pickup_dropped_item(item)
+
     def _pickup_world_item(self, item: Item):
         item.picked_up = True
+        if item.item_type == "coins":
+            # A purse is money on the ground, not an object: it is credited and gone,
+            # never carried, so it leaves the master item list rather than sitting in the
+            # save as something picked up.
+            self.world.items.remove(item)
+            self.player.gain_coins(item.quantity)
+            self.loot_notification.show(f"+{item.quantity} coins", c.Colors.ACCENT)
+            play_sound("pickup")
+            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+            return
         if item.item_type == "lootbox":
             self._open_lootbox(item)
             get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
@@ -769,6 +794,7 @@ class Game:
                 # A building's interior is just its own footprint; re-derive which one (if
                 # any) the player is standing in rather than tracking a separate mode.
                 self.interior = self.world.building_at(self.player.x, self.player.y)
+                self._sweep_loot(gameplay_dt)
                 self.interaction = self.current_interaction()
                 self.update_camera()
                 get_shake().update(dt)

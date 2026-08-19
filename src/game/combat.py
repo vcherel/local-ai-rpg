@@ -972,24 +972,31 @@ class WorldCombat:
 
         Killing a townsperson used to cost the player their village and pay nothing, which
         made it a pure mistake rather than a choice. A merchant carries more than a
-        labourer, since a merchant's whole day is coins. The coins only reach the player
-        when the player did the killing; the item is lying on the ground either way, and
-        anyone is welcome to pick it up."""
+        labourer, since a merchant's whole day is coins. Neither the purse nor the
+        possession is credited to anyone: both drop on the ground where the body fell, for
+        whoever walks over them, which is why an uncredited kill still leaves them there.
+        """
         coins, loot_item = loot_villager(bool(npc.shop_items), player.loot_luck() if by_player else 0.0)
+        dropped = []
+        if coins > 0:
+            purse = Item(npc.x, npc.y, "Purse", "coins", rarity="common", quantity=coins)
+            purse.start_pop_anim(npc.x, npc.y - c.Entities.NPC_SIZE)
+            self.items.append(purse)
+            dropped.append(purse)
         if loot_item is not None:
             loot_item.x, loot_item.y = npc.x, npc.y
             loot_item.start_pop_anim(npc.x, npc.y - c.Entities.NPC_SIZE)
             self.items.append(loot_item)
-        if not by_player:
+            dropped.append(loot_item)
+        if not by_player or not dropped or self.notify is None:
             return
-        player.gain_coins(coins)
-        message = f"Took {coins} coins from {npc.name or 'the body'}"
-        color = c.Colors.WHITE
         if loot_item is not None:
-            message += f", and dropped a {loot_item.rarity} {loot_item.name}"
-            color = rarity_color(loot_item.rarity)
-        if self.notify:
-            self.notify(message, color)
+            self.notify(
+                f"{npc.name or 'The body'} drops a purse and a {loot_item.rarity} {loot_item.name}",
+                rarity_color(loot_item.rarity),
+            )
+        else:
+            self.notify(f"{npc.name or 'The body'} drops a purse", c.Colors.WHITE)
 
     @staticmethod
     def _hit_feedback(x, y, crit: bool, direction=None):

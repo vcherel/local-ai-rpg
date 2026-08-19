@@ -9,6 +9,7 @@ from core.utils import parse_response_quest_analysis
 from game.entities.buildings import random_open_coordinates
 from game.entities.items import Item, item_type_from_name, roll_bonus, roll_rarity
 from game.entities.npcs import NPC
+from game.loot import roll_reward_item
 from game.quest import COUNTED_QUEST_TYPES, Quest
 from llm.llm_request_queue import generate_response_queued
 
@@ -350,7 +351,18 @@ class QuestSystem:
                 return dropped_item
         return None
 
-    def extract_and_give_reward(self, last_message: str) -> int:
+    def extract_and_give_reward(self, last_message: str, quest: Quest) -> int:
+        """Pay out the coins for a quest just handed in. The figure the NPC named is their
+        word and is honoured, but it is clamped into the band its quest type is worth
+        (`c.QUEST_COIN_BANDS`) rather than trusted: the model has no sense of the economy
+        and would send the player across the map for three coins."""
+        floor, ceiling = c.QUEST_COIN_BANDS.get(quest.quest_type, c.Quests.DEFAULT_COIN_BAND)
+        reward = min(max(self._promised_coins(last_message), floor), ceiling)
+        self.player.add_coins(reward)
+        return reward
+
+    def _promised_coins(self, last_message: str) -> int:
+        """The number of coins the NPC's parting line actually names, or 0 if it names none."""
         # Prefer a number explicitly tied to a coin/reward word, so we don't pick up
         # an unrelated count like "I lost 3 sheep, here are 50 coins".
         coin_match = re.search(
@@ -359,22 +371,13 @@ class QuestSystem:
             re.IGNORECASE,
         )
         if coin_match:
-            reward = int(coin_match.group(1) or coin_match.group(2))
-            self.player.add_coins(reward)
-            return reward
+            return int(coin_match.group(1) or coin_match.group(2))
 
         # No coin-tagged number in the text, ask the model to extract it
         system_prompt = "You are an extraction assistant. Reply only with a number."
         prompt = f"How many coins are in this text: '{last_message}'?"
-        reward_str = generate_response_queued(prompt, system_prompt, "Extract reward")
-
-        reward_str = re.sub(r"[^\d]", "", reward_str)
-        if reward_str:
-            reward = int(reward_str)
-            if reward > 0:
-                self.player.add_coins(reward)
-                return reward
-        return 0
+        reward_str = re.sub(r"[^\d]", "", generate_response_queued(prompt, system_prompt, "Extract reward"))
+        return int(reward_str) if reward_str else 0
 
     def remove_quest(self, npc: NPC):
         """Drop an NPC's quest entirely (e.g. when the quest giver dies)."""
@@ -405,6 +408,26 @@ class QuestSystem:
         )
         return (common, uncommon, max(0.0, rare - shift), epic, legendary + shift)
 
+    def _reward_item(self, quest: Quest, npc: NPC) -> Optional[Item]:
+        """The gear a finished quest hands over: the thing the NPC named, or a rolled piece
+        of it for the quest types that always pay in more than coins (`Quests.ALWAYS_ITEM_TYPES`),
+        since emptying a camp or killing a boss is the run's work rather than an errand."""
+        rarity = roll_rarity(self._reward_weights(npc))
+        if not quest.reward_item_name:
+            if quest.quest_type not in c.Quests.ALWAYS_ITEM_TYPES:
+                return None
+            return roll_reward_item(self.player.x, self.player.y, rarity)
+
+        rtype = item_type_from_name(quest.reward_item_name)
+        # A quest reward should be equippable and useful, not a do-nothing trinket;
+        # anything the name can't classify becomes an accessory.
+        if rtype == "misc":
+            rtype = "accessory"
+        rbonus = roll_bonus(rtype, rarity)
+        # A single flask is a thin reward for a whole quest, so potions come in a handful.
+        quantity = random.randint(2, 3) if rtype == "potion" else 1
+        return Item(self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity, quantity=quantity)
+
     def complete_quest(self, npc: NPC):
         quest = npc.quest
         if not quest:
@@ -430,19 +453,8 @@ class QuestSystem:
             if quest.item is not None and quest.item is not handed_in and quest.item in self.items:
                 self.items.remove(quest.item)
 
-        if quest.reward_item_name:
-            rtype = item_type_from_name(quest.reward_item_name)
-            # A quest reward should be equippable and useful, not a do-nothing trinket;
-            # anything the name can't classify becomes an accessory.
-            if rtype == "misc":
-                rtype = "accessory"
-            rarity = roll_rarity(self._reward_weights(npc))
-            rbonus = roll_bonus(rtype, rarity)
-            # A single flask is a thin reward for a whole quest, so potions come in a handful.
-            quantity = random.randint(2, 3) if rtype == "potion" else 1
-            reward_item = Item(
-                self.player.x, self.player.y, quest.reward_item_name, rtype, rbonus, rarity, quantity=quantity
-            )
+        reward_item = self._reward_item(quest, npc)
+        if reward_item is not None:
             reward_item.picked_up = True
             # Potions merge into a stack the player already carries; only a genuinely new
             # entry belongs in the master item list its id resolves through on reload.
