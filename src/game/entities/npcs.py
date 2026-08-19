@@ -62,6 +62,14 @@ class NPC(Entity):
         self.hostile_until = 0.0
         self.grudge = False
         self.attack_ready_ms = 0
+        # A mob surrounds the player the way a pack does: each of them holds its own bearing
+        # around whoever they are fighting (World.assign_surround_slots), and only a few may
+        # swing at once. The rest close the circle. Nobody in a village is a tactician; a
+        # dozen of them standing in a ring is simply what a dozen angry people look like.
+        self.slot_angle = random.uniform(0, 2 * math.pi)
+        self.attack_token = True
+        # The next stone this one may throw, for those who keep their distance instead.
+        self.next_stone_ms = 0
         # Whether this one takes up arms when a monster walks into their settlement, rolled
         # off their home so the same house always sends the same person out. Cached because
         # it is asked every frame.
@@ -213,6 +221,7 @@ class NPC(Entity):
         refuge=None,
         face_player=True,
         terrain_mult: float = 1.0,
+        standoff: float = 0.0,
     ):
         """One frame of this villager's life, returning the damage their swing just landed
         on `target` (0 for none) so the world can resolve it: the same villager can be
@@ -225,11 +234,15 @@ class NPC(Entity):
         cone from pointing at the player no matter where they stand.
 
         `terrain_mult` is the ground: a villager wading a river is as slow in it as anything
-        else, so the frame is simply shortened for them."""
+        else, so the frame is simply shortened for them.
+
+        `standoff` is how far off the target they mean to stand: a hair inside arm's reach
+        for whoever is doing the fighting, well out of it for the ones who would rather
+        throw something from the back of the crowd."""
         dt *= terrain_mult
         self._cool_off()
         if target is not None:
-            return self._hunt(target, dt, blocked, waypoint)
+            return self._hunt(target, dt, blocked, waypoint, standoff)
         if refuge is not None:
             self._run_to(refuge, dt, blocked)
             return 0
@@ -278,28 +291,56 @@ class NPC(Entity):
             return
         self.orientation = self._step_towards(refuge, dt, blocked) + math.pi / 2
 
-    def _hunt(self, target, dt, blocked=None, waypoint=None) -> int:
+    def _ring_point(self, target, standoff: float, blocked=None) -> tuple:
+        """The spot this one is trying to hold: its own bearing around the target, at
+        `standoff`. A spot nobody can stand in is worse than none, so a blocked one falls
+        back to walking straight at the target."""
+        if standoff <= 0:
+            return target.x, target.y
+        x = target.x + math.cos(self.slot_angle) * standoff
+        y = target.y + math.sin(self.slot_angle) * standoff
+        if blocked is not None and blocked(x, y, c.Entities.NPC_SIZE / 2):
+            return target.x, target.y
+        return x, y
+
+    def _hunt(self, target, dt, blocked=None, waypoint=None, standoff: float = 0.0) -> int:
         """Walk at whatever this one is fighting and swing when it is in reach, returning the
         damage landed this frame. Deliberately simpler than a monster's chase: villagers are
-        farmers with sticks, not hunters. They walk at the target (round a wall when the
-        world hands them a waypoint) and hit whatever comes into range."""
+        farmers with sticks, not hunters. They walk to their place around the target (round a
+        wall when the world hands them a waypoint) and hit whatever comes into range.
+
+        The swing needs the token the world deals out (`attack_token`), so a crowd presses in
+        from every side with only a few arms moving at a time instead of a dozen villagers
+        landing a blow each on the same frame, which was less a fight than a woodchipper."""
         dist = self.distance_to_point((target.x, target.y))
-        goal = waypoint if waypoint is not None else (target.x, target.y)
+        place = self._ring_point(target, standoff, blocked)
+        goal = waypoint if waypoint is not None else place
         angle = math.atan2(goal[1] - self.y, goal[0] - self.x)
         self.orientation = angle + math.pi / 2
 
-        if dist > c.Entities.NPC_ATTACK_RANGE:
+        if self.distance_to_point(goal) > c.Entities.CHASE_ARRIVE:
             self._step_towards(goal, dt, blocked)
+        else:
+            # Standing on its spot: look at what it is fighting rather than at the ground.
+            self.orientation = math.atan2(target.y - self.y, target.x - self.x) + math.pi / 2
 
         damage = 0
         now = pygame.time.get_ticks()
-        if dist <= c.Entities.NPC_ATTACK_RANGE + target.size // 2 and now >= self.attack_ready_ms:
+        in_reach = dist <= c.Entities.NPC_ATTACK_RANGE + target.size // 2
+        if in_reach and self.attack_token and now >= self.attack_ready_ms:
             self.attack_ready_ms = now + c.Entities.NPC_ATTACK_COOLDOWN_MS
             self.start_attack_anim()
             damage = c.Entities.NPC_DAMAGE
 
         self.update_attack_anim(dt)
         return damage
+
+    @property
+    def routed(self) -> bool:
+        """Cut down this far and this one is done fighting: they break for the nearest door.
+        A mob that thins out as it loses is a mob; one that fights to the last farmer over a
+        stolen loaf is a machine."""
+        return self.hp <= self.max_hp * c.Villages.ROUT_HP_FRAC
 
     def _badge(self) -> Optional[tuple]:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""

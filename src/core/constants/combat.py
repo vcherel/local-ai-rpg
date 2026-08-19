@@ -30,7 +30,12 @@ class Shield:
 @dataclass(frozen=True)
 class Projectile:
     SPEED: int = 14
-    RANGE: int = 650
+    # How far a shot carries. The player's bow reaches most of the way across the screen,
+    # which is the whole point of carrying one: an archer picks its fight at a distance and
+    # pays for it in damage per hit. A monster's shot deliberately falls short of that, so
+    # closing the gap on an archer stays the answer rather than a foot race under fire.
+    RANGE: int = 980
+    MONSTER_RANGE: int = 700
     SIZE: int = 6
 
 
@@ -59,6 +64,14 @@ class Combat:
     # Player-hurt screen vignette: triggered amount decays back to 0 at this rate.
     VIGNETTE_DECAY: float = 0.90  # per-60fps-frame multiplier
     PLAYER_HURT_VIGNETTE: float = 0.7
+
+    # A cleaving swing does not hit everything it reaches equally. What stands where the
+    # weapon is pointed takes it all; what is caught at the edge of the arc or at the end of
+    # the reach takes as little as CLEAVE_MIN of it. So a cleave is worth swinging into a
+    # crowd and still worth aiming, and the falling damage numbers say which was which.
+    CLEAVE_MIN: float = 0.4
+    # How much of the loss comes from being off to one side, the rest from being far out.
+    CLEAVE_ANGLE_SHARE: float = 0.55
 
     # The arc drawn along a swing (core/swing_arcs.py). It spans the weapon's `arc_deg`
     # at its `reach`, so a cleaving sweep visibly covers the crowd it is about to hit.

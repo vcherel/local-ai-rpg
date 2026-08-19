@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, List
 import pygame
 
 import core.constants as c
+from core.audio import play_sound
 from core.daynight import DayNightCycle
 from game.combat import WorldCombat
 from game.entities.boss import Boss
@@ -20,7 +21,7 @@ from game.entities.items import AMMO_BUNDLE, Item
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
-from game.entities.projectile import Projectile
+from game.entities.projectile import STONE_COLOR, Projectile
 from game.entities.scenery import Scenery
 from game.entities.traps import BearTrap
 from game.entities.village import Village, generate_starting_world
@@ -41,6 +42,25 @@ if TYPE_CHECKING:
 # A bare coordinate to route towards. `chase_waypoint` only ever reads an x and a y off
 # whoever is being chased, and a villager running for a door is chasing a spot on the floor.
 _Point = namedtuple("_Point", "x y")
+
+
+def _merge_rects(rects: List[pygame.Rect]) -> List[pygame.Rect]:
+    """Fold overlapping rectangles into the shapes they actually make. A clump of trunks is
+    one obstacle to walk round; treated as a dozen, a chaser routes round the first, finds
+    the second in its way, and picks its way into the middle of the wood."""
+    merged: List[pygame.Rect] = []
+    for rect in rects:
+        current = rect
+        joined = True
+        while joined:
+            joined = False
+            for other in list(merged):
+                if current.colliderect(other):
+                    merged.remove(other)
+                    current = current.union(other)
+                    joined = True
+        merged.append(current)
+    return merged
 
 
 class World(WorldCombat, WorldStreaming, WorldPlaces):
@@ -613,6 +633,67 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             return door_front
         return inside
 
+    def assign_surround_slots(self, chasers, target):
+        """Deal the chasers coming for one target their places around it, and hand out the
+        few permissions to swing.
+
+        Two things turn a pack from a queue into an ambush. The bearings are dealt evenly
+        round the ring in the order the chasers already stand in, rather than each rolling
+        its own at spawn, so whoever joins the chase late takes the empty side instead of
+        the crowded one; and only `Entities.MAX_ACTIVE_ATTACKERS` of them may swing at any
+        moment, the nearest first, so the rest close the circle and wait their turn where
+        the player can see them coming.
+
+        A chaser keeps the bearing it holds while the dealt one is close to it, which is
+        what stops the whole ring rotating a little every frame."""
+        if not chasers:
+            return
+        ordered = sorted(chasers, key=lambda ch: math.atan2(ch.y - target.y, ch.x - target.x))
+        # The ring is anchored on where the first of them already stands, so dealing the
+        # slots never asks anybody to walk round to the far side for the sake of symmetry.
+        base = math.atan2(ordered[0].y - target.y, ordered[0].x - target.x)
+        step = 2 * math.pi / len(ordered)
+        limit = math.radians(c.Entities.SLOT_REASSIGN_DEG)
+        for index, chaser in enumerate(ordered):
+            slot = base + step * index
+            drift = abs((chaser.slot_angle - slot + math.pi) % (2 * math.pi) - math.pi)
+            if drift > limit:
+                chaser.slot_angle = slot
+
+        target_pos = (target.x, target.y)
+        closest = sorted(chasers, key=lambda ch: ch.distance_to_point(target_pos))
+        for rank, chaser in enumerate(closest):
+            # A swing already under way is never cut off half finished: the token is spent
+            # the moment the arm goes back, not when the blow lands.
+            chaser.attack_token = rank < c.Entities.MAX_ACTIVE_ATTACKERS or chaser.attack_in_progress
+
+    def _scenery_obstacles(self, start, goal, radius: float) -> list:
+        """The solid wilderness standing between two points, as rectangles a detour can be
+        costed round. Trunks and boulders touching each other are merged into one clump: a
+        copse is one thing to walk round, and routing round each trunk in turn is what has
+        a monster picking its way into the middle of the wood.
+
+        Only looked for over a short stretch (`World.SCENERY_DETOUR_RANGE`). Beyond that a
+        wood is not an obstacle, it is the ground, and `Monster._steer` deals with it a
+        trunk at a time."""
+        span = math.dist(start, goal)
+        if not span or span > c.World.SCENERY_DETOUR_RANGE:
+            return []
+        rects = []
+        seen = set()
+        step = c.Scenery.INDEX_CELL / 2
+        for i in range(int(span / step) + 1):
+            t = min(1.0, i * step / span)
+            x = start[0] + (goal[0] - start[0]) * t
+            y = start[1] + (goal[1] - start[1]) * t
+            for piece in self.scenery_near(x, y):
+                if not piece.blocking_radius or id(piece) in seen:
+                    continue
+                seen.add(id(piece))
+                reach = piece.blocking_radius + radius
+                rects.append(pygame.Rect(piece.x - reach, piece.y - reach, reach * 2, reach * 2))
+        return _merge_rects(rects)
+
     def _detour_corner(self, start, goal, radius: float, rects=None):
         """The corner to head for when something solid sits between `start` and `goal`, or
         None when the way is clear.
@@ -627,6 +708,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         """
         if rects is None:
             rects = [building.rect for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE)]
+            rects += self._scenery_obstacles(start, goal, radius)
         for obstacle in rects:
             margin = radius + 8
             rect = obstacle.inflate(margin * 2, margin * 2)
@@ -980,9 +1062,11 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         back whatever its swing landed so the blow can be taken off the right list. A
         villager only ever fights one thing at a time, and defending the settlement comes
         first: a monster in the street is more pressing than a grudge."""
-        player_pos = player.get_pos()
         indoors = self.building_at(player.x, player.y) is not None
         fight, flee = self.militia_orders()
+        mob = self._mob_orders(player, flee)
+        self.assign_surround_slots([npc for npc in self.npcs if id(npc) in mob], player)
+        self._throw_stones(player, mob)
 
         for npc in self.npcs:
             enemy = fight.get(id(npc))
@@ -1028,7 +1112,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
 
             # Only an angry villager actually closing on the player needs a route round
             # the houses; everyone else is wandering and steers for itself.
-            chasing = npc.hostile and npc.distance_to_point(player_pos) <= c.Entities.NPC_HOSTILE_RANGE
+            chasing = id(npc) in mob
             if chasing:
                 self.open_door_for(npc)
             waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
@@ -1043,9 +1127,68 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 target=player if chasing else None,
                 face_player=not indoors,
                 terrain_mult=self.terrain_speed(npc.x, npc.y),
+                standoff=mob.get(id(npc), 0.0),
             )
             if damage:
                 player.receive_damage(damage, source=npc)
+
+    def _mob_orders(self, player: Player, flee: dict) -> dict:
+        """Who in an angry village is actually coming for the player, and how close they mean
+        to get: a dict of `id(npc)` to the standoff they hold.
+
+        The same split that decides who meets a monster in the street decides this. Whoever
+        `NPC.is_militia` names closes to arm's length and swings; the rest hang back at
+        `Villages.MOB_STANDOFF` and throw stones, which is what makes a mob dangerous to walk
+        into rather than something to be cut down one farmer at a time. Anyone already badly
+        hurt (`NPC.routed`) drops out of the fight and is sent to a door instead, so a mob
+        breaks rather than dying to the last of them."""
+        orders: dict = {}
+        for npc in self.npcs:
+            if not npc.hostile or npc.distance_to_point((player.x, player.y)) > c.Entities.NPC_HOSTILE_RANGE:
+                continue
+            if npc.routed:
+                shelter = self._refuge_for(npc)
+                if shelter is not None:
+                    flee[id(npc)] = shelter
+                    continue
+            reach = c.Entities.NPC_ATTACK_RANGE + c.Player.SIZE / 2 - c.Entities.CHASE_RING_MARGIN
+            orders[id(npc)] = reach if npc.is_militia else c.Villages.MOB_STANDOFF
+        return orders
+
+    def _throw_stones(self, player: Player, mob: dict):
+        """The back of the mob doing what a crowd with no swords does: throwing things.
+
+        Only the ones holding their distance throw, only at what they can see, and only on
+        their own slow cooldown. One stone is nothing; ten people throwing them is why an
+        angry village is somewhere to leave rather than somewhere to fight."""
+        now = pygame.time.get_ticks()
+        for npc in self.npcs:
+            if mob.get(id(npc), 0.0) < c.Villages.MOB_STANDOFF or now < npc.next_stone_ms:
+                continue
+            dx, dy = player.x - npc.x, player.y - npc.y
+            if math.hypot(dx, dy) > c.Villages.MOB_STONE_RANGE:
+                continue
+            if not self.line_of_sight(npc.x, npc.y, player.x, player.y):
+                continue
+            npc.next_stone_ms = now + random.randint(*c.Villages.MOB_STONE_COOLDOWN_MS)
+            npc.start_attack_anim()
+            play_sound("shoot")
+            self.projectiles.append(
+                Projectile(
+                    npc.x,
+                    npc.y,
+                    # Projectile angles are measured from straight up, clockwise.
+                    math.atan2(dx, -dy),
+                    c.Villages.MOB_STONE_DAMAGE,
+                    style="stone",
+                    color=STONE_COLOR,
+                    shake=c.Combat.PLAYER_HURT_SHAKE / 2,
+                    hostile=True,
+                    owner_id=id(npc),
+                    source_name=npc.name or "a villager",
+                    max_range=c.Villages.MOB_STONE_RANGE,
+                )
+            )
 
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of
@@ -1076,8 +1219,18 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         nearby = [
             m for m in self.monsters if abs(m.x - player.x) <= update_radius and abs(m.y - player.y) <= update_radius
         ]
+        # Who each of them is coming for is settled before any of them moves: the ones
+        # converging on the same target are dealt their places around it and the handful of
+        # permissions to swing, so a pack closes a circle instead of forming a queue.
+        targets = {monster: self._monster_target(monster, player) for monster in nearby}
+        by_target: dict = {}
+        for monster, target in targets.items():
+            by_target.setdefault(id(target), (target, []))[1].append(monster)
+        for target, chasers in by_target.values():
+            self.assign_surround_slots(chasers, target)
+
         for monster in nearby:
-            target = self._monster_target(monster, player)
+            target = targets[monster]
             waypoint = self.chase_waypoint(monster, target, monster.kind.size / 2)
             # `nearby` doubles as the crowd each monster shoulders its way out of: the ones
             # converging on the player are exactly the ones that pile up on each other.

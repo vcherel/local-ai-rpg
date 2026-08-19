@@ -53,6 +53,16 @@ class World:
     # the same fan is tried again this far ahead: in a tight room there is usually exactly
     # one way out and the lookahead is too long to see it.
     STEER_CLOSE_PROBE: int = 4
+    # A deflection is held for this long once taken: without it a monster re-picks a side
+    # every frame at the seam of an obstacle and shivers on the spot instead of walking
+    # round it. Probes are also sampled along their length rather than at the tip alone,
+    # so a thin wall between the monster and a clear point beyond it still counts.
+    STEER_COMMIT_MS: int = 450
+    STEER_PROBE_SAMPLES: int = 3
+    # How far off the straight line a detour will look for a way round a clump of trees.
+    # Past this the wood is not an obstacle any more, it is the terrain, and steering has
+    # to deal with it a trunk at a time.
+    SCENERY_DETOUR_RANGE: int = 520
 
     # Buildings are bucketed by chunk for collision lookups, each one padded by this much
     # so a footprint just over a chunk border is still found from the chunk next door.
@@ -630,6 +640,18 @@ class Villages:
     DEFEND_MARGIN: float = 300.0
     DEFEND_RADIUS: float = 620.0
     PANIC_RADIUS: float = 520.0
+
+    # The same split decides what an angry village does about the player, so a mob is not a
+    # column of identical farmers. The militia close and swing; everyone else keeps this far
+    # back and throws whatever is to hand, which is a real threat in numbers and impossible
+    # to answer with a sword. Anyone cut down to this fraction of their health has had
+    # enough and runs for a door, so a mob thins out as it loses rather than fighting to
+    # the last farmer.
+    MOB_STANDOFF: float = 250.0
+    MOB_STONE_RANGE: float = 340.0
+    MOB_STONE_DAMAGE: int = 5
+    MOB_STONE_COOLDOWN_MS: tuple = (1400, 2600)
+    ROUT_HP_FRAC: float = 0.35
 
 
 @dataclass(frozen=True)

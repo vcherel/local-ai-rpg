@@ -102,37 +102,60 @@ class WorldCombat:
                 arch.arc_deg,
             )
 
+        def falloff(target):
+            """What this particular target takes of the swing. Full damage for anything the
+            weapon is actually pointed at; a cleave bleeds out toward the edge of its arc and
+            the end of its reach, so sweeping six things at once is worth doing and worth
+            less per head than picking one of them."""
+            if not arch.cleave:
+                return base_damage
+            return base_damage * self._cleave_falloff(origin, player.orientation, arch, hit_radius, target)
+
         def strike_boss(boss):
-            self._strike_monster(boss, self.bosses, base_damage, arch, player, quest_system, blocked)
+            self._strike_monster(boss, self.bosses, falloff(boss), arch, player, quest_system, blocked)
 
         def strike_monster(monster):
-            self._strike_monster(monster, self.monsters, base_damage, arch, player, quest_system, blocked)
+            self._strike_monster(monster, self.monsters, falloff(monster), arch, player, quest_system, blocked)
 
         def strike_critter(critter):
-            self._strike_critter(critter, base_damage, arch, player)
+            self._strike_critter(critter, falloff(critter), arch, player)
 
         def strike_npc(npc):
-            self._strike_npc(npc, base_damage, arch, player, quest_system, blocked)
+            self._strike_npc(npc, falloff(npc), arch, player, quest_system, blocked)
 
         # Target priority: bosses and monsters, then whatever is already fighting back (an
         # animal biting, a villager swinging), then the peaceful. A rabbit standing behind
         # a wolf must never soak the blow meant for the wolf, and hunting one in a crowded
         # street must not land on a bystander and start a brawl. The swing goes to the
-        # first group with anything in reach and stops there.
-        for group, size_of, strike in (
-            (self.bosses, lambda e: e.kind.size, strike_boss),
-            (self.monsters, lambda e: e.kind.size, strike_monster),
-            ([cr for cr in self.critters if cr.hostile], lambda e: e.hit_radius * 2, strike_critter),
-            ([npc for npc in self.npcs if npc.hostile], lambda e: c.Entities.NPC_SIZE, strike_npc),
-            (self.critters, lambda e: e.hit_radius * 2, strike_critter),
-            (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc),
+        # first group with anything in reach.
+        #
+        # A cleaving weapon then carries on through the hostile groups under that one: a
+        # sweep that catches a goblin and the villager swinging beside it hits both, since a
+        # wide blade does not stop at a species. It never reaches the peaceful groups, so
+        # hunting a rabbit in a crowded street still cannot start a brawl.
+        hostile_groups = 4
+        engaged = False
+        for index, (group, size_of, strike) in enumerate(
+            (
+                (self.bosses, lambda e: e.kind.size, strike_boss),
+                (self.monsters, lambda e: e.kind.size, strike_monster),
+                ([cr for cr in self.critters if cr.hostile], lambda e: e.hit_radius * 2, strike_critter),
+                ([npc for npc in self.npcs if npc.hostile], lambda e: c.Entities.NPC_SIZE, strike_npc),
+                (self.critters, lambda e: e.hit_radius * 2, strike_critter),
+                (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc),
+            )
         ):
+            if engaged and not (arch.cleave and index < hostile_groups):
+                break
             targets = in_reach(group, size_of)
             if not targets:
                 continue
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            if not engaged:
+                player.stats.train("strength", c.Stats.XP_PER_HIT)
+            engaged = True
             for target in targets:
                 strike(target)
+        if engaged:
             return
 
         # Nothing living in range: the swing goes into the scenery. Props take the weapon's
@@ -207,6 +230,26 @@ class WorldCombat:
         if not targets or cleave:
             return targets
         return [min(targets, key=lambda e: e.distance_to_point(pos))]
+
+    @staticmethod
+    def _cleave_falloff(origin, facing: float, arch, hit_radius: float, target) -> float:
+        """How much of a cleaving swing lands on one target: 1.0 for whatever is dead ahead
+        at arm's length, down to `Combat.CLEAVE_MIN` for whatever is caught at the edge of
+        the arc or at the far end of the reach.
+
+        A cleave used to hit six things for full damage each, which made a wide weapon
+        strictly better than a focused one in every crowd. Now the crowd is worth sweeping
+        and the single target is worth facing."""
+        dx, dy = target.x - origin[0], target.y - origin[1]
+        distance = math.hypot(dx, dy)
+        # Angles here are measured from straight up, clockwise, like every facing.
+        delta = math.atan2(dx, -dy) - facing
+        delta = abs((delta + math.pi) % (2 * math.pi) - math.pi)
+        half_arc = max(math.radians(arch.arc_deg) / 2, 1e-6)
+        angle_off = min(1.0, delta / half_arc)
+        range_off = min(1.0, distance / max(hit_radius, 1e-6))
+        loss = angle_off * c.Combat.CLEAVE_ANGLE_SHARE + range_off * (1 - c.Combat.CLEAVE_ANGLE_SHARE)
+        return 1.0 - loss * (1.0 - c.Combat.CLEAVE_MIN)
 
     @staticmethod
     def _within_arc(origin, facing: float, arc_deg: float, x, y) -> bool:
@@ -1068,6 +1111,7 @@ class WorldCombat:
                     hostile=True,
                     owner_id=id(monster),
                     source_name=monster.kind.name,
+                    max_range=c.Projectile.MONSTER_RANGE,
                 )
             )
 

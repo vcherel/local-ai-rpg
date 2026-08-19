@@ -32,6 +32,18 @@ class Monster(Entity):
         # in from several sides. A pack's members are given evenly spread bearings when they
         # are stood up (World._spawn_monster_away_from); a lone monster rolls its own.
         self.slot_angle = random.uniform(0, 2 * math.pi)
+        # Which side it committed to when it last had to go round something, and how long
+        # that commitment holds. Steering without it re-decides every frame at the edge of
+        # an obstacle, which reads as a monster shivering against a wall rather than
+        # walking round it.
+        self.steer_side = 0
+        self.steer_hold_ms = 0
+        # Whether it is one of the few allowed to swing right now (World.assign_surround_slots).
+        # Everything else on the ring keeps its place and waits its turn, so a pack presses
+        # in from all sides instead of taking turns in a queue at the front.
+        self.attack_token = True
+        # Which way round the ring it circles while it waits for one.
+        self.circle_side = random.choice((-1, 1))
         # Burn (weapon affix) state: damage per tick, ticks left, and the next tick's time.
         self.burn_damage = 0
         self.burn_ticks_remaining = 0
@@ -105,9 +117,24 @@ class Monster(Entity):
         super().start_attack_anim(weapon_hand(self.kind.weapon) if self.kind.weapon else None)
         return not was_attacking and dist < self.melee_reach + c.Player.SIZE // 2
 
-    # Deflection angles tried when the straight line to the player is blocked, alternating
-    # sides so the monster steers around whichever edge of the obstacle is nearer.
-    _STEER_OFFSETS_DEG = (0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150)
+    # Deflection angles tried when the straight line to the player is blocked, smallest
+    # first; each is tried to both sides, the committed one leading.
+    _STEER_OFFSETS_DEG = (0, 30, 60, 90, 120, 150)
+
+    def _probe_clear(self, angle, probe, blocked, radius) -> bool:
+        """Is the whole leg out to `probe` walkable, not just the point at the end of it?
+
+        Sampling the tip alone let a monster pick a heading straight through a wall as long
+        as there was open ground on the far side of it."""
+        for i in range(1, c.World.STEER_PROBE_SAMPLES + 1):
+            reach = probe * i / c.World.STEER_PROBE_SAMPLES
+            if blocked(self.x + math.cos(angle) * reach, self.y + math.sin(angle) * reach, radius):
+                return False
+        return True
+
+    def _commit_side(self, side: int):
+        self.steer_side = side
+        self.steer_hold_ms = pygame.time.get_ticks() + c.World.STEER_COMMIT_MS
 
     def _steer(self, target_angle, blocked, radius, speed, goal_dist=None):
         """Pick the least deflected heading that stays clear a few steps ahead. Probing at
@@ -116,22 +143,39 @@ class Monster(Entity):
 
         The probe never reaches past the goal itself: a player standing in a corner has a wall
         a step behind them, and steering round a wall that lies beyond where the monster is
-        trying to stand is what used to leave it circling just out of reach."""
+        trying to stand is what used to leave it circling just out of reach.
+
+        A deflection, once taken, is held for a moment and tried first next frame. A monster
+        that re-decides which way round a trunk to go on every frame goes nowhere, and going
+        the long way round consistently beats changing your mind at the halfway point."""
         if blocked is None:
             return target_angle
         far = max(speed * c.World.STEER_LOOKAHEAD, radius + c.World.STEER_MIN_PROBE)
         if goal_dist is not None:
             far = max(radius + c.World.STEER_CLOSE_PROBE, min(far, goal_dist))
+        if pygame.time.get_ticks() >= self.steer_hold_ms:
+            self.steer_side = 0
+        lead = self.steer_side or 1
         # The short probe is the fallback: in a corner or between two pieces of furniture
         # every long probe is blocked, and giving up there is what used to leave a monster
         # grinding into a table while the player stood two steps away.
         for probe in (far, radius + c.World.STEER_CLOSE_PROBE):
             for offset_deg in self._STEER_OFFSETS_DEG:
-                angle = target_angle + math.radians(offset_deg)
-                nx = self.x + math.cos(angle) * probe
-                ny = self.y + math.sin(angle) * probe
-                if not blocked(nx, ny, radius):
+                for side in (0,) if offset_deg == 0 else (lead, -lead):
+                    angle = target_angle + math.radians(offset_deg) * side
+                    if not self._probe_clear(angle, probe, blocked, radius):
+                        continue
+                    if side:
+                        self._commit_side(side)
                     return angle
+        # Boxed in on every heading that still points somewhere useful: run along whatever
+        # is in the way rather than into it, which is what gets a monster out of the corner
+        # it walked itself into.
+        for side in (lead, -lead):
+            angle = target_angle + math.pi / 2 * side
+            if self._probe_clear(angle, radius + c.World.STEER_CLOSE_PROBE, blocked, radius):
+                self._commit_side(side)
+                return angle
         return target_angle
 
     def _aim_point(self, target, blocked, radius: float, cornered: bool = False) -> tuple:
@@ -282,6 +326,10 @@ class Monster(Entity):
 
         aware = dist < senses + target.size // 2
         self.aggro = aware
+        # Held back off the attack tokens with the target in reach: circle rather than
+        # stand. Its own bearing is what it walks to, so turning that turns the whole ring.
+        if not self.attack_token and not self.kind.ranged and dist < self.melee_reach + target.size:
+            self.slot_angle += math.radians(c.Entities.CIRCLE_SPEED_DEG) * self.circle_side * move_factor
         cornered = self.cornered(dist)
         retreating = self.kind.ranged and not cornered and dist < self.kind.keep_distance
 
@@ -320,7 +368,7 @@ class Monster(Entity):
         self._separate(crowd, blocked, radius)
 
         damage = 0
-        if (not self.kind.ranged or cornered) and dist < self.melee_reach * 10:
+        if (not self.kind.ranged or cornered) and self.attack_token and dist < self.melee_reach * 10:
             if self.start_attack_anim(dist):
                 damage = round(self.kind.damage * damage_mult)
 
@@ -348,6 +396,7 @@ class Monster(Entity):
             aggro=self.aggro,
             phase=self.art_phase,
             nock=self.shot_readiness,
+            walk=self.gait.step(self.x, self.y),
         )
         bar_width, bar_height = 60, 8
         self.draw_health_bar(

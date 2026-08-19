@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 import pygame
 
 import core.constants as c
+from game.entities.entities import Gait
 from game.entities.wander import Wander
 
 if TYPE_CHECKING:
@@ -73,6 +74,9 @@ class Critter:
         # happens to be standing, so its anchor moves with it.
         self.anchored = home is not None
         self.home = home if home is not None else (x, y)
+        # The walk cycle, read off its own movement when it is drawn. A critter is not an
+        # Entity, so it carries its own, exactly as it carries its own `root`.
+        self.gait = Gait(x, y)
         radius = c.Wildlife.DOG_WANDER_RADIUS if self.anchored else c.Wildlife.WANDER_RADIUS
         self.wander = Wander(kind.wander_speed, radius, c.Wildlife.IDLE_MIN_MS, c.Wildlife.IDLE_MAX_MS)
 
@@ -256,13 +260,17 @@ class Critter:
                 round(sy + sin_o * forward * size + cos_o * side * size),
             )
 
+        walk = self.gait.step(self.x, self.y)
         if self.kind.shape == "quadruped":
-            self._draw_quadruped(screen, at, color, shade, size)
+            self._draw_quadruped(screen, at, color, shade, size, walk)
         else:
-            self._draw_small(screen, at, color, shade, size, sx, sy)
+            self._draw_small(screen, at, color, shade, size, sx, sy, walk)
         self._draw_health(screen, sx, sy, size)
 
-    def _draw_small(self, screen, at, color, shade, size, sx, sy):
+    def _draw_small(self, screen, at, color, shade, size, sx, sy, walk: float = 0.0):
+        # A rabbit does not walk, it hops: the body lifts with the stride and the head keeps
+        # its place, which from above is the whole of the animation.
+        sy -= abs(walk) * size * 0.12
         body = pygame.Rect(0, 0, round(size * 1.3), round(size * 0.85))
         body.center = (round(sx), round(sy))
         pygame.draw.ellipse(screen, color, body)
@@ -279,14 +287,19 @@ class Critter:
             # The white stripe down the mask is the whole point of a badger from above.
             pygame.draw.line(screen, (240, 240, 235), at(0.45, 0), at(0.95, 0), 3)
 
-    def _draw_quadruped(self, screen, at, color, shade, size):
+    def _draw_quadruped(self, screen, at, color, shade, size, walk: float = 0.0):
         """Deer, boar, dog and bear all stand on legs and are longer than they are wide, so
         they can't be drawn as one blob the way the small critters are: from this far up a
-        plain ellipse with two lines off the front reads as a snail rather than an animal."""
+        plain ellipse with two lines off the front reads as a snail rather than an animal.
+
+        `walk` carries the feet: diagonal pairs move together and opposite pairs against each
+        other, which is how a four-legged animal actually crosses the ground and the one thing
+        that separates a deer trotting away from a deer being dragged."""
         # Hooves/paws first, so they poke out from under the flank rather than sit on top.
-        for forward, splay in ((0.34, 0.46), (-0.38, -0.52)):
+        for forward, splay, lead in ((0.34, 0.46, 1), (-0.38, -0.52, -1)):
             for side in (-1, 1):
-                pygame.draw.line(screen, shade, at(forward, side * 0.26), at(splay, side * 0.5), 3)
+                step = walk * c.Entities.GAIT_LEG * lead * side
+                pygame.draw.line(screen, shade, at(forward, side * 0.26), at(splay + step, side * 0.5), 3)
 
         flank = [at(0.5, -0.28), at(0.5, 0.28), at(-0.55, 0.32), at(-0.72, 0.14), at(-0.72, -0.14), at(-0.55, -0.32)]
         pygame.draw.polygon(screen, color, flank)
