@@ -50,6 +50,12 @@ class Entity:
         # roots). Session-only and shared by everything that moves, since the trap does not
         # care what it caught: whoever is rooted still turns, still swings, still bleeds.
         self.rooted_until_ms = 0
+        # Slowed rather than held: a frost staff's bolt leaves whatever it touched walking
+        # at `chill_mult` of its pace until this tick. Read by every mover the same way
+        # `rooted` is, and deliberately never a stop, since a bear trap is the only thing
+        # in the world that takes movement away entirely.
+        self.chilled_until_ms = 0
+        self.chill_factor = 1.0
         # The walk cycle. Read once per frame by whatever draws this thing, from its own
         # movement, so nothing has to remember to keep it turning.
         self.gait = Gait(x, y)
@@ -60,6 +66,21 @@ class Entity:
     @property
     def rooted(self) -> bool:
         return pygame.time.get_ticks() < self.rooted_until_ms
+
+    def chill(self, duration_ms: int, factor: float):
+        """Slow this thing down for a while. A fresh chill takes the harsher of the two
+        factors and the later of the two deadlines, so shooting something twice never
+        leaves it faster than one bolt would have."""
+        self.chill_factor = min(self.chill_factor, factor) if self.chilled else factor
+        self.chilled_until_ms = max(self.chilled_until_ms, pygame.time.get_ticks() + duration_ms)
+
+    @property
+    def chilled(self) -> bool:
+        return pygame.time.get_ticks() < self.chilled_until_ms
+
+    @property
+    def chill_mult(self) -> float:
+        return self.chill_factor if self.chilled else 1.0
 
     def receive_damage(self, damage):
         """Returns True if the entity died"""

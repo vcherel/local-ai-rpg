@@ -164,9 +164,13 @@ class Affixes:
     BLOODLUST_DAMAGE_MULT: float = 1.3
     BLOODLUST_DURATION_S: float = 8.0
 
-    # Chain Strike: a landed hit also strikes the nearest other enemy within range.
+    # Chain Strike: a landed hit sends a pulse out from whatever was struck, and everything
+    # else caught inside it takes a share of the blow. An AoE rather than one jump to the
+    # nearest body, so the legendary is worth building a crowd fight around, and drawn as
+    # an expanding ring with a bolt to each thing it caught (core/impact_fx.py) so the
+    # numbers popping across the screen have something to come from.
     CHAINSTRIKE_DAMAGE_FRAC: float = 0.6
-    CHAINSTRIKE_RADIUS: float = 220.0
+    CHAINSTRIKE_RADIUS: float = 165.0
 
     # Guardian's Ward: a lethal-looking hit instead clamps hp at this fraction of max and
     # grants a brief window of total invulnerability, on an internal cooldown.

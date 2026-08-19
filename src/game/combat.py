@@ -12,6 +12,7 @@ from core.camera import get_shake
 from core.damage_fx import get_damage_fx
 from core.decals import get_decals
 from core.floating_text import get_floating_text
+from core.impact_fx import get_impacts
 from core.particles import get_particles
 from core.screen_fx import get_hitstop
 from core.swing_arcs import get_swings
@@ -84,10 +85,21 @@ class WorldCombat:
         ) * player.damage_multiplier()
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
 
-        # The wedge the swing covers, drawn and enforced from the same two numbers, so a
-        # cleaving weapon's wide sweep is visible before it lands rather than inferred
-        # from three damage numbers popping at once.
-        get_swings().spawn(origin[0], origin[1], player.orientation, reach, arch.arc_deg, arch.cleave)
+        # What the attack covers, drawn and enforced from the same numbers, so what is on
+        # screen is what the hit test accepts rather than three damage numbers popping at
+        # once and being inferred from. A thrust is a lane down the facing, a sweep a wedge.
+        if arch.pierce_melee:
+            # The lane runs out to where the hit test actually stops: the swing point is
+            # `reach` ahead of the player and the test covers `hit_radius` around it.
+            get_swings().spawn_thrust(
+                origin[0], origin[1], player.orientation, reach + hit_radius, arch.min_hit_distance
+            )
+        else:
+            get_swings().spawn(origin[0], origin[1], player.orientation, reach, arch.arc_deg, arch.cleave)
+
+        # A thrust's share per target: the first body on the shaft takes it all and every
+        # one behind it a little less, filled in as each group is found.
+        lane_share: dict = {}
 
         def in_reach(entities, size_of):
             return self._targets_in_reach(
@@ -100,13 +112,17 @@ class WorldCombat:
                 arch.min_hit_distance,
                 player.orientation,
                 arch.arc_deg,
+                arch.pierce_melee,
             )
 
         def falloff(target):
             """What this particular target takes of the swing. Full damage for anything the
             weapon is actually pointed at; a cleave bleeds out toward the edge of its arc and
             the end of its reach, so sweeping six things at once is worth doing and worth
-            less per head than picking one of them."""
+            less per head than picking one of them. A thrust instead loses a fixed share per
+            body it has already gone through."""
+            if arch.pierce_melee:
+                return base_damage * lane_share.get(id(target), 1.0)
             if not arch.cleave:
                 return base_damage
             return base_damage * self._cleave_falloff(origin, player.orientation, arch, hit_radius, target)
@@ -145,11 +161,13 @@ class WorldCombat:
                 (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc),
             )
         ):
-            if engaged and not (arch.cleave and index < hostile_groups):
+            if engaged and not ((arch.cleave or arch.pierce_melee) and index < hostile_groups):
                 break
             targets = in_reach(group, size_of)
             if not targets:
                 continue
+            if arch.pierce_melee:
+                lane_share.update(self._thrust_shares(origin, targets))
             if not engaged:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
             engaged = True
@@ -211,6 +229,7 @@ class WorldCombat:
         min_distance: float = 0.0,
         facing: float | None = None,
         arc_deg: float = 360.0,
+        pierce: bool = False,
     ) -> list:
         """Entities within a swing's reach: every one in range if the weapon cleaves,
         otherwise just the nearest.
@@ -221,7 +240,16 @@ class WorldCombat:
 
         `facing`/`arc_deg` are the wedge the swing covers, the same one drawn on screen by
         `core.swing_arcs`. Without it a cleaving weapon caught things standing behind the
-        player, which the drawn arc would then be lying about."""
+        player, which the drawn arc would then be lying about.
+
+        `pierce` swaps that wedge for a lane: a thrust skewers everything standing along
+        the shaft, out to `hit_radius` and past the blind spot, which is what the spear's
+        dead zone buys and why lining a pack up is worth doing."""
+        if pierce and origin is not None and facing is not None:
+            # The lane is as long as the disc test is deep: out to the swing point and the
+            # hit radius around it, so a thrust reaches exactly as far as any other swing.
+            reach = math.hypot(pos[0] - origin[0], pos[1] - origin[1]) + hit_radius
+            return WorldCombat._targets_in_lane(entities, origin, facing, reach, min_distance, size_of)
         targets = [e for e in entities if e.distance_to_point(pos) < hit_radius + size_of(e) // 2]
         if min_distance and origin is not None:
             targets = [e for e in targets if e.distance_to_point(origin) >= min_distance]
@@ -230,6 +258,33 @@ class WorldCombat:
         if not targets or cleave:
             return targets
         return [min(targets, key=lambda e: e.distance_to_point(pos))]
+
+    @staticmethod
+    def _targets_in_lane(entities, origin, facing: float, reach: float, min_distance: float, size_of) -> list:
+        """Everything standing on the line a thrust runs down, nearest first.
+
+        Measured as two distances rather than an angle: how far along the facing a target
+        is (which has to fall between the blind spot and the reach) and how far off to the
+        side of it (which has to be inside `Combat.THRUST_LANE_WIDTH` plus its own bulk).
+        An angle would make the lane a wedge again, widening with distance, and the point
+        of a spear is that it is exactly as wide at the tip as at the hand."""
+        sin_a, cos_a = math.sin(facing), math.cos(facing)
+        hits = []
+        for entity in entities:
+            dx, dy = entity.x - origin[0], entity.y - origin[1]
+            along = dx * sin_a - dy * cos_a
+            across = abs(dx * cos_a + dy * sin_a)
+            half = size_of(entity) / 2
+            if min_distance <= along <= reach + half and across <= c.Combat.THRUST_LANE_WIDTH + half:
+                hits.append((along, entity))
+        return [entity for _, entity in sorted(hits, key=lambda pair: pair[0])]
+
+    @staticmethod
+    def _thrust_shares(origin, targets) -> dict:
+        """What each skewered target takes of the thrust: full for the first body on the
+        shaft, `Combat.THRUST_FALLOFF` of the one before it for everything behind."""
+        ordered = sorted(targets, key=lambda e: e.distance_to_point(origin))
+        return {id(entity): c.Combat.THRUST_FALLOFF**index for index, entity in enumerate(ordered)}
 
     @staticmethod
     def _cleave_falloff(origin, facing: float, arch, hit_radius: float, target) -> float:
@@ -391,6 +446,12 @@ class WorldCombat:
         now = pygame.time.get_ticks()
         if now < player.attack_ready_ms:
             return
+        # A boomerang is thrown, not fired: there is only ever one of them in the air, and
+        # waiting for it to come home is what it costs instead of ammo.
+        if arch.projectile_style == "boomerang" and any(
+            proj.style == "boomerang" and proj.owner_id == id(player) for proj in self.projectiles
+        ):
+            return
         if arch.uses_ammo:
             # `Player.ready_ammo` is the quiver in the ammo slot, or the cheapest carried
             # once that one is empty, and it is what the HUD counts too, so the number on
@@ -417,7 +478,10 @@ class WorldCombat:
         damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(ranged=True), rampage=rampage)
         crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
         rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
-        style, color = ("bolt", BOLT_COLOR) if arch.name == "staff" else ("arrow", ARROW_COLOR)
+        style = arch.projectile_style
+        color = c.STAFF_BOLT_COLORS[arch.element] if style == "bolt" else ARROW_COLOR
+        if style == "boomerang":
+            color = c.Boomerang.COLOR
         proj = Projectile(
             player.x,
             player.y,
@@ -428,8 +492,15 @@ class WorldCombat:
             knockback=arch.knockback,
             shake=arch.shake + crit_shake + rampage_shake,
             owner_id=id(player),
+            max_range=c.Boomerang.OUT_RANGE if style == "boomerang" else None,
         )
+        # What the shot does beyond damage, carried by the projectile rather than looked up
+        # again when it lands: the weapon that threw it may well have been swapped by then.
+        proj.element = arch.element
         proj.pierce = player.pierce_count()
+        if style == "boomerang":
+            proj.owner = player
+            proj.pierce += c.Boomerang.PIERCE
         self.projectiles.append(proj)
 
     def _roll_hit(
@@ -454,18 +525,29 @@ class WorldCombat:
             return None
         return (dx / dist, dy / dist)
 
+    KNOCKBACK_STEP = 8.0
+
     @staticmethod
     def _knockback(target, radius, kb_dir, distance, blocked):
-        """Shove a target along kb_dir, sliding along walls one axis at a time."""
+        """Shove a target along kb_dir, sliding along walls one axis at a time.
+
+        Walked out in short hops rather than in one jump, for the reason a projectile is:
+        testing only where the shove ends puts whatever was hit on the far side of a thin
+        wall, and a pole shoves things far enough for that to be most of a room."""
         if not kb_dir or distance <= 0:
             return
-        step_x, step_y = kb_dir[0] * distance, kb_dir[1] * distance
-        if blocked is not None and blocked(target.x + step_x, target.y, radius):
-            step_x = 0
-        target.x += step_x
-        if blocked is not None and blocked(target.x, target.y + step_y, radius):
-            step_y = 0
-        target.y += step_y
+        steps = max(1, math.ceil(distance / WorldCombat.KNOCKBACK_STEP))
+        step_x, step_y = kb_dir[0] * distance / steps, kb_dir[1] * distance / steps
+        for _ in range(steps):
+            moved = False
+            if blocked is None or not blocked(target.x + step_x, target.y, radius):
+                target.x += step_x
+                moved = True
+            if blocked is None or not blocked(target.x, target.y + step_y, radius):
+                target.y += step_y
+                moved = True
+            if not moved:
+                return
 
     def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, blocked):
         rampage = player.rampage_trigger(ranged=False)
@@ -913,37 +995,91 @@ class WorldCombat:
                 self._kill_monster(monster, monster_list, player, quest_system)
 
     def _apply_chainstrike(self, primary, target_list, damage, player, quest_system, blocked, ranged: bool = False):
-        """Chain Strike: a landed hit also strikes the nearest other target in the same
-        list within range, for a fraction of the primary hit's damage."""
+        """Chain Strike: a landed hit sends a pulse out from whatever was struck, and
+        everything else within `Affixes.CHAINSTRIKE_RADIUS` takes a share of the blow.
+
+        An area effect rather than one jump to the nearest body: the legendary is the
+        reason to wade into a crowd rather than a slightly better single target. It draws
+        the ring it damaged over (`core.impact_fx`) and a bolt to each thing it caught, so
+        several damage numbers popping at once have something visible behind them."""
         frac = player.chainstrike_frac(ranged)
         if frac <= 0:
             return
-        chain_target = min(
+        caught = [
+            target
+            for target in target_list
+            if target is not primary and target.distance_to_point((primary.x, primary.y)) < c.Affixes.CHAINSTRIKE_RADIUS
+        ]
+        get_impacts().pulse(
+            primary.x,
+            primary.y,
+            c.Affixes.CHAINSTRIKE_RADIUS,
+            c.ImpactFx.CHAINSTRIKE_COLOR,
+            [(target.x, target.y) for target in caught],
+        )
+        chain_damage = max(1, int(damage * frac))
+        for target in caught:
+            get_particles().spawn_burst(target.x, target.y, (140, 200, 255), count=8, speed=4, life=300, size=3)
+            kb_dir = self._dir_from(primary.x, primary.y, target.x, target.y)
+            died = self._resolve_monster_hit(
+                target,
+                target_list,
+                chain_damage,
+                player,
+                quest_system,
+                shake=0.0,
+                knockback=0.0,
+                kb_dir=kb_dir,
+                blocked=blocked,
+            )
+            self._apply_on_hit_effects(target, target_list, chain_damage, player, quest_system, died, ranged=ranged)
+
+    def _apply_element(self, proj, target, target_list, player, quest_system, died: bool):
+        """What an elemental staff's bolt does where it landed (`c.Staffs`).
+
+        Each element is an existing mechanic pointed at by the weapon rather than by an
+        affix roll: fire lights the burn ticker, frost slows whatever it touched, storm
+        jumps to the nearest other body. Nothing happens on a shot that was not the
+        player's, and nothing happens to something the hit already killed."""
+        if not proj.element or died:
+            return
+        if proj.element == "fire" and hasattr(target, "apply_burn"):
+            target.apply_burn(c.Staffs.BURN_DAMAGE)
+            get_particles().spawn_burst(target.x, target.y, (255, 150, 60), count=8, speed=4, life=320, size=3)
+            return
+        if proj.element == "frost":
+            target.chill(c.Staffs.CHILL_MS, c.Staffs.CHILL_MULT)
+            get_particles().spawn_burst(target.x, target.y, (150, 220, 255), count=8, speed=3, life=380, size=3)
+            return
+        if proj.element == "storm" and target_list is not None:
+            self._chain_bolt(target, target_list, proj.damage, player, quest_system)
+
+    def _chain_bolt(self, primary, target_list, damage, player, quest_system):
+        """A storm staff's bolt jumping to the nearest other body: the Chain Strike idea at
+        a weapon's strength, one target and no pulse."""
+        nearest = min(
             (
-                m
-                for m in target_list
-                if m is not primary and m.distance_to_point((primary.x, primary.y)) < c.Affixes.CHAINSTRIKE_RADIUS
+                target
+                for target in target_list
+                if target is not primary and target.distance_to_point((primary.x, primary.y)) < c.Staffs.CHAIN_RADIUS
             ),
-            key=lambda m: m.distance_to_point((primary.x, primary.y)),
+            key=lambda target: target.distance_to_point((primary.x, primary.y)),
             default=None,
         )
-        if chain_target is None:
+        if nearest is None:
             return
-        chain_damage = max(1, int(damage * frac))
-        get_particles().spawn_burst(chain_target.x, chain_target.y, (140, 200, 255), count=8, speed=4, life=300, size=3)
-        kb_dir = self._dir_from(primary.x, primary.y, chain_target.x, chain_target.y)
-        died = self._resolve_monster_hit(
-            chain_target,
+        get_impacts().pulse(primary.x, primary.y, 0.0, c.STAFF_BOLT_COLORS["storm"], [(nearest.x, nearest.y)])
+        self._resolve_monster_hit(
+            nearest,
             target_list,
-            chain_damage,
+            max(1, int(damage * c.Staffs.CHAIN_FRAC)),
             player,
             quest_system,
             shake=0.0,
             knockback=0.0,
-            kb_dir=kb_dir,
-            blocked=blocked,
+            kb_dir=self._dir_from(primary.x, primary.y, nearest.x, nearest.y),
+            blocked=self.blocked,
         )
-        self._apply_on_hit_effects(chain_target, target_list, chain_damage, player, quest_system, died, ranged=ranged)
 
     def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem, direction=None):
         """A boss dies with extra spectacle and a guaranteed legendary lootbox."""
@@ -1192,6 +1328,7 @@ class WorldCombat:
         )
         if by_player:
             self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
+            self._apply_element(proj, target, targets, player, quest_system, died)
             self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
         self._projectile_after_hit(proj, target)
         return True
@@ -1214,6 +1351,8 @@ class WorldCombat:
         if critter.receive_damage(proj.damage):
             self._kill_critter(critter, player, kb_dir, by_player=by_player)
         else:
+            if by_player:
+                self._apply_element(proj, critter, None, player, None, died=False)
             self._hit_feedback(critter.x, critter.y, False, kb_dir)
             self._knockback(critter, critter.size / 2, kb_dir, proj.knockback, self.blocked)
             critter.startle()
@@ -1245,6 +1384,8 @@ class WorldCombat:
         frac = player.lifesteal_frac(ranged=True) if by_player else 0.0
         if frac > 0:
             player.heal(proj.damage * frac)
+        if by_player and npc.hp > 0:
+            self._apply_element(proj, npc, None, player, quest_system, died=False)
         self._projectile_after_hit(proj, npc)
         return True
 
@@ -1281,9 +1422,12 @@ class WorldCombat:
                 self._kill_monster(monster, monster_list, player, quest_system)
 
     def _projectile_after_hit(self, proj: Projectile, target):
-        """Record the target and either pierce onward (arrow-pierce) or stop the projectile."""
+        """Record the target and either pierce onward (arrow-pierce) or stop the projectile.
+
+        A boomerang that has gone through everything it can carry turns for home instead of
+        stopping: it is thrown rather than fired, and it always comes back."""
         proj.hit_ids.add(id(target))
         if proj.pierce > 0:
             proj.pierce -= 1
-        else:
+        elif not proj.turn_back():
             self.projectiles.remove(proj)

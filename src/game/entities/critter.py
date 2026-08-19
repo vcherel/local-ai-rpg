@@ -70,6 +70,8 @@ class Critter:
         # Held in a bear trap's jaws until this tick. An animal caught in one still turns
         # and still bites whatever comes within reach; it just cannot leave.
         self.rooted_until_ms = 0
+        self.chilled_until_ms = 0
+        self.chill_factor = 1.0
         # A dog belongs somewhere and strolls around it; wildlife roams from wherever it
         # happens to be standing, so its anchor moves with it.
         self.anchored = home is not None
@@ -114,6 +116,20 @@ class Critter:
     def rooted(self) -> bool:
         return pygame.time.get_ticks() < self.rooted_until_ms
 
+    def chill(self, duration_ms: int, factor: float):
+        """Slowed by a frost bolt. Its own copy of `Entity.chill` for the same reason it
+        has its own `root`: a critter is not an `Entity`."""
+        self.chill_factor = min(self.chill_factor, factor) if self.chilled else factor
+        self.chilled_until_ms = max(self.chilled_until_ms, pygame.time.get_ticks() + duration_ms)
+
+    @property
+    def chilled(self) -> bool:
+        return pygame.time.get_ticks() < self.chilled_until_ms
+
+    @property
+    def chill_mult(self) -> float:
+        return self.chill_factor if self.chilled else 1.0
+
     def startle(self):
         """Wounded but alive: run flat out for a while, wherever the player is."""
         self.bolt_until_ms = pygame.time.get_ticks() + c.Wildlife.BOLT_DURATION_MS
@@ -155,7 +171,7 @@ class Critter:
         radius = self.size / 2
         # An animal in water is slowed like everything else: a deer that bolts across a
         # river is easier to catch there than on the bank, which is the point of the bank.
-        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult
+        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult * self.chill_mult
         now = pygame.time.get_ticks()
         dist = self.distance_to_point((player.x, player.y))
 

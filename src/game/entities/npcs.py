@@ -274,7 +274,7 @@ class NPC(Entity):
         if self.rooted:
             return angle
         radius = c.Entities.NPC_SIZE / 2
-        speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * dt * c.TARGET_FPS / 1000.0
+        speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * self.chill_mult * dt * c.TARGET_FPS / 1000.0
         step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
         if blocked is not None and blocked(self.x + step_x, self.y, radius):
             step_x = 0

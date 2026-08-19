@@ -26,6 +26,10 @@ WEAPON_KEYWORDS = {
     "staff",
     "lance",
     "hammer",
+    "cudgel",
+    "pole",
+    "boomerang",
+    "chakram",
 }
 AMMO_KEYWORDS = {"arrow", "bolt"}
 ARMOR_KEYWORDS = {
@@ -290,7 +294,7 @@ def affix_label(affix: str, magnitude) -> str:
     if affix == "bloodlust":
         return f"Kills grant +{round((magnitude - 1) * 100)}% damage for {round(c.Affixes.BLOODLUST_DURATION_S)}s"
     if affix == "chainstrike":
-        return f"Hits also strike a nearby foe for {round(magnitude * 100)}% damage"
+        return f"Hits pulse out, striking every nearby foe for {round(magnitude * 100)}% damage"
     if affix == "guardian_ward":
         return f"A lethal hit instead leaves you at {round(magnitude * 100)}% hp, briefly invulnerable"
     if affix == "retribution":

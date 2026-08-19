@@ -87,6 +87,26 @@ def draw_shape_with_border(surface, shape, center, size, color, border_width, bo
         # diamond on a pole is indistinguishable from the staff's orb at icon size.
         point = [at(0, -1.0), at(0.34, -0.5), at(0.2, -0.28), at(0, -0.2), at(-0.2, -0.28), at(-0.34, -0.5)]
         _poly(surface, point, color, border_color, border_width)
+    elif shape == "pole":
+        # A full-length shaft with a metal band at each end and nothing sharp anywhere on
+        # it, which is the whole reading of the weapon: it hits with its weight.
+        haft = [at(-0.16, -1.0), at(0.16, -1.0), at(0.16, 1.0), at(-0.16, 1.0)]
+        _poly(surface, haft, HAFT_COLOR, border_color, thin)
+        for band_y in (-0.98, 0.62):
+            band = [at(-0.28, band_y), at(0.28, band_y), at(0.28, band_y + 0.36), at(-0.28, band_y + 0.36)]
+            _poly(surface, band, color, border_color, border_width)
+    elif shape == "boomerang":
+        # A chevron of even width rather than a stick with something on the end: the bend
+        # is the whole silhouette, and it is the one weapon in the bag with no handle.
+        chevron = [
+            at(-0.95, 0.62),
+            at(0, -0.92),
+            at(0.95, 0.62),
+            at(0.5, 0.78),
+            at(0, -0.18),
+            at(-0.5, 0.78),
+        ]
+        _poly(surface, chevron, color, border_color, border_width)
     elif shape == "staff":
         haft = [at(-0.13, -0.4), at(0.13, -0.4), at(0.13, 1.0), at(-0.13, 1.0)]
         _poly(surface, haft, HAFT_COLOR, border_color, thin)
