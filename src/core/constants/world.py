@@ -71,6 +71,12 @@ class World:
     # world, and generation threads finish in bursts; the periodic autosave catches the rest.
     PERSIST_MIN_INTERVAL_S: float = 5.0
 
+    # How often the game saves itself while it is being played. The world is also written
+    # at the moments worth not replaying (a tunnel entered or left, a night slept through,
+    # a quest handed in, a death), so this is the floor under all of them rather than the
+    # only thing standing between the player and a lost hour.
+    AUTOSAVE_INTERVAL_S: float = 300.0
+
     # How many rings World.free_spot_near searches before giving up. Each ring is one body
     # diameter farther out, so this covers a building's whole footprint and then some.
     FREE_SPOT_MAX_RINGS: int = 24

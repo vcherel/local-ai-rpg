@@ -9,8 +9,10 @@ import core.constants as c
 from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import (
     ACCESSORY_FLAVOR_LABELS,
+    INVENTORY_SECTIONS,
     affix_label,
     base_value,
+    inventory_section,
     potion_description,
     rarity_color,
     rarity_tier,
@@ -25,21 +27,11 @@ if TYPE_CHECKING:
 
 RARE_GLOW = {"rare", "epic", "legendary"}
 
-# The grid's sections, in order: what you fight with, then what you wear, then supplies,
-# then the junk you are carrying to a merchant. Each one is drawn under its own heading and
-# starts on a fresh row, so a bag reads as blocks instead of one unbroken wall of icons.
-SECTIONS = (
-    ("Weapons", ("weapon",)),
-    ("Armour", ("shield", "armor")),
-    ("Trinkets", ("accessory",)),
-    ("Supplies", ("potion", "ammo")),
-    ("Valuables", ("misc", "lootbox")),
-)
-# Sort order inside the grid, taken straight from the sections so the two can't disagree.
-TYPE_ORDER = tuple(item_type for _title, types in SECTIONS for item_type in types)
-
 # Height of a section heading row, cell rows being cell_size + cell_padding tall.
 HEADER_ROW_H = 34
+
+# The button under the grid, sized here so drawing and hit-testing share the one rect.
+AUTO_EQUIP_SIZE = (170, 30)
 
 
 class InventoryMenu(BaseMenu):
@@ -50,7 +42,7 @@ class InventoryMenu(BaseMenu):
         self.cell_size = 76
         self.cell_padding = 12
         self.paperdoll_width = 240
-        self.footer_height = 44
+        self.footer_height = 74
 
         self.scroll_row = 0
         # The grouped entry under the cursor (not an index: the rows are rebuilt per frame).
@@ -81,11 +73,11 @@ class InventoryMenu(BaseMenu):
 
         def sort_key(entry):
             item = entry["item"]
-            type_rank = TYPE_ORDER.index(item.item_type) if item.item_type in TYPE_ORDER else len(TYPE_ORDER)
-            # Best first inside a type, so the gear worth equipping sits at the top of
+            section_rank = INVENTORY_SECTIONS.index(inventory_section(item))
+            # Best first inside a section, so the gear worth equipping sits at the top of
             # its block rather than wherever it happened to be picked up.
             rarity_rank = -c.Rarity.TIERS.index(rarity_tier(item.rarity))
-            return (type_rank, rarity_rank, -item.bonus, item.name)
+            return (section_rank, rarity_rank, -item.bonus, item.name)
 
         return sorted(item_dict.values(), key=sort_key)
 
@@ -110,8 +102,8 @@ class InventoryMenu(BaseMenu):
         entries). Scrolling, hit-testing and drawing all walk this one list, so a section
         heading takes a row of its own rather than being laid over the cells."""
         rows = []
-        for title, types in SECTIONS:
-            group = [entry for entry in items_list if entry["item"].item_type in types]
+        for title in INVENTORY_SECTIONS:
+            group = [entry for entry in items_list if inventory_section(entry["item"]) == title]
             if not group:
                 continue
             rows.append(("header", title))
@@ -154,10 +146,13 @@ class InventoryMenu(BaseMenu):
 
     def _paperdoll_rects(self) -> list[tuple[str, str, str, pygame.Rect]]:
         """(item_type, label, glyph, slot_rect) for each equip slot, laid out as a 2x2 grid."""
-        slot = 100
+        slot = 76
         label_h = 24
         gap_x = 20
-        gap_y = 22
+        gap_y = 16
+        # Room kept above the grid for the "Equipped" heading, which is drawn from the
+        # first slot's position and would otherwise ride up into the title band.
+        heading_h = 26
         cols = 2
         rows = math.ceil(len(widgets.EQUIP_SLOTS) / cols)
         block_h = label_h + slot
@@ -165,8 +160,8 @@ class InventoryMenu(BaseMenu):
         grid_w = cols * slot + (cols - 1) * gap_x
         grid_h = rows * block_h + (rows - 1) * gap_y
 
-        area_h = self.height - self.content_top - self.footer_height
-        start_y = self.content_top + max(0, (area_h - grid_h) // 2)
+        area_h = self.height - self.content_top - self.footer_height - heading_h
+        start_y = self.content_top + heading_h + max(0, (area_h - grid_h) // 2)
         start_x = self.padding + (self.paperdoll_width - grid_w) // 2
 
         rects = []
@@ -177,6 +172,11 @@ class InventoryMenu(BaseMenu):
             rect = pygame.Rect(x, y + label_h, slot, slot)
             rects.append((item_type, label, glyph, rect))
         return rects
+
+    def _auto_equip_rect(self) -> pygame.Rect:
+        """The Equip best button, under the paper-doll it changes."""
+        width, height = AUTO_EQUIP_SIZE
+        return pygame.Rect(self.width - self.padding - width, self.height - self.footer_height + 4, width, height)
 
     def _entry_at(self, rel_x: int, rel_y: int, rows: list[tuple]) -> Optional[dict]:
         g = self._grid_geom()
@@ -221,14 +221,22 @@ class InventoryMenu(BaseMenu):
                 if equipped is not None:
                     player.toggle_equip(equipped)
                 return True
+            if self._auto_equip_rect().collidepoint(rel_x, rel_y):
+                player.auto_equip_best()
+                return True
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-            # Right click walks a weapon along the number-key bar and then off the end,
-            # which is the only manual way to set the bar up; equipping fills it on its own.
+            # Right click walks a weapon along the number-key bar, or a potion along the
+            # quickbar, and then off the end: the only manual way to set either up, since
+            # equipping and picking up only ever fill a slot that is free.
             rel_x, rel_y = event.pos[0] - menu_x, event.pos[1] - menu_y
             entry = self._entry_at(rel_x, rel_y, rows)
             if entry is not None:
-                player.cycle_weapon_slot(entry["item"])
+                item = entry["item"]
+                if item.item_type == "potion":
+                    player.cycle_potion_slot(item)
+                else:
+                    player.cycle_weapon_slot(item)
             return True
 
         elif event.type == pygame.MOUSEWHEEL:
@@ -267,7 +275,8 @@ class InventoryMenu(BaseMenu):
         self.hovered_equip = self._equip_at(rel_x, rel_y)
 
         self._draw_paperdoll(surface, player)
-        self._draw_grid(surface, rows, equipped_ids, player.weapon_bar)
+        self._draw_auto_equip_button(surface, player, (rel_x, rel_y))
+        self._draw_grid(surface, rows, equipped_ids, player)
 
         tooltip_item = None
         if self.hovered_entry is not None:
@@ -276,7 +285,8 @@ class InventoryMenu(BaseMenu):
             tooltip_item = player.equipped_item(self.hovered_equip)
 
         self.draw_hint(
-            surface, "Click to equip, unequip or drink. Right click a weapon for its number key. ESC or I to close"
+            surface,
+            "Click to equip, unequip or drink. Right click a weapon or potion for its key. ESC or I to close",
         )
         self.blit_panel(surface)
 
@@ -290,15 +300,21 @@ class InventoryMenu(BaseMenu):
         first_rect = self._paperdoll_rects()[0][3]
         surface.blit(header, (self.padding, first_rect.y - 24 - header.get_height() - 6))
 
+        active_melee = player.active_melee_slot()
         for item_type, label, glyph, rect in self._paperdoll_rects():
             item = player.equipped_item(item_type)
             hovered = self.hovered_equip == item_type
+            # Both melee weapons are worn; the one that swings takes the gold label, border
+            # and corner dot, since the two slots are otherwise identical.
+            in_hand = item is not None and item_type == active_melee
 
-            label_surf = c.Fonts.small.render(label, True, c.Colors.MUTED)
+            label_surf = c.Fonts.small.render(label, True, c.Colors.ACCENT if in_hand else c.Colors.MUTED)
             surface.blit(label_surf, (rect.centerx - label_surf.get_width() // 2, rect.y - 22))
 
             border = c.Colors.ACCENT if item else c.Colors.SLOT_BORDER
-            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border)
+            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border, border_w=3 if in_hand else 2)
+            if in_hand:
+                pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 10, rect.y + 10), 4)
 
             if item is not None:
                 widgets.draw_item_scaled(surface, item, rect.centerx, rect.centery - 6, 58)
@@ -308,7 +324,22 @@ class InventoryMenu(BaseMenu):
             else:
                 draw_shape_with_border(surface, glyph, rect.center, 24, (66, 66, 76), 2, (90, 90, 104))
 
-    def _draw_grid(self, surface, rows, equipped_ids, weapon_bar):
+    def _draw_auto_equip_button(self, surface, player: Player, rel_pos):
+        """One click to put the best of everything carried on, reporting how many upgrades
+        are sitting in the bag unworn."""
+        rect = self._auto_equip_rect()
+        pending = player.pending_upgrades()
+        label = f"Equip best ({pending})" if pending else "Equip best"
+        widgets.draw_button(
+            surface,
+            rect,
+            label,
+            c.Fonts.small,
+            hovered=rect.collidepoint(rel_pos),
+            text_color=c.Colors.WHITE if pending else c.Colors.MUTED,
+        )
+
+    def _draw_grid(self, surface, rows, equipped_ids, player: Player):
         g = self._grid_geom()
         for row, y in self._visible_rows(rows):
             if row[0] == "header":
@@ -317,7 +348,7 @@ class InventoryMenu(BaseMenu):
 
             for col, entry in enumerate(row[1]):
                 rect = pygame.Rect(g["start_x"] + col * g["step"], y, self.cell_size, self.cell_size)
-                self._draw_cell(surface, rect, entry, equipped_ids, weapon_bar)
+                self._draw_cell(surface, rect, entry, equipped_ids, player)
 
         if self._max_scroll(rows) > 0:
             self._draw_scrollbar(surface, g, rows)
@@ -330,7 +361,7 @@ class InventoryMenu(BaseMenu):
         line_y = baseline - 6
         pygame.draw.line(surface, c.Colors.SLOT_BORDER, (line_x, line_y), (g["start_x"] + g["width"], line_y))
 
-    def _draw_cell(self, surface, rect, entry, equipped_ids, weapon_bar):
+    def _draw_cell(self, surface, rect, entry, equipped_ids, player: Player):
         item = entry["item"]
         count = entry["count"]
         equipped = item.id in equipped_ids
@@ -354,8 +385,14 @@ class InventoryMenu(BaseMenu):
 
         if equipped:
             pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 12, rect.y + 12), 5)
-        if item.id in weapon_bar:
-            key = c.Fonts.small.render(str(weapon_bar.index(item.id) + 1), True, c.Colors.ACCENT)
+        # Whichever bar the item sits on, drawn as the key that would reach for it.
+        bound = None
+        if item.id in player.weapon_bar:
+            bound = str(player.weapon_bar.index(item.id) + 1)
+        elif item.id in player.potion_bar:
+            bound = c.Potions.QUICK_KEYS[player.potion_bar.index(item.id)].upper()
+        if bound is not None:
+            key = c.Fonts.small.render(bound, True, c.Colors.ACCENT)
             surface.blit(key, (rect.right - key.get_width() - 5, rect.y + 3))
         if count > 1:
             self._draw_count(surface, rect, count)
