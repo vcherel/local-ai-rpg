@@ -475,10 +475,27 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
 
     def walls_near(self, x, y) -> list:
-        """The palisade stretches of any walled town near this point, as rectangles."""
+        """The palisade of any walled town near this point, as rectangles a detour can be
+        costed round: each wall stretch grown to swallow the corner tower it ends at.
+
+        A tower is a third solid where two stretches meet, and left out of this it was
+        invisible to navigation: the way round a stretch ended at a corner standing inside
+        the tower, so a chaser walked at a point it could never reach and ground there. The
+        towers are folded into the stretches one at a time rather than merged wholesale,
+        since unioning both sides of a corner would swallow the town and its gates with it."""
         rects = []
+        reach = c.Villages.TOWER_RADIUS
         for village in self._village_solids_by_chunk.get(self._chunk_of(x, y), ()):
-            rects.extend(village.defences()["walls"])
+            defences = village.defences()
+            towers = [
+                pygame.Rect(round(tx - reach), round(ty - reach), reach * 2, reach * 2) for tx, ty in defences["towers"]
+            ]
+            for wall in defences["walls"]:
+                for tower in towers:
+                    if wall.colliderect(tower):
+                        wall = wall.union(tower)
+                rects.append(wall)
+            rects.extend(tower for tower in towers if not any(tower.colliderect(wall) for wall in defences["walls"]))
         return rects
 
     def line_of_sight(self, x0, y0, x1, y1) -> bool:
@@ -553,17 +570,20 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         and never gets better at it, which is the whole reason a river is worth crossing."""
         return c.Scenery.SWIM_SPEED if self.water_at(x, y) else 1.0
 
-    def free_spot_near(self, x, y, radius) -> tuple[float, float]:
+    def free_spot_near(self, x, y, radius, rings: int | None = None) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
 
         The spawn point is a fixed world coordinate while the starting town is laid out
         around a random centre near it, so the two overlap often; the same is true of any
         village generated later. Rather than move the settlement, whoever is being placed
-        steps out to the first clear spot around it."""
+        steps out to the first clear spot around it.
+
+        `rings` caps how far out the search goes, for a caller who wants a body put back on
+        the open ground it is standing in rather than moved to wherever there is room."""
         if not self.blocked(x, y, radius):
             return x, y
         step = radius * 2
-        for ring in range(1, c.World.FREE_SPOT_MAX_RINGS + 1):
+        for ring in range(1, (rings or c.World.FREE_SPOT_MAX_RINGS) + 1):
             distance = ring * step
             for index in range(ring * 8):
                 angle = 2 * math.pi * index / (ring * 8)
@@ -573,6 +593,21 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # Walled in on every side within the search: leave the caller where they were
         # rather than teleporting them somewhere arbitrary.
         return x, y
+
+    def unstick(self, body, radius: float) -> bool:
+        """Put a body that has ended up inside something solid back onto open ground.
+
+        Everything on legs tests `blocked` at the point it wants to step *to*, so one that
+        is already inside a wall has every step refused and stays there for good: a villager
+        a new village was built on top of, a monster shouldered into a tower by the crowd
+        behind it, anything caught by a door shutting on it. This is the one answer to that,
+        shared by the player, the villagers, the monsters and the wildlife, and the search is
+        deliberately short (`World.UNSTICK_RINGS`) so a body steps out of what it is in
+        rather than being moved through it."""
+        if not self.blocked(body.x, body.y, radius):
+            return False
+        body.x, body.y = self.free_spot_near(body.x, body.y, radius, rings=c.World.UNSTICK_RINGS)
+        return True
 
     def hostiles_near(self, x, y, radius: float) -> list:
         """Everything within `radius` of (x, y) that would attack the player: monsters,
@@ -634,6 +669,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         start = (monster.x, monster.y)
 
         if monster_building is player_building:
+            # Through the doorway (or given up on it): whatever door this one had committed
+            # itself to is behind it now.
+            chaser.door_commit = None
             if monster_building is not None:
                 # Same room: the only things between them are the bed and the table, so the
                 # detour that walks round a house walks round those too. Without it a monster
@@ -685,6 +723,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # How far off the doorway's centre line this one stands, measured across the facade.
         across = abs((monster.x - door.centerx) * -ny + (monster.y - door.centery) * nx)
         aligned = across < c.Buildings.DOOR_WIDTH / 2 - radius
+        if monster.door_commit == building.id and not building.door_closed:
+            # Already committed to going through: the alignment tests below flip as the body
+            # crosses the threshold, and re-deciding every frame is what had a chaser
+            # shivering in the doorway instead of walking through it. The commit is dropped
+            # by `chase_waypoint` the moment both are on the same side of the wall.
+            return door_front if leaving else inside
         if building.door_closed:
             # A shut door is a wall with nothing to walk round: come right up against it from
             # whichever side this is on and beat on it (WorldCombat.bash_doors). Close enough
@@ -693,13 +737,18 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 return inside
             return (door.centerx + nx * (radius + 6), door.centery + ny * (radius + 6))
         if leaving:
-            return door_front if aligned else inside
+            if not aligned:
+                return inside
+            monster.door_commit = building.id
+            return door_front
         # Too broad for the doorway (the stone colossus): it waits on the doorstep rather
         # than shoving itself into a wall it can never pass. Still round the far side of the
         # building, and the door is on the front: only step in from the front half.
         in_front = (monster.x - building.x) * nx + (monster.y - building.y) * ny > 0
         if not fits or not aligned or not in_front:
             return door_front
+        # Lined up on the doorstep and about to step through: hold that line to the end.
+        monster.door_commit = building.id
         return inside
 
     def assign_surround_slots(self, chasers, target):
@@ -1171,10 +1220,16 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         self._restock_merchants()
         fight, flee = self.militia_orders()
         mob = self._mob_orders(player, flee)
-        self.assign_surround_slots([npc for npc in self.npcs if id(npc) in mob], player)
+        crowd = [npc for npc in self.npcs if id(npc) in mob]
+        defenders = [npc for npc in self.npcs if id(npc) in fight]
+        self.assign_surround_slots(crowd, player)
         self._throw_stones(player, mob)
 
         for npc in self.npcs:
+            # Anything standing inside a solid is put back on open ground before it tries to
+            # move: from in there every step it could take would be refused, and a villager
+            # a village was built on top of stayed in the wall for the rest of the save.
+            self.unstick(npc, c.Entities.NPC_SIZE / 2)
             enemy = fight.get(id(npc))
             # The orders were worked out once for the whole street, so the neighbour who
             # went first may already have finished this one off.
@@ -1183,7 +1238,13 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             if enemy is not None:
                 waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
                 damage = npc.update(
-                    player, dt, self.blocked, waypoint, target=enemy, terrain_mult=self.terrain_speed(npc.x, npc.y)
+                    player,
+                    dt,
+                    self.blocked,
+                    waypoint,
+                    target=enemy,
+                    terrain_mult=self.terrain_speed(npc.x, npc.y),
+                    crowd=defenders,
                 )
                 if damage:
                     self._resolve_monster_hit(
@@ -1234,6 +1295,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 face_player=not indoors,
                 terrain_mult=self.terrain_speed(npc.x, npc.y),
                 standoff=mob.get(id(npc), 0.0),
+                crowd=crowd if chasing else None,
             )
             if damage:
                 player.receive_damage(damage, source=npc)
@@ -1353,6 +1415,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
 
         for monster in nearby:
             target = targets[monster]
+            # Anything that has ended up inside a solid (shouldered into a tower by the pack
+            # behind it, caught by a door shutting) is put back on open ground first: every
+            # step it could take from in there would be refused.
+            self.unstick(monster, monster.kind.size / 2)
             waypoint = self.chase_waypoint(monster, target, monster.kind.size / 2)
             # `nearby` doubles as the crowd each monster shoulders its way out of: the ones
             # converging on the player are exactly the ones that pile up on each other.
@@ -1403,6 +1469,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
     def _update_critters(self, player: Player, dt, damage_mult: float):
         player_pos = player.get_pos()
         for critter in self.critters:
+            self.unstick(critter, critter.size / 2)
             # Only an animal actually coming for the player needs a route round the houses;
             # everything else is wandering or running and steers for itself.
             chasing = critter.hostile and critter.distance_to_point(player_pos) <= critter.kind.detection

@@ -9,7 +9,7 @@ import pygame
 
 import core.constants as c
 from core.utils import random_color
-from game.entities.entities import Entity
+from game.entities.entities import Entity, push_apart
 from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 from game.entities.wander import Wander
 from game.quest import Quest
@@ -284,6 +284,7 @@ class NPC(Entity):
         face_player=True,
         terrain_mult: float = 1.0,
         standoff: float = 0.0,
+        crowd=None,
     ):
         """One frame of this villager's life, returning the damage their swing just landed
         on `target` (0 for none) so the world can resolve it: the same villager can be
@@ -300,8 +301,13 @@ class NPC(Entity):
 
         `standoff` is how far off the target they mean to stand: a hair inside arm's reach
         for whoever is doing the fighting, well out of it for the ones who would rather
-        throw something from the back of the crowd."""
+        throw something from the back of the crowd.
+
+        `crowd` is everyone else in the same fight, so a mob presses in as a ring rather
+        than stacking on the one spot nearest the player."""
         dt *= terrain_mult
+        if crowd:
+            push_apart(self, crowd, c.Entities.NPC_SIZE / 2, lambda other: c.Entities.NPC_SIZE / 2, blocked)
         # A stone thrown from the back of a mob starts a swing too, and that one is not in
         # `_hunt`: the animation is advanced here so it always finishes wherever it began.
         if target is None:
@@ -359,15 +365,24 @@ class NPC(Entity):
 
     def _ring_point(self, target, standoff: float, blocked=None) -> tuple:
         """The spot this one is trying to hold: its own bearing around the target, at
-        `standoff`. A spot nobody can stand in is worse than none, so a blocked one falls
-        back to walking straight at the target."""
+        `standoff`.
+
+        A spot nobody can stand in is worse than none, so a blocked bearing shuffles a
+        little way round the ring either side of itself before giving up. It used to fall
+        straight back to the target's own position, which is what had every villager whose
+        slot was against a wall converging on the same pixel: the fallback was the pile.
+        With nowhere on the ring to stand, they hold where they are and let the ones with
+        room do the work."""
         if standoff <= 0:
             return target.x, target.y
-        x = target.x + math.cos(self.slot_angle) * standoff
-        y = target.y + math.sin(self.slot_angle) * standoff
-        if blocked is not None and blocked(x, y, c.Entities.NPC_SIZE / 2):
-            return target.x, target.y
-        return x, y
+        radius = c.Entities.NPC_SIZE / 2
+        for offset in (0.0, 0.5, -0.5, 1.0, -1.0):
+            bearing = self.slot_angle + offset
+            x = target.x + math.cos(bearing) * standoff
+            y = target.y + math.sin(bearing) * standoff
+            if blocked is None or not blocked(x, y, radius):
+                return x, y
+        return self.x, self.y
 
     def _hunt(self, target, dt, blocked=None, waypoint=None, standoff: float = 0.0) -> int:
         """Walk at whatever this one is fighting and swing when it is in reach, returning the
@@ -384,7 +399,10 @@ class NPC(Entity):
         angle = math.atan2(goal[1] - self.y, goal[0] - self.x)
         self.orientation = angle + math.pi / 2
 
-        if self.distance_to_point(goal) > c.Entities.CHASE_ARRIVE:
+        # A waypoint is a step on the way, never a destination: arriving at the corner of a
+        # house or at a doorstep is no reason to stand there while the fight is elsewhere.
+        # Only reaching the place on the ring is standing still.
+        if waypoint is not None or self.distance_to_point(goal) > c.Entities.CHASE_ARRIVE:
             self._step_towards(goal, dt, blocked)
         else:
             # Standing on its spot: look at what it is fighting rather than at the ground.

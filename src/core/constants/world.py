@@ -97,6 +97,11 @@ class World:
     # diameter farther out, so this covers a building's whole footprint and then some.
     FREE_SPOT_MAX_RINGS: int = 24
 
+    # How many of those rings World.unstick is allowed, which is deliberately far fewer.
+    # A body standing inside a solid is meant to step out of what it is in, not to be
+    # teleported across the house it was embedded in.
+    UNSTICK_RINGS: int = 4
+
     # How far World.safe_spot_near keeps the player from anything hostile when placing them.
     # Well past every melee reach, so whatever is standing on the spawn point cannot swing
     # the moment the player arrives.

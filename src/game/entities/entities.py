@@ -59,6 +59,11 @@ class Entity:
         # The walk cycle. Read once per frame by whatever draws this thing, from its own
         # movement, so nothing has to remember to keep it turning.
         self.gait = Gait(x, y)
+        # The id of the door this one has committed to walking through (World._door_goal),
+        # dropped once it is on the same side of the wall as whatever it is chasing. Without
+        # it the goal flips between the doorstep and the threshold as the body crosses, and
+        # the chaser shivers in the gap instead of coming through.
+        self.door_commit = None
 
     def root(self, duration_ms: int):
         self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)
@@ -155,6 +160,42 @@ class Entity:
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset
         self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, bar_color or color, bar_border_width)
+
+
+def push_apart(body, crowd, radius: float, radius_of, blocked=None):
+    """Shove a body out of anything standing in the same place as it.
+
+    Chasers stop moving the moment they are in reach, which is exactly when they pile into
+    one body; this runs whether they are walking or swinging, so the pile comes apart on its
+    own. Shared by a pack of monsters and by an angry village's mob, because a dozen
+    villagers stacked on one pixel is the same problem as a dozen wolves: `radius_of` is all
+    that differs between them.
+
+    One held in a trap is not shoved out of it: the jaws are what keep it there, and the
+    crowd piling in behind would otherwise carry it free."""
+    if not crowd or body.rooted:
+        return
+    push_x = push_y = 0.0
+    for other in crowd:
+        if other is body:
+            continue
+        dx, dy = body.x - other.x, body.y - other.y
+        gap = math.hypot(dx, dy)
+        overlap = radius + radius_of(other) - gap
+        if overlap <= 0:
+            continue
+        if gap < 1e-6:
+            # Exactly on top of each other: shove along its own bearing rather than
+            # dividing by nothing.
+            dx, dy, gap = math.cos(body.slot_angle), math.sin(body.slot_angle), 1.0
+        push_x += dx / gap * overlap * c.Entities.SEPARATION_PUSH
+        push_y += dy / gap * overlap * c.Entities.SEPARATION_PUSH
+    if push_x == 0.0 and push_y == 0.0:
+        return
+    if blocked is None or not blocked(body.x + push_x, body.y, radius):
+        body.x += push_x
+    if blocked is None or not blocked(body.x, body.y + push_y, radius):
+        body.y += push_y
 
 
 def draw_human(
