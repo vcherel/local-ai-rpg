@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from llm.llm_request_queue import generate_response_queued
 
@@ -19,8 +19,8 @@ class NPCNameGenerator:
         self.is_generating = False
         # Both restored from the save so a continued game keeps every name it already
         # made: used_names avoids duplicates, name_buffer skips regenerating ready names.
-        self.used_names: List[str] = list(save_system.load("used_names", []))
-        self.ready_names: List[str] = list(save_system.load("name_buffer", []))
+        self.used_names: list[str] = list(save_system.load("used_names", []))
+        self.ready_names: list[str] = list(save_system.load("name_buffer", []))
         # Set by close() when the player leaves the game: the save file is shared with
         # whatever game starts next, so a name still being generated must not write to it.
         self.closed = False

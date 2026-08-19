@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 import time
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -38,13 +38,13 @@ class NPC(Entity):
     def __init__(self, x, y):
         super().__init__(x, y, random_color(), c.Entities.NPC_SIZE, c.Entities.NPC_HP, c.Entities.NPC_HP)
         self.name = None
-        self.quest: Optional[Quest] = None
+        self.quest: Quest | None = None
         self.is_merchant = False
         # True for an NPC spawned to hold a recover_stolen quest's item; shows a marker
         # so the player can spot them without already knowing where to look.
         self.is_thief = False
-        self.shop_items: List[Item] = []
-        self.shop_prices: Dict[str, int] = {}
+        self.shop_items: list[Item] = []
+        self.shop_prices: dict[str, int] = {}
         self.shop_ready = False
         # When this merchant next puts new wares out (wall clock, like every other deadline
         # in the world, so quitting is not a way of skipping the wait). What is already on
@@ -77,11 +77,11 @@ class NPC(Entity):
         # Whether this one takes up arms when a monster walks into their settlement, rolled
         # off their home so the same house always sends the same person out. Cached because
         # it is asked every frame.
-        self._militia: Optional[bool] = None
+        self._militia: bool | None = None
         # What this one has in their hands, rolled with the militia flag off the same home
         # seed: a name, resolved through the ordinary weapon archetypes, so a villager's
         # reach, damage and cadence all come from the table the player's own weapons use.
-        self._weapon_name: Optional[str] = None
+        self._weapon_name: str | None = None
         # A posted guard: stands their watch instead of wandering, always takes up arms,
         # and carries something a farmer does not (World._post_guards).
         self.is_guard = False
@@ -210,7 +210,7 @@ class NPC(Entity):
         }
 
     @classmethod
-    def from_dict(cls, data: dict, items_by_id: Dict[str, Item]) -> NPC:
+    def from_dict(cls, data: dict, items_by_id: dict[str, Item]) -> NPC:
         npc = cls(data["x"], data["y"])
         npc.name = data["name"]
         npc.hp = data["hp"]
@@ -413,7 +413,7 @@ class NPC(Entity):
         stolen loaf is a machine."""
         return self.hp <= self.max_hp * c.Villages.ROUT_HP_FRAC
 
-    def _badge(self) -> Optional[tuple]:
+    def _badge(self) -> tuple | None:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""
         if self.hostile:
             return c.Fonts.badge, "!", c.Colors.RED

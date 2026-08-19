@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING, Iterable, List, Tuple
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -29,7 +30,7 @@ class BearTrap:
     # What `Player._damage_source_name` calls it on the death screen.
     name = "a bear trap"
 
-    def __init__(self, x: float, y: float, chunk: Tuple[int, int], sprung: bool = False):
+    def __init__(self, x: float, y: float, chunk: tuple[int, int], sprung: bool = False):
         self.x = x
         self.y = y
         self.chunk = (int(chunk[0]), int(chunk[1]))
@@ -72,7 +73,7 @@ class BearTrap:
         pygame.draw.circle(screen, (66, 64, 60), center, round(radius * 0.35))
 
 
-def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) -> List[BearTrap]:
+def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) -> list[BearTrap]:
     """Every trap set in one chunk, rolled from its coordinates alone.
 
     Traps belong to a settlement's hunting ground rather than to the map at large: a chunk
@@ -89,7 +90,7 @@ def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) ->
     footprints = [b.rect.inflate(c.Traps.CLEARANCE * 2, c.Traps.CLEARANCE * 2) for b in buildings]
     solids = [(s.x, s.y, max(s.blocking_radius, s.water_reach)) for s in scenery if s.blocking_radius or s.water_reach]
 
-    traps: List[BearTrap] = []
+    traps: list[BearTrap] = []
     for _ in range(rng.randint(*c.Traps.PER_CHUNK)):
         x = cx * size + rng.uniform(0, size)
         y = cy * size + rng.uniform(0, size)

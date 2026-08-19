@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -38,17 +38,17 @@ class ShopMenu(BaseMenu):
     def __init__(self, screen):
         super().__init__(screen, width=940, height=600)
         self.header_height = HEADER_HEIGHT
-        self.merchant: Optional[NPC] = None
-        self.player: Optional[Player] = None
-        self.world_items: Optional[List[Item]] = None
-        self.hovered_buy: Optional[int] = None
-        self.hovered_sell: Optional[int] = None
+        self.merchant: NPC | None = None
+        self.player: Player | None = None
+        self.world_items: list[Item] | None = None
+        self.hovered_buy: int | None = None
+        self.hovered_sell: int | None = None
         # First visible row of each column; a stock or an inventory longer than the panel
         # is otherwise drawn past its bottom edge with no way to reach it.
         self.buy_scroll = 0
         self.sell_scroll = 0
 
-    def open(self, merchant: NPC, player: Player, world_items: List[Item]):
+    def open(self, merchant: NPC, player: Player, world_items: list[Item]):
         self.merchant = merchant
         self.player = player
         self.world_items = world_items
@@ -98,10 +98,10 @@ class ShopMenu(BaseMenu):
 
     # --- bulk selling ---------------------------------------------------------
 
-    def _valuables(self) -> List[Item]:
+    def _valuables(self) -> list[Item]:
         return [item for item in self.player.inventory if item.item_type == "misc"]
 
-    def _unused_gear(self) -> List[Item]:
+    def _unused_gear(self) -> list[Item]:
         """Equippable items the player is neither wearing nor keeping on the weapon bar."""
         spoken_for = set(self.player.equipped_ids().values()) | set(self.player.weapon_bar)
         return [item for item in self.player.inventory if item.item_type in GEAR_TYPES and item.id not in spoken_for]
@@ -121,24 +121,24 @@ class ShopMenu(BaseMenu):
         y = self.height - FOOTER_HEIGHT + 6
         return pygame.Rect(self._buy_panel_x(), y, (self._panel_width() - 10) // 2, BULK_BUTTON_HEIGHT)
 
-    def _sell_all(self, items: List[Item]):
+    def _sell_all(self, items: list[Item]):
         """Sell a whole batch through the normal per-item path, so each one still trains
         bartering and warms the merchant exactly as it would clicked by hand."""
         for item in items:
             if item in self.player.inventory:
                 self._sell(self.player.inventory.index(item))
 
-    def _slot_at(self, panel_x: int, count: int, scroll: int, rel_x: int, rel_y: int) -> Optional[int]:
+    def _slot_at(self, panel_x: int, count: int, scroll: int, rel_x: int, rel_y: int) -> int | None:
         """Index in the full list of the row under (rel_x, rel_y), or None."""
         for i in range(max(0, min(self._visible_rows(), count - scroll))):
             if self._row_rect(panel_x, i).collidepoint(rel_x, rel_y):
                 return scroll + i
         return None
 
-    def _buy_slot_at(self, rel_x: int, rel_y: int) -> Optional[int]:
+    def _buy_slot_at(self, rel_x: int, rel_y: int) -> int | None:
         return self._slot_at(self._buy_panel_x(), len(self.merchant.shop_items), self.buy_scroll, rel_x, rel_y)
 
-    def _sell_slot_at(self, rel_x: int, rel_y: int) -> Optional[int]:
+    def _sell_slot_at(self, rel_x: int, rel_y: int) -> int | None:
         return self._slot_at(self._sell_panel_x(), len(self.player.inventory), self.sell_scroll, rel_x, rel_y)
 
     def handle_event(self, event) -> bool:

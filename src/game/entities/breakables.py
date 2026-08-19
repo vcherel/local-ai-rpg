@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -47,7 +47,7 @@ class Breakable:
         return {"x": self.x, "y": self.y, "kind": self.kind, "hp": self.hp}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Breakable":
+    def from_dict(cls, data: dict) -> Breakable:
         return cls(data["x"], data["y"], data.get("kind", "barrel"), data.get("hp"))
 
     def draw(self, screen: pygame.Surface, camera: Camera):
@@ -186,10 +186,10 @@ def _pick_kind(rng: random.Random) -> str:
     return rng.choices(kinds, weights=weights)[0]
 
 
-def generate_breakables(buildings: List["Building"]) -> List[Breakable]:
+def generate_breakables(buildings: list[Building]) -> list[Breakable]:
     """Scatter a few barrels and plantings just outside each house/shop/tavern (never the
     landmark), deterministic per building so they stay put across a save/reload."""
-    result: List[Breakable] = []
+    result: list[Breakable] = []
     for building in buildings:
         if building.kind == "landmark":
             continue

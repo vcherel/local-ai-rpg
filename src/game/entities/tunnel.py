@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from core.camera import Camera
 
 
-def has_tunnel(chunk: Tuple[int, int]) -> bool:
+def has_tunnel(chunk: tuple[int, int]) -> bool:
     """Whether the well of the village in this chunk goes anywhere. A pure function of the
     coordinates, like everything else about where a place is: the same well always leads to
     the same nothing, or to the same tunnel."""
@@ -36,17 +36,17 @@ class Tunnel:
     world saves.
     """
 
-    def __init__(self, chunk: Tuple[int, int]):
+    def __init__(self, chunk: tuple[int, int]):
         self.chunk = (int(chunk[0]), int(chunk[1]))
-        self.guards_alive: Optional[int] = None
+        self.guards_alive: int | None = None
         self.hoard_placed = False
 
         rng = random.Random(f"tunnel-layout:{self.chunk[0]},{self.chunk[1]}")
         origin_x = c.Tunnels.ORIGIN + self.chunk[0] * c.Tunnels.SPACING
         origin_y = c.Tunnels.ORIGIN + self.chunk[1] * c.Tunnels.SPACING
 
-        self.rooms: List[pygame.Rect] = []
-        self.corridors: List[pygame.Rect] = []
+        self.rooms: list[pygame.Rect] = []
+        self.corridors: list[pygame.Rect] = []
         x, y = origin_x, origin_y
         for index in range(rng.randint(*c.Tunnels.ROOMS)):
             width = rng.randint(*c.Tunnels.ROOM_SIZE)
@@ -69,7 +69,7 @@ class Tunnel:
         return f"tunnel:{self.chunk[0]}:{self.chunk[1]}"
 
     @staticmethod
-    def _dig(start, end) -> List[pygame.Rect]:
+    def _dig(start, end) -> list[pygame.Rect]:
         """The two legs of the passage between two room centres, horizontal then vertical.
 
         Starting and ending at the centres is what keeps the floor one connected piece: each
@@ -110,7 +110,7 @@ class Tunnel:
         self.guards_alive = state.get("guards_alive")
         self.hoard_placed = state.get("hoard_placed", False)
 
-    def floor_spots(self, count: int, rng: random.Random) -> List[Tuple[float, float]]:
+    def floor_spots(self, count: int, rng: random.Random) -> list[tuple[float, float]]:
         """`count` points scattered over the rooms, for whatever has to be stood up down
         here. The rooms only: nothing is put in a corridor, which is what the player walks."""
         spots = []

@@ -39,7 +39,7 @@ class BaseMenu:
         self.screen.blit(overlay, (0, 0))
         self.just_active = False
 
-    def create_menu_surface(self, title: str = None) -> pygame.Surface:
+    def create_menu_surface(self, title: str | None = None) -> pygame.Surface:
         surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         widgets.draw_panel(surface, surface.get_rect())
         if title:

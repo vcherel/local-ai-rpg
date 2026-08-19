@@ -12,20 +12,20 @@ import core.constants as c
 
 class Particle:
     __slots__ = (
-        "x",
-        "y",
-        "vx",
-        "vy",
+        "color",
+        "gravity",
         "life",
         "max_life",
-        "color",
-        "size",
-        "z",
-        "vz",
-        "gravity",
-        "shape",
         "rot",
         "rot_speed",
+        "shape",
+        "size",
+        "vx",
+        "vy",
+        "vz",
+        "x",
+        "y",
+        "z",
     )
 
     def __init__(self, x, y, vx, vy, life, color, size, gravity=0.0, shape="circle", rot=0.0, rot_speed=0.0):

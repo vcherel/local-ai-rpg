@@ -154,8 +154,8 @@ def draw_human(
     color: tuple,
     angle: float,
     attack_progress: float = 0.0,
-    attack_hand: str = None,
-    gear: dict = None,
+    attack_hand: str | None = None,
+    gear: dict | None = None,
     walk: float = 0.0,
 ):
     """`walk` is how far through the stride this body is (game/entities/entities.py `Gait`):

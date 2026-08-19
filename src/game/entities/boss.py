@@ -149,7 +149,7 @@ class Boss(Monster):
         self.kind = replace(
             self.kind,
             speed=self.kind.speed * c.Boss.ENRAGE_SPEED_MULT,
-            damage=int(round(self.kind.damage * c.Boss.ENRAGE_DAMAGE_MULT)),
+            damage=round(self.kind.damage * c.Boss.ENRAGE_DAMAGE_MULT),
         )
 
     def _enrage(self, world: World):
@@ -187,7 +187,7 @@ class Boss(Monster):
         if self.distance_to_point((player.x, player.y)) <= c.Boss.SLAM_RADIUS + c.Player.SIZE / 2:
             damage = c.Boss.SLAM_DAMAGE
             if self.enraged:
-                damage = int(round(damage * c.Boss.ENRAGE_DAMAGE_MULT))
+                damage = round(damage * c.Boss.ENRAGE_DAMAGE_MULT)
             # Sourced on the boss so a raised shield can take the edge off a slam the
             # player saw coming and turned to face.
             player.receive_damage(damage, source=self)
@@ -199,7 +199,7 @@ class Boss(Monster):
         count = c.Boss.VOLLEY_COUNT
         damage = c.Boss.VOLLEY_DAMAGE
         if self.enraged:
-            damage = int(round(damage * c.Boss.ENRAGE_DAMAGE_MULT))
+            damage = round(damage * c.Boss.ENRAGE_DAMAGE_MULT)
         for i in range(count):
             offset = spread * (i / (count - 1) - 0.5) if count > 1 else 0.0
             world.projectiles.append(

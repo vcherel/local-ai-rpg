@@ -161,7 +161,7 @@ def item_type_from_name(name: str) -> str:
 INVENTORY_SECTIONS = ("Melee", "Ranged", "Shields", "Armour", "Trinkets", "Supplies", "Valuables")
 
 
-def inventory_section(item: "Item") -> str:
+def inventory_section(item: Item) -> str:
     """Which block of the inventory an item belongs in. Melee and ranged are the same
     `item_type` and are told apart by archetype, which is why this is a function rather
     than a table keyed by type."""
@@ -192,7 +192,7 @@ def rarity_tier(rarity: str) -> c.RarityTier:
     raise ValueError(f"Unknown rarity: {rarity}")
 
 
-def roll_rarity(weights: tuple = None, luck: float = 0.0) -> str:
+def roll_rarity(weights: tuple | None = None, luck: float = 0.0) -> str:
     """Roll an item's rarity. `luck` (Player.loot_luck) makes every step up the ladder
     (1 + luck) times as likely as the one below it, so a lucky player finds better things
     rather than more of them; the shape of the curve is unchanged, it just leans up."""
@@ -355,7 +355,7 @@ def potion_duration(rarity: str) -> float:
     return c.Potions.DURATION_S[c.Rarity.TIERS.index(rarity_tier(rarity))]
 
 
-def potion_description(item: "Item") -> str:
+def potion_description(item: Item) -> str:
     """One line describing what drinking this potion does, for tooltips and shop rows."""
     effect = item.potion_effect or "heal"
     magnitude = potion_magnitude(effect, item.rarity)
@@ -373,7 +373,7 @@ def potion_description(item: "Item") -> str:
     return POTION_EFFECT_LABELS.get(effect, effect)
 
 
-def base_value(item: "Item") -> int:
+def base_value(item: Item) -> int:
     """Base sell/worth value before shop multipliers, used by the shop and inventory tooltip.
 
     Kept low against how much gear the world drops: a bag of salvage is pocket money, and
@@ -397,10 +397,10 @@ class Item:
         name,
         item_type: str = "misc",
         bonus: int = 0,
-        rarity: str = None,
-        accessory_flavor: str = None,
+        rarity: str | None = None,
+        accessory_flavor: str | None = None,
         quantity: int = 1,
-        potion_effect: str = None,
+        potion_effect: str | None = None,
     ):
         self.id = uuid.uuid4().hex
         self.x = x

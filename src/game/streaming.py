@@ -94,7 +94,7 @@ class WorldStreaming:
         self.start_shop_generation()
         self._start_village_naming()
 
-    def _clear_scenery_for(self, village: Village, buildings: list["Building"]):
+    def _clear_scenery_for(self, village: Village, buildings: list[Building]):
         """Cut back the wilderness a new settlement has just been built in.
 
         A chunk keeps its own scenery clear of what already stands in it, but a village
