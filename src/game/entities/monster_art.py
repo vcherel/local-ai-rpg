@@ -89,12 +89,17 @@ def draw_monster(
     aggro: bool = False,
     phase: float = 0.0,
     nock: float = 0.0,
+    walk: float = 0.0,
 ):
     """Draw one creature: its ground shadow, its silhouette, whatever it is holding and its eyes.
 
     `phase` offsets the idle breath so a pack does not pulse in unison, `aggro` is whether it
     has noticed the player (its eyes flare, the one warning it gives before it arrives), and
-    `nock` is how close a bow is to loosing, drawn as the arrow being drawn back."""
+    `nock` is how close a bow is to loosing, drawn as the arrow being drawn back, and `walk`
+    is how far through its stride it is (game/entities/entities.py `Gait`): the body rocks and
+    lifts with it. Like the shadow, the breath and the eyes, the walk sits above the
+    silhouette and is the same for every kind, because a thing that slides across the ground
+    reads as wrong whatever shape it is."""
     breath = math.sin(pygame.time.get_ticks() / c.MonsterArt.BREATH_PERIOD_MS * math.tau + phase * math.tau)
 
     _draw_shadow(surface, x, y, size)
@@ -129,9 +134,12 @@ def draw_monster(
 
     _draw_eyes(sprite, parts.get("eyes", ()), size * c.MonsterArt.EYE_RADIUS, eye_color, aggro)
 
-    if angle:
-        sprite = pygame.transform.rotate(sprite, math.degrees(-angle))
-    surface.blit(sprite, sprite.get_rect(center=(x, y)))
+    # The body rocks from side to side as it walks and lifts off the ground at each step.
+    # The shadow was laid down before this and stays where it is, which is what sells it.
+    lean = math.radians(c.Entities.GAIT_LEAN_DEG) * walk
+    if angle or lean:
+        sprite = pygame.transform.rotate(sprite, math.degrees(-(angle + lean)))
+    surface.blit(sprite, sprite.get_rect(center=(x, y - abs(walk) * c.Entities.GAIT_BOB)))
 
 
 def _draw_shadow(surface, x, y, size):

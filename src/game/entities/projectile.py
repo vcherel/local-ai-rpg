@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 ARROW_COLOR = (180, 140, 90)
 BOLT_COLOR = (150, 90, 230)
+# A stone out of an angry villager's hand: what a crowd with no weapons throws.
+STONE_COLOR = (140, 136, 128)
 
 
 class Projectile:
@@ -30,6 +32,7 @@ class Projectile:
         hostile=False,
         owner_id=None,
         source_name="",
+        max_range=None,
     ):
         self.x = x
         self.y = y
@@ -37,7 +40,7 @@ class Projectile:
         self.vx = math.sin(angle) * c.Projectile.SPEED
         self.vy = -math.cos(angle) * c.Projectile.SPEED
         self.damage = damage
-        self.style = style  # "arrow" or "bolt" (glowing magic orb)
+        self.style = style  # "arrow", "bolt" (glowing magic orb) or "stone"
         self.color = color
         self.knockback = knockback
         self.shake = shake
@@ -56,6 +59,9 @@ class Projectile:
         self.source_name = source_name
         self.hit_ids = set() if owner_id is None else {owner_id}
         self.traveled = 0.0
+        # How far this one carries. Its own rather than one number for everything in flight:
+        # the player's bow outranges a monster's, and a stone out of a fist outranges neither.
+        self.max_range = c.Projectile.RANGE if max_range is None else max_range
         self.dead = False
 
     def update(self, dt, blocked=None):
@@ -73,7 +79,7 @@ class Projectile:
             self.x += total_x / steps
             self.y += total_y / steps
             self.traveled += distance / steps
-            if self.traveled >= c.Projectile.RANGE:
+            if self.traveled >= self.max_range:
                 self.dead = True
                 return
             if blocked is not None and blocked(self.x, self.y, c.Projectile.SIZE):
@@ -88,6 +94,11 @@ class Projectile:
             x, y = camera.world_to_screen(self.x, self.y)
         else:
             x, y = self.x, self.y
+
+        if self.style == "stone":
+            pygame.draw.circle(screen, (60, 58, 54), (int(x), int(y)), 5)
+            pygame.draw.circle(screen, self.color, (int(x), int(y)), 4)
+            return
 
         if self.style == "bolt":
             glow = pygame.Surface((16, 16), pygame.SRCALPHA)

@@ -42,6 +42,20 @@ class Entities:
     CHASE_ARRIVE: int = 6
     # How much of the overlap between two chasers is undone per frame when they collide.
     SEPARATION_PUSH: float = 0.45
+    # Surrounding rather than queueing. The chasers coming for one target are dealt evenly
+    # spaced bearings around it (World.assign_surround_slots) instead of each rolling its
+    # own, and a chaser only takes a new bearing once its own has drifted this far from the
+    # one it holds, so the ring settles instead of reshuffling every frame.
+    SLOT_REASSIGN_DEG: float = 55.0
+    # ...and only this many of them may be mid-swing at once. The rest hold their place on
+    # the ring and keep circling, which is the whole difference between being surrounded
+    # and standing in a queue. A token is held until the swing lands or its holder walks
+    # out of reach, and the nearest claim it first.
+    MAX_ACTIVE_ATTACKERS: int = 3
+    # Waiting its turn does not mean standing still: one held back off the tokens walks its
+    # bearing round the ring at this rate (degrees per frame), so the circle turns and the
+    # player is being stalked rather than politely queued for.
+    CIRCLE_SPEED_DEG: float = 1.1
     # Backing away is always slower than walking in, so closing on an archer is a real
     # answer; driven inside this fraction of its keep_distance it stops retreating, stops
     # shooting and fights with the knife it has, at this reach.
@@ -49,6 +63,22 @@ class Entities:
     CORNERED_FRAC: float = 0.4
     RANGED_MELEE_RANGE: int = 8
     SWING_SPEED: float = 0.007
+    # The walk cycle (game/entities/entities.py `Gait`), shared by the player, the villagers,
+    # the monsters and the animals. Advanced by the ground actually covered rather than by
+    # the clock, so a slowed, rooted or dead-stopped thing never moonwalks: one full cycle
+    # per GAIT_STRIDE pixels, arms and legs carried GAIT_ARM/GAIT_LEG at the ends of it, the
+    # body lifting GAIT_BOB off the ground at each stride. Movement under GAIT_DEADZONE a
+    # frame is standing still, and the swing eases in and out at GAIT_EASE rather than
+    # snapping, so stopping settles instead of freezing mid-step.
+    GAIT_STRIDE: float = 42.0
+    GAIT_DEADZONE: float = 0.35
+    GAIT_EASE: float = 0.15
+    GAIT_ARM: float = 5.0
+    GAIT_BOB: float = 1.8
+    GAIT_LEAN_DEG: float = 2.5
+    # How far a quadruped's feet carry fore and aft over a stride, in fractions of its own
+    # size: legs are the one place an animal's walk can actually be drawn rather than implied.
+    GAIT_LEG: float = 0.22
     # How long an entity flashes white after being hit (ms).
     FLASH_MS: int = 150
     # A dropped item pops from its source (a smashed crate, say) and settles into place.

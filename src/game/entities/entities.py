@@ -7,6 +7,32 @@ import core.constants as c
 from game.entities.gear import draw_accessory, draw_armor_band, draw_shield, draw_weapon, gear_padding
 
 
+class Gait:
+    """The walk cycle, shared by everything in the world that moves on legs.
+
+    Advanced by the ground actually covered rather than by the clock, which is the whole
+    trick: a rooted thing, a monster wading a river, a villager pinned against a wall and a
+    corpse all stop animating for free, and nothing needs to be told how fast it is going.
+    One number in (where it is now), one number out (how far through the stride it is,
+    -1 to 1), so the arms, the legs and the bob all read the same walk.
+    """
+
+    def __init__(self, x, y):
+        self.phase = random.uniform(0, 2 * math.pi)
+        self.amount = 0.0
+        self._x, self._y = x, y
+
+    def step(self, x, y) -> float:
+        moved = math.hypot(x - self._x, y - self._y)
+        self._x, self._y = x, y
+        self.phase = (self.phase + moved / c.Entities.GAIT_STRIDE * 2 * math.pi) % (2 * math.pi)
+        # Eased rather than switched, so coming to a halt settles the arms instead of
+        # freezing them wherever the last frame left them.
+        walking = 1.0 if moved > c.Entities.GAIT_DEADZONE else 0.0
+        self.amount += (walking - self.amount) * c.Entities.GAIT_EASE
+        return math.sin(self.phase) * self.amount
+
+
 class Entity:
     def __init__(self, x, y, color, size, hp, max_hp):
         self.x = x
@@ -24,6 +50,9 @@ class Entity:
         # roots). Session-only and shared by everything that moves, since the trap does not
         # care what it caught: whoever is rooted still turns, still swings, still bleeds.
         self.rooted_until_ms = 0
+        # The walk cycle. Read once per frame by whatever draws this thing, from its own
+        # movement, so nothing has to remember to keep it turning.
+        self.gait = Gait(x, y)
 
     def root(self, duration_ms: int):
         self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)
@@ -88,7 +117,8 @@ class Entity:
         bar_border_width=2,
         gear=None,
     ):
-        draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand, gear)
+        walk = self.gait.step(self.x, self.y)
+        draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand, gear, walk)
 
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset
@@ -105,7 +135,12 @@ def draw_human(
     attack_progress: float = 0.0,
     attack_hand: str = None,
     gear: dict = None,
+    walk: float = 0.0,
 ):
+    """`walk` is how far through the stride this body is (game/entities/entities.py `Gait`):
+    the arms swing fore and aft with it and the whole sprite lifts a little at each step, so
+    a person crossing a field reads as walking rather than sliding. The arm mid attack keeps
+    its swing: what it is doing matters more than where it is in its stride."""
     border_thickness = 2
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
@@ -141,11 +176,17 @@ def draw_human(
         pygame.draw.circle(char_surf, c.Colors.BLACK, (cx, cy), arm_radius)
         pygame.draw.circle(char_surf, color, (cx, cy), arm_radius - border_thickness)
 
+    # Forward is up in the sprite's own space, so a stride carries one arm up the surface
+    # and the other down it. Opposite arms, like anything that walks on two legs.
+    arm_swing = walk * c.Entities.GAIT_ARM
+
     left_arm_x = padding + arm_radius + distance_arm
     left_arm_y = arm_y
     if attack_hand == "left":
         left_arm_x += int(attack_progress * 15)
         left_arm_y -= int(attack_progress * 15)
+    else:
+        left_arm_y -= arm_swing
     draw_arm(left_arm_x, left_arm_y)
 
     right_arm_x = base_width + padding - arm_radius - distance_arm
@@ -153,6 +194,8 @@ def draw_human(
     if attack_hand == "right":
         right_arm_x -= int(attack_progress * 15)
         right_arm_y -= int(attack_progress * 15)
+    else:
+        right_arm_y += arm_swing
     draw_arm(right_arm_x, right_arm_y)
 
     # The shield hangs off the left arm, under whatever that hand is also holding.
@@ -170,5 +213,8 @@ def draw_human(
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
 
-    rect = char_surf.get_rect(center=(x, y))
+    # The body lifts at each step. Applied after the rotation, so it is a bob on the screen
+    # rather than a slide along whatever way the sprite happens to be facing.
+    bob = abs(walk) * c.Entities.GAIT_BOB
+    rect = char_surf.get_rect(center=(x, y - bob))
     surface.blit(char_surf, rect)

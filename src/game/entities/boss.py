@@ -214,6 +214,7 @@ class Boss(Monster):
                     hostile=True,
                     owner_id=id(self),
                     source_name=self.display_name,
+                    max_range=c.Projectile.MONSTER_RANGE,
                 )
             )
 
@@ -268,6 +269,7 @@ class Boss(Monster):
             # A boss is never idling as far as the player is concerned: its eyes are always lit.
             aggro=True,
             phase=self.art_phase,
+            walk=self.gait.step(self.x, self.y),
         )
 
         label = c.Fonts.button.render(self.name, True, c.Colors.WHITE)
