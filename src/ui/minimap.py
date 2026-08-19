@@ -150,7 +150,8 @@ class Minimap:
         y = top + 4
         village = world.village_at(player.x, player.y)
         if village is not None and village.name and village.discovered:
-            text, color = self._village_mood(world, village)
+            suffix, color = self._village_mood(world, village)
+            text = self._fit_name(village.name, suffix, self.rect.width - c.Minimap.PADDING * 2)
             label = c.Fonts.small.render(text, True, color)
             strip = pygame.Rect(self.rect.left, y, self.rect.width, label.get_height() + 8)
             widgets.draw_panel(self.screen, strip)
@@ -161,17 +162,28 @@ class Minimap:
 
     @staticmethod
     def _village_mood(world: World, village) -> tuple:
-        """What this settlement's strip says: its name, or its name and how much longer it
+        """What this settlement's strip adds after its name: nothing, or how much longer it
         wants the player dead. Anger runs out now, so the player needs somewhere to read how
         long is left; the strip that already names the place they are standing in is it. A
         grudge (somebody was killed here) has no countdown to show, and never will."""
         angry = [npc for npc in world.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
         if not angry:
-            return village.name, c.Colors.WHITE
+            return "", c.Colors.WHITE
         if any(npc.grudge for npc in angry):
-            return f"{village.name}: never forgiven", c.Colors.RED
+            return ": never forgiven", c.Colors.RED
         remaining = max(npc.anger_remaining for npc in angry)
-        return f"{village.name}: furious ({int(remaining) // 60}:{int(remaining) % 60:02d})", c.Colors.RED
+        return f": furious {int(remaining) // 60}:{int(remaining) % 60:02d}", c.Colors.RED
+
+    @staticmethod
+    def _fit_name(name: str, suffix: str, width: int) -> str:
+        """Name plus mood, cut to the width of the strip. A long name with a countdown after
+        it used to run out of the panel and across the map, so the name is what gives: the
+        countdown is the part the player is reading."""
+        if c.Fonts.small.size(name + suffix)[0] <= width:
+            return name + suffix
+        while name and c.Fonts.small.size(name + "..." + suffix)[0] > width:
+            name = name[:-1]
+        return name + "..." + suffix
 
     def _draw_clock(self, world: World, top: int):
         """The time of day, as a dial swept once per cycle plus the name of the phase. The

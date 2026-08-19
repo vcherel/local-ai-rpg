@@ -37,7 +37,7 @@ def generate_shop_inventories(context: str, shop_count: int) -> list:
         "Example:\n"
         "1|Iron Sword|weapon|uncommon|25\n"
         "Rules: shop is the shop number. "
-        'type is "weapon", "armor", "accessory", "potion" or "misc". '
+        'type is "weapon", "armor", "shield", "accessory", "potion" or "misc". '
         'rarity is "common", "uncommon", "rare", "epic" or "legendary" (mostly common or uncommon). '
         "price is 5 to 80. "
         "Each shop's items fit its trade, suit the world, and differ from the other shops'. "

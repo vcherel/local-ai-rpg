@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 import pygame
 
 import core.constants as c
-from game.entities.buildings import Building, draw_label
+from game.entities.buildings import Building
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -65,7 +65,8 @@ class Village:
         return village
 
     def draw(self, screen: pygame.Surface, camera: Camera):
-        """The plaza: packed earth, a well, and the village name once it has been found."""
+        """The plaza: packed earth and a well. The name is the minimap strip's job; written on
+        the ground it was one more label lying over the street."""
         cx, cy = camera.world_to_screen(self.x, self.y)
         plaza = pygame.Rect(0, 0, c.Villages.PLAZA_RADIUS * 2, round(c.Villages.PLAZA_RADIUS * 1.5))
         plaza.center = (round(cx), round(cy))
@@ -83,10 +84,6 @@ class Village:
             pygame.draw.circle(screen, darker, (round(px), round(py)), rng.randint(4, 11))
 
         self._draw_well(screen, (round(cx), round(cy)))
-
-        if self.name and self.discovered:
-            # Well below the plaza, so it doesn't sit under whoever is standing at the well.
-            draw_label(screen, self.name, (cx, cy + plaza.height / 2 + 54))
 
     @staticmethod
     def _draw_well(screen: pygame.Surface, center):
