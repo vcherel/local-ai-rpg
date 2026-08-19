@@ -476,17 +476,78 @@ class WorldPlaces:
         radius = self.witness_radius()
         return [npc for npc in self.npcs if not npc.hostile and npc.distance_to_point((x, y)) <= radius]
 
+    def _sight_solid(self, x: float, y: float, ignore) -> bool:
+        """Whether something opaque stands at this point. The same solids `blocked` walks,
+        with one exception: the building the player is standing in is see-through, because
+        the villager whose house is being robbed is on the other side of a doorway rather
+        than behind a wall, and a strict test would make every theft free."""
+        if any(village.blocks(x, y, 1) for village in self._village_solids_by_chunk.get(self._chunk_of(x, y), ())):
+            return True
+        if any(b.blocks(x, y, 1) for b in self.buildings_near(x, y) if b is not ignore):
+            return True
+        return any(item.blocks(x, y, 1) for item in self.scenery_near(x, y))
+
+    def sight_reach(self, x0: float, y0: float, angle: float, radius: float, ignore) -> float:
+        """How far sight actually carries from (x0, y0) along `angle`: the full radius, or
+        the distance to the first thing in the way. One function behind both the check and
+        the cone drawn on the ground, so the picture can never promise cover the rule does
+        not give."""
+        step = c.Buildings.WALL_THICKNESS / 2
+        dx, dy = math.cos(angle) * step, math.sin(angle) * step
+        x, y = x0, y0
+        for i in range(1, int(radius / step) + 1):
+            x, y = x + dx, y + dy
+            if self._sight_solid(x, y, ignore):
+                return i * step - step
+        return radius
+
+    def vision_polygon(self, npc: NPC, radius: float, ignore, rays: int = 18) -> List[tuple]:
+        """The wedge this villager can actually see, in world coordinates: their own position
+        followed by the far end of each ray, cut short wherever a wall stops it."""
+        half = math.radians(c.Crime.VIEW_CONE_DEG) / 2
+        facing = npc.orientation - math.pi / 2
+        points = [(npc.x, npc.y)]
+        for step in range(rays + 1):
+            angle = facing - half + 2 * half * step / rays
+            reach = self.sight_reach(npc.x, npc.y, angle, radius, ignore)
+            points.append((npc.x + math.cos(angle) * reach, npc.y + math.sin(angle) * reach))
+        return points
+
+    def can_see(self, npc: NPC, x: float, y: float, radius: float, ignore) -> bool:
+        """Whether this villager has (x, y) in their cone and nothing in the way. The one
+        test behind both the theft check and the red wedge on the ground."""
+        if not npc.sees(x, y, radius):
+            return False
+        bearing = math.atan2(y - npc.y, x - npc.x)
+        return self.sight_reach(npc.x, npc.y, bearing, radius, ignore) >= npc.distance_to_point((x, y))
+
+    def sight_blocker(self, x: float, y: float):
+        """The one building sight is allowed through when looking at (x, y): the one whoever
+        is being watched is standing in."""
+        return self.building_at(x, y)
+
     def theft_witness(self, x: float, y: float) -> NPC | None:
         """Whoever sees the player helping themselves at (x, y), or None if nobody is looking.
 
-        Deliberately no roll: near enough and facing the right way is the whole test, so
-        getting caught is a decision the player made and not luck. The cone is what the
-        renderer draws on the ground while a chest or a bed is in reach, so waiting for
-        somebody to turn their back is a real answer rather than a guess. Anyone already
-        hostile is past caring what else the player takes."""
+        Deliberately no roll: near enough, facing the right way and with nothing standing in
+        between is the whole test, so getting caught is a decision the player made and not
+        luck. All three are what the renderer draws on the ground while a chest or a bed is
+        in reach, so putting a house between yourself and the street is a real answer rather
+        than a guess. Anyone already hostile is past caring what else the player takes."""
         radius = self.witness_radius()
-        seen = [npc for npc in self.watchers_near(x, y) if npc.sees(x, y, radius)]
+        ignore = self.sight_blocker(x, y)
+        seen = [npc for npc in self.watchers_near(x, y) if self.can_see(npc, x, y, radius, ignore)]
         return min(seen, key=lambda npc: npc.distance_to_point((x, y)), default=None)
+
+    def report_crime(self, x: float, y: float) -> NPC | None:
+        """Somebody wrecking a room somebody else owns, answered exactly as a theft is: the
+        one villager who saw it turns on the player and nobody else hears about it. The
+        cones are on the ground the whole time the player is standing indoors, so a swing
+        taken in front of a witness is a decision rather than an ambush."""
+        witness = self.theft_witness(x, y)
+        if witness is not None:
+            self.catch_thief(witness)
+        return witness
 
     def rest_in_house(self, building: Building) -> None:
         """Note that this household's bed has been slept in, so it isn't a free full heal to

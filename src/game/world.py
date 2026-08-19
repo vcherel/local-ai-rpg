@@ -26,6 +26,7 @@ from game.entities.scenery import Scenery
 from game.entities.traps import BearTrap
 from game.entities.village import Village, generate_starting_world
 from game.events import EventSystem
+from game.loot import roll_shop_stock
 from game.places import WorldPlaces
 from game.streaming import WorldStreaming
 from llm.llm_request_queue import generate_response_queued
@@ -101,7 +102,9 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         # Buildings (and village wells) bucketed by chunk, so a collision test looks at the
         # handful standing near a point instead of everything in every village ever found.
         self._buildings_by_chunk: dict = {}
-        self._wells_by_chunk: dict = {}
+        # The solid parts of a village that are not buildings: its well, and the palisade
+        # and towers of a walled town.
+        self._village_solids_by_chunk: dict = {}
         self.breakables: List[Breakable] = []
         # Every village generated so far. Unlike POIs these are kept, not regenerated: a
         # settlement's NPCs carry affinity, quests and shop stock that a chunk seed can't
@@ -195,6 +198,13 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             # Fills in quests saved before boss names were tracked, and quests whose boss
             # was still unnamed when the game was last closed.
             self.sync_quest_boss_names()
+            # A settlement saved before it had a wall still gets its garrison, so the towers
+            # of a game already in progress are not standing empty.
+            for village in self.villages:
+                if village.defended and not any(
+                    npc.is_guard and village.contains_point(npc.x, npc.y) for npc in self.npcs
+                ):
+                    self._post_guards(village)
             if self.context:
                 self.start_shop_generation()
         else:
@@ -205,6 +215,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
             set_active_buildings(self.buildings)
             self.breakables = generate_breakables(self.buildings)
             self._populate_npcs(self.buildings)
+            self._post_guards(village)
             # A new world is stocked to the *near* cap, not the far one. Everything placed
             # here lands inside the settled ring, which is within despawn range of the
             # spawn point, so seeding the far cap put the deep wilds' population on the
@@ -243,6 +254,26 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
                 npc.home = (door_x, door_y)
                 self.npcs.append(npc)
+
+    def _post_guards(self, village: Village):
+        """Stand somebody at every gate and every tower of a walled town.
+
+        A guard is an ordinary villager with three differences, all of them already meant
+        something elsewhere: they always take up arms (`NPC.is_militia`), they carry a real
+        weapon rather than a tool, and they hold their post instead of strolling the street.
+        That is enough for the militia orders, the mob and the surround slots to treat them
+        like anyone else."""
+        defences = village.defences()
+        posts = list(defences["gates"]) + list(defences["towers"])
+        for x, y in posts:
+            for _ in range(c.Villages.GUARDS_PER_GATE):
+                spot = self.free_spot_near(x, y, c.Entities.NPC_SIZE / 2)
+                guard = NPC(*spot)
+                guard.is_guard = True
+                guard.home = spot
+                guard.color = c.Villages.GUARD_COLOR
+                guard.wander.radius = c.Villages.GUARD_POST_RADIUS
+                self.npcs.append(guard)
 
     def _random_coords_away_from_spawn(self) -> tuple[int, int]:
         center = c.World.WORLD_SIZE // 2
@@ -377,7 +408,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         every time the player finds one, and scanning the whole list per monster step per
         frame would get slower the more of the world they had seen."""
         self._buildings_by_chunk = {}
-        self._wells_by_chunk = {}
+        self._village_solids_by_chunk = {}
         size = c.World.CHUNK_SIZE
         pad = c.World.BUILDING_INDEX_PAD
 
@@ -392,9 +423,12 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         for building in self.buildings:
             bucket(self._buildings_by_chunk, building.rect, building)
         for village in self.villages:
-            well = pygame.Rect(0, 0, c.Villages.WELL_RADIUS * 2, c.Villages.WELL_RADIUS * 2)
-            well.center = (round(village.x), round(village.y))
-            bucket(self._wells_by_chunk, well, village)
+            # A walled town is solid all the way out to its palisade, so it is bucketed by
+            # the whole ring rather than by the well in the middle of it.
+            reach = village.grounds_radius if village.defended else c.Villages.WELL_RADIUS
+            footprint = pygame.Rect(0, 0, reach * 2, reach * 2)
+            footprint.center = (round(village.x), round(village.y))
+            bucket(self._village_solids_by_chunk, footprint, village)
 
     def _register_buildings(self, buildings: List[Building]):
         """Add a newly generated village's buildings to the world and the lookup index."""
@@ -421,11 +455,19 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         # to collide with.
         if self.underground is not None:
             return self.underground.blocks(x, y, radius)
-        if any(village.blocks(x, y, radius) for village in self._wells_by_chunk.get(self._chunk_of(x, y), ())):
+        solids = self._village_solids_by_chunk.get(self._chunk_of(x, y), ())
+        if any(village.blocks(x, y, radius) for village in solids):
             return True
         if any(building.blocks(x, y, radius) for building in self.buildings_near(x, y)):
             return True
         return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
+
+    def walls_near(self, x, y) -> list:
+        """The palisade stretches of any walled town near this point, as rectangles."""
+        rects = []
+        for village in self._village_solids_by_chunk.get(self._chunk_of(x, y), ()):
+            rects.extend(village.defences()["walls"])
+        return rects
 
     def line_of_sight(self, x0, y0, x1, y1) -> bool:
         """Is there a clear line between two points, or is something solid in the way?
@@ -619,22 +661,32 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
     def _door_goal(building: Building, monster: Monster, radius: float, leaving: bool):
         """The point to walk to next to get through `building`'s door, in or out. A monster
         lines up with the doorway from the outside first, then steps across the threshold,
-        so it goes through the gap instead of shouldering the wall next to it."""
+        so it goes through the gap instead of shouldering the wall next to it.
+
+        Written along the door's own outward normal rather than in terms of "the bottom of
+        the building", since a house can be turned to face any of the four ways."""
+        nx, ny = building.outward()
+        door = building.door_rect()
         door_front = building.door_front()
-        inside = (building.x, building.interior_rect().bottom - 20)
+        inside = (door.centerx - nx * 36, door.centery - ny * 36)
         fits = radius < c.Buildings.DOOR_WIDTH / 2 - 4
-        aligned = abs(monster.x - building.x) < c.Buildings.DOOR_WIDTH / 2 - radius
+        # How far off the doorway's centre line this one stands, measured across the facade.
+        across = abs((monster.x - door.centerx) * -ny + (monster.y - door.centery) * nx)
+        aligned = across < c.Buildings.DOOR_WIDTH / 2 - radius
         if building.door_closed:
             # A shut door is a wall with nothing to walk round: come right up against it from
             # whichever side this is on and beat on it (WorldCombat.bash_doors). Close enough
             # to be in reach of the leaf, which the usual standing-off point is not.
-            return inside if leaving else (building.x, building.rect.bottom + radius + 6)
+            if leaving:
+                return inside
+            return (door.centerx + nx * (radius + 6), door.centery + ny * (radius + 6))
         if leaving:
             return door_front if aligned else inside
         # Too broad for the doorway (the stone colossus): it waits on the doorstep rather
         # than shoving itself into a wall it can never pass. Still round the far side of the
         # building, and the door is on the front: only step in from the front half.
-        if not fits or not aligned or monster.y < building.rect.centery:
+        in_front = (monster.x - building.x) * nx + (monster.y - building.y) * ny > 0
+        if not fits or not aligned or not in_front:
             return door_front
         return inside
 
@@ -713,6 +765,10 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         """
         if rects is None:
             rects = [building.rect for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE)]
+            # A town wall is the one obstacle in the world too long to steer round a step at
+            # a time: each stretch runs from a corner tower to a gatepost, so rounding its
+            # end is exactly walking to the nearest gate.
+            rects += self.walls_near(*start)
             rects += self._scenery_obstacles(start, goal, radius)
         for obstacle in rects:
             margin = radius + 8
@@ -834,6 +890,20 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
                 self.spawn_boss(x, y, announce="A roaming terror, {name}, prowls the wilds")
                 return
 
+    def _restock_merchants(self):
+        """Put a delivery on the shelf of any merchant whose clock has run out.
+
+        Rolled locally rather than asked of the model: the batched generation exists because
+        one call per shop was the queue's biggest cost, and a shop that refills every ten
+        minutes would put that cost straight back. What is already out is left alone, so a
+        restock tops the stock back up instead of replacing what the player was saving up
+        for."""
+        for npc in self.npcs:
+            if not npc.is_merchant or not npc.shop_ready or npc.restock_in() > 0:
+                continue
+            missing = c.Villages.SHOP_STOCK_TARGET - len(npc.shop_items)
+            npc.add_stock(roll_shop_stock(missing) if missing > 0 else [])
+
     def start_shop_generation(self):
         """Stock every merchant still waiting for one, in a single background call."""
         merchants = [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready]
@@ -910,7 +980,11 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         """The village whose grounds (x, y) stands on, or None out in the wilds. `margin`
         widens the grounds, which is what keeps a spawn off a settlement's doorstep."""
         return next(
-            (village for village in self.villages if village.distance_to_point((x, y)) <= village.radius + margin),
+            (
+                village
+                for village in self.villages
+                if village.distance_to_point((x, y)) <= village.grounds_radius + margin
+            ),
             None,
         )
 
@@ -1080,6 +1154,7 @@ class World(WorldCombat, WorldStreaming, WorldPlaces):
         villager only ever fights one thing at a time, and defending the settlement comes
         first: a monster in the street is more pressing than a grudge."""
         indoors = self.building_at(player.x, player.y) is not None
+        self._restock_merchants()
         fight, flee = self.militia_orders()
         mob = self._mob_orders(player, flee)
         self.assign_surround_slots([npc for npc in self.npcs if id(npc) in mob], player)

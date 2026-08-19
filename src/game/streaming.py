@@ -60,7 +60,7 @@ class WorldStreaming:
         # The wilderness itself, laid down last so it can be kept off everything already
         # standing here: the settlement, its buildings and this chunk's landmark.
         center = ((cx + 0.5) * size, (cy + 0.5) * size)
-        villages = [v for v in self.villages if v.distance_to_point(center) < v.radius + size * 2]
+        villages = [v for v in self.villages if v.distance_to_point(center) < v.grounds_radius + size * 2]
         chunk_scenery = generate_chunk_scenery(cx, cy, nearby, villages, chunk_pois)
         self.scenery.extend(chunk_scenery)
 
@@ -89,6 +89,7 @@ class WorldStreaming:
         self._clear_scenery_for(village, buildings)
         self.breakables.extend(generate_breakables(buildings))
         self._populate_npcs(buildings)
+        self._post_guards(village)
         # The new merchants need stock, and the settlement needs a name.
         self.start_shop_generation()
         self._start_village_naming()
@@ -99,7 +100,7 @@ class WorldStreaming:
         A chunk keeps its own scenery clear of what already stands in it, but a village
         reaches into the chunks around it and those may have been generated first, so the
         trees that would end up in the middle of the street are taken out here instead."""
-        keep_out = village.radius + c.Scenery.CLEARANCE_VILLAGE
+        keep_out = village.grounds_radius + c.Scenery.CLEARANCE_VILLAGE
         footprints = [b.rect.inflate(c.Scenery.CLEARANCE_BUILDING, c.Scenery.CLEARANCE_BUILDING) for b in buildings]
         kept = []
         for item in self.scenery:

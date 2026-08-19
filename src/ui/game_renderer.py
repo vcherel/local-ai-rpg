@@ -126,7 +126,10 @@ class GameRenderer:
 
         # The plaza a village is built around, drawn under its buildings.
         for village in world.villages:
-            if self._on_screen(camera, village.x, village.y, margin=c.Villages.PLAZA_RADIUS + 40):
+            # A walled town is drawn from a long way outside its plaza: the palisade stands
+            # at the edge of the settlement, not at the middle of it.
+            reach = village.grounds_radius + 40 if village.defended else c.Villages.PLAZA_RADIUS + 40
+            if self._on_screen(camera, village.x, village.y, margin=reach):
                 village.draw(self.screen, camera)
 
         for building in world.buildings_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 500):
@@ -135,7 +138,10 @@ class GameRenderer:
 
         get_decals().draw(self.screen, camera)
 
-        if interaction is not None and interaction.kind in ("chest", "bed"):
+        # Up whenever the player is standing in somebody else's room, not only over a chest:
+        # taking the furniture apart is watched exactly like emptying the chest is, and the
+        # rule is only fair if the eyes are on screen before the swing.
+        if interior is not None or (interaction is not None and interaction.kind in ("chest", "bed")):
             self._draw_witness_cones(camera, world, player)
 
         # Lying on the ground and under everything that walks over it: a trap is meant to be
@@ -215,26 +221,19 @@ class GameRenderer:
 
         Only up while the player is stood over something that isn't theirs: the cone is the
         question "is anyone looking right now", and a street permanently full of wedges would
-        be wallpaper. Red is the one that has the player in it. Radius and angle come from
-        `World.witness_radius` and the same constant `NPC.sees` tests, so the picture cannot
-        promise cover the rule doesn't give."""
+        be wallpaper. Red is the one that has the player in it. The shape comes straight from
+        `World.vision_polygon`, walls and all, so a wedge stops at the house it is looking at
+        exactly where the check stops, and cover on screen is cover in the rule."""
         radius = world.witness_radius()
-        half = math.radians(c.Crime.VIEW_CONE_DEG) / 2
         watchers = world.watchers_near(player.x, player.y)
         if not watchers:
             return
 
+        ignore = world.sight_blocker(player.x, player.y)
         overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
         for npc in watchers:
-            seen = npc.sees(player.x, player.y, radius)
-            facing = npc.orientation - math.pi / 2
-            origin = camera.world_to_screen(npc.x, npc.y)
-            steps = 14
-            points = [origin]
-            for step in range(steps + 1):
-                angle = facing - half + (2 * half) * step / steps
-                edge = (npc.x + math.cos(angle) * radius, npc.y + math.sin(angle) * radius)
-                points.append(camera.world_to_screen(*edge))
+            points = [camera.world_to_screen(x, y) for x, y in world.vision_polygon(npc, radius, ignore)]
+            seen = world.can_see(npc, player.x, player.y, radius, ignore)
             # Kept faint: several of these overlap on a busy street, and they are drawn on
             # the ground the player is trying to read, not over it.
             pygame.draw.polygon(overlay, (200, 70, 60, 38) if seen else (230, 225, 200, 16), points)

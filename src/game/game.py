@@ -564,11 +564,10 @@ class Game:
         self._check_witness()
 
     def _bed_cooling(self) -> float:
-        """Seconds before this bed is worth lying in again. Only a villager's own bed has a
-        cooldown, so an inn's is always ready as long as the player can pay; the prompt and
-        the key both read it from here so they can't disagree about whether it will work."""
-        if self.interior.kind != "house":
-            return 0.0
+        """Seconds before this bed is worth lying in again. Every bed in the world has the
+        same cooldown, the tavern's included: a room of them is not a row of full heals. The
+        prompt and the key both read it from here so they can't disagree about whether it
+        will work."""
         return self.world.rest_ready_in(self.interior.id)
 
     def _watched_label(self, label: str) -> str:
@@ -581,16 +580,16 @@ class Game:
         return f"{label} ({witness.name or 'someone'} is watching)"
 
     def _bed_label(self) -> str:
-        """What the prompt over a bed says: the inn charges, a villager's bed doesn't, and
-        a bed slept in recently says how long until it is worth lying in again."""
+        """What the prompt over a bed says. No bed is paid for and none of them is the
+        player's, so all of them read the same way: whether it is still warm, and who is
+        watching them climb into it."""
         if self._sleep_threat():
             return "Too dangerous to sleep with that out there"
-        if self.interior.kind != "house":
-            return f"E: sleep ({c.Buildings.TAVERN_SLEEP_COST} coins)"
         cooling = self._bed_cooling()
         if cooling > 0:
             return f"E: this bed is still warm ({int(cooling) + 1}s)"
-        return self._watched_label("E: sleep in their bed")
+        label = "E: sleep in their bed" if self.interior.kind == "house" else "E: take a room"
+        return self._watched_label(label)
 
     def _use_door(self, building):
         """Open or shut a door. Shutting one is the only way to put a wall between the player
@@ -606,26 +605,20 @@ class Game:
     def _sleep_in_bed(self):
         # A bed is the one full night's rest in the game: unlike a campfire it heals
         # everything, shakes off the post-death weakness and puts the night behind the
-        # player. The inn charges coins for it; a villager's own bed asks nothing but that
-        # nobody sees you climb into it, and that household won't have it slept in again
-        # for a while. Nobody sleeps with something hostile in the street, the same refusal
-        # a campfire makes through `camp_is_clear`.
+        # player. None of them is bought and none of them is the player's: a tavern room
+        # is taken rather than paid for, exactly like a villager's own bed, so both cost
+        # the risk of being seen and both leave that bed cold for a while. Nobody sleeps
+        # with something hostile in the street, the same refusal a campfire makes through
+        # `camp_is_clear`.
         if self._sleep_threat():
             self.loot_notification.show("Too dangerous to sleep with that out there", c.Colors.RED)
             return
 
-        stolen_sleep = self.interior.kind == "house"
-        if stolen_sleep:
-            remaining = self._bed_cooling()
-            if remaining > 0:
-                self.loot_notification.show(f"You slept here recently. Again in {int(remaining) + 1}s", c.Colors.MUTED)
-                return
-            self.world.rest_in_house(self.interior)
-        else:
-            if self.player.coins < c.Buildings.TAVERN_SLEEP_COST:
-                self.loot_notification.show("Not enough coins to rest here", c.Colors.RED)
-                return
-            self.player.add_coins(-c.Buildings.TAVERN_SLEEP_COST)
+        remaining = self._bed_cooling()
+        if remaining > 0:
+            self.loot_notification.show(f"You slept here recently. Again in {int(remaining) + 1}s", c.Colors.MUTED)
+            return
+        self.world.rest_in_house(self.interior)
 
         play_sound("quest_complete")
         self._sleep_until_dawn()
@@ -633,8 +626,7 @@ class Game:
         self.player.max_hp = self.player.effective_max_hp()
         self.player.hp = self.player.max_hp
         self.loot_notification.show("You sleep until dawn and wake fully rested", c.Colors.GREEN)
-        if stolen_sleep:
-            self._check_witness()
+        self._check_witness()
         # A night is hours of world clocks moved on; nobody wants to sleep it twice.
         self.save_data()
 

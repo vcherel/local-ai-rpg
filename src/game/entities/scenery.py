@@ -559,7 +559,7 @@ def generate_chunk_scenery(
     # Circles nothing at all may stand in, and circles only solid things are kept out of.
     solid_zones = [(b.x, b.y, max(b.w, b.h) / 2 + c.Scenery.CLEARANCE_BUILDING) for b in buildings]
     solid_zones += [(p.x, p.y, c.Scenery.CLEARANCE_POI) for p in pois]
-    open_zones = [(v.x, v.y, v.radius + c.Scenery.CLEARANCE_VILLAGE) for v in villages]
+    open_zones = [(v.x, v.y, v.grounds_radius + c.Scenery.CLEARANCE_VILLAGE) for v in villages]
 
     def clear_of_places(x: float, y: float) -> bool:
         return not any(math.hypot(x - zx, y - zy) < radius for zx, zy, radius in solid_zones + open_zones)

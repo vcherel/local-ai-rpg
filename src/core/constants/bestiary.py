@@ -21,6 +21,19 @@ class Entities:
     NPC_ATTACK_RANGE: int = 34
     NPC_DAMAGE: int = 9
     NPC_ATTACK_COOLDOWN_MS: int = 900
+    # What a villager actually has in their hands, rolled once off their home so the same
+    # house always sends the same person out with the same tool. It is a name, resolved
+    # through `weapon_archetype` like anything the player picks up, so a pitchfork reaches
+    # further and a kitchen knife is quick and feeble without a line of new numbers: the
+    # two above are the baseline the archetype's multipliers are applied to. Whoever takes
+    # up arms for the settlement owns a real weapon; everyone else fights with a tool.
+    VILLAGER_WEAPONS: tuple = ("Kitchen Knife", "Cudgel", "Pitchfork", "Hatchet", "Fire Poker")
+    MILITIA_WEAPONS: tuple = ("Spear", "Sword", "Axe", "Mace")
+    GUARD_WEAPONS: tuple = ("Halberd", "Longsword", "Guard's Spear")
+    # The steel and the haft a villager's weapon is drawn in. Nobody in a village carries
+    # anything enchanted, so it is one colour rather than an item's rarity tint.
+    WEAPON_COLOR: tuple = (176, 178, 186)
+    WEAPON_OUTLINE: tuple = (64, 62, 58)
     # Angry villagers are not a hunting party: outrun them by this much and they go back
     # to their houses. Still hostile, still waiting, just no longer following you across
     # the world in a column of eighteen.
