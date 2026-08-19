@@ -8,7 +8,7 @@ import pygame
 
 import core.constants as c
 from core.audio import play_sound
-from game.entities.entities import Entity
+from game.entities.entities import Entity, push_apart
 from game.entities.monster_art import draw_monster, weapon_hand
 
 if TYPE_CHECKING:
@@ -246,35 +246,9 @@ class Monster(Entity):
         return (self.x, self.y) if self.kind.ranged else (target.x, target.y)
 
     def _separate(self, crowd, blocked, radius: float):
-        """Push out of anything standing in the same place. Chasers stop moving once they
-        are in reach, which is exactly when they pile into one body; this runs whether the
-        monster is walking or swinging, so the pile comes apart on its own.
-
-        One held in a trap is not shoved out of it: the jaws are what keep it there, and a
-        pack piling in behind would otherwise carry it free."""
-        if not crowd or self.rooted:
-            return
-        push_x = push_y = 0.0
-        for other in crowd:
-            if other is self:
-                continue
-            dx, dy = self.x - other.x, self.y - other.y
-            gap = math.hypot(dx, dy)
-            overlap = radius + other.kind.size / 2 - gap
-            if overlap <= 0:
-                continue
-            if gap < 1e-6:
-                # Exactly on top of each other: shove along its own bearing rather than
-                # dividing by nothing.
-                dx, dy, gap = math.cos(self.slot_angle), math.sin(self.slot_angle), 1.0
-            push_x += dx / gap * overlap * c.Entities.SEPARATION_PUSH
-            push_y += dy / gap * overlap * c.Entities.SEPARATION_PUSH
-        if push_x == 0.0 and push_y == 0.0:
-            return
-        if blocked is None or not blocked(self.x + push_x, self.y, radius):
-            self.x += push_x
-        if blocked is None or not blocked(self.x, self.y + push_y, radius):
-            self.y += push_y
+        """Push out of anything standing in the same place, through the same shove an angry
+        village's mob uses (`entities.push_apart`)."""
+        push_apart(self, crowd, radius, lambda other: other.kind.size / 2, blocked)
 
     def cornered(self, dist: float) -> bool:
         """A ranged kind with the player right on top of it. It has nowhere useful to back
