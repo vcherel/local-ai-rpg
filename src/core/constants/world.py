@@ -784,13 +784,15 @@ class PointsOfInterest:
             "These stones were raised on purpose, a very long time ago.",
         ),
     }
+    # Kept short on purpose: the two are toasted as one line, and a paragraph on the screen
+    # is read as furniture rather than as something the player just found.
     SHRINE_MESSAGES: tuple = (
-        "An old shrine, worn smooth by countless hands.",
-        "Faded offerings lie at the foot of this shrine.",
-        "The carvings on this shrine predate any living memory.",
-        "Someone has left a wilted flower at this shrine.",
+        "An old shrine, worn smooth.",
+        "A shrine, its offerings long faded.",
+        "A shrine older than any memory.",
+        "A shrine, one wilted flower at its foot.",
     )
-    SHRINE_EXPLANATION: str = "Pray at it (E) for a blessing, but the old gods are not always kind."
+    SHRINE_EXPLANATION: str = "Pray (E): the old gods are not always kind."
 
     # Praying is a gamble taken once per shrine: mostly a timed blessing, sometimes the
     # shrine takes something instead.
@@ -799,16 +801,16 @@ class PointsOfInterest:
     # (buff effect, magnitude, seconds, message). The effects are the potion buffs, read
     # back by the same multipliers, so a blessing needs no machinery of its own.
     SHRINE_BLESSINGS: tuple = (
-        ("strength", 1.35, 45.0, "The shrine's warmth settles in your arms: you strike harder."),
-        ("swiftness", 1.30, 45.0, "Your feet feel light. The shrine speeds your step."),
-        ("stoneskin", 7, 45.0, "Your skin hardens like the shrine's own stone."),
+        ("strength", 1.35, 45.0, "The shrine warms your arms: you strike harder."),
+        ("swiftness", 1.30, 45.0, "Your feet feel light."),
+        ("stoneskin", 7, 45.0, "Your skin hardens like the stone."),
     )
     # (curse kind, message). "weakness" is the same Weakened timer dying leaves behind,
     # "tithe" takes coins, "wound" takes health on the spot.
     SHRINE_CURSES: tuple = (
-        ("weakness", "The shrine drinks something out of you. You feel weakened."),
-        ("tithe", "The offering bowl empties your purse: {amount} coins gone."),
-        ("wound", "Old stone cuts back. Something unseen tears at you."),
+        ("weakness", "The shrine drinks something out of you."),
+        ("tithe", "The bowl takes its tithe: {amount} coins gone."),
+        ("wound", "Old stone cuts back."),
     )
     SHRINE_CURSE_WEAKNESS_S: float = 40.0
     SHRINE_CURSE_TITHE_FRAC: float = 0.2
