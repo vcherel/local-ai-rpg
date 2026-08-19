@@ -8,7 +8,7 @@ import core.constants as c
 
 
 class FloatingText:
-    __slots__ = ("x", "y", "text", "color", "life", "max_life", "big", "drift_x")
+    __slots__ = ("big", "color", "drift_x", "life", "max_life", "text", "x", "y")
 
     def __init__(self, x, y, text, color, life, big):
         self.x = x

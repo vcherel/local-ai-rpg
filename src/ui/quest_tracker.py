@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from llm.quest_system import QuestSystem
 
 
-def _progress_line(quest: "Quest") -> str:
+def _progress_line(quest: Quest) -> str:
     if quest.quest_type == "kill_mob":
         return f"Kill {quest.target_monster_kind}: {quest.kills_done}/{quest.kill_count}"
     if quest.quest_type == "loot_mob":
@@ -47,23 +47,23 @@ class QuestTracker:
 
     def __init__(self, screen: pygame.Surface):
         self.screen = screen
-        self.tracked: Optional["Quest"] = None
+        self.tracked: Quest | None = None
         self.collapsed = False
         self.highlight_until = 0
         self.collapse_button_rect = pygame.Rect(0, 0, 0, 0)
-        self.chip_rects: List[Tuple[pygame.Rect, "Quest"]] = []
+        self.chip_rects: list[tuple[pygame.Rect, Quest]] = []
 
-    def notify_new_quest(self, quest: "Quest"):
+    def notify_new_quest(self, quest: Quest):
         self.tracked = quest
         self.collapsed = False
         self.highlight_until = pygame.time.get_ticks() + self.HIGHLIGHT_MS
 
-    def _resolve_tracked(self, active_quests: list) -> Optional["Quest"]:
+    def _resolve_tracked(self, active_quests: list) -> Quest | None:
         if self.tracked is None or not any(q is self.tracked for q in active_quests):
             self.tracked = active_quests[0] if active_quests else None
         return self.tracked
 
-    def handle_event(self, event: pygame.event.Event, quest_system: "QuestSystem") -> bool:
+    def handle_event(self, event: pygame.event.Event, quest_system: QuestSystem) -> bool:
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return False
         if not quest_system.active_quests:
@@ -81,7 +81,7 @@ class QuestTracker:
 
         return False
 
-    def draw(self, quest_system: "QuestSystem", top: int):
+    def draw(self, quest_system: QuestSystem, top: int):
         """`top` is where the minimap's own strips ended (Minimap.content_bottom), not a
         fixed offset: the clock and the village name under the map change height, and the
         card used to be laid straight over them."""
@@ -136,7 +136,7 @@ class QuestTracker:
             points = [(cx - 5, cy + 2), (cx, cy - 3), (cx + 5, cy + 2)]
         pygame.draw.lines(self.screen, c.Colors.MUTED, False, points, 2)
 
-    def _draw_tracked_card(self, rect: pygame.Rect, quest: "Quest"):
+    def _draw_tracked_card(self, rect: pygame.Rect, quest: Quest):
         highlighted = pygame.time.get_ticks() < self.highlight_until
         border = c.Colors.ACCENT if highlighted else c.Colors.BORDER
         widgets.draw_panel(self.screen, rect, border=border, border_w=3 if highlighted else 2)

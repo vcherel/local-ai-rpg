@@ -7,7 +7,7 @@ flat and square: solid fills, plain borders, a gold accent on hover/focus.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -34,8 +34,8 @@ EQUIP_SLOTS = (
 def draw_panel(
     surface: pygame.Surface,
     rect: pygame.Rect,
-    fill: Optional[tuple] = None,
-    border: Optional[tuple] = None,
+    fill: tuple | None = None,
+    border: tuple | None = None,
     border_w: int = 2,
 ):
     """Fill `rect` with a flat panel color and a square border."""
@@ -54,8 +54,8 @@ def draw_button(
     font: pygame.font.Font,
     hovered: bool = False,
     pressed: bool = False,
-    text_color: Optional[tuple] = None,
-    accent: Optional[tuple] = None,
+    text_color: tuple | None = None,
+    accent: tuple | None = None,
 ):
     """A flat, square button with a gold border on hover, sinks slightly when pressed."""
     accent = accent or c.Colors.ACCENT
@@ -75,8 +75,8 @@ def draw_slot(
     surface: pygame.Surface,
     rect: pygame.Rect,
     hovered: bool = False,
-    border_color: Optional[tuple] = None,
-    glow_color: Optional[tuple] = None,
+    border_color: tuple | None = None,
+    glow_color: tuple | None = None,
     border_w: int = 2,
 ):
     """An inset slot for grid cells and list rows, with an optional rarity tint/glow."""
@@ -95,7 +95,7 @@ def wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
     lines = []
     current_line = []
     for word in text.split():
-        candidate = " ".join(current_line + [word])
+        candidate = " ".join([*current_line, word])
         if font.size(candidate)[0] <= max_width:
             current_line.append(word)
             continue
@@ -116,7 +116,7 @@ def wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
     return lines
 
 
-def draw_item_scaled(surface: pygame.Surface, item: "Item", cx: int, cy: int, size: int):
+def draw_item_scaled(surface: pygame.Surface, item: Item, cx: int, cy: int, size: int):
     """Draw an item icon scaled to `size` px, centered at (cx, cy).
 
     Item.draw renders at a fixed small size, too tiny for big inventory slots, so we

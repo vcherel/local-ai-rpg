@@ -17,7 +17,7 @@ import core.constants as c
 
 
 class Decal:
-    __slots__ = ("x", "y", "blobs", "life", "max_life", "color")
+    __slots__ = ("blobs", "color", "life", "max_life", "x", "y")
 
     def __init__(self, x, y, radius, color, life):
         self.x = x

@@ -57,7 +57,7 @@ class ToastNotification(_TimedBanner):
 
         self.padding = 15
 
-    def show(self, text: str, color: tuple = None):
+    def show(self, text: str, color: tuple | None = None):
         self.lines = widgets.wrap_text(text, c.Fonts.button, c.Screen.WIDTH * self.MAX_WIDTH_FRAC)
         self.color = color or c.Colors.YELLOW
         self._activate()

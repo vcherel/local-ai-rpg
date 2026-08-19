@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 from functools import lru_cache
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -24,7 +24,7 @@ class Village:
     has walked into it yet.
     """
 
-    def __init__(self, x, y, chunk: Tuple[int, int], size: str = "village", radius: int = 700, extent: int = 0):
+    def __init__(self, x, y, chunk: tuple[int, int], size: str = "village", radius: int = 700, extent: int = 0):
         self.x = x
         self.y = y
         # The chunk that owns this village, and its identity in the save: a chunk that
@@ -32,7 +32,7 @@ class Village:
         self.chunk = (int(chunk[0]), int(chunk[1]))
         self.size = size
         self.radius = radius
-        self.name: Optional[str] = None
+        self.name: str | None = None
         self.discovered = False
         # Whether this one stands a palisade. Rolled from the size when the settlement is
         # built and then persisted, like everything else about a village: the wall is part
@@ -235,7 +235,7 @@ class Village:
 
 
 @lru_cache(maxsize=4096)
-def _region_site(rx: int, ry: int) -> Optional[Tuple[int, int, int, int]]:
+def _region_site(rx: int, ry: int) -> tuple[int, int, int, int] | None:
     """The chunk one region settles and where in it, as (cx, cy, x, y), or None for an empty
     region. Pure function of the region coordinates."""
     region = c.Villages.REGION_CHUNKS
@@ -257,7 +257,7 @@ def _region_site(rx: int, ry: int) -> Optional[Tuple[int, int, int, int]]:
 
 
 @lru_cache(maxsize=4096)
-def village_site(cx: int, cy: int) -> Optional[Tuple[int, int]]:
+def village_site(cx: int, cy: int) -> tuple[int, int] | None:
     """Where the village belonging to chunk (cx, cy) stands, or None if it holds none.
 
     One region of REGION_CHUNKS x REGION_CHUNKS chunks settles a single chunk, and a region
@@ -285,7 +285,7 @@ def village_site(cx: int, cy: int) -> Optional[Tuple[int, int]]:
     return site[2], site[3]
 
 
-def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> List[Tuple[int, int]]:
+def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> list[tuple[int, int]]:
     """Every village site within `chunk_radius` chunks of (cx, cy), generated or not.
 
     Sites are a pure function of their region, so this answers the same thing from
@@ -293,7 +293,7 @@ def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> List[Tuple[int, int
     on every chunk load because it walks regions rather than chunks.
     """
     region = c.Villages.REGION_CHUNKS
-    sites: List[Tuple[int, int]] = []
+    sites: list[tuple[int, int]] = []
     for rx in range(math.floor((cx - chunk_radius) / region), math.floor((cx + chunk_radius) / region) + 1):
         for ry in range(math.floor((cy - chunk_radius) / region), math.floor((cy + chunk_radius) / region) + 1):
             site = _region_site(rx, ry)
@@ -304,17 +304,17 @@ def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> List[Tuple[int, int
     return sites
 
 
-def _building_kinds(composition: dict, rng: random.Random) -> List[str]:
+def _building_kinds(composition: dict, rng: random.Random) -> list[str]:
     """The buildings a settlement of this composition is made of, biggest first: the
     tavern and the shops take the slots nearest the plaza, the houses spread out behind."""
-    kinds: List[str] = []
+    kinds: list[str] = []
     for kind in ("tavern", "shop", "house"):
         low, high = composition[kind]
         kinds.extend([kind] * rng.randint(low, high))
     return kinds
 
 
-def _plaza_slots(count: int, rng: random.Random) -> List[Tuple[float, float]]:
+def _plaza_slots(count: int, rng: random.Random) -> list[tuple[float, float]]:
     """Offsets from the plaza for `count` buildings: a grid centred on the village with its
     middle slot left open, ordered nearest the plaza first and jittered so the result reads
     as a settlement rather than a spreadsheet."""
@@ -342,7 +342,7 @@ def _facing_towards_plaza(ox: float, oy: float) -> str:
     return "N" if oy > 0 else "S"
 
 
-def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> Tuple[Village, List[Building]]:
+def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> tuple[Village, list[Building]]:
     kinds = _building_kinds(composition, rng)
     slots = _plaza_slots(len(kinds), rng)
     buildings = [
@@ -359,7 +359,7 @@ def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> Tup
     return Village(x, y, chunk, size, radius, extent), buildings
 
 
-def generate_village(x, y, chunk: Tuple[int, int]) -> Tuple[Village, List[Building]]:
+def generate_village(x, y, chunk: tuple[int, int]) -> tuple[Village, list[Building]]:
     """Lay out the village that chunk (cx, cy) offers. Called once, the first time the
     player walks into range; after that the result lives in the save like the starting town."""
     rng = random.Random(f"village-layout:{chunk[0]},{chunk[1]}")
@@ -368,7 +368,7 @@ def generate_village(x, y, chunk: Tuple[int, int]) -> Tuple[Village, List[Buildi
     return _build(x, y, chunk, size, c.Villages.COMPOSITION[size], rng)
 
 
-def generate_starting_world() -> Tuple[Village, List[Building]]:
+def generate_starting_world() -> tuple[Village, list[Building]]:
     """The village the player starts next to, plus the ruined landmark standing alone out
     in the settled ring. Rolled fresh per new game rather than seeded, so two playthroughs
     don't open on the same town."""
@@ -386,7 +386,7 @@ def generate_starting_world() -> Tuple[Village, List[Building]]:
     return village, buildings
 
 
-def _place_landmark(village: Village, buildings: List[Building]) -> Optional[Building]:
+def _place_landmark(village: Village, buildings: list[Building]) -> Building | None:
     """The ancient ruin: out on the far side of the settled ring, well clear of the village
     and a long way from the spawn point, since its guardian is a boss and shouldn't be
     waiting on the doorstep (Boss.LANDMARK_MIN_DISTANCE, its own floor rather than the

@@ -83,7 +83,7 @@ def draw_monster(
     shape: str = "humanoid",
     *,
     attack_progress: float = 0.0,
-    attack_hand: str = None,
+    attack_hand: str | None = None,
     weapon: str = "",
     eye_color: tuple = (255, 120, 60),
     aggro: bool = False,

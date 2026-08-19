@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import threading
 import time
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import core.constants as c
 from llm.llm_request_queue import generate_response_queued
@@ -27,7 +27,7 @@ class DeathTauntGenerator:
         self.cond = threading.Condition()
         self.save_system: SaveSystem = save_system
         self.is_generating = False
-        self.ready_taunts: List[str] = list(save_system.load("death_taunts", []))
+        self.ready_taunts: list[str] = list(save_system.load("death_taunts", []))
         # Set by close(): a taunt still in flight belongs to a session that is over and must
         # not write into the next game's save.
         self.closed = False

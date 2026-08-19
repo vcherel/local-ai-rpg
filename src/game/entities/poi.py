@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -334,7 +334,7 @@ class PointOfInterest:
             screen.blit(glow, (cx - 30, cy - 36))
 
 
-def pois_for_chunk(cx: int, cy: int, buildings: List["Building"]) -> List[PointOfInterest]:
+def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfInterest]:
     """The points of interest belonging to one chunk, generated from its coordinates.
 
     Deterministic, so a chunk looks the same every time the player walks back into it, and

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from game.entities.items import Item
@@ -18,7 +18,7 @@ class Quest:
     npc_name: str
     description: str
     item_name: str
-    item: Optional[Item] = None
+    item: Item | None = None
     is_completed: bool = False
     reward_coins: int = 0
     reward_item_name: str = ""
@@ -44,8 +44,8 @@ class Quest:
     # Where a clear_camp or steal quest points on the map. Written down when the quest is
     # given: a camp and a house both stand still, and the camp may well be out in a chunk
     # nobody has loaded, so there is nothing to look the position up from later.
-    target_x: Optional[float] = None
-    target_y: Optional[float] = None
+    target_x: float | None = None
+    target_y: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -70,7 +70,7 @@ class Quest:
         }
 
     @classmethod
-    def from_dict(cls, data: dict, items_by_id: Dict[str, Item]) -> Quest:
+    def from_dict(cls, data: dict, items_by_id: dict[str, Item]) -> Quest:
         return cls(
             npc_name=data["npc_name"],
             description=data["description"],

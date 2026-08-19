@@ -28,7 +28,15 @@ sources = ["src"]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "UP", "RUF"]
+ignore = [
+    # Deliberate: the LLM output filter needs the real unicode dash/quote ranges it strips.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # The constants modules are nothing but class-level tables; ClassVar on each says nothing.
+    "RUF012",
+]
 
 [tool.uv]
 package = true

@@ -51,7 +51,7 @@ class SwingArc:
     def update(self, dt):
         self.age += dt
 
-    def draw(self, layer: pygame.Surface, camera: "Camera"):
+    def draw(self, layer: pygame.Surface, camera: Camera):
         progress = min(1.0, self.age / c.Combat.SWING_ARC_MS)
         alpha = round(200 * (1.0 - progress) ** 1.5)
         if alpha <= 2:
@@ -91,7 +91,7 @@ class ThrustTrail:
     def update(self, dt):
         self.age += dt
 
-    def draw(self, layer: pygame.Surface, camera: "Camera"):
+    def draw(self, layer: pygame.Surface, camera: Camera):
         progress = min(1.0, self.age / c.Combat.SWING_ARC_MS)
         alpha = round(210 * (1.0 - progress) ** 1.5)
         if alpha <= 2:
@@ -120,7 +120,7 @@ class SwingArcSystem:
             arc.update(dt)
         self.arcs = [arc for arc in self.arcs if not arc.dead]
 
-    def draw(self, surface: pygame.Surface, camera: "Camera"):
+    def draw(self, surface: pygame.Surface, camera: Camera):
         """One transparent layer for every arc in flight, blitted once: the arcs need
         per-pixel alpha to fade, and a surface each would mean a full-screen allocation
         per swing."""

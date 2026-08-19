@@ -60,7 +60,7 @@ class ImpactRing:
         points.append(end)
         return points
 
-    def draw(self, layer: pygame.Surface, camera: "Camera"):
+    def draw(self, layer: pygame.Surface, camera: Camera):
         progress = min(1.0, self.age / c.ImpactFx.RING_MS)
         alpha = round(210 * (1.0 - progress) ** 1.6)
         if alpha <= 2:
@@ -94,7 +94,7 @@ class ImpactFxSystem:
             ring.update(dt)
         self.rings = [ring for ring in self.rings if not ring.dead]
 
-    def draw(self, surface: pygame.Surface, camera: "Camera"):
+    def draw(self, surface: pygame.Surface, camera: Camera):
         """One transparent layer for every ring in flight, blitted once, exactly as the
         swing arcs are drawn: they need per-pixel alpha to fade, and a surface each would
         mean a full-screen allocation per hit."""

@@ -4,7 +4,8 @@ import math
 import random
 import threading
 import time
-from typing import TYPE_CHECKING, Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import core.constants as c
 from core.utils import parse_response_quest_analysis
@@ -35,10 +36,10 @@ class EventSystem:
         self._notify = notify
         self.cooldown = random.uniform(*c.Events.INTERVAL_RANGE_MS)
 
-        self.wandering_merchant: Optional[NPC] = None
+        self.wandering_merchant: NPC | None = None
         # The hired sword walking with them, and the way the pair are heading. A merchant on
         # the road is a merchant: they walk it, and they do not walk it alone.
-        self.merchant_guard: Optional[NPC] = None
+        self.merchant_guard: NPC | None = None
         self.merchant_heading = 0.0
         self.merchant_timer = 0.0
         self.blood_night_timer = 0.0
@@ -226,7 +227,7 @@ class EventSystem:
 
     # ------------------------------------------------------------------ treasure cache
 
-    def _spawn_treasure(self, player: Player, message: str = None, mark: str = ""):
+    def _spawn_treasure(self, player: Player, message: str | None = None, mark: str = ""):
         pos = self._point_near_player(
             player, c.Events.TREASURE_MIN_DIST, c.Events.TREASURE_MAX_DIST, c.Entities.ITEM_SIZE / 2
         )
@@ -262,7 +263,7 @@ class EventSystem:
 
     # ------------------------------------------------------------------ boss
 
-    def _spawn_boss_event(self, player: Player, message: str = None):
+    def _spawn_boss_event(self, player: Player, message: str | None = None):
         if len(self.world.bosses) >= c.Boss.MAX_ACTIVE:
             return
         pos = self._point_near_player(

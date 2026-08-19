@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -44,7 +44,7 @@ class Critter:
         x,
         y,
         kind: c.CritterKind,
-        home: Optional[tuple] = None,
+        home: tuple | None = None,
         village_key: str = "",
         camp_id: str = "",
     ):
@@ -64,7 +64,7 @@ class Critter:
         self.lunge_until_ms = 0
         # Fleeing: the heading it committed to, when the sprint started, and (when wounded)
         # how long it keeps running whatever the distance to the player.
-        self.flee_heading: Optional[float] = None
+        self.flee_heading: float | None = None
         self.flee_started_ms = 0
         self.bolt_until_ms = 0
         # Held in a bear trap's jaws until this tick. An animal caught in one still turns

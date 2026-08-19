@@ -62,7 +62,7 @@ class SaveSystem:
 
     def _load_all(self):
         if os.path.exists(self.filename):
-            with open(self.filename, "r") as f:
+            with open(self.filename) as f:
                 try:
                     return json.load(f)
                 except json.JSONDecodeError:

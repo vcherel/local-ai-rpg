@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 import time
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import core.constants as c
 from core.audio import play_sound
@@ -420,7 +420,7 @@ class WorldPlaces:
             return None, [npc]
         return village, [other for other in self.npcs if village.contains_point(other.x, other.y)]
 
-    def provoke_village(self, npc: NPC) -> List[NPC]:
+    def provoke_village(self, npc: NPC) -> list[NPC]:
         """Turn a settlement on the player after one of its people is struck, returning
         everyone who just went hostile (so the caller can strike their quests off).
 
@@ -448,7 +448,7 @@ class WorldPlaces:
             self.notify(f"{name} turns on you!", c.Colors.RED)
         return newly_hostile
 
-    def hold_grudge(self, npc: NPC) -> List[NPC]:
+    def hold_grudge(self, npc: NPC) -> list[NPC]:
         """A villager is dead by the player's hand, and that one is never forgiven.
 
         Anger is a countdown; a killing is not. Everyone on this settlement's grounds is
@@ -470,7 +470,7 @@ class WorldPlaces:
         renderer draws, so what the player is shown is exactly what is tested."""
         return c.Crime.WITNESS_RADIUS * (c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0)
 
-    def watchers_near(self, x: float, y: float) -> List[NPC]:
+    def watchers_near(self, x: float, y: float) -> list[NPC]:
         """Everyone close enough to (x, y) that their field of view is worth drawing, whether
         or not (x, y) actually falls inside it."""
         radius = self.witness_radius()
@@ -501,7 +501,7 @@ class WorldPlaces:
                 return i * step - step
         return radius
 
-    def vision_polygon(self, npc: NPC, radius: float, ignore, rays: int = 18) -> List[tuple]:
+    def vision_polygon(self, npc: NPC, radius: float, ignore, rays: int = 18) -> list[tuple]:
         """The wedge this villager can actually see, in world coordinates: their own position
         followed by the far end of each ray, cut short wherever a wall stops it."""
         half = math.radians(c.Crime.VIEW_CONE_DEG) / 2
