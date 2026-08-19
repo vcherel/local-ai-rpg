@@ -28,18 +28,18 @@ if TYPE_CHECKING:
     from core.save import SaveSystem
 
 
-# Every equip slot, and the attribute holding the id of what is in it. The one definition
-# of the slots the player has: the constructor fills them from the save, `equipped_ids`
-# writes them back, and the equip/unequip paths look the attribute up here.
-EQUIP_SLOT_ATTRS = {
-    "melee_weapon": "equipped_melee_weapon_id",
-    "melee_weapon_2": "equipped_melee_weapon_2_id",
-    "ranged_weapon": "equipped_ranged_weapon_id",
-    "offhand": "equipped_offhand_id",
-    "armor": "equipped_armor_id",
-    "accessory": "equipped_accessory_id",
-    "ammo": "equipped_ammo_id",
-}
+# Every equip slot the player has, in the order the save writes them. `Player.equipped`
+# is a dict on exactly these keys holding the id of what is in each, so a slot is read and
+# written by its own name everywhere instead of through an attribute looked up off a table.
+EQUIP_SLOT_NAMES = (
+    "melee_weapon",
+    "melee_weapon_2",
+    "ranged_weapon",
+    "offhand",
+    "armor",
+    "accessory",
+    "ammo",
+)
 
 # The two melee slots, in bar order. Both are equipped at once and `Player.active_melee`
 # indexes which of them swings; carrying a spear beside a sword is a choice of stance made
@@ -107,9 +107,8 @@ class Player(Entity):
         self.max_hp = self.stats.max_hp()
         self.hp = self.max_hp
 
-        equipped = save_system.load("equipped", {})
-        for slot, attr in EQUIP_SLOT_ATTRS.items():
-            setattr(self, attr, equipped.get(slot))
+        saved_equipped = save_system.load("equipped", {})
+        self.equipped = {slot: saved_equipped.get(slot) for slot in EQUIP_SLOT_NAMES}
 
         # The weapon bar the number keys switch between. It sits on top of the melee and
         # ranged slots rather than replacing them: selecting a bar slot routes that weapon
@@ -364,7 +363,7 @@ class Player(Entity):
         if item.item_type == "ammo":
             loaded = self.equipped_item("ammo")
             if loaded is None or loaded.quantity <= 0:
-                self.equipped_ammo_id = item.id
+                self.equipped["ammo"] = item.id
                 self.save_system.update("equipped", self.equipped_ids())
         elif item.item_type == "potion" and item.id not in self.potion_bar and None in self.potion_bar:
             self.potion_bar[self.potion_bar.index(None)] = item.id
@@ -433,10 +432,10 @@ class Player(Entity):
         return ammo.quantity if ammo else 0
 
     def equipped_ids(self) -> dict:
-        return {slot: getattr(self, attr) for slot, attr in EQUIP_SLOT_ATTRS.items()}
+        return dict(self.equipped)
 
     def equipped_item(self, slot: str):
-        item_id = getattr(self, EQUIP_SLOT_ATTRS[slot])
+        item_id = self.equipped[slot]
         if item_id is None:
             return None
         return next((item for item in self.inventory if item.id == item_id), None)
@@ -449,7 +448,7 @@ class Player(Entity):
         if slot != "melee_weapon":
             return slot
         for melee_slot in MELEE_SLOTS:
-            if getattr(self, EQUIP_SLOT_ATTRS[melee_slot]) is None:
+            if self.equipped[melee_slot] is None:
                 return melee_slot
         return self.active_melee_slot()
 
@@ -458,9 +457,8 @@ class Player(Entity):
         slot = self._target_slot(item)
         if slot is None:
             return
-        attr = EQUIP_SLOT_ATTRS[slot]
-        displaced = getattr(self, attr)
-        setattr(self, attr, item.id)
+        displaced = self.equipped[slot]
+        self.equipped[slot] = item.id
         if slot in MELEE_SLOTS:
             # Equipping a weapon means wanting to use it, so the slot it landed in is the
             # one that swings; the other stays equipped as the spare.
@@ -560,8 +558,8 @@ class Player(Entity):
         if slot >= len(items) or items[slot] is None:
             return None
         item = items[slot]
-        for equip_slot, attr in EQUIP_SLOT_ATTRS.items():
-            if getattr(self, attr) == item.id:
+        for equip_slot, equipped_id in self.equipped.items():
+            if equipped_id == item.id:
                 if equip_slot in MELEE_SLOTS:
                     self._set_active_melee(MELEE_SLOTS.index(equip_slot))
                 return item
@@ -570,7 +568,7 @@ class Player(Entity):
 
     def equipped_slot_of(self, item) -> str | None:
         """The slot an item is currently in, or None if it isn't equipped."""
-        return next((slot for slot, attr in EQUIP_SLOT_ATTRS.items() if getattr(self, attr) == item.id), None)
+        return next((slot for slot, equipped_id in self.equipped.items() if equipped_id == item.id), None)
 
     def is_upgrade(self, item) -> bool:
         """True if the item is equippable and beats (or fills an empty) its slot. Ammo is
@@ -593,7 +591,7 @@ class Player(Entity):
         """Empty an equip slot. Emptying the melee slot that was in hand falls back to the
         other one, so putting a weapon away never leaves the player barehanded next to the
         spare they are still carrying."""
-        setattr(self, EQUIP_SLOT_ATTRS[slot], None)
+        self.equipped[slot] = None
         if slot == self.active_melee_slot() and self.equipped_item(MELEE_SLOTS[1 - self.active_melee]) is not None:
             self._set_active_melee(1 - self.active_melee)
         self.save_system.update("equipped", self.equipped_ids())
@@ -641,9 +639,7 @@ class Player(Entity):
         """How many slots `auto_equip_best` would actually change: what the button offers,
         rather than how many upgrades are lying in the bag (three swords are one upgrade)."""
         loadout = self._best_loadout()
-        return sum(
-            1 for slot, item in loadout.items() if item is not None and getattr(self, EQUIP_SLOT_ATTRS[slot]) != item.id
-        )
+        return sum(1 for slot, item in loadout.items() if item is not None and self.equipped[slot] != item.id)
 
     def auto_equip_best(self) -> list:
         """Put the best loadout on. Returns the items newly equipped, for the caller to
@@ -651,9 +647,9 @@ class Player(Entity):
         changed = []
         for slot, item in self._best_loadout().items():
             wanted = item.id if item is not None else None
-            if getattr(self, EQUIP_SLOT_ATTRS[slot]) == wanted:
+            if self.equipped[slot] == wanted:
                 continue
-            setattr(self, EQUIP_SLOT_ATTRS[slot], wanted)
+            self.equipped[slot] = wanted
             if item is not None:
                 changed.append(item)
                 if slot in MELEE_SLOTS or slot == "ranged_weapon":

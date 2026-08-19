@@ -20,7 +20,6 @@ class Entities:
     NPC_HOSTILE_SPEED: float = 3.4
     NPC_ATTACK_RANGE: int = 34
     NPC_DAMAGE: int = 9
-    NPC_ATTACK_COOLDOWN_MS: int = 900
     # What a villager actually has in their hands, rolled once off their home so the same
     # house always sends the same person out with the same tool. It is a name, resolved
     # through `weapon_archetype` like anything the player picks up, so a pitchfork reaches

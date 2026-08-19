@@ -66,102 +66,67 @@ def _bezier(start, control, end, steps=10):
     return points
 
 
-def _weapon_parts(kind: str, length: float) -> list:
-    """Primitives making up a weapon, in weapon-local space: grip at (0, 0), tip toward -y.
-
-    Each part is (kind, geometry, style) where style picks the colour: "metal" takes the
-    item colour with a rarity-coloured border, "grip" and "string" are fixed.
-    """
-    L = length
-    if kind == "bow":
-        tips = ((-L * 0.4, -L * 0.3), (L * 0.4, -L * 0.3))
-        stave = _bezier(tips[0], (0, -L * 1.45), tips[1])
-        return [
-            ("lines", tips, "string"),
-            ("lines", stave, "metal"),
-        ]
-    if kind == "staff":
-        return [
-            ("lines", ((0, L * 0.12), (0, -L * 0.86)), "grip"),
-            ("circle", ((0, -L * 0.9), L * 0.14), "metal"),
-        ]
-    if kind == "pole":
-        # A long shaft capped at both ends: what it hits with is its weight, so nothing on
-        # it comes to a point.
-        return [
-            ("lines", ((0, L * 0.34), (0, -L * 0.82)), "grip"),
-            (
-                "poly",
-                [(-L * 0.16, -L * 0.78), (L * 0.16, -L * 0.78), (L * 0.16, -L), (-L * 0.16, -L)],
-                "metal",
-            ),
-            (
-                "poly",
-                [(-L * 0.14, L * 0.3), (L * 0.14, L * 0.3), (L * 0.14, L * 0.44), (-L * 0.14, L * 0.44)],
-                "metal",
-            ),
-        ]
-    if kind == "boomerang":
-        # Held out at the elbow of the blade, the way it is thrown.
-        return [
-            (
-                "poly",
-                [
-                    (-L * 0.15, L * 0.1),
-                    (-L * 0.55, -L * 0.75),
-                    (-L * 0.2, -L * 0.95),
-                    (L * 0.1, -L * 0.2),
-                    (L * 0.85, L * 0.15),
-                    (L * 0.7, L * 0.5),
-                ],
-                "metal",
-            ),
-        ]
-    if kind == "spear":
-        return [
-            ("lines", ((0, L * 0.1), (0, -L * 0.82)), "grip"),
-            ("poly", [(-L * 0.1, -L * 0.78), (0, -L), (L * 0.1, -L * 0.78)], "metal"),
-        ]
-    if kind == "hammer":
-        return [
-            ("lines", ((0, L * 0.08), (0, -L * 0.72)), "grip"),
-            (
-                "poly",
-                [(-L * 0.3, -L * 0.68), (L * 0.3, -L * 0.68), (L * 0.3, -L * 0.98), (-L * 0.3, -L * 0.98)],
-                "metal",
-            ),
-        ]
-    if kind == "axe":
-        return [
-            ("lines", ((0, L * 0.08), (0, -L * 0.96)), "grip"),
-            (
-                "poly",
-                [(L * 0.04, -L * 0.96), (L * 0.5, -L * 0.82), (L * 0.5, -L * 0.54), (L * 0.04, -L * 0.6)],
-                "metal",
-            ),
-        ]
-    if kind == "dagger":
-        return [
-            ("lines", ((0, L * 0.08), (0, -L * 0.28)), "grip"),
-            (
-                "poly",
-                [(-L * 0.14, -L * 0.26), (L * 0.14, -L * 0.26), (L * 0.14, -L * 0.34), (-L * 0.14, -L * 0.34)],
-                "metal",
-            ),
-            (
-                "poly",
-                [
-                    (-L * 0.09, -L * 0.34),
-                    (L * 0.09, -L * 0.34),
-                    (L * 0.09, -L * 0.84),
-                    (0, -L),
-                    (-L * 0.09, -L * 0.84),
-                ],
-                "metal",
-            ),
-        ]
-    # sword, and any weapon whose archetype falls back to one
-    return [
+# Every weapon shape, in weapon-local space: grip at (0, 0), tip toward -y, sized by the
+# blade length `L`. Each part is (kind, geometry, style) where style picks the colour:
+# "metal" takes the item colour with a rarity-coloured border, "grip" and "string" are
+# fixed. Pure data, so adding a weapon family is a row here rather than a branch.
+_WEAPON_PARTS = {
+    "bow": lambda L: [
+        ("lines", ((-L * 0.4, -L * 0.3), (L * 0.4, -L * 0.3)), "string"),
+        ("lines", _bezier((-L * 0.4, -L * 0.3), (0, -L * 1.45), (L * 0.4, -L * 0.3)), "metal"),
+    ],
+    "staff": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.86)), "grip"),
+        ("circle", ((0, -L * 0.9), L * 0.14), "metal"),
+    ],
+    # A long shaft capped at both ends: what a pole hits with is its weight, so nothing on
+    # it comes to a point.
+    "pole": lambda L: [
+        ("lines", ((0, L * 0.34), (0, -L * 0.82)), "grip"),
+        ("poly", [(-L * 0.16, -L * 0.78), (L * 0.16, -L * 0.78), (L * 0.16, -L), (-L * 0.16, -L)], "metal"),
+        ("poly", [(-L * 0.14, L * 0.3), (L * 0.14, L * 0.3), (L * 0.14, L * 0.44), (-L * 0.14, L * 0.44)], "metal"),
+    ],
+    # Held out at the elbow of the blade, the way it is thrown.
+    "boomerang": lambda L: [
+        (
+            "poly",
+            [
+                (-L * 0.15, L * 0.1),
+                (-L * 0.55, -L * 0.75),
+                (-L * 0.2, -L * 0.95),
+                (L * 0.1, -L * 0.2),
+                (L * 0.85, L * 0.15),
+                (L * 0.7, L * 0.5),
+            ],
+            "metal",
+        ),
+    ],
+    "spear": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.82)), "grip"),
+        ("poly", [(-L * 0.1, -L * 0.78), (0, -L), (L * 0.1, -L * 0.78)], "metal"),
+    ],
+    "hammer": lambda L: [
+        ("lines", ((0, L * 0.08), (0, -L * 0.72)), "grip"),
+        ("poly", [(-L * 0.3, -L * 0.68), (L * 0.3, -L * 0.68), (L * 0.3, -L * 0.98), (-L * 0.3, -L * 0.98)], "metal"),
+    ],
+    "axe": lambda L: [
+        ("lines", ((0, L * 0.08), (0, -L * 0.96)), "grip"),
+        ("poly", [(L * 0.04, -L * 0.96), (L * 0.5, -L * 0.82), (L * 0.5, -L * 0.54), (L * 0.04, -L * 0.6)], "metal"),
+    ],
+    "dagger": lambda L: [
+        ("lines", ((0, L * 0.08), (0, -L * 0.28)), "grip"),
+        (
+            "poly",
+            [(-L * 0.14, -L * 0.26), (L * 0.14, -L * 0.26), (L * 0.14, -L * 0.34), (-L * 0.14, -L * 0.34)],
+            "metal",
+        ),
+        (
+            "poly",
+            [(-L * 0.09, -L * 0.34), (L * 0.09, -L * 0.34), (L * 0.09, -L * 0.84), (0, -L), (-L * 0.09, -L * 0.84)],
+            "metal",
+        ),
+    ],
+    "sword": lambda L: [
         ("lines", ((0, L * 0.08), (0, -L * 0.2)), "grip"),
         (
             "poly",
@@ -173,7 +138,14 @@ def _weapon_parts(kind: str, length: float) -> list:
             [(-L * 0.1, -L * 0.27), (L * 0.1, -L * 0.27), (L * 0.1, -L * 0.86), (0, -L), (-L * 0.1, -L * 0.86)],
             "metal",
         ),
-    ]
+    ],
+}
+
+
+def _weapon_parts(kind: str, length: float) -> list:
+    """The primitives making up a weapon, sized to `length`. Anything whose archetype has no
+    silhouette of its own falls back to the sword."""
+    return _WEAPON_PARTS.get(kind, _WEAPON_PARTS["sword"])(length)
 
 
 def draw_weapon(surface, hand_pos, spec: dict, size: int, hand: str, attack_progress: float):

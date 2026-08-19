@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -366,7 +366,7 @@ class GameRenderer:
         if self.show_llm_tasks:
             self._draw_llm_task_panel(llm_tasks)
 
-    def _quick_slot_rects(self) -> List[pygame.Rect]:
+    def _quick_slot_rects(self) -> list[pygame.Rect]:
         step = self.QUICK_SLOT_SIZE + self.QUICK_SLOT_GAP
         count = c.Potions.QUICK_SLOTS
         total = count * self.QUICK_SLOT_SIZE + (count - 1) * self.QUICK_SLOT_GAP
@@ -515,11 +515,7 @@ class GameRenderer:
         already did."""
         slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
-        live = {
-            player.equipped_melee_weapon_id,
-            player.equipped_melee_weapon_2_id,
-            player.equipped_ranged_weapon_id,
-        }
+        live = {player.equipped[name] for name in ("melee_weapon", "melee_weapon_2", "ranged_weapon")}
 
         for i, item in enumerate(player.weapon_bar_items()):
             rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
