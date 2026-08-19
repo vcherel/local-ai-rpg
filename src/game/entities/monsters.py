@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.audio import play_sound
 from game.entities.entities import Entity
 from game.entities.monster_art import draw_monster, weapon_hand
 
@@ -77,6 +78,9 @@ class Monster(Entity):
         self.charge_until_ms = 0
         self.charge_angle = 0.0
         self.charge_ready_ms = 0
+        # Detonator state (kind.detonate): when its fuse was lit, 0 while it is still walking.
+        # Once lit it is never put out; killing it or leaving its blast are the answers.
+        self.fuse_started_ms = 0
         # Flanker state (kind.flank_deg): which side it is currently swinging round, and
         # when it next switches.
         self.flank_side = random.choice((-1, 1))
@@ -120,6 +124,36 @@ class Monster(Entity):
             return 0.0
         remaining = self.next_shot_ms - pygame.time.get_ticks()
         return min(1.0, max(0.0, 1.0 - remaining / self.kind.shot_cooldown_ms))
+
+    @property
+    def fusing(self) -> bool:
+        return bool(self.fuse_started_ms)
+
+    @property
+    def fuse_progress(self) -> float:
+        """How far through its fuse a detonator is, 0 to 1. Drawn as the flash and the ring,
+        so the seconds the player has are read off the screen rather than counted."""
+        if not self.fuse_started_ms:
+            return 0.0
+        elapsed = pygame.time.get_ticks() - self.fuse_started_ms
+        return min(1.0, max(0.0, elapsed / c.Creeper.FUSE_MS))
+
+    def fuse_expired(self) -> bool:
+        """The fuse has burned out: the world takes this one off the map and sets the blast
+        off where it is standing (WorldCombat.detonate_creeper)."""
+        return self.fusing and self.fuse_progress >= 1.0
+
+    def _tick_fuse(self, dist, aware, target):
+        """Light the fuse once the target is inside the blast, and never put it out again.
+
+        Committing is the whole of the counterplay: from that moment it is a timer the player
+        can walk out of, shove out of with a cudgel or kill inside, rather than a swing they
+        have to stand there and block."""
+        if self.fusing or not aware:
+            return
+        if dist < c.Creeper.TRIGGER_RANGE + target.size / 2:
+            self.fuse_started_ms = pygame.time.get_ticks()
+            play_sound("fuse")
 
     def start_attack_anim(self, dist):
         """Return True in case of hit to the player"""
@@ -340,6 +374,12 @@ class Monster(Entity):
 
         aware = dist < senses + target.size // 2
         self.aggro = aware
+        # A detonator plants itself the moment its fuse is lit: what happens next is a timer,
+        # and a bomb that kept walking would be unavoidable rather than dodgeable.
+        if self.kind.detonate:
+            self._tick_fuse(dist, aware, target)
+            if self.fusing:
+                move_factor = 0.0
         # Held back off the attack tokens with the target in reach: circle rather than
         # stand. Its own bearing is what it walks to, so turning that turns the whole ring.
         if not self.attack_token and not self.kind.ranged and dist < self.melee_reach + target.size:
@@ -382,7 +422,9 @@ class Monster(Entity):
         self._separate(crowd, blocked, radius)
 
         damage = 0
-        if (not self.kind.ranged or cornered) and self.attack_token and dist < self.melee_reach * 10:
+        # A detonator never swings: its whole attack is the blast the world sets off for it.
+        swings = not self.kind.detonate and (not self.kind.ranged or cornered)
+        if swings and self.attack_token and dist < self.melee_reach * 10:
             if self.start_attack_anim(dist):
                 damage = round(self.kind.damage * damage_mult)
 
@@ -395,12 +437,16 @@ class Monster(Entity):
     def draw(self, screen, camera: Camera):
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
         self._draw_charge_telegraph(screen, screen_x, screen_y)
+        self._draw_fuse_telegraph(screen, screen_x, screen_y)
+        body_color = self.flash_color(self.kind.color)
+        if self.fusing:
+            body_color = self._fuse_color(body_color)
         draw_monster(
             screen,
             screen_x,
             screen_y,
             self.kind.size,
-            self.flash_color(self.kind.color),
+            body_color,
             self.orientation,
             self.kind.shape,
             attack_progress=self.attack_progress,
@@ -422,6 +468,23 @@ class Monster(Entity):
             self.kind.color,
             2,
         )
+
+    def _fuse_color(self, color) -> tuple:
+        """The body whitening out as the fuse burns, faster the closer it is to going off.
+        The ring says where the blast reaches; this says when."""
+        beat = (math.sin(pygame.time.get_ticks() / (140 - 90 * self.fuse_progress)) + 1) / 2
+        mix = (0.3 + 0.7 * self.fuse_progress) * beat
+        return tuple(round(channel + (255 - channel) * mix) for channel in color[:3])
+
+    def _draw_fuse_telegraph(self, screen, screen_x, screen_y):
+        """The ground a lit detonator is about to take with it: the outer ring is exactly the
+        radius the blast is applied over, and the filled disc closing on it is the fuse."""
+        if not self.fusing:
+            return
+        center = (round(screen_x), round(screen_y))
+        radius = round(c.Creeper.RADIUS)
+        pygame.draw.circle(screen, (190, 80, 55), center, radius, 2)
+        pygame.draw.circle(screen, (255, 170, 60), center, max(2, round(radius * self.fuse_progress)), 3)
 
     def _draw_charge_telegraph(self, screen, screen_x, screen_y):
         """The lane a winding-up charger is about to cross, drawn under it. Without this the

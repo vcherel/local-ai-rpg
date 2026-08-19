@@ -404,6 +404,50 @@ def _draw_robed(sprite, center, size, color, breath, hand):
     return {"hands": hands, "eyes": (at(0.38, -0.1), at(0.38, 0.1))}
 
 
+def _draw_creeper(sprite, center, size, color, breath, hand):
+    """The creeper: a swollen sack of powder on four stubby legs, cracked open along the
+    seams by the light of what is inside it. It carries nothing and it never swings, so the
+    silhouette has to say "this is about to go off" on its own: bloated where everything else
+    in the world is lean, and split by glowing fissures that read from across a clearing."""
+    s = _breathed(size, breath) * 0.92
+    at = _local(center, s)
+    shade, light = _shade(color, 60), _light(color, 70)
+
+    for forward, splay in ((0.3, 0.78), (-0.32, 0.86)):
+        for side in (-1, 1):
+            pygame.draw.line(sprite, shade, at(forward, side * 0.36), at(forward - 0.08, side * splay), 6)
+
+    # Narrow at the head, bulging at the belly and tapering to a heavy rear: a sack that is
+    # too full, rather than the near-circle a symmetrical body draws.
+    _poly(
+        sprite,
+        color,
+        [
+            at(0.6, -0.2),
+            at(0.6, 0.2),
+            at(0.28, 0.46),
+            at(-0.16, 0.6),
+            at(-0.58, 0.36),
+            at(-0.78, 0.0),
+            at(-0.58, -0.36),
+            at(-0.16, -0.6),
+            at(0.28, -0.46),
+        ],
+    )
+
+    # The fissures: the powder showing through, wider and brighter toward the full rear.
+    for forward, spread in ((0.2, 0.28), (-0.1, 0.42), (-0.42, 0.3)):
+        crack = [at(forward + 0.08, -spread), at(forward - 0.05, -spread * 0.3), at(forward + 0.05, spread * 0.3)]
+        crack.append(at(forward - 0.08, spread))
+        pygame.draw.lines(sprite, shade, False, crack, 5)
+        pygame.draw.lines(sprite, light, False, crack, 2)
+
+    _circle(sprite, OUTLINE, at(0.66, 0.0), s * 0.28)
+    _circle(sprite, shade, at(0.66, 0.0), s * 0.28 - 2)
+
+    return {"eyes": (at(0.72, -0.12), at(0.72, 0.12))}
+
+
 _SHAPES = {
     "humanoid": _draw_humanoid,
     "goblin": _draw_goblin,
@@ -413,4 +457,5 @@ _SHAPES = {
     "blob": _draw_blob,
     "beast": _draw_beast,
     "robed": _draw_robed,
+    "creeper": _draw_creeper,
 }

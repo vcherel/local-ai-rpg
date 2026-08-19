@@ -141,6 +141,9 @@ class MonsterKind:
     # A flanker refuses to walk straight at the player: its approach angle is bent to one
     # side, flipping every few seconds, so it circles in rather than queueing up in front.
     flank_deg: float = 0.0
+    # A detonator has no swing at all: it closes, plants itself, burns a fuse and blows up,
+    # killing itself and hurting whatever is standing near it. See `Creeper` below.
+    detonate: bool = False
     # How it is drawn (game/entities/monster_art.py): one of "humanoid", "goblin", "hulk",
     # "skeleton", "wraith", "blob", "beast", "robed". A kind's name has to be legible from
     # its silhouette alone, so this is picked per kind rather than defaulted per stat block.
@@ -153,6 +156,26 @@ class MonsterKind:
     # The colour of its eyes, the one part of a monster that glows. Read at a glance, and
     # after dark it is the brightest thing on the sprite.
     eye_color: tuple = (255, 120, 60)
+
+
+@dataclass(frozen=True)
+class Creeper:
+    """A detonating monster (MonsterKind.detonate), which is a timer rather than a fight.
+
+    It walks in, plants itself inside TRIGGER_RANGE and burns FUSE_MS of fuse before going
+    off. Everything about it is counterplay: the fuse is long enough to run out of, the body
+    is soft enough to kill in it, and knockback moves the blast rather than stopping it. It
+    is killed by its own blast, so nothing it destroys pays the player.
+    """
+
+    TRIGGER_RANGE: int = 95
+    FUSE_MS: int = 1150
+    RADIUS: float = 145.0
+    DAMAGE: int = 48
+    # Damage falls off from full at the centre to this share of it at the rim, like a keg's.
+    EDGE_DAMAGE_FRAC: float = 0.3
+    KNOCKBACK: float = 30.0
+    SHAKE: float = 18.0
 
 
 # Ordered weakest to strongest, scaling up with distance from the world center so wandering
@@ -286,6 +309,20 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         shape="robed",
         weapon="staff",
         eye_color=(215, 130, 255),
+    ),
+    MonsterKind(
+        "Creeper",
+        (96, 168, 92),
+        26,
+        30,
+        4,
+        Creeper.TRIGGER_RANGE,
+        0,
+        min_distance=3200,
+        weight=3,
+        detonate=True,
+        shape="creeper",
+        eye_color=(255, 150, 60),
     ),
 )
 
