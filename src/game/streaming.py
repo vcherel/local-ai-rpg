@@ -157,6 +157,20 @@ class WorldStreaming:
         # the nearest clear ground rather than being stuck inside a tree.
         player.x, player.y = self.free_spot_near(player.x, player.y, player.size / 2)
 
+    def prepare(self, player: Player):
+        """Build the ground the player is about to open their eyes on, before they can move.
+
+        Chunk streaming used to happen on the first frame after the opening lore was
+        dismissed, which is the worst possible moment for it: the player takes control into a
+        freeze while a ring of chunks generates its wilderness, its landmarks and its traps,
+        and then watches trees pop in around them. The generation is the same work either
+        way, so it is done here instead, while nothing is on screen but black.
+        """
+        if self.underground is not None:
+            return
+        self._sync_chunks(player)
+        self._reveal_around(player)
+
     def _reindex_scenery(self):
         """Rebuild what the renderer and `World.blocked` read the wilderness through.
 

@@ -84,6 +84,10 @@ class Game:
         # made mid-fight would otherwise load the player back under whatever they were
         # fighting, with no chance to react while the first frame is still being drawn.
         self.player.x, self.player.y = self.world.safe_spot_near(self.player.x, self.player.y, c.Player.SIZE / 2)
+        # Generate the ground around that spot now, while the screen is still black and the
+        # opening lore is being written onto it, rather than on the first frame the player
+        # controls. It also settles them out of anything a fresh chunk grew on top of them.
+        self.world.prepare(self.player)
 
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
         # slay_boss quests spawn their target through the world.
