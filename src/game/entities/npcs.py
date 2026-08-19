@@ -46,6 +46,10 @@ class NPC(Entity):
         self.shop_items: List[Item] = []
         self.shop_prices: Dict[str, int] = {}
         self.shop_ready = False
+        # When this merchant next puts new wares out (wall clock, like every other deadline
+        # in the world, so quitting is not a way of skipping the wait). What is already on
+        # the shelf stays: a restock is a delivery, not a new shop.
+        self.restock_at = 0.0
         self.home = (x, y)
         self.wander = Wander(
             c.Entities.NPC_WANDER_SPEED,
@@ -74,6 +78,13 @@ class NPC(Entity):
         # off their home so the same house always sends the same person out. Cached because
         # it is asked every frame.
         self._militia: Optional[bool] = None
+        # What this one has in their hands, rolled with the militia flag off the same home
+        # seed: a name, resolved through the ordinary weapon archetypes, so a villager's
+        # reach, damage and cadence all come from the table the player's own weapons use.
+        self._weapon_name: Optional[str] = None
+        # A posted guard: stands their watch instead of wandering, always takes up arms,
+        # and carries something a farmer does not (World._post_guards).
+        self.is_guard = False
 
     @property
     def hostile(self) -> bool:
@@ -106,10 +117,43 @@ class NPC(Entity):
     def is_militia(self) -> bool:
         """Whether this one meets a monster in the street or runs from it. Merchants never
         fight: their stock is their life, and a shopkeeper with a sword is a different game."""
+        if self.is_guard:
+            return True
         if self._militia is None:
             seed = f"militia:{round(self.home[0])}:{round(self.home[1])}"
             self._militia = not self.is_merchant and random.Random(seed).random() < c.Villages.MILITIA_FRACTION
         return self._militia
+
+    @property
+    def weapon_name(self) -> str:
+        """The tool or weapon in this one's hands. Rolled off their home like the militia
+        flag, so the same house always turns out the same person with the same thing."""
+        if self._weapon_name is None:
+            rng = random.Random(f"weapon:{round(self.home[0])}:{round(self.home[1])}")
+            if self.is_guard:
+                pool = c.Entities.GUARD_WEAPONS
+            elif self.is_militia:
+                pool = c.Entities.MILITIA_WEAPONS
+            else:
+                pool = c.Entities.VILLAGER_WEAPONS
+            self._weapon_name = rng.choice(pool)
+        return self._weapon_name
+
+    @property
+    def weapon(self):
+        return c.weapon_archetype(self.weapon_name)
+
+    def gear(self) -> dict:
+        """What is drawn in this one's hands, in the shape `draw_human` wants. A villager
+        carries one thing and it is always melee: the stones a mob throws are picked up off
+        the ground, not kept in a quiver."""
+        return {
+            "melee": {
+                "kind": self.weapon.name,
+                "color": c.Entities.WEAPON_COLOR,
+                "outline": c.Entities.WEAPON_OUTLINE,
+            }
+        }
 
     def sees(self, x: float, y: float, radius: float) -> bool:
         """Whether (x, y) falls inside this one's field of view: near enough, and inside the
@@ -152,6 +196,7 @@ class NPC(Entity):
             "orientation": self.orientation,
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
+            "is_guard": self.is_guard,
             "is_thief": self.is_thief,
             # Absolute wall clock, like the rest cooldowns: quitting while a village is
             # angry must not be a way of waiting the anger out.
@@ -159,6 +204,7 @@ class NPC(Entity):
             "grudge": self.grudge,
             "affinity": self.affinity,
             "shop_ready": self.shop_ready,
+            "restock_at": self.restock_at,
             "home": list(self.home),
             "shop_items": [{**item.to_dict(), "shop_price": self.shop_prices[item.id]} for item in self.shop_items],
         }
@@ -173,6 +219,11 @@ class NPC(Entity):
         if data["quest"]:
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
+        npc.is_guard = data.get("is_guard", False)
+        if npc.is_guard:
+            # A guard holds their post rather than strolling the street, on a reload as
+            # much as on the frame they were first stood there.
+            npc.wander.radius = c.Villages.GUARD_POST_RADIUS
         npc.is_thief = data.get("is_thief", False)
         # A save from before anger had a clock recorded it as a plain flag; those villagers
         # were angry for good, so they load as a grudge rather than silently forgiving.
@@ -180,6 +231,7 @@ class NPC(Entity):
         npc.grudge = data.get("grudge", data.get("hostile", False))
         npc.affinity = data.get("affinity", c.Affinity.START)
         npc.shop_ready = data["shop_ready"]
+        npc.restock_at = data.get("restock_at", 0.0)
         npc.home = tuple(data["home"])
         for entry in data["shop_items"]:
             price = entry["shop_price"]
@@ -189,10 +241,20 @@ class NPC(Entity):
             npc.shop_prices[item.id] = price
         return npc
 
+    def restock_in(self) -> float:
+        """Seconds until this merchant's next delivery; 0 once it is due. Read by the shop
+        menu's countdown and by the world that actually puts the wares out."""
+        return max(0.0, self.restock_at - time.time())
+
     def set_shop(self, shop_data: list):
         self.shop_items.clear()
         self.shop_prices.clear()
+        self.add_stock(shop_data)
+        self.shop_ready = True
 
+    def add_stock(self, shop_data: list):
+        """Put wares on the shelf beside whatever is already there, and start the clock on
+        the next delivery. Everything a merchant ever sells arrives through here."""
         for entry in shop_data:
             # The name is the better authority on what a ware is: the model routinely
             # lists a shield as "armor", which put it in the body-armour slot and left
@@ -205,7 +267,7 @@ class NPC(Entity):
             item = Item(0, 0, entry["name"], item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
             self.shop_items.append(item)
             self.shop_prices[item.id] = round(entry["price"] * rarity_tier(rarity).price_mult)
-        self.shop_ready = True
+        self.restock_at = time.time() + c.Villages.SHOP_RESTOCK_S
 
     def assign_name(self, npc_name_generator: NPCNameGenerator):
         if self.name is None:
@@ -240,6 +302,10 @@ class NPC(Entity):
         for whoever is doing the fighting, well out of it for the ones who would rather
         throw something from the back of the crowd."""
         dt *= terrain_mult
+        # A stone thrown from the back of a mob starts a swing too, and that one is not in
+        # `_hunt`: the animation is advanced here so it always finishes wherever it began.
+        if target is None:
+            self.update_attack_anim(dt)
         self._cool_off()
         if target is not None:
             return self._hunt(target, dt, blocked, waypoint, standoff)
@@ -326,11 +392,16 @@ class NPC(Entity):
 
         damage = 0
         now = pygame.time.get_ticks()
-        in_reach = dist <= c.Entities.NPC_ATTACK_RANGE + target.size // 2
+        weapon = self.weapon
+        reach = c.Entities.NPC_ATTACK_RANGE * weapon.reach_mult
+        in_reach = dist <= reach + target.size // 2
         if in_reach and self.attack_token and now >= self.attack_ready_ms:
-            self.attack_ready_ms = now + c.Entities.NPC_ATTACK_COOLDOWN_MS
-            self.start_attack_anim()
-            damage = c.Entities.NPC_DAMAGE
+            # Cadence, reach and damage all come off whatever they are holding: the woman
+            # with the pitchfork keeps the player at arm's length and the one with the
+            # kitchen knife has to get close and hit twice.
+            self.attack_ready_ms = now + weapon.cooldown_ms
+            self.start_attack_anim("right")
+            damage = max(1, round(c.Entities.NPC_DAMAGE * weapon.damage_mult))
 
         self.update_attack_anim(dt)
         return damage
@@ -366,9 +437,12 @@ class NPC(Entity):
             c.Entities.NPC_SIZE,
             self.color,
             self.orientation,
+            attack_progress=self.attack_progress,
+            attack_hand=self.attack_hand,
             bar_width=60 if health_bar else 0,
             bar_height=8 if health_bar else 0,
             health_bar_offset=10,
+            gear=self.gear(),
         )
 
         badge = self._badge()

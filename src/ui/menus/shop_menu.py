@@ -231,6 +231,16 @@ class ShopMenu(BaseMenu):
         self.player.stats.train("bartering", c.Stats.XP_PER_TRADE)
         self.merchant.affinity = min(c.Affinity.MAX, self.merchant.affinity + c.Affinity.TRADE_BONUS)
 
+    def _restock_label(self) -> str:
+        """The countdown drawn over the buy column. Minutes while it is far off, seconds once
+        it is close, because a shop about to refill is worth standing around for."""
+        remaining = self.merchant.restock_in()
+        if remaining <= 0:
+            return "New wares arriving"
+        if remaining >= 60:
+            return f"Restocks in {int(remaining // 60) + 1}m"
+        return f"Restocks in {int(remaining) + 1}s"
+
     def draw(self):
         if not self.active:
             return
@@ -251,6 +261,12 @@ class ShopMenu(BaseMenu):
 
         buy_label = c.Fonts.heading.render("Buy", True, (120, 220, 120))
         surface.blit(buy_label, (bx, label_y))
+
+        # When the next delivery lands, beside the wares it lands on: buying a shop out is
+        # only a decision if the player can see what waiting is worth.
+        if self.merchant.shop_ready:
+            restock = c.Fonts.small.render(self._restock_label(), True, c.Colors.MUTED)
+            surface.blit(restock, (bx + pw - restock.get_width(), label_y + 6))
 
         sell_label = c.Fonts.heading.render("Sell", True, (235, 180, 90))
         surface.blit(sell_label, (sx, label_y))

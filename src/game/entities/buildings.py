@@ -45,8 +45,14 @@ def draw_label(screen: pygame.Surface, text: str, center: tuple):
     screen.blit(label, label_rect)
 
 
+# Which wall the front door sits in, as the outward direction of that wall. A building is
+# still an axis-aligned rect: what turns is the facade, so a street can face the plaza from
+# both sides instead of every house in the world opening south.
+FACING_NORMALS = {"S": (0, 1), "N": (0, -1), "E": (1, 0), "W": (-1, 0)}
+
+
 class Building:
-    def __init__(self, x, y, kind: str, w=None, h=None):
+    def __init__(self, x, y, kind: str, w=None, h=None, facing: str = "S"):
         w_range, h_range = c.Buildings.SIZES[kind]
         self.id = uuid.uuid4().hex
         self.kind = kind
@@ -54,14 +60,20 @@ class Building:
         self.y = y
         self.w = w if w is not None else random.randint(*w_range)
         self.h = h if h is not None else random.randint(*h_range)
+        # Which way the front is. Set by the village layout so a door opens onto the plaza
+        # (game/entities/village.py) and persisted, since it cannot be rederived from the id:
+        # the same house would face a different way in a different slot.
+        self.facing = facing
         self.name = None  # Only the landmark gets an LLM-generated name
         self.looted = False
-        self.broken_crates: set = set()  # indices into interior_layout()["crates"] already smashed
+        # Indices into interior_layout()["props"]: every piece of furniture already taken
+        # apart, crates and tables alike.
+        self.broken_props: set = set()
         self.broken_windows: set = set()  # indices into window_rects() already shattered
         # Damage taken by a crate/window still standing, by index. Session-only, like the
         # loot on the floor: what a save has to remember is what finally broke, not how
         # far along the player got with the rest.
-        self.crate_hp: dict = {}
+        self.prop_hp: dict = {}
         self.window_hp: dict = {}
         # The front door, shut until somebody opens it. `door_open` and `door_broken` are
         # persisted (a door left open stays open, a door beaten down is a hole for good);
@@ -87,24 +99,55 @@ class Building:
     def has_door(self) -> bool:
         return self.kind != "landmark"
 
+    def outward(self) -> tuple:
+        """The unit vector pointing out of the front wall. Everything about the facade (the
+        door, its trigger zone, the windows, the doorstep, an awning, the point a monster
+        lines up on) is written as an offset along this rather than as "the bottom"."""
+        return FACING_NORMALS[self.facing]
+
+    def _facade_band(self, depth: int, inset: int = 0) -> pygame.Rect:
+        """A band `depth` deep lying along the front wall, `inset` in from its outer face.
+        The one place the four facings are turned into a rect."""
+        nx, ny = self.outward()
+        r = self.rect
+        if nx:
+            left = r.right - inset - depth if nx > 0 else r.left + inset
+            return pygame.Rect(left, r.top, depth, r.height)
+        top = r.bottom - inset - depth if ny > 0 else r.top + inset
+        return pygame.Rect(r.left, top, r.width, depth)
+
+    def _facade_slot(self, width: int, depth: int, offset: float, inset: int = 0) -> pygame.Rect:
+        """A `width` by `depth` piece of the front wall, `offset` along it from the middle
+        (positive is clockwise round the building), lying `inset` in from the outer face."""
+        band = self._facade_band(depth, inset)
+        nx, _ny = self.outward()
+        slot = pygame.Rect(0, 0, depth if nx else width, width if nx else depth)
+        if nx:
+            slot.center = (band.centerx, round(self.y + offset))
+        else:
+            slot.center = (round(self.x + offset), band.centery)
+        return slot
+
     def door_zone(self) -> Optional[pygame.Rect]:
         """Trigger area straddling the front wall; walking into it enters the building."""
         if not self.has_door:
             return None
         depth = c.Buildings.DOOR_DEPTH
-        return pygame.Rect(
-            round(self.x - c.Buildings.DOOR_WIDTH / 2), self.rect.bottom - depth, c.Buildings.DOOR_WIDTH, depth * 2
-        )
+        door = self.door_rect()
+        nx, _ny = self.outward()
+        zone = pygame.Rect(0, 0, depth * 2 if nx else door.width, door.height if nx else depth * 2)
+        zone.center = door.center
+        return zone
 
     def door_front(self) -> tuple:
-        return (self.x, self.rect.bottom + 60)
+        """The spot on the doorstep, outside the wall: where somebody waits to be let in."""
+        nx, ny = self.outward()
+        door = self.door_rect()
+        return (door.centerx + nx * 60, door.centery + ny * 60)
 
     def door_rect(self) -> pygame.Rect:
         """The door leaf itself, filling the gap in the front wall."""
-        wall = c.Buildings.WALL_THICKNESS
-        return pygame.Rect(
-            round(self.x - c.Buildings.DOOR_WIDTH / 2), self.rect.bottom - wall, c.Buildings.DOOR_WIDTH, wall
-        )
+        return self._facade_slot(c.Buildings.DOOR_WIDTH, c.Buildings.WALL_THICKNESS, 0)
 
     @property
     def door_closed(self) -> bool:
@@ -141,12 +184,10 @@ class Building:
         The landmark has no facade at all, so it gets none."""
         if not self.has_door:
             return []
-        w, h = c.Buildings.WINDOW_W, c.Buildings.WINDOW_H
-        y = round(self.rect.bottom - c.Buildings.WINDOW_Y_FROM_BOTTOM)
-        offset = c.Buildings.DOOR_WIDTH / 2 + c.Buildings.WINDOW_X_FROM_DOOR
-        left = pygame.Rect(round(self.x - offset - w), y, w, h)
-        right = pygame.Rect(round(self.x + offset), y, w, h)
-        return [left, right]
+        long_side, depth = c.Buildings.WINDOW_W, c.Buildings.WINDOW_H
+        inset = c.Buildings.WINDOW_Y_FROM_BOTTOM - depth
+        offset = c.Buildings.DOOR_WIDTH / 2 + c.Buildings.WINDOW_X_FROM_DOOR + long_side / 2
+        return [self._facade_slot(long_side, depth, side * offset, inset) for side in (-1, 1)]
 
     def _wall_segments(self) -> List[pygame.Rect]:
         """The building's solid shell as a few thin rects, with a permanent door-sized
@@ -156,15 +197,23 @@ class Building:
         if not self.has_door:
             return [r]
         wall = c.Buildings.WALL_THICKNESS
-        door_left = round(self.x - c.Buildings.DOOR_WIDTH / 2)
-        door_right = round(self.x + c.Buildings.DOOR_WIDTH / 2)
+        door = self.door_rect()
+        nx, _ny = self.outward()
+        # Three whole walls plus the two stubs either side of the doorway, whichever wall
+        # the doorway happens to be in.
         segments = [
-            pygame.Rect(r.left, r.top, r.width, wall),  # back wall
-            pygame.Rect(r.left, r.top, wall, r.height),  # left wall
-            pygame.Rect(r.right - wall, r.top, wall, r.height),  # right wall
-            pygame.Rect(r.left, r.bottom - wall, door_left - r.left, wall),  # front, left of door
-            pygame.Rect(door_right, r.bottom - wall, r.right - door_right, wall),  # front, right of door
+            pygame.Rect(r.left, r.top, r.width, wall),
+            pygame.Rect(r.left, r.bottom - wall, r.width, wall),
+            pygame.Rect(r.left, r.top, wall, r.height),
+            pygame.Rect(r.right - wall, r.top, wall, r.height),
         ]
+        segments = [seg for seg in segments if not seg.colliderect(door)]
+        if nx:
+            segments.append(pygame.Rect(door.left, r.top, wall, door.top - r.top))
+            segments.append(pygame.Rect(door.left, door.bottom, wall, r.bottom - door.bottom))
+        else:
+            segments.append(pygame.Rect(r.left, door.top, door.left - r.left, wall))
+            segments.append(pygame.Rect(door.right, door.top, r.right - door.right, wall))
         # A shut door is part of the shell; open it or break it and the gap is back.
         if self.door_closed:
             segments.append(self.door_rect())
@@ -194,9 +243,10 @@ class Building:
             "y": self.y,
             "w": self.w,
             "h": self.h,
+            "facing": self.facing,
             "name": self.name,
             "looted": self.looted,
-            "broken_crates": sorted(self.broken_crates),
+            "broken_props": sorted(self.broken_props),
             "broken_windows": sorted(self.broken_windows),
             "door_open": self.door_open,
             "door_broken": self.door_broken,
@@ -204,11 +254,11 @@ class Building:
 
     @classmethod
     def from_dict(cls, data: dict) -> Building:
-        building = cls(data["x"], data["y"], data["kind"], data["w"], data["h"])
+        building = cls(data["x"], data["y"], data["kind"], data["w"], data["h"], data.get("facing", "S"))
         building.id = data["id"]
         building.name = data["name"]
         building.looted = data["looted"]
-        building.broken_crates = set(data.get("broken_crates", []))
+        building.broken_props = set(data.get("broken_props", []))
         building.broken_windows = set(data.get("broken_windows", []))
         building.door_open = data.get("door_open", False)
         building.door_broken = data.get("door_broken", False)
@@ -225,13 +275,41 @@ class Building:
         """True once (x, y) has stepped past the wall onto this building's floor."""
         return self.has_door and self.interior_rect().collidepoint(x, y)
 
+    def _place(self, rect: pygame.Rect, canon: pygame.Rect, floor: pygame.Rect) -> pygame.Rect:
+        """Carry one piece of furniture out of the canonical room (door at the bottom) into
+        the real one, turned to match the facing. A room laid out four times over, once per
+        wall the door might be in, is four chances to get a bed placed across a doorway; laid
+        out once and turned, it is the same room seen from a different side."""
+        u = rect.centerx - canon.centerx
+        v = rect.centery - canon.centery
+        if self.facing == "S":
+            cu, cv, w, h = u, v, rect.width, rect.height
+        elif self.facing == "N":
+            cu, cv, w, h = -u, -v, rect.width, rect.height
+        elif self.facing == "E":
+            cu, cv, w, h = v, -u, rect.height, rect.width
+        else:
+            cu, cv, w, h = -v, u, rect.height, rect.width
+        out = pygame.Rect(0, 0, w, h)
+        out.center = (round(floor.centerx + cu), round(floor.centery + cv))
+        return out
+
     def interior_layout(self) -> dict:
-        """Furniture for this building's single room, deterministic from the building id."""
+        """Furniture for this building's single room, deterministic from the building id.
+
+        Laid out in a canonical room whose door is in the bottom wall, then turned onto the
+        wall this building's door is actually in (`_place`), so every arrangement below can
+        go on saying "by the door" and "against the back wall" and mean it."""
         if self._layout is not None:
             return self._layout
 
         rng = random.Random(self.id)
-        floor = self.interior_rect()
+        room = self.interior_rect()
+        # The same room seen with the door at the bottom: a facade on the long side swaps
+        # the two dimensions.
+        floor = pygame.Rect(room.left, room.top, room.width, room.height)
+        if self.facing in ("E", "W"):
+            floor.size = (room.height, room.width)
         solids: list = []
         beds: List[pygame.Rect] = []
         crates: List[pygame.Rect] = []
@@ -317,53 +395,64 @@ class Building:
         rug = pygame.Rect(0, 0, 130, 80)
         rug.center = (round(floor.centerx), round(floor.centery - 25))
 
-        # Smashed crates no longer block movement, but stay in `crates` so their debris
-        # still draws and their index keeps matching the saved broken set.
-        broken = [crates[i] for i in self.broken_crates if i < len(crates)]
-        solids = [(rect, kind) for rect, kind in solids if not (kind == "crate" and rect in broken)]
+        # Everything in the room that can be taken apart, in placement order: that order is
+        # what `broken_props` indexes, so it has to be built before anything is dropped for
+        # having been smashed already.
+        props = [(rect, kind) for rect, kind in solids if kind in c.Buildings.FURNITURE_HP]
+        broken = {id(props[i][0]) for i in self.broken_props if i < len(props)}
+        # Wreckage no longer blocks movement, but stays in `props` so its debris still draws
+        # and its index keeps matching the saved broken set.
+        solids = [(rect, kind) for rect, kind in solids if id(rect) not in broken]
 
-        self._layout = {"solids": solids, "beds": beds, "crates": crates, "chest": chest, "rug": rug}
+        def place(rect: pygame.Rect) -> pygame.Rect:
+            return self._place(rect, floor, room)
+
+        self._layout = {
+            "solids": [(place(rect), kind) for rect, kind in solids],
+            "beds": [place(bed) for bed in beds],
+            "crates": [place(crate) for crate in crates],
+            "props": [(place(rect), kind) for rect, kind in props],
+            "chest": place(chest) if chest is not None else None,
+            "rug": place(rug),
+        }
         return self._layout
 
-    def crate_key(self, crate: pygame.Rect) -> str:
-        """Identity of one crate for `core.damage_fx`. A crate is an index into this
-        building's layout rather than an object of its own, so the registry that remembers
-        recent blows needs a string to hang them on."""
-        crates = self.interior_layout()["crates"]
-        idx = crates.index(crate) if crate in crates else -1
-        return f"{self.id}:crate:{idx}"
+    def prop_key(self, index: int) -> str:
+        """Identity of one piece of furniture for `core.damage_fx`. A table is an index into
+        this building's layout rather than an object of its own, so the registry that
+        remembers recent blows needs a string to hang them on."""
+        return f"{self.id}:prop:{index}"
 
-    def damage_crate_at(self, pos, hit_radius, damage: int) -> Optional[tuple]:
-        """Land a blow on the nearest intact crate (shop or tavern) a swing reaches.
+    def damage_prop_at(self, pos, hit_radius, damage: int) -> Optional[tuple]:
+        """Land a blow on the nearest intact piece of furniture a swing reaches.
 
-        Returns (rect, destroyed) for the crate that was hit, or None if the swing reached
-        no crate at all. A crate takes several blows before it gives; only the one that
-        finishes it reports `destroyed`, and only then does it stop blocking movement.
+        Returns (index, rect, kind, destroyed), or None if the swing reached nothing. Every
+        stick of furniture in a room comes apart under enough blows, not only the crates: a
+        table takes more than a chair and only the blow that finishes one reports
+        `destroyed`, which is also when it stops blocking movement.
         """
         layout = self.interior_layout()
         px, py = pos
         best = None
-        for idx, crate in enumerate(layout["crates"]):
-            if idx in self.broken_crates:
+        for idx, (rect, kind) in enumerate(layout["props"]):
+            if idx in self.broken_props:
                 continue
-            dist = math.hypot(px - crate.centerx, py - crate.centery)
-            if dist < hit_radius + crate.width / 2 and (best is None or dist < best[1]):
-                best = (idx, dist, crate)
+            dist = math.hypot(px - rect.centerx, py - rect.centery)
+            if dist < hit_radius + max(rect.width, rect.height) / 2 and (best is None or dist < best[1]):
+                best = (idx, dist, rect, kind)
         if best is None:
             return None
-        idx, _dist, crate = best
+        idx, _dist, rect, kind = best
 
-        remaining = self.crate_hp.get(idx, c.Buildings.CRATE_HP) - damage
+        remaining = self.prop_hp.get(idx, c.Buildings.FURNITURE_HP[kind]) - damage
         if remaining > 0:
-            self.crate_hp[idx] = remaining
-            return crate, False
-        self.crate_hp.pop(idx, None)
-        self.broken_crates.add(idx)
+            self.prop_hp[idx] = remaining
+            return idx, rect, kind, False
+        self.prop_hp.pop(idx, None)
+        self.broken_props.add(idx)
         # Drop it from the cached collision set so the player can walk through the wreckage now.
-        self._layout["solids"] = [
-            (rect, kind) for rect, kind in self._layout["solids"] if not (kind == "crate" and rect == crate)
-        ]
-        return crate, True
+        self._layout["solids"] = [(other, other_kind) for other, other_kind in self._layout["solids"] if other != rect]
+        return idx, rect, kind, True
 
     # ------------------------------------------------------------------ drawing
 
@@ -388,7 +477,8 @@ class Building:
         roof = srect.inflate(-16, -16)
         self._draw_roof(screen, roof, style)
 
-        pygame.draw.rect(screen, (205, 185, 140), pygame.Rect(srect.centerx - 22, srect.bottom, 44, 10))
+        # The doorstep, wherever the door is.
+        pygame.draw.rect(screen, (205, 185, 140), self._facade_screen(camera, 44, 10, 0, -10))
         self._draw_door(screen, camera)
 
         windows = self.window_rects()
@@ -404,9 +494,9 @@ class Building:
         self._draw_extras(screen, camera, srect, roof, windows, style)
 
         if self.kind == "shop":
-            self._draw_awning(screen, srect)
+            self._draw_awning(screen, camera)
         elif self.kind == "tavern":
-            self._draw_tavern_sign(screen, srect)
+            self._draw_tavern_sign(screen, camera)
 
     def style(self) -> dict:
         """How this building is built. Rolled once from its id, which is stable across a
@@ -444,6 +534,13 @@ class Building:
             "side": rng.choice((-1, 1)),
         }
         return self._style
+
+    def _facade_screen(self, camera: Camera, width, depth, offset, inset=0) -> pygame.Rect:
+        """`_facade_slot` in screen coordinates, for everything hung on the front of the
+        building. A negative `inset` puts it outside the wall (a doorstep, an awning)."""
+        r = self._facade_slot(round(width), round(depth), offset, round(inset))
+        sx, sy = camera.world_to_screen(r.left, r.top)
+        return pygame.Rect(round(sx), round(sy), r.width, r.height)
 
     def _draw_roof(self, screen, roof: pygame.Rect, style: dict):
         """The covering over the walls: a ridged gable, a hipped pyramid or a flat slab,
@@ -512,26 +609,43 @@ class Building:
                     puff = (round(stack.centerx + drift * (4 + i * 4)), stack.top - 8 - i * 11)
                     pygame.draw.circle(screen, (206, 202, 198), puff, 5 + i * 2)
             elif extra == "porch":
-                porch = pygame.Rect(0, 0, c.Buildings.DOOR_WIDTH + 46, 20)
-                porch.midtop = (srect.centerx, srect.bottom - 2)
+                porch = self._facade_screen(camera, c.Buildings.DOOR_WIDTH + 46, 20, 0, -18)
                 pygame.draw.rect(screen, (126, 100, 68), porch)
                 pygame.draw.rect(screen, (78, 60, 40), porch, 2)
-                for post_x in (porch.left + 5, porch.right - 5):
-                    pygame.draw.circle(screen, (94, 74, 50), (post_x, porch.bottom - 3), 5)
+                posts = (
+                    ((porch.left + 5, porch.centery), (porch.right - 5, porch.centery))
+                    if porch.width > porch.height
+                    else ((porch.centerx, porch.top + 5), (porch.centerx, porch.bottom - 5))
+                )
+                for post in posts:
+                    pygame.draw.circle(screen, (94, 74, 50), post, 5)
             elif extra == "shutters":
                 for window in windows:
                     wx, wy = camera.world_to_screen(window.left, window.top)
-                    for offset in (-8, window.width):
-                        shutter = pygame.Rect(round(wx) + offset, round(wy), 8, window.height)
+                    frame = pygame.Rect(round(wx), round(wy), window.width, window.height)
+                    # Flanking the opening along the wall, whichever way the wall runs.
+                    for shift in (-8, frame.width if frame.width > frame.height else frame.height):
+                        shutter = (
+                            pygame.Rect(frame.left + shift, frame.top, 8, frame.height)
+                            if frame.width > frame.height
+                            else pygame.Rect(frame.left, frame.top + shift, frame.width, 8)
+                        )
                         pygame.draw.rect(screen, (92, 108, 86), shutter)
                         pygame.draw.rect(screen, (54, 66, 52), shutter, 1)
             elif extra == "flowerbox" and windows:
                 window = windows[0] if side < 0 else windows[-1]
-                wx, wy = camera.world_to_screen(window.left, window.bottom)
-                box = pygame.Rect(round(wx) - 2, round(wy), window.width + 4, 9)
+                nx, ny = self.outward()
+                wx, wy = camera.world_to_screen(window.centerx, window.centery)
+                long_side = max(window.width, window.height)
+                box = pygame.Rect(0, 0, long_side + 4, 9) if nx == 0 else pygame.Rect(0, 0, 9, long_side + 4)
+                box.center = (
+                    round(wx + nx * (min(window.width, window.height) / 2 + 4)),
+                    round(wy + ny * (min(window.width, window.height) / 2 + 4)),
+                )
                 pygame.draw.rect(screen, (112, 84, 54), box)
                 for i in range(3):
-                    pygame.draw.circle(screen, (216, 96, 120), (box.left + 7 + i * 11, box.top + 1), 4)
+                    petal = (box.left + 7 + i * 11, box.centery) if nx == 0 else (box.centerx, box.top + 7 + i * 11)
+                    pygame.draw.circle(screen, (216, 96, 120), petal, 4)
             elif extra == "woodpile":
                 pile = pygame.Rect(0, 0, 16, 46)
                 pile.midtop = (srect.centerx + side * (srect.width // 2 - 12), srect.bottom + 4)
@@ -540,19 +654,31 @@ class Building:
                     pygame.draw.circle(screen, (146, 116, 76), (pile.centerx, y), 5)
                     pygame.draw.circle(screen, (74, 54, 34), (pile.centerx, y), 5, 1)
 
-    def _draw_awning(self, screen, srect: pygame.Rect):
-        band = pygame.Rect(round(srect.centerx - 110), srect.bottom - 6, 220, 16)
+    def _draw_awning(self, screen, camera: Camera):
+        """The shop's striped canopy, hung over whichever wall the door is in. The stripes
+        run along the facade, so a shop facing east reads the same as one facing south."""
+        band = self._facade_screen(camera, 220, 16, 0, -10)
         stripe_colors = ((196, 60, 50), (232, 226, 210))
-        for i, x in enumerate(range(band.left, band.right, 22)):
-            pygame.draw.rect(
-                screen, stripe_colors[i % 2], pygame.Rect(x, band.top, min(22, band.right - x), band.height)
+        along_x = band.width > band.height
+        span = band.width if along_x else band.height
+        for i, offset in enumerate(range(0, span, 22)):
+            size = min(22, span - offset)
+            stripe = (
+                pygame.Rect(band.left + offset, band.top, size, band.height)
+                if along_x
+                else pygame.Rect(band.left, band.top + offset, band.width, size)
             )
+            pygame.draw.rect(screen, stripe_colors[i % 2], stripe)
         pygame.draw.rect(screen, (60, 45, 35), band, 2)
 
-    def _draw_tavern_sign(self, screen, srect: pygame.Rect):
+    def _draw_tavern_sign(self, screen, camera: Camera):
+        """Hung beside the door. The board stays the right way up whichever wall it is on:
+        a sign nobody can read is a decoration."""
         text = c.Fonts.small.render("TAVERN", True, (60, 45, 35))
-        sign = pygame.Rect(0, 0, text.get_width() + 16, 24)
-        sign.midleft = (round(srect.centerx + c.Buildings.DOOR_WIDTH / 2) + 12, srect.bottom - 16)
+        width = text.get_width() + 16
+        anchor = self._facade_screen(camera, width, 24, c.Buildings.DOOR_WIDTH / 2 + 12 + width / 2, 4)
+        sign = pygame.Rect(0, 0, width, 24)
+        sign.center = anchor.center
         pygame.draw.rect(screen, (225, 190, 70), sign)
         pygame.draw.rect(screen, (60, 45, 35), sign, 2)
         screen.blit(text, text.get_rect(center=sign.center))
@@ -671,19 +797,15 @@ class Building:
         for rect, kind in layout["solids"]:
             self._draw_furniture(screen, to_screen(rect), kind, rect)
 
-        # Crates carry their damage on them: the cracks say how many more blows it takes,
-        # and a struck one flinches on the frame it was hit.
+        # Furniture carries its damage on it: the cracks say how many more blows it takes,
+        # and a struck piece flinches on the frame it was hit.
         fx = get_damage_fx()
-        for idx, crate in enumerate(layout["crates"]):
-            if idx in self.broken_crates or idx not in self.crate_hp:
-                continue
-            rect = to_screen(crate).move(fx.offset(f"{self.id}:crate:{idx}"))
-            draw_cracks(screen, rect, self.crate_hp[idx] / c.Buildings.CRATE_HP, f"{self.id}-{idx}")
-
-        for idx in self.broken_crates:
-            if idx < len(layout["crates"]):
-                world_rect = layout["crates"][idx]
-                self._draw_broken_crate(screen, to_screen(world_rect), world_rect)
+        for idx, (prop, kind) in enumerate(layout["props"]):
+            if idx in self.broken_props:
+                self._draw_debris(screen, to_screen(prop), prop)
+            elif idx in self.prop_hp:
+                rect = to_screen(prop).move(fx.offset(self.prop_key(idx)))
+                draw_cracks(screen, rect, self.prop_hp[idx] / c.Buildings.FURNITURE_HP[kind], f"{self.id}-{idx}")
 
         # Interaction prompts (pick up, open, sleep) are not drawn here: the game draws a
         # single prompt for the one thing the key would act on, so a room full of beds
@@ -757,8 +879,10 @@ class Building:
         # A cracked pane before it shatters: the same wear every other breakable shows.
         draw_cracks(screen, pane, hp_frac, damage_key)
 
-    def _draw_broken_crate(self, screen, rect: pygame.Rect, world_rect: pygame.Rect):
-        """A smashed crate: a scatter of splintered planks left on the floor."""
+    def _draw_debris(self, screen, rect: pygame.Rect, world_rect: pygame.Rect):
+        """What is left of a piece of furniture: a scatter of splintered planks on the floor.
+        One look for all of them, because a broken chair and a broken crate are both a pile
+        of wood and the room is read at a glance."""
         # Seed from the world rect so the debris keeps its shape as the camera pans.
         rng = random.Random(world_rect.left * 31 + world_rect.top)
         for _ in range(6):
@@ -770,13 +894,18 @@ class Building:
 
     def _draw_furniture(self, screen, rect: pygame.Rect, kind: str, world_rect: pygame.Rect):
         if kind == "bed":
+            # A bed in a room whose door is in a side wall lies along the other axis, so the
+            # pillow and the blanket follow the long side rather than always the top.
             pygame.draw.rect(screen, (95, 65, 45), rect)
             mattress = rect.inflate(-12, -12)
             pygame.draw.rect(screen, (228, 222, 205), mattress)
-            pygame.draw.rect(
-                screen, c.Colors.WHITE, pygame.Rect(mattress.left + 8, mattress.top + 8, mattress.width - 16, 30)
-            )
-            blanket = pygame.Rect(mattress.left, mattress.top + 55, mattress.width, mattress.height - 55)
+            if mattress.height >= mattress.width:
+                pillow = pygame.Rect(mattress.left + 8, mattress.top + 8, mattress.width - 16, 30)
+                blanket = pygame.Rect(mattress.left, mattress.top + 55, mattress.width, mattress.height - 55)
+            else:
+                pillow = pygame.Rect(mattress.left + 8, mattress.top + 8, 30, mattress.height - 16)
+                blanket = pygame.Rect(mattress.left + 55, mattress.top, mattress.width - 55, mattress.height)
+            pygame.draw.rect(screen, c.Colors.WHITE, pillow)
             pygame.draw.rect(screen, (150, 70, 60), blanket)
         elif kind == "table":
             pygame.draw.rect(screen, (60, 42, 30), rect)
@@ -789,14 +918,25 @@ class Building:
                 pygame.draw.line(screen, (60, 42, 30), rect.topright, rect.bottomleft, 2)
         elif kind == "counter":
             pygame.draw.rect(screen, (70, 50, 35), rect)
-            pygame.draw.rect(screen, (150, 110, 70), pygame.Rect(rect.left, rect.top, rect.width, 14))
+            top = (
+                pygame.Rect(rect.left, rect.top, rect.width, 14)
+                if rect.width >= rect.height
+                else pygame.Rect(rect.left, rect.top, 14, rect.height)
+            )
+            pygame.draw.rect(screen, (150, 110, 70), top)
         elif kind == "shelf":
             pygame.draw.rect(screen, (55, 40, 28), rect)
             # Seed from the world-space rect so the items keep their colours as the camera moves.
             rng = random.Random(world_rect.left * 31 + world_rect.top)
             palette = ((190, 70, 60), (90, 140, 190), (110, 170, 90), (210, 170, 80))
-            for i in range(rect.width // 34):
-                item = pygame.Rect(rect.left + 8 + i * 34, rect.top + 8, 20, rect.height - 16)
+            along_x = rect.width >= rect.height
+            span = rect.width if along_x else rect.height
+            for i in range(span // 34):
+                item = (
+                    pygame.Rect(rect.left + 8 + i * 34, rect.top + 8, 20, rect.height - 16)
+                    if along_x
+                    else pygame.Rect(rect.left + 8, rect.top + 8 + i * 34, rect.width - 16, 20)
+                )
                 pygame.draw.rect(screen, palette[rng.randrange(len(palette))], item)
         elif kind == "chest":
             pygame.draw.rect(screen, (60, 42, 30), rect)

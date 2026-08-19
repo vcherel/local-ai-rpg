@@ -183,14 +183,14 @@ class WorldCombat:
         blow = player.orientation
 
         for building in self.buildings_in_range(*pos, c.World.CHUNK_SIZE):
-            hit = building.damage_crate_at(pos, hit_radius, prop_damage)
+            hit = building.damage_prop_at(pos, hit_radius, prop_damage)
             if hit is not None:
-                crate, destroyed = hit
+                index, rect, kind, destroyed = hit
                 if destroyed:
-                    self._break_crate(player, building, crate)
+                    self._break_prop(player, building, rect, kind)
                 else:
                     self._prop_chip(
-                        crate.centerx, crate.centery, (150, 110, 70), "crate_break", building.crate_key(crate), blow
+                        rect.centerx, rect.centery, (150, 110, 70), "crate_break", building.prop_key(index), blow
                     )
                 return
 
@@ -647,19 +647,25 @@ class WorldCombat:
         if self.notify:
             self.notify(message, color)
 
-    def _break_crate(self, player: Player, building: Building, crate):
-        """Smash a shop or tavern crate: juice, a few coins, and a small chance of a dropped item.
+    def _break_prop(self, player: Player, building: Building, rect, kind: str):
+        """Take a piece of furniture apart: splinters, and for the two kinds that hold wares
+        a few coins and a small chance of a dropped item.
 
-        The crate has already been removed from the interior's collision set by
-        damage_crate_at; here we handle the feedback and the loot. Coins are credited
-        straight away; an item (if any) pops out onto the floor for the player to walk
-        over and collect, rather than jumping straight into the inventory.
+        The piece has already been removed from the interior's collision set by
+        `damage_prop_at`; here we handle the feedback and the loot. Coins are credited
+        straight away; an item (if any) pops out onto the floor for the player to walk over
+        and collect, rather than jumping straight into the inventory. A table pays nothing,
+        which is the point: most of a room is somebody's furniture, not a container.
         """
-        self._break_effects(crate.centerx, crate.centery, (150, 110, 70), 20)
+        self._break_effects(rect.centerx, rect.centery, (150, 110, 70), 20)
+        # Wrecking somebody's room is a crime like emptying their chest: whoever sees it
+        # comes for the player alone, and the rest of the street never hears about it.
+        self.report_crime(rect.centerx, rect.centery)
+        if kind not in c.Buildings.FURNITURE_LOOT:
+            return
         coins, loot_item = break_crate()
-        self._break_loot(
-            player, crate.centerx, crate.centery, coins, loot_item, "Crate smashed", building.dropped_items.append
-        )
+        label = "Crate smashed" if kind == "crate" else "Shelf cleared"
+        self._break_loot(player, rect.centerx, rect.centery, coins, loot_item, label, building.dropped_items.append)
 
     def _hit_poi(self, player: Player, poi: PointOfInterest, damage: int, angle: float = 0.0):
         """Work at a ruins pile or a camp cache. It takes several blows to force one open,

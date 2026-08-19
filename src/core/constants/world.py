@@ -133,6 +133,9 @@ class Events:
     MERCHANT_MIN_DIST: int = 400
     MERCHANT_MAX_DIST: int = 700
     MERCHANT_DURATION_MS: int = 180_000
+    # How fast the caravan works its way down the road, in world pixels a second. Slow: the
+    # point is that they are somewhere else next time, not that they are hard to catch.
+    MERCHANT_TRAVEL_SPEED: float = 26.0
 
     TREASURE_MIN_DIST: int = 300
     TREASURE_MAX_DIST: int = 600
@@ -212,10 +215,13 @@ class Buildings:
     # (width range, height range) per kind. The landmark ruin has no door and no interior.
     # A house/shop/tavern's footprint is also its interior room now (no separate coordinate
     # space), so these are sized to hold a walkable room with furniture, not just a facade.
+    # Deliberately wide ranges on both axes and rolled independently, so a street holds a
+    # long hall beside a squat cottage rather than four copies of the same square. The
+    # floor still has to hold the furniture, which is what sets the lower bounds.
     SIZES = {
-        "house": ((320, 380), (280, 340)),
-        "shop": ((340, 380), (280, 320)),
-        "tavern": ((420, 480), (340, 400)),
+        "house": ((290, 420), (250, 360)),
+        "shop": ((310, 430), (260, 350)),
+        "tavern": ((400, 520), (320, 430)),
         "landmark": ((280, 330), (240, 290)),
     }
     ROOF_COLORS = {
@@ -269,7 +275,6 @@ class Buildings:
     # walkable floor is the footprint inset by this on every side.
     WALL_THICKNESS: int = 16
 
-    TAVERN_SLEEP_COST: int = 25
     INTERACT_DISTANCE: int = 120
 
     # Sleeping. Nobody climbs into a bed with something hostile this close, and the night
@@ -283,6 +288,14 @@ class Buildings:
     # Nothing breaks in one tap: a crate takes a few blows, each one splintering it a
     # little further, and only the last one spills what's inside.
     CRATE_HP: int = 22
+    # Everything in a room that can be taken apart, and what it costs to do it. A bed and a
+    # chest are deliberately absent: both are mechanics (the one full rest in the game, and
+    # somebody's savings) rather than props, and a player who smashed either would only have
+    # removed something they wanted. What is here pays nothing but splinters, apart from the
+    # two that hold wares.
+    FURNITURE_HP = {"crate": 22, "shelf": 16, "table": 26, "chair": 12, "counter": 34}
+    # The ones with something in them: the same odds a shop crate has always had.
+    FURNITURE_LOOT: tuple = ("crate", "shelf")
     WINDOW_HP: int = 10
     # Smashing a shop crate always yields a few coins and sometimes a common item.
     CRATE_COIN_MIN: int = 1
@@ -662,6 +675,36 @@ class Villages:
     MOB_STONE_DAMAGE: int = 5
     MOB_STONE_COOLDOWN_MS: tuple = (1400, 2600)
     ROUT_HP_FRAC: float = 0.35
+
+    # A town is worth defending, and a hamlet has nothing to defend with: only the largest
+    # settlements (and the starting town) stand a palisade. The wall is a square ring set
+    # this far outside the last row of houses, with a gate cut in the middle of each side,
+    # so there is always a way in from whichever direction the player or a pack arrives,
+    # and the wall itself is something to be routed round rather than a box with one door.
+    # A watchtower stands at each corner: solid, and the one piece of a village that reads
+    # from a long way off.
+    WALLED_SIZES: tuple = ("town",)
+    WALL_MARGIN: int = 150
+    WALL_THICKNESS: int = 26
+    GATE_WIDTH: int = 190
+    TOWER_RADIUS: int = 46
+    WALL_COLOR: tuple = (118, 92, 62)
+    WALL_TOP: tuple = (146, 116, 78)
+    TOWER_STONE: tuple = (136, 132, 124)
+    GATE_POST: tuple = (92, 70, 46)
+    # Somebody stands at each gate and each tower, always armed and always willing. They
+    # hold their post rather than strolling the way a villager does.
+    GUARDS_PER_GATE: int = 1
+    GUARD_POST_RADIUS: int = 70
+    GUARD_COLOR: tuple = (92, 104, 126)
+
+    # A merchant's shelf refills on a clock rather than staying whatever the model wrote at
+    # world generation. What is already out stays out and the delivery tops the stock back
+    # up to SHOP_STOCK_TARGET, so buying a shop empty is worth doing and coming back later
+    # is worth doing too. Rolled locally (game.loot.roll_shop_stock): a fresh LLM call per
+    # restock is exactly the cost the batched generation exists to avoid.
+    SHOP_RESTOCK_S: float = 600.0
+    SHOP_STOCK_TARGET: int = 10
 
 
 @dataclass(frozen=True)

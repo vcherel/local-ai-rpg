@@ -10,6 +10,7 @@ import core.constants as c
 from core.utils import parse_response_quest_analysis
 from game.entities.items import Item
 from game.entities.npcs import NPC
+from game.entities.scenery import road_points_for_chunk
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
@@ -35,6 +36,10 @@ class EventSystem:
         self.cooldown = random.uniform(*c.Events.INTERVAL_RANGE_MS)
 
         self.wandering_merchant: Optional[NPC] = None
+        # The hired sword walking with them, and the way the pair are heading. A merchant on
+        # the road is a merchant: they walk it, and they do not walk it alone.
+        self.merchant_guard: Optional[NPC] = None
+        self.merchant_heading = 0.0
         self.merchant_timer = 0.0
         self.blood_night_timer = 0.0
 
@@ -63,7 +68,7 @@ class EventSystem:
             self._notify(message, color)
 
     def update(self, dt, player: Player, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
-        self._tick_merchant(dt)
+        self._tick_merchant(dt, player)
         if self.blood_night_timer > 0:
             self.blood_night_timer = max(0.0, self.blood_night_timer - dt)
 
@@ -136,8 +141,28 @@ class EventSystem:
 
     # ------------------------------------------------------------------ wandering merchant
 
+    def _road_point_near(self, player: Player, min_dist, max_dist):
+        """Somewhere on a road within the band around the player, or None if no road runs
+        near enough. A trader met on the track reads as a traveller; the same man standing
+        in the middle of a field reads as a spawn."""
+        size = c.World.CHUNK_SIZE
+        cx, cy = int(player.x // size), int(player.y // size)
+        reach = int(max_dist // size) + 1
+        points = []
+        for dx in range(-reach, reach + 1):
+            for dy in range(-reach, reach + 1):
+                for x, y, _width in road_points_for_chunk(cx + dx, cy + dy):
+                    if min_dist <= math.hypot(x - player.x, y - player.y) <= max_dist:
+                        points.append((x, y))
+        random.shuffle(points)
+        for x, y in points:
+            if not self.world.blocked(x, y, c.Entities.NPC_SIZE / 2):
+                return x, y
+        return None
+
     def _spawn_wandering_merchant(self, player: Player):
-        pos = self._point_near_player(
+        on_road = self._road_point_near(player, c.Events.MERCHANT_MIN_DIST, c.Events.MERCHANT_MAX_DIST)
+        pos = on_road or self._point_near_player(
             player, c.Events.MERCHANT_MIN_DIST, c.Events.MERCHANT_MAX_DIST, c.Entities.NPC_SIZE / 2
         )
         if pos is None:
@@ -148,18 +173,56 @@ class EventSystem:
         npc.home = pos
         self.world.npcs.append(npc)
         self.wandering_merchant = npc
+
+        # Nobody carries a cart of goods through monster country on their own. The guard is
+        # an ordinary villager with a guard's weapon and a guard's willingness to use it,
+        # which is all `is_guard` means anywhere else in the world.
+        guard_pos = self.world.free_spot_near(pos[0] + 60, pos[1] + 40, c.Entities.NPC_SIZE / 2)
+        guard = NPC(*guard_pos)
+        guard.is_guard = True
+        guard.home = guard_pos
+        guard.color = c.Villages.GUARD_COLOR
+        self.world.npcs.append(guard)
+        self.merchant_guard = guard
+
+        self.merchant_heading = random.uniform(0, 2 * math.pi)
         self.merchant_timer = c.Events.MERCHANT_DURATION_MS
-        self.notify("A traveling merchant has set up camp nearby", c.Colors.MERCHANT)
+        self.notify("A traveling merchant is on the road nearby", c.Colors.MERCHANT)
         self.world.start_shop_generation()
 
-    def _tick_merchant(self, dt):
+    def _tick_merchant(self, dt, player: Player):
+        """The pair walk while they are here and leave when their time is up.
+
+        They travel by having their wander anchor drift: the merchant and the guard keep
+        strolling around a point that is itself moving down the road, so the caravan makes
+        its way across the map without any pathfinding of its own. They are only taken off
+        the map once nothing can see them go."""
         if self.wandering_merchant is None:
             return
+
+        merchant = self.wandering_merchant
+        step = c.Events.MERCHANT_TRAVEL_SPEED * dt / 1000.0
+        hx = merchant.home[0] + math.cos(self.merchant_heading) * step
+        hy = merchant.home[1] + math.sin(self.merchant_heading) * step
+        if self.world.blocked(hx, hy, c.Entities.NPC_SIZE / 2):
+            # Something in the way: turn rather than push into it. A road bends anyway.
+            self.merchant_heading += random.uniform(math.pi / 3, math.pi)
+        else:
+            merchant.home = (hx, hy)
+            if self.merchant_guard is not None:
+                self.merchant_guard.home = (hx + 60, hy + 40)
+
         self.merchant_timer -= dt
-        if self.merchant_timer <= 0:
-            if self.wandering_merchant in self.world.npcs:
-                self.world.npcs.remove(self.wandering_merchant)
-            self.wandering_merchant = None
+        if self.merchant_timer > 0:
+            return
+        # Out of sight before they are taken away, so nobody watches a man wink out.
+        if merchant.distance_to_point(player.get_pos()) < c.Events.MERCHANT_MIN_DIST:
+            return
+        for npc in (self.wandering_merchant, self.merchant_guard):
+            if npc is not None and npc in self.world.npcs:
+                self.world.npcs.remove(npc)
+        self.wandering_merchant = None
+        self.merchant_guard = None
 
     # ------------------------------------------------------------------ treasure cache
 
