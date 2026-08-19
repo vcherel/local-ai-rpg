@@ -74,6 +74,14 @@ class DeathTauntGenerator:
         with self.cond:
             self.is_generating = False
         self.persist()
+        if not taunt:
+            # A reply that came back with nothing in it (the stream cut at a leading line
+            # break, the model answered with punctuation) used to re-arm immediately and
+            # never fill the buffer, so one bad generation turned into a call every few
+            # seconds for the rest of the session, in front of everything the player was
+            # actually waiting on. The canned lines are there for exactly this: leave the
+            # buffer as it is and let the next death ask again.
+            return
         # One call per thread, so a buffer that wants three lines queues them one behind the
         # other instead of firing three LLM calls at once in front of the player's dialogue.
         self.start_generation()
