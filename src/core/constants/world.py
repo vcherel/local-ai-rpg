@@ -205,6 +205,11 @@ class Crime:
     # How long the one villager who catches the player stays angry about it. Shorter than a
     # whole settlement's anger: it is their chest, and it is only their business.
     THEFT_ANGER_S: float = 180.0
+    # How far a villager has to move, and how far they have to turn, before the wedge drawn
+    # on the ground is recast rather than reused (`World.vision_polygon`). A cone is a few
+    # hundred raycasts, and somebody standing still sees the same thing they saw last frame.
+    CONE_CACHE_MOVE: float = 6.0
+    CONE_CACHE_TURN_DEG: float = 3.0
 
 
 @dataclass(frozen=True)

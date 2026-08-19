@@ -476,6 +476,23 @@ class WorldPlaces:
         radius = self.witness_radius()
         return [npc for npc in self.npcs if not npc.hostile and npc.distance_to_point((x, y)) <= radius]
 
+    def sight_obstacles(self, x: float, y: float, radius: float, ignore) -> list:
+        """Everything opaque within `radius` of (x, y), gathered once so a walk along a ray
+        does not go back to the chunk buckets at every sample.
+
+        A cone is a few hundred samples of the same handful of solids; looking each of them
+        up per sample is what made a street of villagers cost more to draw than the world
+        behind them."""
+        found = []
+        for chunk in self._chunk_window(x, y, radius):
+            found += list(self._village_solids_by_chunk.get(chunk, ()))
+            found += [b for b in self._buildings_by_chunk.get(chunk, ()) if b is not ignore]
+        cell = c.Scenery.INDEX_CELL
+        for cx in range(int((x - radius) // cell), int((x + radius) // cell) + 1):
+            for cy in range(int((y - radius) // cell), int((y + radius) // cell) + 1):
+                found += self._scenery_by_cell.get((cx, cy), ())
+        return found
+
     def _sight_solid(self, x: float, y: float, ignore) -> bool:
         """Whether something opaque stands at this point. The same solids `blocked` walks,
         with one exception: the building the player is standing in is see-through, because
@@ -487,30 +504,57 @@ class WorldPlaces:
             return True
         return any(item.blocks(x, y, 1) for item in self.scenery_near(x, y))
 
-    def sight_reach(self, x0: float, y0: float, angle: float, radius: float, ignore) -> float:
+    def sight_reach(self, x0: float, y0: float, angle: float, radius: float, ignore, solids=None) -> float:
         """How far sight actually carries from (x0, y0) along `angle`: the full radius, or
         the distance to the first thing in the way. One function behind both the check and
         the cone drawn on the ground, so the picture can never promise cover the rule does
-        not give."""
+        not give.
+
+        `solids` is the list `sight_obstacles` gathered for a whole cone; without it each
+        sample looks its own candidates up, which is what a single ray (`can_see`) wants."""
         step = c.Buildings.WALL_THICKNESS / 2
         dx, dy = math.cos(angle) * step, math.sin(angle) * step
         x, y = x0, y0
+        solid = (lambda px, py: any(s.blocks(px, py, 1) for s in solids)) if solids is not None else None
         for i in range(1, int(radius / step) + 1):
             x, y = x + dx, y + dy
-            if self._sight_solid(x, y, ignore):
+            if solid(x, y) if solid else self._sight_solid(x, y, ignore):
                 return i * step - step
         return radius
 
-    def vision_polygon(self, npc: NPC, radius: float, ignore, rays: int = 18) -> list[tuple]:
+    def vision_polygon(self, npc: NPC, radius: float, ignore, rays: int = 12) -> list[tuple]:
         """The wedge this villager can actually see, in world coordinates: their own position
-        followed by the far end of each ray, cut short wherever a wall stops it."""
+        followed by the far end of each ray, cut short wherever a wall stops it.
+
+        Cached per villager and rebuilt only once they have actually moved or turned
+        (`Crime.CONE_CACHE_MOVE`/`CONE_CACHE_TURN_DEG`): a villager standing still looking
+        the same way sees the same wedge, and recasting it every frame for everyone on the
+        street was the whole cost of the cones being on the ground at all."""
+        key = id(npc)
+        turn = math.radians(c.Crime.CONE_CACHE_TURN_DEG)
+        cached = self._cone_cache.get(key)
+        if (
+            cached is not None
+            and cached[0] is npc
+            and cached[1] == (radius, id(ignore))
+            and math.hypot(npc.x - cached[2][0], npc.y - cached[2][1]) < c.Crime.CONE_CACHE_MOVE
+            and abs(npc.orientation - cached[2][2]) < turn
+        ):
+            return cached[3]
+
         half = math.radians(c.Crime.VIEW_CONE_DEG) / 2
         facing = npc.orientation - math.pi / 2
+        solids = self.sight_obstacles(npc.x, npc.y, radius, ignore)
         points = [(npc.x, npc.y)]
         for step in range(rays + 1):
             angle = facing - half + 2 * half * step / rays
-            reach = self.sight_reach(npc.x, npc.y, angle, radius, ignore)
+            reach = self.sight_reach(npc.x, npc.y, angle, radius, ignore, solids)
             points.append((npc.x + math.cos(angle) * reach, npc.y + math.sin(angle) * reach))
+        if len(self._cone_cache) > 64:
+            # Keyed by id, so an entry outlives the villager it belonged to. Nothing here is
+            # worth tracking lifetimes for: drop the lot and let it fill again.
+            self._cone_cache.clear()
+        self._cone_cache[key] = (npc, (radius, id(ignore)), (npc.x, npc.y, npc.orientation), points)
         return points
 
     def can_see(self, npc: NPC, x: float, y: float, radius: float, ignore) -> bool:

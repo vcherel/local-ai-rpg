@@ -69,6 +69,9 @@ class GameRenderer:
             (self.pause_button_rect, "pause", "Pause (P)"),
         )
 
+        # Reused by `_draw_witness_cones` rather than reallocated per frame.
+        self._cone_overlay: pygame.Surface | None = None
+
         self.minimap = Minimap(self.screen)
         # Left of the minimap, which owns the top right corner now.
         self.loading_indicator = LoadingIndicator(self.screen, self.minimap.rect.left - 30, 30)
@@ -203,12 +206,14 @@ class GameRenderer:
         get_particles().draw(self.screen, camera)
         get_floating_text().draw(self.screen, camera)
 
-        player.draw(self.screen)
-
-        # Over everything alive and under the prompt: what is out past the lantern is not
+        # Over everything alive and under the player: what is out past the lantern is not
         # seen at all, which is the tunnel's real difficulty and the reason to go back up.
+        # The player themselves is drawn on top of it, because the player's health bar is
+        # part of that sprite and the HUD is not something the dark may swallow.
         if underground:
             world.underground.draw_dark(self.screen, camera, player)
+
+        player.draw(self.screen)
 
         if interaction is not None:
             self._draw_interaction_prompt(camera, interaction)
@@ -230,8 +235,17 @@ class GameRenderer:
             return
 
         ignore = world.sight_blocker(player.x, player.y)
-        overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        if self._cone_overlay is None:
+            # One surface for the life of the renderer: a fresh screen-sized alpha surface
+            # per frame is an allocation the size of the window, every frame, for a wedge.
+            self._cone_overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        overlay = self._cone_overlay
+        overlay.fill((0, 0, 0, 0))
         for npc in watchers:
+            # A villager whose whole cone is off screen is not worth casting: the cones are
+            # drawn to be read, and the check that matters has already been made elsewhere.
+            if not self._on_screen(camera, npc.x, npc.y, margin=radius):
+                continue
             points = [camera.world_to_screen(x, y) for x, y in world.vision_polygon(npc, radius, ignore)]
             seen = world.can_see(npc, player.x, player.y, radius, ignore)
             # Kept faint: several of these overlap on a busy street, and they are drawn on
