@@ -390,10 +390,8 @@ class Game:
             # what is lying on the floor.
             tunnel = self.world.underground
             if tunnel.at_exit(self.player.x, self.player.y):
-                offer(
-                    Interaction("ladder", tunnel, "E: climb back up", *tunnel.entrance),
-                    reach_of(*tunnel.entrance),
-                )
+                label = "E: climb back up" if tunnel.kind == "well" else "E: leave the cave"
+                offer(Interaction("ladder", tunnel, label, *tunnel.entrance), reach_of(*tunnel.entrance))
         else:
             village = self.world.well_in_reach(self.player)
             if village is not None:
@@ -402,6 +400,13 @@ class Game:
                 offer(
                     Interaction("well", village, "E: look down the well", village.x, village.y - 40),
                     reach_of(village.x, village.y),
+                )
+
+            cave = self.world.cave_in_reach(self.player)
+            if cave is not None:
+                offer(
+                    Interaction("cave", cave, "E: enter the cave", cave.x, cave.y - 50),
+                    reach_of(cave.x, cave.y),
                 )
 
         camp = self.world.camp_in_reach(self.player)
@@ -456,6 +461,9 @@ class Game:
             self._use_door(interaction.target)
         elif interaction.kind == "well":
             self.world.enter_tunnel(self.player, interaction.target)
+            self.save_data()
+        elif interaction.kind == "cave":
+            self.world.enter_cave(self.player, interaction.target)
             self.save_data()
         elif interaction.kind == "ladder":
             self.world.leave_tunnel(self.player)

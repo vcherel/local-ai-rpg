@@ -546,22 +546,32 @@ def site_grounds_radius(cx: int, cy: int) -> float:
 
 
 def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> list[tuple[int, int]]:
-    """Every village site within `chunk_radius` chunks of (cx, cy), generated or not.
+    """Every village site within `chunk_radius` chunks of (cx, cy), generated or not, as
+    plain points. `settlements_near_chunk` is the same walk with each site's chunk and the
+    reach of its grounds kept, which is what a road needs to stop at a gate rather than
+    running through the houses behind it."""
+    return [(x, y) for x, y, _, _, _ in settlements_near_chunk(cx, cy, chunk_radius)]
+
+
+@lru_cache(maxsize=512)
+def settlements_near_chunk(cx: int, cy: int, chunk_radius: int) -> tuple[tuple[float, float, int, int, float], ...]:
+    """Every village site within `chunk_radius` chunks of (cx, cy), generated or not, as
+    (x, y, chunk x, chunk y, grounds radius).
 
     Sites are a pure function of their region, so this answers the same thing from
     anywhere: what the roads between settlements are drawn from, and cheap enough to ask
     on every chunk load because it walks regions rather than chunks.
     """
     region = c.Villages.REGION_CHUNKS
-    sites: list[tuple[int, int]] = []
+    sites: list[tuple[float, float, int, int, float]] = []
     for rx in range(math.floor((cx - chunk_radius) / region), math.floor((cx + chunk_radius) / region) + 1):
         for ry in range(math.floor((cy - chunk_radius) / region), math.floor((cy + chunk_radius) / region) + 1):
             site = _region_site(rx, ry)
             # Asked back through village_site so a region that stands down for a neighbour
             # is left out here too, and no road is drawn to a village that never exists.
             if site is not None and village_site(site[0], site[1]) is not None:
-                sites.append((site[2], site[3]))
-    return sites
+                sites.append((site[2], site[3], site[0], site[1], site_grounds_radius(site[0], site[1])))
+    return tuple(sites)
 
 
 def _building_kinds(composition: dict, rng: random.Random) -> list[str]:
