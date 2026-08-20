@@ -67,7 +67,6 @@ class ContextMenu(BaseMenu):
             self._generating = False
             self._ready = True
             self.active = True
-            self.just_active = True
             self.intro = intro
             self._ready_at = pygame.time.get_ticks()
             self._calculate_dimensions()

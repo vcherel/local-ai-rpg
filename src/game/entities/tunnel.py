@@ -20,6 +20,10 @@ def has_tunnel(chunk: tuple[int, int]) -> bool:
 
 
 _LANTERN_MASK: pygame.Surface | None = None
+# The dark itself, kept for the life of the process and refilled each frame. A fresh
+# screen-sized alpha surface every frame is an allocation the size of the window for
+# something whose contents never change but for where the light is cut out of it.
+_DARK_OVERLAY: pygame.Surface | None = None
 
 
 def _lantern_mask() -> pygame.Surface:
@@ -241,7 +245,10 @@ class Tunnel:
         The light is one gradient rather than a stack of circles: circles drawn onto an alpha
         surface replace the pixels under them rather than blending, so each one left a hard
         edge and the lantern read as a set of rings."""
-        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
+        global _DARK_OVERLAY
+        if _DARK_OVERLAY is None:
+            _DARK_OVERLAY = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
+        overlay = _DARK_OVERLAY
         overlay.fill((0, 0, 0, c.Tunnels.DARKNESS))
         x, y = camera.world_to_screen(player.x, player.y)
         light = _lantern_mask()

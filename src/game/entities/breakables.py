@@ -63,28 +63,14 @@ class Breakable:
         # Seeded from the world position (stable) rather than the screen position (which
         # pans every frame), so the planting doesn't jitter as the camera moves.
         rng = random.Random(f"{self.x},{self.y}")
-        if self.kind == "bush":
-            self._draw_bush(screen, center, rng, hp_frac, flash)
-        elif self.kind == "flowerbed":
-            self._draw_flowerbed(screen, center, rng, hp_frac, flash)
-        elif self.kind == "herbs":
-            self._draw_herbs(screen, center, rng, hp_frac, flash)
-        elif self.kind == "sapling":
-            self._draw_sapling(screen, center, rng, hp_frac, flash)
-        elif self.kind == "powder":
-            self._draw_powder_keg(screen, center, flash)
-            self._draw_wear(screen, center, hp_frac, int(c.Breakables.SIZE * 1.15))
-        else:
-            self._draw_barrel(screen, center, flash)
-            self._draw_wear(screen, center, hp_frac, c.Breakables.SIZE)
+        _DRAWERS.get(self.kind, Breakable._draw_barrel)(self, screen, center, rng, hp_frac, flash)
 
     def _draw_wear(self, screen: pygame.Surface, center, hp_frac: float, width: int):
         body = pygame.Rect(0, 0, width, int(width * 1.3))
         body.center = center
         draw_cracks(screen, body, hp_frac, f"{self.x},{self.y}")
 
-    @staticmethod
-    def _draw_barrel(screen: pygame.Surface, center, flash: float = 0.0):
+    def _draw_barrel(self, screen: pygame.Surface, center, rng, hp_frac: float, flash: float):
         w, h = c.Breakables.SIZE, int(c.Breakables.SIZE * 1.3)
         body = pygame.Rect(0, 0, w, h)
         body.center = center
@@ -93,9 +79,9 @@ class Breakable:
         for frac in (0.28, 0.72):
             band_y = round(body.top + body.height * frac)
             pygame.draw.line(screen, (66, 44, 24), (body.left + 2, band_y), (body.right - 2, band_y), 3)
+        self._draw_wear(screen, center, hp_frac, c.Breakables.SIZE)
 
-    @staticmethod
-    def _draw_powder_keg(screen: pygame.Surface, center, flash: float = 0.0):
+    def _draw_powder_keg(self, screen: pygame.Surface, center, rng, hp_frac: float, flash: float):
         """A keg of black powder: squatter and darker than a barrel, iron-banded, with a
         fuse out of the lid. It has to be told apart from an ordinary barrel at a glance,
         because walking up and hitting one is a very different decision."""
@@ -117,9 +103,9 @@ class Breakable:
             2,
         )
         pygame.draw.circle(screen, (255, 190, 90), (body.centerx - 2, body.top - 12), 3)
+        self._draw_wear(screen, center, hp_frac, int(c.Breakables.SIZE * 1.15))
 
-    @staticmethod
-    def _draw_bush(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
+    def _draw_bush(self, screen: pygame.Surface, center, rng: random.Random, hp_frac: float, flash: float):
         """A planted prop shows its damage by losing bulk rather than by cracking: the
         clumps shrink as it is hacked at, so a half-cleared bush reads as half cleared."""
         cx, cy = center
@@ -131,8 +117,7 @@ class Breakable:
             pygame.draw.circle(screen, tint(leaf_color, flash), (round(cx + ox), round(cy + oy)), r)
             pygame.draw.circle(screen, (35, 75, 32), (round(cx + ox), round(cy + oy)), r, 1)
 
-    @staticmethod
-    def _draw_flowerbed(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
+    def _draw_flowerbed(self, screen: pygame.Surface, center, rng: random.Random, hp_frac: float, flash: float):
         """A tilled bed with a few blooms in it, the thing most likely to be growing by a
         village door. Blooms are trampled off it one by one as it takes hits."""
         cx, cy = center
@@ -154,8 +139,7 @@ class Breakable:
             pygame.draw.circle(screen, color, head, rng.randint(3, 5))
             pygame.draw.circle(screen, (250, 236, 160), head, 1)
 
-    @staticmethod
-    def _draw_herbs(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
+    def _draw_herbs(self, screen: pygame.Surface, center, rng: random.Random, hp_frac: float, flash: float):
         """A kitchen patch: low, ragged, no flowers to speak of."""
         cx, cy = center
         size = c.Breakables.SIZE
@@ -167,8 +151,7 @@ class Breakable:
             green = (72 + rng.randint(-12, 12), 116 + rng.randint(-14, 18), 58 + rng.randint(-10, 12))
             pygame.draw.line(screen, tint(green, flash), base, (round(base[0] + lean), base[1] - height), 3)
 
-    @staticmethod
-    def _draw_sapling(screen: pygame.Surface, center, rng: random.Random, hp_frac: float = 1.0, flash: float = 0.0):
+    def _draw_sapling(self, screen: pygame.Surface, center, rng: random.Random, hp_frac: float, flash: float):
         """A young tree somebody planted: a thin trunk and a small crown, small enough to
         read as part of the garden rather than as wilderness."""
         cx, cy = center
@@ -179,6 +162,19 @@ class Breakable:
             oy = rng.uniform(-size * 0.45, -size * 0.1)
             leaf = (58 + rng.randint(-10, 12), 118 + rng.randint(-12, 20), 54 + rng.randint(-8, 10))
             pygame.draw.circle(screen, leaf, (round(cx + ox), round(cy + oy)), rng.randint(8, 12))
+
+
+# What draws each kind, named explicitly rather than off the kind's own name, the same table
+# `scenery.py` and `monster_art.py` use. Anything not listed is drawn as a barrel, which is
+# what a save made before the clay pots were replaced holds.
+_DRAWERS = {
+    "barrel": Breakable._draw_barrel,
+    "powder": Breakable._draw_powder_keg,
+    "bush": Breakable._draw_bush,
+    "flowerbed": Breakable._draw_flowerbed,
+    "herbs": Breakable._draw_herbs,
+    "sapling": Breakable._draw_sapling,
+}
 
 
 def _pick_kind(rng: random.Random) -> str:
