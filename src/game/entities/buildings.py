@@ -217,6 +217,16 @@ class Building:
         # ask like the style: None until asked, False once rolled and refused.
         self._wing: pygame.Rect | bool | None = None
         self._canon_wing: pygame.Rect | None = None
+        # Everything derived from where this building stands and how it is built, worked out
+        # once and kept: the footprint, the floors, and the wall shell with its doorway.
+        # `blocks` is asked hundreds of times a frame by anything that walks, and rebuilding
+        # a dozen rects per question is what made a street of villagers cost more than the
+        # street. `reset_geometry` drops the lot; the shell also depends on whether the door
+        # is shut, which is the one part of it that changes without the building moving.
+        self._rect: pygame.Rect | None = None
+        self._floors: list[pygame.Rect] | None = None
+        self._segments: list[pygame.Rect] | None = None
+        self._segments_door: bool | None = None
         # How this one is built (roof material and form, wall tint, extras). Rolled from
         # the building's own id on first draw, so a street is a row of different houses
         # and each of them keeps its look for good.
@@ -224,7 +234,9 @@ class Building:
 
     @property
     def rect(self) -> pygame.Rect:
-        return pygame.Rect(round(self.x - self.w / 2), round(self.y - self.h / 2), self.w, self.h)
+        if self._rect is None:
+            self._rect = pygame.Rect(round(self.x - self.w / 2), round(self.y - self.h / 2), self.w, self.h)
+        return self._rect
 
     @property
     def has_door(self) -> bool:
@@ -276,6 +288,9 @@ class Building:
         self._wing = None
         self._canon_wing = None
         self._layout = None
+        self._rect = None
+        self._floors = None
+        self._segments = None
 
     def _canon_rect(self) -> pygame.Rect:
         """This building's own footprint seen with its door in the bottom wall: the frame
@@ -435,10 +450,18 @@ class Building:
 
         An L is the same shell twice over, minus the wall the two halves would otherwise
         have between them: `_wing_opening` is cut out of every segment, which turns two
-        boxes standing against each other into one room with a corner in it."""
+        boxes standing against each other into one room with a corner in it.
+
+        Kept once built, and rebuilt only when the door opens or comes down: a shut door is
+        part of the shell and an open one is a gap in it, and nothing else about a standing
+        building's walls ever changes."""
+        if self._segments is not None and self._segments_door == self.door_closed:
+            return self._segments
+        self._segments_door = self.door_closed
         r = self.rect
         if not self.has_door:
-            return [r]
+            self._segments = [r]
+            return self._segments
         wall = c.Buildings.WALL_THICKNESS
         door = self.door_rect()
         nx, _ny = self.outward()
@@ -472,6 +495,7 @@ class Building:
         # A shut door is part of the shell; open it or break it and the gap is back.
         if self.door_closed:
             segments.append(self.door_rect())
+        self._segments = segments
         return segments
 
     def blocks(self, x, y, radius) -> bool:
@@ -530,8 +554,10 @@ class Building:
     def interior_rects(self) -> list[pygame.Rect]:
         """Every piece of floor in the building. Two of them for an L, overlapping where
         the wing meets the main room so the union is one connected space to walk over."""
-        opening = self._wing_opening()
-        return [self.interior_rect()] if opening is None else [self.interior_rect(), opening]
+        if self._floors is None:
+            opening = self._wing_opening()
+            self._floors = [self.interior_rect()] if opening is None else [self.interior_rect(), opening]
+        return self._floors
 
     def contains_point(self, x, y) -> bool:
         """True once (x, y) has stepped past the wall onto this building's floor."""

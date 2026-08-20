@@ -162,10 +162,6 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # Where the player climbed down from, so the ladder puts them back at that well.
         self.surface_return = None
         self._last_reveal_cell = None
-        # The wedge each villager can see, cached until they move or turn. Session-only and
-        # keyed by id: a cone is a few hundred raycasts and a street full of them, recast
-        # every frame, cost more than drawing the world behind them.
-        self._cone_cache: dict = {}
         # Wandering wildlife, purely atmospheric; transient like particles, never saved.
         self.critters: list[Critter] = []
         # Arrows in flight; transient like particles, never saved.

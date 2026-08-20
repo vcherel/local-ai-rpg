@@ -138,16 +138,25 @@ Theft is the one exception to the all-or-nothing rule and it has exactly one ent
 climb into a bed, and `World.catch_thief` turns that one villager, alone, while the rest of
 the settlement goes on with its day.
 
-Being seen is a field of view with walls in it, not a radius: `NPC.sees` tests
-`Crime.VIEW_CONE_DEG` off the villager's own facing and `World.can_see` then walks the line
-for anything solid (`sight_reach`), with exactly one thing see-through, the building the
-player is standing in, since the villager being robbed is on the other side of a doorway
-rather than behind a wall and a strict test would make every theft free.
-`GameRenderer._draw_witness_cones` draws exactly that wedge on the ground while a chest or
-a bed is in reach, and the prompt names whoever is currently watching, so waiting for a back
-to be turned is the mechanic. Its price is that a villager stops turning to greet the player
-while the player is inside a building (`face_player`), since a cone that always points at you
-is not a cone.
+Being seen is a field of view with rooms in it, not a radius and not a raycast: `NPC.sees`
+tests `Crime.VIEW_CONE_DEG` off the villager's own facing, and `World.can_see` then asks
+which room each of the two is standing in (`World.theft_room` is the building the theft
+happens in). Out in the open, anyone else out in the open sees you. Inside a room, whoever
+is in it with you sees you and whoever is inside a different building sees nothing, having
+their own walls and their own roof between. From outside, a room is open along the wall its
+door and its windows are in: a villager in front of the facade sees straight in, one round
+the back does not, which is why the far side of a house is worth walking to.
+
+That is the whole test and it is a handful of comparisons per villager. It used to be a ray
+per villager per frame, marched in half-wall steps against every solid nearby, which cost
+more than everything else on screen put together: a tavern with ten villagers outside ran at
+one and a half frames a second, of which 99% was casting the cones.
+`GameRenderer._draw_witness_cones` draws the wedge whole while a chest or a bed is in reach,
+unclipped, because nothing clips the rule either: a cone that reaches the player and stays
+pale is a villager the walls have already answered. The prompt names whoever is currently
+watching, so waiting for a back to be turned is still the mechanic. Its price is that a
+villager stops turning to greet the player while the player is inside a building
+(`face_player`), since a cone that always points at you is not a cone.
 
 Escalation is the player's own doing: swinging back at whoever caught them lands in
 `_resolve_npc_hit` like any other blow and turns the whole village. No other path may turn a

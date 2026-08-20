@@ -197,7 +197,9 @@ class Crime:
     of the village never hears about it), which is the one way a single NPC goes hostile
     without the whole settlement; swinging back at them is what escalates it, through the
     usual `World.provoke_village`. Nobody sees through a wall, so what decides it is who is
-    standing outside, which makes an empty street or the dark the way to rob a house."""
+    standing outside and which wall they are standing at: a room is open along its facade
+    and shut everywhere else, which makes an empty street, the dark, or the back of a house
+    the way to rob it."""
 
     WITNESS_RADIUS: float = 430.0
     # How much of that radius is left after dark. Night is when a house is worth robbing.
@@ -209,11 +211,6 @@ class Crime:
     # How long the one villager who catches the player stays angry about it. Shorter than a
     # whole settlement's anger: it is their chest, and it is only their business.
     THEFT_ANGER_S: float = 180.0
-    # How far a villager has to move, and how far they have to turn, before the wedge drawn
-    # on the ground is recast rather than reused (`World.vision_polygon`). A cone is a few
-    # hundred raycasts, and somebody standing still sees the same thing they saw last frame.
-    CONE_CACHE_MOVE: float = 6.0
-    CONE_CACHE_TURN_DEG: float = 3.0
 
 
 @dataclass(frozen=True)
