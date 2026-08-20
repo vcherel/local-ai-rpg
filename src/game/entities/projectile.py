@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.utils import frames
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -93,7 +94,7 @@ class Projectile:
         Stepping the whole frame at once let an arrow cross a wall in a single move when
         the framerate dipped: the speed is 14px at 60fps but twice that at 30, and a wall
         shell is 16px thick. Substepping means a wall stops a shot at any framerate."""
-        move_factor = dt * c.TARGET_FPS / 1000.0
+        move_factor = frames(dt)
         if self.returning:
             self._steer_home()
         total_x = self.vx * move_factor

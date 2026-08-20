@@ -53,7 +53,6 @@ class ShopMenu(BaseMenu):
         self.player = player
         self.world_items = world_items
         self.active = True
-        self.just_active = True
         self.hovered_buy = None
         self.hovered_sell = None
         self.buy_scroll = 0
@@ -349,15 +348,17 @@ class ShopMenu(BaseMenu):
         max_scroll = self._max_scroll(count)
         if max_scroll <= 0:
             return
-
         visible = self._visible_rows()
-        track_y = self._list_top()
-        track_h = visible * ROW_HEIGHT - 6
-        pygame.draw.rect(surface, c.Colors.SLOT_BG, (x, track_y, 6, track_h))
-
-        thumb_h = max(24, int(track_h * visible / count))
-        thumb_y = track_y + int((track_h - thumb_h) * (scroll / max_scroll))
-        pygame.draw.rect(surface, c.Colors.ACCENT, (x, thumb_y, 6, thumb_h))
+        widgets.draw_scrollbar(
+            surface,
+            x,
+            self._list_top(),
+            visible * ROW_HEIGHT - 6,
+            visible=visible,
+            total=count,
+            scroll=scroll,
+            max_scroll=max_scroll,
+        )
 
     def _draw_row(
         self,

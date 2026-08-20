@@ -130,3 +130,22 @@ def draw_item_scaled(surface: pygame.Surface, item: Item, cx: int, cy: int, size
     scale = size / base
     scaled = pygame.transform.smoothscale(tmp, (int(tmp_size * scale), int(tmp_size * scale)))
     surface.blit(scaled, scaled.get_rect(center=(cx, cy)))
+
+
+SCROLLBAR_WIDTH = 6
+SCROLLBAR_MIN_THUMB = 24
+
+
+def draw_scrollbar(
+    surface: pygame.Surface, x: int, y: int, height: int, visible: int, total: int, scroll: int, max_scroll: int
+):
+    """The track and thumb down the side of a scrolling list.
+
+    Shared by the inventory grid and the shop's two columns. They disagree about what a row
+    is (the grid's vary in height, the shop's do not), so each works out `visible`, `total`
+    and `max_scroll` its own way and only the drawing is common.
+    """
+    pygame.draw.rect(surface, c.Colors.SLOT_BG, (x, y, SCROLLBAR_WIDTH, height))
+    thumb_h = max(SCROLLBAR_MIN_THUMB, int(height * visible / total))
+    thumb_y = y + int((height - thumb_h) * (scroll / max_scroll)) if max_scroll else y
+    pygame.draw.rect(surface, c.Colors.ACCENT, (x, thumb_y, SCROLLBAR_WIDTH, thumb_h))

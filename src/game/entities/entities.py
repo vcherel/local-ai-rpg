@@ -4,6 +4,7 @@ import random
 import pygame
 
 import core.constants as c
+from core.utils import frames
 from game.entities.gear import draw_accessory, draw_armor_band, draw_shield, draw_weapon, gear_padding
 
 
@@ -206,8 +207,8 @@ def advance_impulse(body, dt, radius: float, blocked=None) -> bool:
     if speed <= c.Combat.KNOCKBACK_REST_SPEED:
         body.kb_vx = body.kb_vy = 0.0
         return False
-    frames = dt * c.TARGET_FPS / 1000.0
-    step_x, step_y = body.kb_vx * frames, body.kb_vy * frames
+    step = frames(dt)
+    step_x, step_y = body.kb_vx * step, body.kb_vy * step
     hops = max(1, math.ceil(math.hypot(step_x, step_y) / KNOCKBACK_STEP))
     hop_x, hop_y = step_x / hops, step_y / hops
     for _ in range(hops):
@@ -222,7 +223,7 @@ def advance_impulse(body, dt, radius: float, blocked=None) -> bool:
             # Into a wall: the shove is spent there rather than grinding along it.
             body.kb_vx = body.kb_vy = 0.0
             return False
-    decay = c.Combat.KNOCKBACK_DECAY**frames
+    decay = c.Combat.KNOCKBACK_DECAY**step
     body.kb_vx *= decay
     body.kb_vy *= decay
     return True

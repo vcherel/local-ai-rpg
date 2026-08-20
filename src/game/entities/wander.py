@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 
-import core.constants as c
+from core.utils import frames
 
 
 class Wander:
@@ -47,7 +47,7 @@ class Wander:
 
         dx = self.target[0] - entity.x
         dy = self.target[1] - entity.y
-        step = self.speed * dt * c.TARGET_FPS / 1000.0
+        step = self.speed * frames(dt)
         if math.hypot(dx, dy) <= step:
             entity.x, entity.y = self.target
             self._rest()

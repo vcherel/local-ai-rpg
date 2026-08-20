@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from core.utils import random_color
+from core.utils import frames, random_color
 from game.entities.entities import Entity, push_apart
 from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 from game.entities.wander import Wander
@@ -364,7 +364,7 @@ class NPC(Entity):
         if self.rooted or self.staggered:
             return angle
         radius = c.Entities.NPC_SIZE / 2
-        speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * self.chill_mult * dt * c.TARGET_FPS / 1000.0
+        speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * self.chill_mult * frames(dt)
         step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
         if blocked is not None and blocked(self.x + step_x, self.y, radius):
             step_x = 0

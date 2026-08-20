@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.utils import frames
 from game.entities.item_icons import draw_shape_with_border
 
 if TYPE_CHECKING:
@@ -470,7 +471,7 @@ class Item:
             c.Player.MAGNET_SPEED_MAX,
             max(self.magnet_speed, c.Player.MAGNET_SPEED_START) + c.Player.MAGNET_ACCEL * dt,
         )
-        step = min(distance, self.magnet_speed * dt * c.TARGET_FPS / 1000.0)
+        step = min(distance, self.magnet_speed * frames(dt))
         self.x += dx / distance * step
         self.y += dy / distance * step
         return distance - step <= c.Player.MAGNET_CATCH
