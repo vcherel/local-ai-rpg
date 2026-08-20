@@ -46,6 +46,10 @@ class Quest:
     # nobody has loaded, so there is nothing to look the position up from later.
     target_x: float | None = None
     target_y: float | None = None
+    # How far the objective stood from the quest giver when it was handed over. Written
+    # down once, because what it pays for is the journey the quest asked for, not where the
+    # player happens to be standing when they come back (`llm.quest_system.coin_band`).
+    travel_distance: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +71,7 @@ class Quest:
             "recipient_npc_name": self.recipient_npc_name,
             "target_x": self.target_x,
             "target_y": self.target_y,
+            "travel_distance": self.travel_distance,
         }
 
     @classmethod
@@ -90,4 +95,5 @@ class Quest:
             recipient_npc_name=data.get("recipient_npc_name", ""),
             target_x=data.get("target_x"),
             target_y=data.get("target_y"),
+            travel_distance=data.get("travel_distance", 0.0),
         )

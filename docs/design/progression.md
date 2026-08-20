@@ -24,6 +24,14 @@ model's: `c.QUEST_COIN_BANDS` per quest type clamps whatever figure the NPC name
 parting line, the prompt is told that band so the sentence and the payout agree, and the hardest
 types always hand over gear as well (`Quests.ALWAYS_ITEM_TYPES`).
 
+What stretches that band is the journey. A quest puts whatever it sends the player after a
+real walk away (`World.quest_target_spot`, floored at `Quests.MIN_TARGET_DISTANCE`, and the
+same floor is what a `clear_camp` looks past the nearest camp for), the distance is written
+into the quest when it is given, and `quest_system.coin_band` widens the band with it up to
+`Quests.PAY_DISTANCE_BONUS`. Both the NPC's line and the payout read that one function, so
+they still agree. An errand finishable without leaving the square is a line of dialogue, not
+a quest.
+
 Against that, salvage is pocket money: shops pay `Stats.SELL_BASE` of a low `items.base_value`
 with a ceiling under 1.0, and lootbox/crate/cache coins are all small. New income belongs on the
 quest and cache side of that line, not on the "sell everything you find" side.

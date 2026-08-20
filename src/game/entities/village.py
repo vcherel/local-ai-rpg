@@ -612,18 +612,30 @@ def _plaza_slots(count: int, rng: random.Random) -> list[tuple[float, float]]:
     return [(ox + rng.uniform(-jitter, jitter), oy + rng.uniform(-jitter, jitter)) for ox, oy in slots[:count]]
 
 
-def _clear_of_plaza(ox: float, oy: float, w: int, h: int) -> tuple[float, float]:
-    """The same offset, pushed out until the building standing on it no longer covers the
-    plaza. Whichever axis needs the smaller shove is the one that gives, so a house steps
-    off the square rather than being flung to the edge of the village."""
+def _clear_of_plaza(building: Building, center: tuple[float, float]) -> bool:
+    """Push a building out until nothing it is built of covers the plaza.
+
+    Measured off `bounds` rather than off the slot offset: a wing grows out to one side, so
+    the middle of what the building actually covers is not where its main block stands, and
+    an L used to reach over the well while its rect sat clear of it. Whichever axis needs
+    the smaller shove is the one that gives, so a house steps off the square rather than
+    being flung to the edge of the village. Returns whether the building had to move."""
     keep = c.Villages.PLAZA_RADIUS
-    need_x = keep + w / 2 - abs(ox)
-    need_y = keep + h / 2 - abs(oy)
+    bounds = building.bounds
+    dx = bounds.centerx - center[0]
+    dy = bounds.centery - center[1]
+    need_x = keep + bounds.width / 2 - abs(dx)
+    need_y = keep + bounds.height / 2 - abs(dy)
     if need_x <= 0 or need_y <= 0:
-        return ox, oy
+        return False
+    # Rounded up rather than to nearest: half a pixel of plaza left under a wall is still
+    # a wall on the square.
     if need_x <= need_y:
-        return ox + math.copysign(need_x, ox or 1.0), oy
-    return ox, oy + math.copysign(need_y, oy or 1.0)
+        building.x += math.ceil(need_x) * (1 if dx >= 0 else -1)
+    else:
+        building.y += math.ceil(need_y) * (1 if dy >= 0 else -1)
+    building.reset_geometry()
+    return True
 
 
 def _facing_towards_plaza(ox: float, oy: float) -> str:
@@ -636,28 +648,36 @@ def _facing_towards_plaza(ox: float, oy: float) -> str:
 
 
 def _separate(buildings: list[Building], center: tuple[float, float], gap: int = 90):
-    """Push overlapping buildings apart, outward from the middle of the village.
+    """Push buildings off each other and off the plaza, outward from the middle of the
+    village. The plaza and the well in the middle of it belong to the settlement: a house
+    standing on the well made the one thing every village has impossible to walk up to.
 
     The grid the slots come off is spaced for a plain rect; a building with a wing on it is
     wider than its slot, and two of them side by side used to end up sharing ground, which
-    is a broken room rather than a tight street. Each pass shoves the one further from the
-    plaza, so the settlement spreads outward instead of the layout shifting off centre."""
-    for _ in range(4):
-        moved = False
+    is a broken room rather than a tight street. Everything is measured off `bounds`, whose
+    middle is not the building's own (x, y) once it has a wing: overlap resolved off the
+    rect centres moved a pair the wrong way as often as not, which is how two Ls stayed
+    interlocked however many passes ran. Each pass shoves the one further from the plaza,
+    so the settlement spreads outward instead of the layout shifting off centre."""
+    for _ in range(c.Villages.SEPARATE_PASSES):
+        # The plaza is settled first and re-settled every pass: shoving one house off its
+        # neighbour can put it back over the square, and both shoves point outward, so
+        # taking them in turn settles rather than fighting.
+        moved = any([_clear_of_plaza(building, center) for building in buildings])
         order = sorted(buildings, key=lambda b: math.hypot(b.x - center[0], b.y - center[1]))
         for i, first in enumerate(order):
             for second in order[i + 1 :]:
                 a, b = first.bounds.inflate(gap, gap), second.bounds
                 if not a.colliderect(b):
                     continue
-                dx = second.x - first.x
-                dy = second.y - first.y
+                dx = b.centerx - a.centerx
+                dy = b.centery - a.centery
                 overlap_x = (a.width + b.width) / 2 - abs(dx)
                 overlap_y = (a.height + b.height) / 2 - abs(dy)
                 if overlap_x <= overlap_y:
-                    second.x += round(math.copysign(overlap_x, dx or 1.0))
+                    second.x += round(math.copysign(overlap_x, dx or (second.x - first.x) or 1.0))
                 else:
-                    second.y += round(math.copysign(overlap_y, dy or 1.0))
+                    second.y += round(math.copysign(overlap_y, dy or (second.y - first.y) or 1.0))
                 second.reset_geometry()
                 moved = True
         if not moved:
@@ -670,12 +690,6 @@ def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> tup
     buildings = []
     for kind, (ox, oy) in zip(kinds, slots):
         building = Building(round(x + ox), round(y + oy), kind, facing=_facing_towards_plaza(ox, oy))
-        # Built, then stepped off the square if its footprint reached over it: the plaza and
-        # the well in the middle of it belong to the village, and a house standing on the
-        # well made the one thing every settlement has impossible to walk up to.
-        ox, oy = _clear_of_plaza(ox, oy, building.bounds.width, building.bounds.height)
-        building.x, building.y = round(x + ox), round(y + oy)
-        building.reset_geometry()
         buildings.append(building)
     _separate(buildings, (x, y))
 
@@ -719,14 +733,14 @@ def generate_starting_world() -> tuple[Village, list[Building]]:
 def _place_landmark(village: Village, buildings: list[Building]) -> Building | None:
     """The ancient ruin: out on the far side of the settled ring, well clear of the village
     and a long way from the spawn point, since its guardian is a boss and shouldn't be
-    waiting on the doorstep (Boss.LANDMARK_MIN_DISTANCE, its own floor rather than the
-    ordinary building clearance)."""
+    waiting on the doorstep (Boss.MIN_DIST_FROM_START, the floor under every boss rather
+    than the ordinary building clearance)."""
     center = c.World.WORLD_SIZE // 2
     margin = c.Buildings.EDGE_MARGIN
     for _ in range(120):
         x = random.randint(margin, c.World.WORLD_SIZE - margin)
         y = random.randint(margin, c.World.WORLD_SIZE - margin)
-        if math.hypot(x - center, y - center) < c.Boss.LANDMARK_MIN_DISTANCE:
+        if math.hypot(x - center, y - center) < c.Boss.MIN_DIST_FROM_START:
             continue
         if village.distance_to_point((x, y)) < village.grounds_radius + c.Buildings.MIN_GAP:
             continue

@@ -124,13 +124,18 @@ class EventSystem:
         elif kind == "crisis":
             threading.Thread(target=self._generate_crisis, args=(quest_system, npc_name_generator), daemon=True).start()
 
-    def _point_near_player(self, player: Player, min_dist, max_dist, radius):
+    def _point_near_player(self, player: Player, min_dist, max_dist, radius, accept=None):
+        """Open ground in a band around the player, or None. `accept` is whatever else the
+        caller needs of the spot: a boss, unlike a merchant, may not be put down just
+        anywhere something fits (`World.boss_spawn_ok`)."""
         for _ in range(10):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(min_dist, max_dist)
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
-            if not self.world.blocked(x, y, radius):
+            if self.world.blocked(x, y, radius):
+                continue
+            if accept is None or accept(x, y):
                 return x, y
         return None
 
@@ -267,7 +272,11 @@ class EventSystem:
         if len(self.world.bosses) >= c.Boss.MAX_ACTIVE:
             return
         pos = self._point_near_player(
-            player, c.Events.BOSS_EVENT_MIN_DIST, c.Events.BOSS_EVENT_MAX_DIST, c.MONSTER_MAX_SIZE
+            player,
+            c.Events.BOSS_EVENT_MIN_DIST,
+            c.Events.BOSS_EVENT_MAX_DIST,
+            c.MONSTER_MAX_SIZE,
+            accept=self.world.boss_spawn_ok,
         )
         if pos is None:
             return

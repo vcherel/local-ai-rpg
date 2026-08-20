@@ -33,7 +33,11 @@ _POI_HINT_LABELS = {
     "watchtower": "a ruined watchtower",
     "stones": "a ring of standing stones",
     "signpost": "a crossroads",
+    "cave": "a cave mouth",
 }
+
+# Any kind added later still gets a sentence rather than a KeyError mid-conversation.
+_POI_HINT_FALLBACK = "somewhere worth a look"
 
 
 def _compass_direction(dx: float, dy: float) -> str:
@@ -132,14 +136,22 @@ class WorldPlaces:
         if not state.get("guards_alive") and not state.get("leader_alive"):
             quest_system.on_camp_cleared(monster.camp_id)
 
-    def find_bandit_camp(self, x: float, y: float) -> PointOfInterest | None:
-        """A bandit camp still held, for a clear_camp quest to send the player at.
+    def find_bandit_camp(self, x: float, y: float, min_distance: float = 0.0) -> PointOfInterest | None:
+        """A bandit camp still held, for a clear_camp quest to send the player at, no nearer
+        than `min_distance` from where the quest is being given.
 
         Loaded chunks first, then rings of chunks outward, generated from their coordinates
         exactly as `_load_chunk` would: a camp is a pure function of its chunk, so a quest
         can name one nobody has walked to yet. Saved state is applied before judging a camp,
         so one the player already emptied is never handed out as a task."""
-        held = [poi for poi in self.pois if poi.variant == "bandit" and not poi.guards_defeated and not poi.looted]
+        held = [
+            poi
+            for poi in self.pois
+            if poi.variant == "bandit"
+            and not poi.guards_defeated
+            and not poi.looted
+            and poi.distance_to_point((x, y)) >= min_distance
+        ]
         if held:
             return min(held, key=lambda poi: poi.distance_to_point((x, y)))
 
@@ -157,7 +169,9 @@ class WorldPlaces:
                         state = self.poi_state.get(poi.id)
                         if state:
                             poi.apply_state(state)
-                        if not poi.guards_defeated and not poi.looted:
+                        if poi.guards_defeated or poi.looted:
+                            continue
+                        if math.hypot(poi.x - x, poi.y - y) >= min_distance:
                             return poi
         return None
 
@@ -718,7 +732,7 @@ class WorldPlaces:
                 # per chunk in the search window.
                 center = ((gx + 0.5) * size, (gy + 0.5) * size)
                 for other in pois_for_chunk(gx, gy, self.buildings_in_range(*center, size)):
-                    candidates.append(((other.x, other.y), _POI_HINT_LABELS[other.kind]))
+                    candidates.append(((other.x, other.y), _POI_HINT_LABELS.get(other.kind, _POI_HINT_FALLBACK)))
                 for (x, y), label in candidates:
                     distance = math.hypot(x - from_x, y - from_y)
                     if distance < c.PointsOfInterest.HINT_MIN_DISTANCE or self.is_explored(x, y):

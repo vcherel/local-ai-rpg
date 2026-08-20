@@ -15,7 +15,7 @@ from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import potion_description
 from game.quest import COUNTED_QUEST_TYPES
 from llm.llm_request_queue import generate_response_stream_queued
-from llm.quest_system import QuestSystem
+from llm.quest_system import QuestSystem, coin_band
 from ui import widgets
 from ui.conversation_ui import ConversationUI
 from ui.quest_tracker import QuestTracker
@@ -247,7 +247,7 @@ class DialogueManager:
             )
             # The band the payout is clamped into anyway (QuestSystem.extract_and_give_reward),
             # told to the NPC so the figure they say out loud is the figure the player is paid.
-            low, high = c.QUEST_COIN_BANDS.get(quest.quest_type, c.Quests.DEFAULT_COIN_BAND)
+            low, high = coin_band(quest)
             return (
                 done_line.format(**fields)
                 + "Thank them and give them their reward"
