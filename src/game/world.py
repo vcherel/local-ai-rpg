@@ -16,6 +16,7 @@ from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
 from game.entities.buildings import Building, set_active_buildings
 from game.entities.critter import Critter, pick_critter_kind
+from game.entities.entities import advance_impulse
 from game.entities.items import AMMO_BUNDLE, Item
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
@@ -672,6 +673,23 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # Walled in on every side within the search: leave the caller where they were
         # rather than teleporting them somewhere arbitrary.
         return x, y
+
+    def advance_impulses(self, player: Player, dt):
+        """Spend one frame of every shove in flight: the monsters, the bosses, the villagers,
+        the wildlife and the player.
+
+        A blow hands its target a velocity rather than a new position (`WorldCombat._knockback`),
+        which is what makes a pole's shove a thing that visibly happens rather than a body
+        appearing at the far end of the room. Nothing here knows what did the shoving."""
+        bodies = (
+            [(m, m.kind.size / 2) for m in self.monsters]
+            + [(b, b.kind.size / 2) for b in self.bosses]
+            + [(n, c.Entities.NPC_SIZE / 2) for n in self.npcs]
+            + [(cr, cr.size / 2) for cr in self.critters]
+            + [(player, c.Player.SIZE / 2)]
+        )
+        for body, radius in bodies:
+            advance_impulse(body, dt, radius, self.blocked)
 
     def unstick(self, body, radius: float) -> bool:
         """Put a body that has ended up inside something solid back onto open ground.
@@ -1525,6 +1543,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # is a state of the world, not a property of the monsters standing in it.
         damage_mult = self.night_damage_mult()
 
+        # Whatever is still travelling under a blow's shove is carried first, so a body
+        # crosses the ground it was thrown across before it gets a step of its own.
+        self.advance_impulses(player, dt)
         self._update_monsters(player, dt, quest_system, damage_mult)
         self.update_projectiles(player, quest_system, dt)
         self._update_npcs(player, dt, quest_system)

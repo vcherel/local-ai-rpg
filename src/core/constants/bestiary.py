@@ -3,6 +3,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Entities:
+    # One multiplier on every monster's own `MonsterKind.speed`, so the pace of the whole
+    # bestiary is one number rather than sixty. Pulled down alongside `Player.SPEED`: a
+    # fight is meant to be read as it happens, and a chase to be a chase rather than two
+    # bodies teleporting round each other. The ladder between kinds is untouched.
+    MONSTER_SPEED_SCALE: float = 0.8
     NPC_SIZE: int = 30
     ITEM_SIZE: int = 25
     # NPCs wander around their spawn point: walk to a random spot within

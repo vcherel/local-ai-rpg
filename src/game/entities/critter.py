@@ -70,6 +70,10 @@ class Critter:
         # Held in a bear trap's jaws until this tick. An animal caught in one still turns
         # and still bites whatever comes within reach; it just cannot leave.
         self.rooted_until_ms = 0
+        # The shove it is still travelling under, its own copy of the pair every Entity
+        # holds, for the same reason it has its own `root`.
+        self.kb_vx = 0.0
+        self.kb_vy = 0.0
         self.chilled_until_ms = 0
         self.chill_factor = 1.0
         # A dog belongs somewhere and strolls around it; wildlife roams from wherever it
@@ -125,6 +129,11 @@ class Critter:
     def rooted(self) -> bool:
         return pygame.time.get_ticks() < self.rooted_until_ms
 
+    @property
+    def staggered(self) -> bool:
+        """Still travelling under a shove, so it gets no step of its own this frame."""
+        return math.hypot(self.kb_vx, self.kb_vy) > c.Combat.KNOCKBACK_STAGGER_SPEED
+
     def chill(self, duration_ms: int, factor: float):
         """Slowed by a frost bolt. Its own copy of `Entity.chill` for the same reason it
         has its own `root`: a critter is not an `Entity`."""
@@ -161,8 +170,9 @@ class Critter:
 
     def _step(self, angle, speed, radius, blocked):
         # Everything an animal does with its legs comes through here, so a trap holding it
-        # is one check: it still faces where it was going, it just doesn't get there.
-        if self.rooted:
+        # and a shove still carrying it are one check each: it still faces where it was
+        # going, it just doesn't get there under its own power.
+        if self.rooted or self.staggered:
             self.orientation = angle
             return
         step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
@@ -193,7 +203,7 @@ class Critter:
             return
 
         self.flee_heading = None
-        if self.rooted:
+        if self.rooted or self.staggered:
             return
         anchor = self.home if self.anchored else (self.x, self.y)
         moved_angle = self.wander.step(self, dt * terrain_mult, anchor, radius, blocked)

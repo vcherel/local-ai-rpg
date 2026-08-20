@@ -45,7 +45,7 @@ class GameRenderer:
 
     QUICK_SLOT_SIZE = 52
     QUICK_SLOT_GAP = 8
-    QUICK_BAR_BOTTOM = c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + 360 - 12
+    QUICK_BAR_BOTTOM = c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + c.Player.HEALTH_BAR_OFFSET - 12
 
     def __init__(self, screen):
         self.screen: pygame.Surface = screen
@@ -362,6 +362,7 @@ class GameRenderer:
         equipped_bottom = self._draw_equipped(player, top=stats_y + 28)
         self._draw_weapon_bar(player, top=equipped_bottom + 8)
         self._draw_potion_bar(player)
+        self._draw_mana_bar(player)
         self._draw_guard_bar(player)
 
         # Last, so the panel's own contents can't cover it.
@@ -431,6 +432,36 @@ class GameRenderer:
         pygame.draw.circle(disc, (*c.Colors.ACCENT, alpha), (6, 6), 5)
         self.screen.blit(disc, (x - 18, y + label.get_height() // 2 - 6))
 
+    # The player's health bar is drawn by the entity itself (Player.draw, under the body at
+    # `Player.HEALTH_BAR_OFFSET`); the mana bar hangs directly under it and the guard bar
+    # under that, so the whole stack follows the one offset.
+    MANA_BAR_HEIGHT = 14
+
+    def _mana_bar_bottom(self) -> int:
+        health_bottom = c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + c.Player.HEALTH_BAR_OFFSET + c.Player.HEALTH_BAR_HEIGHT
+        return health_bottom + 4 + self.MANA_BAR_HEIGHT
+
+    def _draw_mana_bar(self, player: Player):
+        """The mana pool, drawn as a second bar under the health bar and always shown.
+
+        Magic costs something now, and what it costs has to be as readable as health: a bolt
+        that does not come out because the pool is empty must be something the player saw
+        coming. It dims while the pool is held short of regenerating, so the pause after a
+        volley is visible too."""
+        width = 800
+        rect = pygame.Rect(0, 0, width, self.MANA_BAR_HEIGHT)
+        rect.bottomleft = (c.Screen.ORIGIN_X - width // 2, self._mana_bar_bottom())
+
+        holding = pygame.time.get_ticks() - player.last_cast_ms < c.Magic.REGEN_DELAY_MS
+        fill = c.Magic.EMPTY_COLOR if holding else c.Magic.BAR_COLOR
+        ratio = max(0.0, min(1.0, player.mana / max(1, player.max_mana)))
+        pygame.draw.rect(self.screen, c.Colors.MENU_BACKGROUND, rect)
+        pygame.draw.rect(self.screen, fill, (rect.x, rect.y, round(rect.width * ratio), rect.height))
+        pygame.draw.rect(self.screen, c.Colors.BORDER, rect, 3)
+
+        label = c.Fonts.small.render(f"{int(player.mana)}/{player.max_mana}", True, c.Colors.WHITE)
+        self.screen.blit(label, (rect.right - label.get_width() - 6, rect.centery - label.get_height() // 2))
+
     def _draw_guard_bar(self, player: Player):
         """The shield's guard, drawn just under the health bar and only while a shield is
         carried. It brightens while the block is up and turns red once the guard breaks,
@@ -439,7 +470,7 @@ class GameRenderer:
             return
         width, height = 400, 10
         rect = pygame.Rect(0, 0, width, height)
-        rect.midtop = (c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + 360 + 30 + 6)
+        rect.midtop = (c.Screen.ORIGIN_X, self._mana_bar_bottom() + 6)
 
         broken = player.guard_broken()
         fill = (200, 70, 60) if broken else ((150, 210, 255) if player.blocking else (90, 130, 175))

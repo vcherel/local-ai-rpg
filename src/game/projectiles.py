@@ -8,6 +8,7 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
+from core.floating_text import get_floating_text
 from game.entities.entities import Entity
 from game.entities.projectile import ARROW_COLOR, BOLT_COLOR, Projectile
 
@@ -41,6 +42,13 @@ class WorldProjectiles:
             proj.style == "boomerang" and proj.owner_id == id(player) for proj in self.projectiles
         ):
             return
+        # Magic is paid for out of the pool, ammo out of the quiver, and a staff that cannot
+        # pay simply does not fire: the shot is not queued, nothing is spent and the swing
+        # animation never starts, so an empty pool reads as a weapon that has run dry.
+        if arch.mana_cost and not player.spend_mana(arch.mana_cost):
+            get_floating_text().spawn(player.x, player.y - c.Player.SIZE, "No mana", c.Magic.EMPTY_COLOR)
+            player.attack_ready_ms = now + arch.cooldown_ms
+            return
         if arch.uses_ammo:
             # `Player.ready_ammo` is the quiver in the ammo slot, or the cheapest carried
             # once that one is empty, and it is what the HUD counts too, so the number on
@@ -58,9 +66,12 @@ class WorldProjectiles:
         player.start_attack_anim("left")
         play_sound("shoot")
 
-        base_damage = (
-            c.Player.ATTACK_DAMAGE + player.weapon_bonus(ranged=True) + player.stats.attack_bonus()
-        ) * player.damage_multiplier()
+        # A bolt is worth what the caster is worth: magic where a bow reads strength, so
+        # training one never quietly pays for the other.
+        stat_bonus = player.stats.magic_bonus() if arch.mana_cost else player.stats.attack_bonus()
+        base_damage = (c.Player.ATTACK_DAMAGE + player.weapon_bonus(ranged=True) + stat_bonus) * (
+            player.damage_multiplier()
+        )
         # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
         # Rampage forces every Nth shot to crit and amplifies it further.
         rampage = player.rampage_trigger(ranged=True)
@@ -91,6 +102,10 @@ class WorldProjectiles:
             proj.owner = player
             proj.pierce += c.Boomerang.PIERCE
         self.projectiles.append(proj)
+        # Magic is trained by casting, the way running trains speed: the mana it costs is
+        # what stops that being free.
+        if arch.mana_cost:
+            player.stats.train("magic", c.Stats.XP_PER_CAST)
 
     def fire_monster_shots(self, player: Player, damage_mult: float = 1.0):
         """Let every ranged monster in range loose an arrow at the player.

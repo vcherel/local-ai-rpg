@@ -21,7 +21,7 @@ class World:
     # distance fraction): the first walk out of town is meant to be quiet enough to learn
     # the game in, and the crowding is meant to arrive at the same depth the tougher kinds
     # do, not a thousand pixels out.
-    ROAMING_CAP_NEAR: int = 16
+    ROAMING_CAP_NEAR: int = 6
     ROAMING_CAP_FAR: int = 150
     ROAMING_CAP_FAR_DISTANCE: int = 6500
     ROAMING_CAP_CURVE: float = 2.0
@@ -30,19 +30,19 @@ class World:
     RESPAWN_INTERVAL_MS: int = 2200
     # New monsters spawn at least this far from the player so they never pop into view.
     # The screen's half-diagonal is ~1006px, so anything under that can appear on camera.
-    SPAWN_MIN_DISTANCE: int = 1100
+    SPAWN_MIN_DISTANCE: int = 1500
     # ...and at most this far, so they still show up as the player explores.
-    SPAWN_MAX_DISTANCE: int = 1500
+    SPAWN_MAX_DISTANCE: int = 2100
     # Monsters left this far behind despawn, freeing their slot to respawn near the player.
-    DESPAWN_DISTANCE: int = 3000
+    DESPAWN_DISTANCE: int = 3400
     # Monsters placed at world creation start at least this far from the player spawn point.
-    INITIAL_SPAWN_MIN_DISTANCE: int = 1400
+    INITIAL_SPAWN_MIN_DISTANCE: int = 2200
     # Nothing hostile is ever spawned within this radius of the world centre, which is where
     # the player starts and respawns. Comfortably past the starting village's own radius, so
     # standing in town produces no respawns at all rather than a ring at its boundary: the
     # player has to walk out to find the fight. Kept equal to INITIAL_SPAWN_MIN_DISTANCE so
     # world creation and respawning follow the one rule.
-    SAFE_RADIUS: int = 1400
+    SAFE_RADIUS: int = 2200
     # ...and none within this much of any other settlement's edge either, so a monster never
     # materialises pressed against the houses.
     VILLAGE_SPAWN_MARGIN: int = 400
@@ -443,6 +443,17 @@ class Traps:
     JAW_COLOR: tuple = (118, 116, 112)
     PLATE_COLOR: tuple = (86, 84, 80)
     SPRUNG_COLOR: tuple = (96, 92, 86)
+
+    # What being caught looks like (core/screen_fx.py `TrapSnap`). A bite of health and a
+    # few seconds of not moving is, on its own, a number and a body that has stopped
+    # responding, which reads as the game freezing rather than as a trap. So the jaws shut
+    # over the whole screen: in fast, held, then easing open again as the hold runs out.
+    SNAP_FX_MS: float = 900.0
+    SNAP_FX_BITE_FRAC: float = 0.18  # share of that spent slamming shut
+    SNAP_FX_REACH: float = 0.22  # how far into the screen each jaw bites, as a share of it
+    SNAP_FX_TEETH: int = 14
+    SNAP_FX_SHAKE: float = 20.0
+    SNAP_FX_HITSTOP_MS: float = 90.0
 
 
 @dataclass(frozen=True)

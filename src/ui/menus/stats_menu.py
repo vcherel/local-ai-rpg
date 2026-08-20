@@ -11,12 +11,12 @@ if TYPE_CHECKING:
     from game.entities.player import Player
 
 
-ROW_HEIGHT = 78
+ROW_HEIGHT = 72
 
 
 class StatsMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=620, height=686)
+        super().__init__(screen, width=620, height=712)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -43,6 +43,11 @@ class StatsMenu(BaseMenu):
             ("resistance", f"-{stats.damage_reduction()} damage taken"),
             ("speed", f"+{round((stats.speed_multiplier() - 1) * 100)}% move speed"),
             ("vitality", f"{stats.max_hp()} max HP"),
+            (
+                "magic",
+                f"+{stats.magic_bonus()} bolt damage, {stats.max_mana()} mana, "
+                f"{round(stats.mana_regen_rate() * 1000, 1)} mana/s",
+            ),
             (
                 "bartering",
                 f"buy {round((1 - stats.buy_multiplier()) * 100)}% cheaper, "
