@@ -267,6 +267,11 @@ WEAPON_ARCHETYPES: dict[str, WeaponArchetype] = {
     # shoved into (a river, a bear trap, a powder keg) and off (a pack that has surrounded
     # the player).
     "pole": WeaponArchetype("pole", 1.5, 0.0, 1.2, 0.45, 300, 62, 0.02, True, 1.3, 6.0, False, False, 140.0),
+    # What somebody who owns no weapon fights with. A hoe is not a slower axe: it is short,
+    # clumsy and barely hurts, which is the point of a farmer being dangerous in numbers
+    # rather than in the hands. Anything a villager picks up off their own wall resolves
+    # here, so making a village tougher is never a question of what its people are holding.
+    "tool": WeaponArchetype("tool", 0.85, 0.0, 0.8, 0.5, 560, 4, 0.03, False, 1.0, 2.0, False, False, 95.0),
     "staff": WeaponArchetype(
         "staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False, 90.0, projectile_style="bolt"
     ),
@@ -294,7 +299,21 @@ _KEYWORD_TO_ARCHETYPE = {
     "lance": "spear",
     "pitchfork": "spear",
     "halberd": "spear",
+    "pike": "spear",
     "hatchet": "axe",
+    # A farmhouse's contents. Listed above the weapon words so a "Fire Poker" is a poker
+    # rather than falling through to the sword every unknown name used to become.
+    "hoe": "tool",
+    "shovel": "tool",
+    "spade": "tool",
+    "rake": "tool",
+    "sickle": "tool",
+    "scythe": "tool",
+    "broom": "tool",
+    "rolling pin": "tool",
+    "poker": "tool",
+    "mallet": "tool",
+    "tongs": "tool",
     "cudgel": "pole",
     "pole": "pole",
     "boomerang": "boomerang",

@@ -16,19 +16,35 @@ class Entities:
     # Hit a villager and the settlement turns on you: they drop what they were doing and
     # come at you with whatever is to hand. Slower and weaker than a bandit one on one,
     # dangerous because a village holds a dozen of them.
-    NPC_HP: int = 45
+    NPC_HP: int = 70
     NPC_HOSTILE_SPEED: float = 3.4
     NPC_ATTACK_RANGE: int = 34
     NPC_DAMAGE: int = 9
     # What a villager actually has in their hands, rolled once off their home so the same
-    # house always sends the same person out with the same tool. It is a name, resolved
-    # through `weapon_archetype` like anything the player picks up, so a pitchfork reaches
-    # further and a kitchen knife is quick and feeble without a line of new numbers: the
-    # two above are the baseline the archetype's multipliers are applied to. Whoever takes
-    # up arms for the settlement owns a real weapon; everyone else fights with a tool.
-    VILLAGER_WEAPONS: tuple = ("Kitchen Knife", "Cudgel", "Pitchfork", "Hatchet", "Fire Poker")
-    MILITIA_WEAPONS: tuple = ("Spear", "Sword", "Axe", "Mace")
-    GUARD_WEAPONS: tuple = ("Halberd", "Longsword", "Guard's Spear")
+    # house always sends the same person out with the same thing. It is a name, resolved
+    # through `weapon_archetype` like anything the player picks up, so a halberd reaches
+    # further and a hoe is slow and feeble without a line of new numbers: the two above are
+    # the baseline the archetype's multipliers are applied to.
+    #
+    # A farmer owns no weapon. What they bring to a fight came off their own wall and
+    # resolves to the `tool` archetype: short, slow and barely worth the swing. A village
+    # is dangerous in numbers, in health and behind its wall, never in what its people are
+    # holding, which is why the militia and guard pools are ladders indexed by the
+    # settlement's own defence tier (`Village.tier`) rather than one list for the world.
+    VILLAGER_WEAPONS: tuple = ("Hoe", "Shovel", "Rake", "Sickle", "Rolling Pin", "Fire Poker", "Broom")
+    MILITIA_WEAPON_TIERS: tuple = (
+        ("Pitchfork", "Hatchet", "Cudgel", "Woodaxe"),
+        ("Spear", "Sword", "Axe", "Mace"),
+        ("Halberd", "Longsword", "War Axe", "Mace"),
+    )
+    GUARD_WEAPON_TIERS: tuple = (
+        ("Guard's Spear", "Sword", "Mace"),
+        ("Halberd", "Longsword", "Guard's Spear"),
+        ("Greatsword", "Warhammer", "War Axe", "Guard's Pike"),
+    )
+    # A posted archer's bow. Drawn like any other weapon and fired through the same
+    # `Projectile` a thrown stone already used.
+    ARCHER_WEAPONS: tuple = ("Hunting Bow", "Longbow")
     # The steel and the haft a villager's weapon is drawn in. Nobody in a village carries
     # anything enchanted, so it is one colour rather than an item's rarity tint.
     WEAPON_COLOR: tuple = (176, 178, 186)

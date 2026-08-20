@@ -87,7 +87,7 @@ def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) ->
 
     rng = random.Random(f"traps:{cx},{cy}")
     size = c.World.CHUNK_SIZE
-    footprints = [b.rect.inflate(c.Traps.CLEARANCE * 2, c.Traps.CLEARANCE * 2) for b in buildings]
+    footprints = [b.bounds.inflate(c.Traps.CLEARANCE * 2, c.Traps.CLEARANCE * 2) for b in buildings]
     solids = [(s.x, s.y, max(s.blocking_radius, s.water_reach)) for s in scenery if s.blocking_radius or s.water_reach]
 
     traps: list[BearTrap] = []

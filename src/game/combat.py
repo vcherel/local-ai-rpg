@@ -196,6 +196,11 @@ class WorldCombat:
                     )
                 return
 
+        gate_hit = self._gate_in_reach(pos, hit_radius)
+        if gate_hit is not None:
+            self._hit_gate(*gate_hit, prop_damage, blow)
+            return
+
         poi_hit = next(
             (
                 p
@@ -379,6 +384,118 @@ class WorldCombat:
         if math.hypot(chaser.x - door.centerx, chaser.y - door.centery) > c.Buildings.DOOR_BASH_REACH:
             return None
         return building
+
+    def _gate_in_reach(self, pos, reach: float):
+        """The barred gate a blow at `pos` lands on, as (village, index), or None."""
+        for village in self._village_solids_by_chunk.get(self._chunk_of(*pos), ()):
+            index = village.gate_at(pos[0], pos[1], reach)
+            if index is not None:
+                return village, index
+        return None
+
+    def _hit_gate(self, village, index: int, damage: int, angle: float = 0.0):
+        """Land a blow on a barred gate, and put it through once it has taken enough. The
+        one part of a wall that ever gives: a settlement that has shut you out (or in) can
+        be answered with a weapon rather than only with a walk round to the next side."""
+        gate = village.defences()["gates"][index]
+        rect = gate["rect"]
+        if not village.damage_gate(index, damage):
+            self._prop_chip(
+                rect.centerx, rect.centery, c.Villages.GATE_LEAF, "crate_break", village.gate_key(index), angle
+            )
+            return
+        get_shake().add(c.Combat.CRATE_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(
+            rect.centerx,
+            rect.centery,
+            c.Villages.GATE_LEAF,
+            count=26,
+            speed=7,
+            life=560,
+            size=5,
+            gravity=0.5,
+            shape="shard",
+        )
+        if self.notify:
+            self.notify("The gate gives way", c.Colors.WHITE)
+
+    def bash_gates(self, player: Player, damage_mult: float = 1.0):
+        """Let a monster shut out by a barred gate beat on it, exactly as it would a door.
+
+        A gate is barred because the settlement has turned on the player, which is also when
+        a pack is most likely to be standing at it: the wall is not breakable, the way round
+        is a long one, and the leaf across the gap is the one thing in the way that answers a
+        swing."""
+        now = pygame.time.get_ticks()
+        for monster in self.monsters:
+            if (
+                abs(monster.x - player.x) > c.World.DETECTION_RANGE
+                or abs(monster.y - player.y) > c.World.DETECTION_RANGE
+            ):
+                continue
+            if now < monster.next_bash_ms:
+                continue
+            hit = self._gate_in_reach((monster.x, monster.y), c.Buildings.DOOR_BASH_REACH)
+            if hit is None:
+                continue
+            village, index = hit
+            # Only if it is actually what stands between them: inside looking out, or the
+            # other way about, the same test a door gets.
+            if village.contains_point(monster.x, monster.y) == village.contains_point(player.x, player.y):
+                continue
+            monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
+            Entity.start_attack_anim(monster)
+            rect = village.defences()["gates"][index]["rect"]
+            angle = math.atan2(rect.centery - monster.y, rect.centerx - monster.x)
+            self._hit_gate(village, index, round(monster.kind.damage * damage_mult), angle)
+
+    def prick_spikes(self, player: Player, quest_system: QuestSystem):
+        """Whatever has just walked into the stakes outside a town's wall.
+
+        The same idea as a bear trap and resolved the same way: nobody aimed it, so it costs
+        the player nothing and pays them nothing (`by_player=False`). What it is for is the
+        approach: an attacker crossing a tier 1 wall's outworks arrives hurt and slowed,
+        which is what makes walking up to a far settlement feel different from walking up to
+        a near one. The villagers know where their own stakes are and are never caught."""
+        now = pygame.time.get_ticks()
+        villages = [
+            village
+            for village in self._village_solids_by_chunk.get(self._chunk_of(player.x, player.y), ())
+            if village.defended and village.tier >= c.Villages.SPIKE_TIER
+        ]
+        if not villages:
+            return
+        victims = [(player, c.Player.SIZE / 2)]
+        victims += [(m, m.kind.size / 2) for m in self.monsters]
+        victims += [(cr, cr.hit_radius) for cr in self.critters]
+        for victim, radius in victims:
+            if now < self._spike_ready.get(id(victim), 0):
+                continue
+            if not any(village.spike_hit(victim.x, victim.y, radius) for village in villages):
+                continue
+            self._spike_ready[id(victim)] = now + c.Villages.SPIKE_COOLDOWN_MS
+            self._spike_victim(victim, player, quest_system)
+
+    def _spike_victim(self, victim, player: Player, quest_system: QuestSystem):
+        """A stake going in: a bite of health, wherever it lands."""
+        damage = c.Villages.SPIKE_DAMAGE
+        play_sound("hit")
+        get_particles().spawn_burst(victim.x, victim.y, c.Decals.BLOOD_COLOR, count=8, speed=4, life=380, size=3)
+        if victim is player:
+            player.receive_damage(damage, source=None)
+            get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
+            return
+        if isinstance(victim, Critter):
+            if victim.dead:
+                return
+            self._pop_damage(victim.x, victim.y - victim.size / 2, damage, False)
+            if victim.receive_damage(damage):
+                self._kill_critter(victim, player, by_player=False)
+            else:
+                victim.startle()
+            return
+        self._resolve_monster_hit(victim, self.monsters, damage, player, quest_system, by_player=False)
 
     def bash_doors(self, player: Player, damage_mult: float = 1.0):
         """Let every monster held up at a shut door beat on it.

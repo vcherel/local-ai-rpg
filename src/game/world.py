@@ -20,7 +20,7 @@ from game.entities.items import AMMO_BUNDLE, Item
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
-from game.entities.projectile import STONE_COLOR, Projectile
+from game.entities.projectile import ARROW_COLOR, STONE_COLOR, Projectile
 from game.entities.scenery import Scenery
 from game.entities.traps import BearTrap
 from game.entities.village import Village, generate_starting_world
@@ -137,6 +137,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # and towers of a walled town.
         self._village_solids_by_chunk: dict = {}
         self.breakables: list[Breakable] = []
+        # When each body may next be pricked by a town's stakes (`WorldCombat.prick_spikes`),
+        # by id. Session-only, like a projectile: nothing about standing in a ditch of
+        # sharpened sticks is worth saving.
+        self._spike_ready: dict[int, int] = {}
         # Every village generated so far. Unlike POIs these are kept, not regenerated: a
         # settlement's NPCs carry affinity, quests and shop stock that a chunk seed can't
         # rebuild. `village_site` still decides where they go, so the map itself is endless.
@@ -238,7 +242,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         self._index_buildings()
         set_active_buildings(self.buildings)
         self.breakables = generate_breakables(self.buildings)
-        self._populate_npcs(self.buildings)
+        self._populate_npcs(self.buildings, village)
         self._post_guards(village)
         # A new world is stocked to the *near* cap, not the far one. Everything placed
         # here lands inside the settled ring, which is within despawn range of the
@@ -250,22 +254,44 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         ]
         self._spawn_landmark_boss()
 
-    def _populate_npcs(self, buildings: list[Building]):
+    def _populate_npcs(self, buildings: list[Building], village: Village | None = None):
         """Fill one village with people: a merchant standing at each shop, and a villager or
-        two living at every house and tavern. Called for the starting town and again for each
-        village the player finds, so a settlement is never an empty film set."""
+        more living at every house and tavern. Called for the starting town and again for each
+        village the player finds, so a settlement is never an empty film set.
+
+        How many of them there are and how much they can take both come off the settlement,
+        never off what they are holding: a farmer's hoe is a farmer's hoe wherever it is
+        swung, and a deep wilds town is dangerous because there are more of them, they are
+        harder to put down and there is a wall between you and them."""
         for shop in (b for b in buildings if b.kind == "shop"):
             npc = NPC(*shop.door_front())
             npc.is_merchant = True
             npc.color = c.Colors.MERCHANT
+            self._set_toughness(npc, village)
             self.npcs.append(npc)
 
+        size = village.size if village is not None else "village"
+        per_home = c.Villages.VILLAGERS_PER_HOME_BY_SIZE.get(size, c.Villages.VILLAGERS_PER_HOME)
         for home in (b for b in buildings if b.kind in ("house", "tavern")):
             door_x, door_y = home.door_front()
-            for _ in range(random.randint(*c.Villages.VILLAGERS_PER_HOME)):
+            for _ in range(random.randint(*per_home)):
                 npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
                 npc.home = (door_x, door_y)
+                self._set_toughness(npc, village)
                 self.npcs.append(npc)
+
+    @staticmethod
+    def _set_toughness(npc: NPC, village: Village | None):
+        """What one villager is worth in a fight: their settlement's tier, and whether they
+        are the one who takes up arms for it. The only place a villager's health is set."""
+        npc.defence_tier = village.tier if village is not None else 0
+        mult = c.Villages.HP_BY_TIER[npc.defence_tier]
+        if npc.is_guard:
+            mult *= c.Villages.GUARD_HP_MULT
+        elif npc.is_militia:
+            mult *= c.Villages.MILITIA_HP_MULT
+        npc.max_hp = round(c.Entities.NPC_HP * mult)
+        npc.hp = npc.max_hp
 
     def _post_guards(self, village: Village):
         """Stand somebody at every gate and every tower of a walled town.
@@ -274,18 +300,47 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         something elsewhere: they always take up arms (`NPC.is_militia`), they carry a real
         weapon rather than a tool, and they hold their post instead of strolling the street.
         That is enough for the militia orders, the mob and the surround slots to treat them
-        like anyone else."""
+        like anyone else. How many stand there and what they hold is the settlement's tier;
+        from tier 1 the towers hold archers, who shoot over the wall rather than coming down
+        off it (`_loose_arrows`)."""
         defences = village.defences()
-        posts = list(defences["gates"]) + list(defences["towers"])
-        for x, y in posts:
-            for _ in range(c.Villages.GUARDS_PER_GATE):
-                spot = self.free_spot_near(x, y, c.Entities.NPC_SIZE / 2)
-                guard = NPC(*spot)
-                guard.is_guard = True
-                guard.home = spot
-                guard.color = c.Villages.GUARD_COLOR
-                guard.wander.radius = c.Villages.GUARD_POST_RADIUS
-                self.npcs.append(guard)
+        tier = village.tier
+        per_post = c.Villages.GUARDS_PER_POST_BY_TIER[tier]
+        archers = c.Villages.ARCHERS_PER_TOWER_BY_TIER[tier]
+
+        def post(x, y, archer: bool):
+            spot = self.free_spot_near(x, y, c.Entities.NPC_SIZE / 2)
+            guard = NPC(*spot)
+            guard.is_guard = True
+            guard.is_archer = archer
+            guard.home = spot
+            guard.color = c.Villages.GUARD_COLOR
+            guard.wander.radius = c.Villages.GUARD_POST_RADIUS
+            self._set_toughness(guard, village)
+            self.npcs.append(guard)
+
+        for gate in defences["gates"]:
+            for _ in range(per_post):
+                post(*gate["pos"], archer=False)
+        for tower in defences["towers"]:
+            for index in range(max(per_post, archers)):
+                post(*tower, archer=index < archers)
+        # And, on the best defended walls, somebody standing on each stretch: four corners
+        # cover a small settlement and nothing like the length of a town's wall.
+        for wall in defences["walls"]:
+            for _ in range(c.Villages.ARCHERS_PER_WALL_BY_TIER[tier]):
+                if max(wall.width, wall.height) < c.Villages.GATE_WIDTH:
+                    continue  # a gatehouse block, not a stretch worth standing on
+                # Standing on the wall means standing just inside it: the middle of the
+                # stretch is solid, and a free spot searched for from there is as likely to
+                # be found outside the town as in it.
+                inward = math.hypot(village.x - wall.centerx, village.y - wall.centery) or 1.0
+                step = village.wall_thickness + c.Entities.NPC_SIZE
+                post(
+                    wall.centerx + (village.x - wall.centerx) / inward * step,
+                    wall.centery + (village.y - wall.centery) / inward * step,
+                    archer=True,
+                )
 
     def _random_coords_away_from_spawn(self) -> tuple[int, int]:
         center = c.World.WORLD_SIZE // 2
@@ -433,7 +488,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                     index.setdefault((cx, cy), []).append(value)
 
         for building in self.buildings:
-            bucket(self._buildings_by_chunk, building.rect, building)
+            bucket(self._buildings_by_chunk, building.bounds, building)
         for village in self.villages:
             # A walled town is solid all the way out to its palisade, so it is bucketed by
             # the whole ring rather than by the well in the middle of it.
@@ -484,9 +539,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         towers are folded into the stretches one at a time rather than merged wholesale,
         since unioning both sides of a corner would swallow the town and its gates with it."""
         rects = []
-        reach = c.Villages.TOWER_RADIUS
         for village in self._village_solids_by_chunk.get(self._chunk_of(x, y), ()):
             defences = village.defences()
+            reach = village.tower_radius
             towers = [
                 pygame.Rect(round(tx - reach), round(ty - reach), reach * 2, reach * 2) for tx, ty in defences["towers"]
             ]
@@ -498,14 +553,19 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             rects.extend(tower for tower in towers if not any(tower.colliderect(wall) for wall in defences["walls"]))
         return rects
 
-    def line_of_sight(self, x0, y0, x1, y1) -> bool:
+    def line_of_sight(self, x0, y0, x1, y1, over_walls: bool = False) -> bool:
         """Is there a clear line between two points, or is something solid in the way?
 
         Walks the segment in steps half a wall thick, asking the same `blocked` everything
         else does, so a house wall, a well or a tree trunk all break sight the way they
         break movement. Used by ranged monsters before they shoot: their arrow was already
         stopped by the wall, but they used to keep firing into it at a player they could
-        not possibly see."""
+        not possibly see.
+
+        `over_walls` is what an archer standing in a tower has that a goblin in a field does
+        not: a settlement's own palisade is beneath them, so it neither hides the target nor
+        stops the arrow (`blocked_over_walls`). Everything else still does both."""
+        test = self.blocked_over_walls if over_walls else self.blocked
         dx, dy = x1 - x0, y1 - y0
         distance = math.hypot(dx, dy)
         if distance == 0:
@@ -513,9 +573,19 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         step = c.Buildings.WALL_THICKNESS / 2
         for i in range(1, int(distance / step) + 1):
             t = i * step / distance
-            if self.blocked(x0 + dx * t, y0 + dy * t, 1):
+            if test(x0 + dx * t, y0 + dy * t, 1):
                 return False
         return True
+
+    def blocked_over_walls(self, x, y, radius) -> bool:
+        """`blocked` for something flying above a town's wall: houses, trees and boulders
+        still stop it, the palisade and its towers do not. The one thing that reads this is
+        an arrow loosed from a tower, and the archer's own sight test before it."""
+        if self.underground is not None:
+            return self.underground.blocks(x, y, radius)
+        if any(building.blocks(x, y, radius) for building in self.buildings_near(x, y)):
+            return True
+        return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
 
     def _chunk_window(self, x, y, radius) -> list[tuple[int, int]]:
         """Every chunk covering the box of `radius` around (x, y). The one place that walk
@@ -567,8 +637,17 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
 
     def terrain_speed(self, x, y) -> float:
         """What the ground under something costs it. Everything but the player swims badly
-        and never gets better at it, which is the whole reason a river is worth crossing."""
-        return c.Scenery.SWIM_SPEED if self.water_at(x, y) else 1.0
+        and never gets better at it, which is the whole reason a river is worth crossing.
+
+        A town's ditch is the same idea dug by hand: it costs an approach its speed under
+        the archers on the wall, and it never stops anyone, so a gate is still the fast way
+        in rather than the only one."""
+        if self.water_at(x, y):
+            return c.Scenery.SWIM_SPEED
+        for village in self._village_solids_by_chunk.get(self._chunk_of(x, y), ()):
+            if village.in_ditch(x, y):
+                return c.Villages.DITCH_SPEED
+        return 1.0
 
     def free_spot_near(self, x, y, radius, rings: int | None = None) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
@@ -825,7 +904,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         room's furniture when the chase is happening inside one.
         """
         if rects is None:
-            rects = [building.rect for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE)]
+            rects = [building.bounds for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE)]
             # A town wall is the one obstacle in the world too long to steer round a step at
             # a time: each stretch runs from a corner tower to a gatepost, so rounding its
             # end is exactly walking to the nearest gate.
@@ -1224,6 +1303,8 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         defenders = [npc for npc in self.npcs if id(npc) in fight]
         self.assign_surround_slots(crowd, player)
         self._throw_stones(player, mob)
+        self._bar_gates()
+        self._loose_arrows(fight, mob, player)
 
         for npc in self.npcs:
             # Anything standing inside a solid is put back on open ground before it tries to
@@ -1234,6 +1315,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             # The orders were worked out once for the whole street, so the neighbour who
             # went first may already have finished this one off.
             if enemy is not None and enemy.hp <= 0:
+                enemy = None
+            # An archer never walks to what they are shooting at: they were given a target
+            # by the same orders (`_loose_arrows` read it a moment ago) and they stay in
+            # their tower, which is the whole point of being posted in one.
+            if npc.is_archer:
                 enemy = None
             if enemy is not None:
                 waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
@@ -1320,8 +1406,69 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                     flee[id(npc)] = shelter
                     continue
             reach = c.Entities.NPC_ATTACK_RANGE + c.Player.SIZE / 2 - c.Entities.CHASE_RING_MARGIN
-            orders[id(npc)] = reach if npc.is_militia else c.Villages.MOB_STANDOFF
+            if npc.is_archer:
+                # An archer holds the wall and shoots off it (`_loose_arrows`); walking out
+                # to swing a bow at the player is exactly what they are posted not to do.
+                orders[id(npc)] = c.Villages.ARCHER_RANGE * 0.7
+            else:
+                orders[id(npc)] = reach if npc.is_militia else c.Villages.MOB_STANDOFF
         return orders
+
+    def _bar_gates(self):
+        """Shut the gates of any settlement that has turned on the player, open them again
+        once it has calmed down.
+
+        A gate is the one part of a wall that is ever a wall to the player: while it is
+        barred, getting out of a town you have set against you means hacking your way
+        through it, and a pack that followed you in is shut in with you. A gate already
+        beaten down never shuts again."""
+        for village in self.villages:
+            if not village.defended:
+                continue
+            village.barred = any(npc.hostile and village.contains_point(npc.x, npc.y) for npc in self.npcs)
+
+    def _loose_arrows(self, fight: dict, mob: dict, player: Player):
+        """The archers posted in the towers, shooting over their own wall.
+
+        They never come down: an archer holds their post and answers whatever the settlement
+        is fighting, the monster in the street first and the player second. Their arrow is an
+        ordinary `Projectile`, so it hits whatever is standing in the way, and it credits
+        nobody (`by_player=False`): a town's kill is the town's."""
+        now = pygame.time.get_ticks()
+        for npc in self.npcs:
+            if not npc.is_archer or now < npc.next_arrow_ms:
+                continue
+            target = fight.get(id(npc))
+            if target is not None and target.hp <= 0:
+                target = None
+            if target is None and id(npc) in mob:
+                target = player
+            if target is None:
+                continue
+            dx, dy = target.x - npc.x, target.y - npc.y
+            if math.hypot(dx, dy) > c.Villages.ARCHER_RANGE:
+                continue
+            if not self.line_of_sight(npc.x, npc.y, target.x, target.y, over_walls=True):
+                continue
+            npc.next_arrow_ms = now + random.randint(*c.Villages.ARCHER_COOLDOWN_MS)
+            npc.start_attack_anim()
+            play_sound("shoot")
+            self.projectiles.append(
+                Projectile(
+                    npc.x,
+                    npc.y,
+                    math.atan2(dx, -dy),
+                    c.Villages.ARCHER_DAMAGE,
+                    color=ARROW_COLOR,
+                    shake=c.Combat.PLAYER_HURT_SHAKE / 2,
+                    hostile=target is player,
+                    owner_id=id(npc),
+                    source_name=npc.name or "a town archer",
+                    max_range=c.Villages.ARCHER_RANGE,
+                    by_player=False,
+                    over_walls=True,
+                )
+            )
 
     def _throw_stones(self, player: Player, mob: dict):
         """The back of the mob doing what a crowd with no swords does: throwing things.
@@ -1385,6 +1532,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # Checked once everything has taken its step, so a trap shuts on where things
         # actually ended up this frame rather than on where they set off from.
         self.snap_traps(player, quest_system)
+        self.prick_spikes(player, quest_system)
 
         # Restocking is the surface's alone: a tunnel holds what was put in it when the
         # player climbed down, and nothing wanders in after them.
@@ -1441,6 +1589,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 self.detonate_creeper(monster, player, quest_system)
         self.fire_monster_shots(player, damage_mult)
         self.bash_doors(player, damage_mult)
+        self.bash_gates(player, damage_mult)
 
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         # Camp guards are the exception: they hold a place rather than roam, and their camp

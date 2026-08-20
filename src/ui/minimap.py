@@ -97,9 +97,12 @@ class Minimap:
         for building in world.buildings_in_range(player.x, player.y, c.Minimap.RANGE / 2):
             if not world.is_explored(building.x, building.y):
                 continue
-            left, top = to_map(building.rect.left, building.rect.top)
+            left, top = to_map(building.bounds.left, building.bounds.top)
             rect = pygame.Rect(
-                round(left), round(top), max(2, round(building.w * scale)), max(2, round(building.h * scale))
+                round(left),
+                round(top),
+                max(2, round(building.bounds.width * scale)),
+                max(2, round(building.bounds.height * scale)),
             )
             color = c.Buildings.ROOF_COLORS.get(building.kind, c.Buildings.STONE_COLOR)
             pygame.draw.rect(self.screen, color, rect)

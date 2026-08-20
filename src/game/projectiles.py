@@ -139,7 +139,7 @@ class WorldProjectiles:
 
     def update_projectiles(self, player: Player, quest_system: QuestSystem, dt):
         for proj in list(self.projectiles):
-            proj.update(dt, self.blocked)
+            proj.update(dt, self.blocked_over_walls if proj.over_walls else self.blocked)
             if proj.dead:
                 self.projectiles.remove(proj)
                 continue
@@ -158,7 +158,7 @@ class WorldProjectiles:
                     self.projectiles.remove(proj)
                     continue
 
-            by_player = not proj.hostile
+            by_player = proj.by_player and not proj.hostile
             if self._projectile_hits_monster(proj, self.monsters, player, quest_system, by_player):
                 continue
             if self._projectile_hits_monster(proj, self.bosses, player, quest_system, by_player):

@@ -88,7 +88,7 @@ class WorldStreaming:
         self._register_buildings(buildings)
         self._clear_scenery_for(village, buildings)
         self.breakables.extend(generate_breakables(buildings))
-        self._populate_npcs(buildings)
+        self._populate_npcs(buildings, village)
         self._post_guards(village)
         # The new merchants need stock, and the settlement needs a name.
         self.start_shop_generation()
@@ -101,7 +101,7 @@ class WorldStreaming:
         reaches into the chunks around it and those may have been generated first, so the
         trees that would end up in the middle of the street are taken out here instead."""
         keep_out = village.grounds_radius + c.Scenery.CLEARANCE_VILLAGE
-        footprints = [b.rect.inflate(c.Scenery.CLEARANCE_BUILDING, c.Scenery.CLEARANCE_BUILDING) for b in buildings]
+        footprints = [b.bounds.inflate(c.Scenery.CLEARANCE_BUILDING, c.Scenery.CLEARANCE_BUILDING) for b in buildings]
         kept = []
         for item in self.scenery:
             if item.blocking_radius and village.distance_to_point((item.x, item.y)) < keep_out:

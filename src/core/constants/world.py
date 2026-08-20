@@ -234,6 +234,18 @@ class Buildings:
         "tavern": ((400, 520), (320, 430)),
         "landmark": ((280, 330), (240, 290)),
     }
+    # Some buildings are an L rather than a box: a second rect growing out of the back half
+    # of one side, so the facade stays one straight wall and the door, the windows and the
+    # awning know nothing about it. Rolled from the building's own id like its roof, and the
+    # room inside follows the shape (`Building.footprint`, `interior_rects`).
+    WING_KINDS: tuple = ("house", "shop", "tavern")
+    WING_CHANCE: float = 0.4
+    WING_DEPTH: tuple = (110, 180)
+    WING_LENGTH_FRAC: tuple = (0.45, 0.8)
+    # The neck between the two halves is kept this clear of furniture, the same rule the
+    # corridor in from the door follows: a table dropped in it walls the wing off.
+    WING_NECK_CLEAR: int = 80
+
     ROOF_COLORS = {
         "house": (152, 76, 56),
         "shop": (88, 110, 152),
@@ -638,7 +650,11 @@ class Villages:
     START_COMPOSITION = {"tavern": (2, 2), "shop": (3, 3), "house": (8, 8)}
     START_DISTANCE_FROM_CENTER: int = 900
 
+    # How many people live in one home. A bigger settlement is a busier one: numbers are
+    # the first of the three things a village is made strong with (the others being health
+    # and its wall), never what its people are carrying.
     VILLAGERS_PER_HOME: tuple = (1, 2)
+    VILLAGERS_PER_HOME_BY_SIZE = {"hamlet": (1, 2), "village": (1, 3), "town": (2, 3)}
 
     # The plaza: an open patch of packed earth with a well in the middle.
     PLAZA_RADIUS: int = 150
@@ -683,26 +699,89 @@ class Villages:
     ROUT_HP_FRAC: float = 0.35
 
     # A town is worth defending, and a hamlet has nothing to defend with: only the largest
-    # settlements (and the starting town) stand a palisade. The wall is a square ring set
-    # this far outside the last row of houses, with a gate cut in the middle of each side,
-    # so there is always a way in from whichever direction the player or a pack arrives,
-    # and the wall itself is something to be routed round rather than a box with one door.
-    # A watchtower stands at each corner: solid, and the one piece of a village that reads
-    # from a long way off.
-    WALLED_SIZES: tuple = ("town",)
+    # settlements (and the starting town) stand a wall. The ring follows the settlement's
+    # own footprint rather than being a square around its diagonal, with a gate cut in the
+    # middle of each side, so there is always a way in from whichever direction the player
+    # or a pack arrives, and the wall itself is something to be routed round rather than a
+    # box with one door. A tower stands at each corner: solid, and the one piece of a
+    # village that reads from a long way off.
+    WALLED_SIZES: tuple = ("town", "village")
     WALL_MARGIN: int = 150
     WALL_THICKNESS: int = 26
-    GATE_WIDTH: int = 190
+    # Big enough to read as a way in from across a field, and wide enough that a chased
+    # player and whatever is behind them both fit through it.
+    GATE_WIDTH: int = 260
+    # The block of wall thickened either side of a gateway. Solid like the rest, so
+    # navigation routes round it for free.
+    GATEHOUSE: int = 54
     TOWER_RADIUS: int = 46
     WALL_COLOR: tuple = (118, 92, 62)
     WALL_TOP: tuple = (146, 116, 78)
+    WALL_STONE: tuple = (128, 124, 116)
+    WALL_STONE_TOP: tuple = (162, 158, 148)
     TOWER_STONE: tuple = (136, 132, 124)
     GATE_POST: tuple = (92, 70, 46)
+    GATE_LEAF: tuple = (104, 76, 48)
     # Somebody stands at each gate and each tower, always armed and always willing. They
     # hold their post rather than strolling the way a villager does.
     GUARDS_PER_GATE: int = 1
     GUARD_POST_RADIUS: int = 70
     GUARD_COLOR: tuple = (92, 104, 126)
+
+    # How well defended one settlement is: a number from 0 to MAX_TIER, rolled once from
+    # how far out it stands and how big it is, then persisted with the village like its
+    # wall. It is the one lever behind every difference between a border hamlet and a deep
+    # wilds town: the wall's material, how many stand on it, whether any of them carry a
+    # bow, whether there are stakes and a ditch outside it, which weapon ladder its people
+    # draw from and how much health they have. Walking further out should be visible
+    # before anything is fought.
+    TIER_DISTANCES: tuple = (6500, 14000)
+    TIER_SIZE_BONUS = {"hamlet": -1, "village": 0, "town": 1}
+    MAX_TIER: int = 2
+    WALL_STYLE_BY_TIER: tuple = ("palisade", "palisade", "stone")
+    WALL_THICKNESS_BY_TIER: tuple = (26, 32, 40)
+    TOWER_RADIUS_BY_TIER: tuple = (44, 52, 62)
+    GUARDS_PER_POST_BY_TIER: tuple = (1, 1, 2)
+    # Archers are posted in the towers, where they can see over the wall. A tier 0 wall is
+    # watched by spearmen alone.
+    ARCHERS_PER_TOWER_BY_TIER: tuple = (0, 1, 2)
+    # A wall long enough to matter is not covered from its corners alone, so the best
+    # defended settlements also stand somebody on each stretch between a gate and a tower.
+    ARCHERS_PER_WALL_BY_TIER: tuple = (0, 1, 1)
+    ARCHER_RANGE: float = 720.0
+    ARCHER_DAMAGE: int = 12
+    ARCHER_COOLDOWN_MS: tuple = (1500, 2600)
+
+    # The gates stand open while a settlement has nothing to fear. Turn the place against
+    # you and they are barred, which is when a gate is a wall with a hit-point pool: the
+    # one part of a wall that can be broken, by the player hacking their way out or by a
+    # pack beating its way in. Nothing else about a palisade ever gives.
+    GATE_HP: int = 240
+
+    # Stakes outside the wall from tier 1, a ditch from tier 2. Both follow the wall
+    # stretches only, so a gateway is never obstructed by either. Stakes prick whatever
+    # walks into them on their own cooldown; the ditch costs speed rather than health,
+    # like water, so it slows an approach instead of stopping one.
+    SPIKE_TIER: int = 1
+    SPIKE_OFFSET: int = 40
+    SPIKE_SPACING: int = 34
+    SPIKE_LENGTH: int = 22
+    SPIKE_RADIUS: int = 16
+    SPIKE_DAMAGE: int = 7
+    SPIKE_COOLDOWN_MS: int = 900
+    SPIKE_COLOR: tuple = (126, 100, 66)
+    DITCH_TIER: int = 2
+    DITCH_OFFSET: int = 92
+    DITCH_WIDTH: int = 76
+    DITCH_SPEED: float = 0.55
+    DITCH_COLOR: tuple = (86, 72, 52)
+
+    # What a villager is worth in a fight, by their settlement's tier and by what they do
+    # in it. A farmer with a hoe is not meant to win; a street of them, a militia that
+    # takes real hits and a guard on the gate together are.
+    HP_BY_TIER: tuple = (1.0, 1.25, 1.55)
+    MILITIA_HP_MULT: float = 1.4
+    GUARD_HP_MULT: float = 1.9
 
     # A merchant's shelf refills on a clock rather than staying whatever the model wrote at
     # world generation. What is already out stays out and the delivery tops the stock back
@@ -746,6 +825,10 @@ class PointsOfInterest:
     PER_CHUNK_CHANCE: float = 0.7
     CHUNK_MARGIN: int = 260
     MIN_DIST_FROM_BUILDING: int = 400
+    # How much open ground a landmark keeps beyond a settlement's own grounds, which are
+    # asked for directly (`village.site_grounds_radius`) rather than approximated by the
+    # distance to its centre.
+    VILLAGE_MARGIN: int = 260
     MIN_DIST_FROM_CENTER: int = 900
     # Nobody pitches a camp or raises a shrine in a river.
     MIN_DIST_FROM_WATER: int = 120
