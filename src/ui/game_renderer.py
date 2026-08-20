@@ -282,15 +282,16 @@ class GameRenderer:
 
         Only up while the player is stood over something that isn't theirs: the cone is the
         question "is anyone looking right now", and a street permanently full of wedges would
-        be wallpaper. Red is the one that has the player in it. The shape comes straight from
-        `World.vision_polygon`, walls and all, so a wedge stops at the house it is looking at
-        exactly where the check stops, and cover on screen is cover in the rule."""
+        be wallpaper. Red is the one that has the player in it. The wedge is drawn whole,
+        which is exactly what `World.can_see` tests: walls do not bite pieces out of the
+        shape, they decide whether the villager was ever looking into this room at all, so a
+        cone that reaches the player and stays pale is a villager the walls have answered."""
         radius = world.witness_radius()
         watchers = world.watchers_near(player.x, player.y)
         if not watchers:
             return
 
-        ignore = world.sight_blocker(player.x, player.y)
+        room = world.theft_room(player.x, player.y)
         if self._cone_overlay is None:
             # One surface for the life of the renderer: a fresh screen-sized alpha surface
             # per frame is an allocation the size of the window, every frame, for a wedge.
@@ -302,8 +303,8 @@ class GameRenderer:
             # drawn to be read, and the check that matters has already been made elsewhere.
             if not self._on_screen(camera, npc.x, npc.y, margin=radius):
                 continue
-            points = [camera.world_to_screen(x, y) for x, y in world.vision_polygon(npc, radius, ignore)]
-            seen = world.can_see(npc, player.x, player.y, radius, ignore)
+            points = [camera.world_to_screen(x, y) for x, y in world.vision_polygon(npc, radius)]
+            seen = world.can_see(npc, player.x, player.y, radius, room)
             # Kept faint: several of these overlap on a busy street, and they are drawn on
             # the ground the player is trying to read, not over it.
             pygame.draw.polygon(overlay, (200, 70, 60, 38) if seen else (230, 225, 200, 16), points)

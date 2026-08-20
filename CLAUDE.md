@@ -44,7 +44,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/entities/monster_art.py`: the vector art per silhouette (`humanoid`, `goblin`, `hulk`, `skeleton`, `wraith`, `blob`, `beast`, `robed`, `creeper`) behind `draw_monster`; shadow, breath and eyes are shared by all of them
 - `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam, bolt volley, summons), knockback immune
 - `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza, `defences()` (wall, gates, towers, outworks), `tier`, `grounds_radius`
-- `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L), facade offsets, interior layout and furniture, front door, windows, roof style; `set_active_buildings`
+- `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L), facade offsets, interior layout and furniture, front door, windows, roof style; the footprint, floors and wall shell are worked out once and kept (`reset_geometry` drops them); `set_active_buildings`
 - `src/game/entities/scenery.py`: the wilderness: per-chunk biome clumps, trees/boulders/ponds/grass, roads and footpaths, rivers and bridges, plus the collision and water indexes
 - `src/game/entities/traps.py`: `BearTrap`, `traps_for_chunk`, the hunters' traps laid in a band around settlements; persisted only as which ones have shut
 - `src/game/entities/tunnel.py`: `Tunnel`, `has_tunnel`, the rooms dug far out in world space, reached by a village well or a wilderness cave; floor-based collision, the exit shaft, and the player's own light
