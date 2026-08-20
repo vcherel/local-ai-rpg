@@ -12,7 +12,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.particles import get_particles
-from core.screen_fx import get_hitstop, get_vignette
+from core.screen_fx import get_flash, get_hitstop, get_trap_fx, get_vignette
 from core.swing_arcs import get_swings
 from game.entities.items import rarity_color, roll_rarity
 from game.entities.player import Player
@@ -833,7 +833,7 @@ class Game:
         self.update_camera()
         for system in (get_shake(), get_particles(), get_swings(), get_impacts()):
             system.update(dt)
-        for system in (get_floating_text(), get_decals(), get_vignette()):
+        for system in (get_floating_text(), get_decals(), get_vignette(), get_flash(), get_trap_fx()):
             system.update(dt)
 
     def _draw_frame(self):
@@ -852,6 +852,10 @@ class Game:
         if self.world.underground is None:
             self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
         get_vignette().draw(self.screen)
+        # Over the sky and the vignette, under the HUD: a blast's wash and a trap's jaws are
+        # things happening to the world, not readouts.
+        get_flash().draw(self.screen)
+        get_trap_fx().draw(self.screen)
 
         if not self.active_menu:
             self.game_renderer.draw_ui(

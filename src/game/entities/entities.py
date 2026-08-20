@@ -59,6 +59,11 @@ class Entity:
         # The walk cycle. Read once per frame by whatever draws this thing, from its own
         # movement, so nothing has to remember to keep it turning.
         self.gait = Gait(x, y)
+        # The shove it is still travelling under, in pixels per 60fps frame. A blow hands
+        # over an impulse rather than a new position (`apply_impulse`), and it is spent one
+        # frame at a time by `advance_impulse` like any other movement, walls included.
+        self.kb_vx = 0.0
+        self.kb_vy = 0.0
         # The id of the door this one has committed to walking through (World._door_goal),
         # dropped once it is on the same side of the wall as whatever it is chasing. Without
         # it the goal flips between the doorstep and the threshold as the body crosses, and
@@ -86,6 +91,13 @@ class Entity:
     @property
     def chill_mult(self) -> float:
         return self.chill_factor if self.chilled else 1.0
+
+    @property
+    def staggered(self) -> bool:
+        """Still travelling under a shove hard enough that it is not walking anywhere of its
+        own accord this frame. It still turns, still swings, still bleeds: what it has lost
+        is its footing, which is the follow-through the impulse is worth."""
+        return math.hypot(self.kb_vx, self.kb_vy) > c.Combat.KNOCKBACK_STAGGER_SPEED
 
     def receive_damage(self, damage):
         """Returns True if the entity died"""
@@ -160,6 +172,60 @@ class Entity:
         bar_x = x - bar_width // 2
         bar_y = y + size // 2 + health_bar_offset
         self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, bar_color or color, bar_border_width)
+
+
+# How far a shove is allowed to carry a body between two collision tests.
+KNOCKBACK_STEP = 8.0
+
+
+def apply_impulse(body, kb_dir, distance: float):
+    """Hand a body the velocity a shove is worth instead of moving it there.
+
+    A blow used to teleport its target the whole way at once, which is why the pole, the
+    weapon whose entire job is moving people, had nothing to show for it. The impulse is
+    sized so the body coasts exactly `distance` as it decays (a geometric series summing to
+    v0 / (1 - decay)), and it is spent frame by frame through `advance_impulse` with the
+    same collision every step takes, so a shove into a wall stops at the wall.
+
+    Impulses add rather than replace: two blows landing at once throw somebody twice as far.
+    """
+    if not kb_dir or distance <= 0:
+        return
+    speed = distance * (1.0 - c.Combat.KNOCKBACK_DECAY)
+    body.kb_vx += kb_dir[0] * speed
+    body.kb_vy += kb_dir[1] * speed
+
+
+def advance_impulse(body, dt, radius: float, blocked=None) -> bool:
+    """Spend one frame of whatever shove a body is under. True while it is still moving.
+
+    Walked out in hops no longer than KNOCKBACK_STEP for the reason a projectile is: testing
+    only where the shove ends puts the body on the far side of a thin wall, and a pole shoves
+    things far enough for that to be most of a room."""
+    speed = math.hypot(body.kb_vx, body.kb_vy)
+    if speed <= c.Combat.KNOCKBACK_REST_SPEED:
+        body.kb_vx = body.kb_vy = 0.0
+        return False
+    frames = dt * c.TARGET_FPS / 1000.0
+    step_x, step_y = body.kb_vx * frames, body.kb_vy * frames
+    hops = max(1, math.ceil(math.hypot(step_x, step_y) / KNOCKBACK_STEP))
+    hop_x, hop_y = step_x / hops, step_y / hops
+    for _ in range(hops):
+        moved = False
+        if blocked is None or not blocked(body.x + hop_x, body.y, radius):
+            body.x += hop_x
+            moved = True
+        if blocked is None or not blocked(body.x, body.y + hop_y, radius):
+            body.y += hop_y
+            moved = True
+        if not moved:
+            # Into a wall: the shove is spent there rather than grinding along it.
+            body.kb_vx = body.kb_vy = 0.0
+            return False
+    decay = c.Combat.KNOCKBACK_DECAY**frames
+    body.kb_vx *= decay
+    body.kb_vy *= decay
+    return True
 
 
 def push_apart(body, crowd, radius: float, radius_of, blocked=None):

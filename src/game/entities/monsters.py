@@ -110,6 +110,13 @@ class Monster(Entity):
         return monster
 
     @property
+    def pace(self) -> float:
+        """How fast this one actually walks: its kind's speed under the one world-wide
+        `Entities.MONSTER_SPEED_SCALE`, which is where the whole bestiary is slowed or
+        quickened at once. Nothing reads `kind.speed` for movement directly."""
+        return self.kind.speed * c.Entities.MONSTER_SPEED_SCALE
+
+    @property
     def melee_reach(self) -> int:
         """How close this one has to be to land a swing. A ranged kind's `attack_range` is
         how far it can shoot rather than how far it can reach, so it gets a knife's reach:
@@ -280,7 +287,7 @@ class Monster(Entity):
         if now < self.charge_windup_until_ms:
             return True
         if now < self.charge_until_ms:
-            speed = self.kind.speed * c.Charge.SPEED_MULT * move_factor
+            speed = self.pace * c.Charge.SPEED_MULT * move_factor
             step_x = math.cos(self.charge_angle) * speed
             step_y = math.sin(self.charge_angle) * speed
             if blocked is not None and blocked(self.x + step_x, self.y + step_y, radius):
@@ -340,9 +347,10 @@ class Monster(Entity):
         # Chilled by a frost bolt: it still turns, still swings and still shoots, it just
         # covers less ground doing it, exactly like the water and unlike a trap.
         move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult * self.chill_mult
-        # Caught in a bear trap: every step below is scaled by this, so it turns, swings and
-        # shoots from where it stands and simply cannot cross the ground to the player.
-        if self.rooted:
+        # Caught in a bear trap, or still travelling under a shove: every step below is
+        # scaled by this, so it turns, swings and shoots from where it stands and simply
+        # cannot cross the ground to the player under its own power.
+        if self.rooted or self.staggered:
             move_factor = 0.0
         radius = self.kind.size / 2
 
@@ -378,7 +386,7 @@ class Monster(Entity):
         if charging:
             self.orientation = self.charge_angle
         elif aware and not arrived:
-            speed = self.kind.speed * move_factor
+            speed = self.pace * move_factor
             if retreating:
                 speed *= c.Entities.RETREAT_SPEED_MULT
             move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)

@@ -12,8 +12,18 @@ class Player:
     REGEN_DELAY_MS: int = 12000
     SIZE: int = 30
 
-    SPEED: int = 5
-    RUN_SPEED: int = 7
+    # Walking and running pace, in pixels per frame at TARGET_FPS. Deliberately unhurried:
+    # the world is read at this speed, a monster is outrun by a small margin rather than
+    # left standing, and a shove or a root costs real ground because ground is expensive.
+    SPEED: float = 4.0
+    RUN_SPEED: float = 5.6
+
+    # Where the player's own health bar hangs under the body, and how tall it is. Read by
+    # `Player.draw` and by everything the HUD stacks around it (the potion quickbar above,
+    # the mana and guard bars below), so the stack moves as one rather than off three
+    # copies of the same number.
+    HEALTH_BAR_OFFSET: int = 330
+    HEALTH_BAR_HEIGHT: int = 30
 
     INTERACTION_DISTANCE: int = 30
     # Loot is not picked up by a key at all: anything lying within MAGNET_RADIUS flies to
@@ -31,6 +41,27 @@ class Player:
     # Weapons on the number-key bar. Deliberately short: the point is switching between a
     # couple of answers mid-fight, not carrying an armoury on the HUD.
     WEAPON_SLOTS: int = 3
+
+
+@dataclass(frozen=True)
+class Magic:
+    """The mana a staff spends (game/projectiles.py `_fire_ranged`).
+
+    A staff used to be the only weapon in the game with no cost at all: no ammo to buy, no
+    swing to close the distance for, so carrying one made every other family a worse choice.
+    Mana is that cost. It is a pool rather than a stock: it comes back on its own, so magic
+    is paced instead of rationed, and what decides how deep and how fast is the magic stat.
+    """
+
+    # Pool at magic level 1, and what one bolt costs out of it.
+    POOL: int = 60
+    BOLT_COST: int = 14
+    # Mana per millisecond, held off for REGEN_DELAY_MS after the last cast so emptying the
+    # pool is felt: a staff carries a fight, it does not carry it alone.
+    REGEN_RATE: float = 0.012
+    REGEN_DELAY_MS: int = 900
+    BAR_COLOR: tuple = (120, 150, 255)
+    EMPTY_COLOR: tuple = (150, 120, 220)
 
 
 @dataclass(frozen=True)
@@ -73,7 +104,16 @@ class Stats:
     # Character progression is use-based: every stat starts at level 1 and gains XP
     # from a matching action. Effects are pure functions of the level, so growing a
     # stat never touches the save format.
-    NAMES: tuple = ("strength", "resistance", "speed", "vitality", "bartering", "persuasion", "swimming")
+    NAMES: tuple = (
+        "strength",
+        "resistance",
+        "speed",
+        "vitality",
+        "magic",
+        "bartering",
+        "persuasion",
+        "swimming",
+    )
 
     # XP needed for level 1 -> 2, scaled by XP_GROWTH for each further level.
     BASE_XP: float = 35.0
@@ -81,7 +121,7 @@ class Stats:
 
     # Combat stats level from very frequent actions (per hit, per frame moved) compared
     # to persuasion/bartering, so they get an extra multiplier on top of the shared curve.
-    COMBAT_STAT_NAMES: tuple = ("strength", "resistance", "speed", "vitality")
+    COMBAT_STAT_NAMES: tuple = ("strength", "resistance", "speed", "vitality", "magic")
     COMBAT_XP_GROWTH_MULTIPLIER: float = 3.0
 
     # Effect increment per level above 1.
@@ -90,6 +130,13 @@ class Stats:
     SPEED_PER_LEVEL: float = 0.04  # +4% move speed
     VITALITY_HP_PER_LEVEL: int = 15  # extra max HP
     VITALITY_REGEN_PER_LEVEL: float = 0.0001
+    # Magic is strength's opposite number and nothing about it overlaps: a bolt's damage
+    # comes off this ladder instead of strength's, and the same level also buys the pool it
+    # is spent from and how fast that pool comes back. So a caster is built by casting, and
+    # a swordsman picking up a staff is holding a beginner's weapon.
+    MAGIC_DAMAGE_PER_LEVEL: int = 3  # flat damage on anything a staff puts in the air
+    MAGIC_POOL_PER_LEVEL: int = 8  # extra mana
+    MAGIC_REGEN_PER_LEVEL: float = 0.0015  # extra mana per millisecond
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
     # How much of the water penalty each level of swimming buys back, from Scenery.SWIM_SPEED
     # toward SWIM_SPEED_MAX. The only stat with no effect on land: it turns a river from a
@@ -129,6 +176,7 @@ class Stats:
     XP_PER_KILL: float = 8.0
     XP_PER_RUN_FRAME: float = 0.015
     XP_PER_SWIM_FRAME: float = 0.06  # swimming, per frame moved in water
+    XP_PER_CAST: float = 5.0  # magic, per bolt actually paid for
     XP_PER_TALK: float = 6.0  # persuasion
     XP_PER_TALK_BARTERING: float = 1.5  # small bartering trickle from talking
     XP_PER_TRADE: float = 8.0  # bartering, per shop buy/sell
@@ -140,6 +188,7 @@ STAT_LABELS: dict[str, str] = {
     "resistance": "Resistance",
     "speed": "Speed",
     "vitality": "Vitality",
+    "magic": "Magic",
     "bartering": "Bartering",
     "persuasion": "Persuasion",
     "swimming": "Swimming",

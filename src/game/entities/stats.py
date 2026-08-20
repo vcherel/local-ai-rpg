@@ -53,6 +53,19 @@ class Stats:
     def speed_multiplier(self) -> float:
         return 1.0 + (self.level["speed"] - 1) * c.Stats.SPEED_PER_LEVEL
 
+    def magic_bonus(self) -> int:
+        """Flat damage on anything a staff puts in the air. Strength's opposite number: a
+        bolt reads this ladder and never strength's, which is why a caster and a swordsman
+        are two characters rather than one character holding two things."""
+        return (self.level["magic"] - 1) * c.Stats.MAGIC_DAMAGE_PER_LEVEL
+
+    def max_mana(self) -> int:
+        return c.Magic.POOL + (self.level["magic"] - 1) * c.Stats.MAGIC_POOL_PER_LEVEL
+
+    def mana_regen_rate(self) -> float:
+        """Mana per millisecond once the pool has been left alone long enough."""
+        return c.Magic.REGEN_RATE + (self.level["magic"] - 1) * c.Stats.MAGIC_REGEN_PER_LEVEL
+
     def swim_multiplier(self) -> float:
         """How fast the player crosses water, from the standing penalty everything else in
         the world is stuck with up to a ceiling that still never matches walking."""

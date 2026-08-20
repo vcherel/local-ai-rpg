@@ -125,6 +125,14 @@ class Player(Entity):
         self.max_hp = self.stats.max_hp()
         self.hp = self.max_hp
 
+        # The mana a staff spends. Session-only and always full on entry, unlike health: it
+        # is a pool that refills on its own anyway, so there is nothing a save could bank or
+        # lose, and a run should never open unable to cast. `last_cast_ms` holds the regen
+        # off briefly after each bolt, so emptying the pool is felt.
+        self.max_mana = self.stats.max_mana()
+        self.mana = self.max_mana
+        self.last_cast_ms = 0
+
         saved_equipped = save_system.load("equipped", {})
         self.equipped = {slot: saved_equipped.get(slot) for slot in EQUIP_SLOT_NAMES}
 
@@ -268,6 +276,8 @@ class Player(Entity):
         # Keep the xp-gain accessory's multiplier live for every stat.train call this frame.
         self.stats.xp_bonus = self.xp_gain_mult()
 
+        self._regen_mana(dt)
+
         self.max_hp = self.effective_max_hp()
         self.hp = min(self.hp, self.max_hp)
         if self.hp < self.max_hp:
@@ -281,6 +291,28 @@ class Player(Entity):
             self.hp = min(self.hp + regen * dt, self.max_hp)
 
     # --- shield and guard ------------------------------------------------------
+
+    # --- mana ------------------------------------------------------------------
+
+    def spend_mana(self, amount: int) -> bool:
+        """Pay for a cast. False (and nothing spent) if the pool is short, which is the whole
+        of what stops a staff being the free weapon it used to be."""
+        if amount <= 0:
+            return True
+        if self.mana < amount:
+            return False
+        self.mana -= amount
+        self.last_cast_ms = pygame.time.get_ticks()
+        return True
+
+    def _regen_mana(self, dt):
+        self.max_mana = self.stats.max_mana()
+        if self.mana >= self.max_mana:
+            self.mana = self.max_mana
+            return
+        if pygame.time.get_ticks() - self.last_cast_ms < c.Magic.REGEN_DELAY_MS:
+            return
+        self.mana = min(self.mana + self.stats.mana_regen_rate() * dt, self.max_mana)
 
     def has_shield(self) -> bool:
         return self.equipped_item("offhand") is not None
@@ -1051,8 +1083,8 @@ class Player(Entity):
             self.attack_progress,
             self.attack_hand,
             bar_width=800,
-            bar_height=30,
-            health_bar_offset=360,
+            bar_height=c.Player.HEALTH_BAR_HEIGHT,
+            health_bar_offset=c.Player.HEALTH_BAR_OFFSET,
             bar_color=c.Colors.RED,
             bar_border_width=4,
             gear=self.gear(),

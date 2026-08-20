@@ -14,13 +14,13 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.particles import get_particles
-from core.screen_fx import get_hitstop
+from core.screen_fx import get_flash, get_hitstop, get_trap_fx
 from core.swing_arcs import get_swings
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
-from game.entities.entities import Entity
+from game.entities.entities import Entity, apply_impulse
 from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
@@ -583,29 +583,39 @@ class WorldCombat:
             return None
         return (dx / dist, dy / dist)
 
-    KNOCKBACK_STEP = 8.0
-
     @staticmethod
     def _knockback(target, radius, kb_dir, distance, blocked):
-        """Shove a target along kb_dir, sliding along walls one axis at a time.
+        """Shove a target along kb_dir: hand it the impulse the blow is worth and let it
+        travel.
 
-        Walked out in short hops rather than in one jump, for the reason a projectile is:
-        testing only where the shove ends puts whatever was hit on the far side of a thin
-        wall, and a pole shoves things far enough for that to be most of a room."""
+        The shove used to be walked out here and then it was over, all of it inside the
+        frame the blow landed on, which is a teleport however many collision tests it is
+        cut into: the pole, whose whole job is moving people, put them somewhere else with
+        nothing crossing the ground in between. Now the blow only sets a velocity
+        (`entities.apply_impulse`); `World.advance_impulses` spends it over the next few
+        frames, walls and all, and the body is off its feet (`staggered`) while it does.
+
+        `radius` and `blocked` are the caller's business no longer, kept in the signature
+        because every strike site has them to hand and the sweep needs neither.
+        """
         if not kb_dir or distance <= 0:
             return
-        steps = max(1, math.ceil(distance / WorldCombat.KNOCKBACK_STEP))
-        step_x, step_y = kb_dir[0] * distance / steps, kb_dir[1] * distance / steps
-        for _ in range(steps):
-            moved = False
-            if blocked is None or not blocked(target.x + step_x, target.y, radius):
-                target.x += step_x
-                moved = True
-            if blocked is None or not blocked(target.x, target.y + step_y, radius):
-                target.y += step_y
-                moved = True
-            if not moved:
-                return
+        apply_impulse(target, kb_dir, distance)
+        # A shove worth real ground kicks up where it started, so the impulse is seen
+        # leaving the weapon rather than only read off where the body ends up.
+        if distance >= c.Combat.KNOCKBACK_DUST_MIN:
+            get_particles().spawn_directional_burst(
+                target.x,
+                target.y,
+                math.atan2(-kb_dir[1], -kb_dir[0]),
+                spread_deg=70.0,
+                color=c.Combat.KNOCKBACK_DUST_COLOR,
+                count=8,
+                speed=4,
+                life=340,
+                size=4,
+                gravity=0.25,
+            )
 
     def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, blocked):
         rampage = player.rampage_trigger(ranged=False)
@@ -831,12 +841,32 @@ class WorldCombat:
 
         `depth` caps a chain so a shipment of kegs cannot recurse without end.
         """
+        # A blast is the loudest thing that happens in this game and everything here is
+        # about it looking it: the wash, the freeze, the shockwave going out past what it
+        # hurt, the fire, the smoke that hangs, and the debris that arcs and lands.
         get_shake().add(shake)
         play_sound("crate_break")
-        get_particles().spawn_burst(x, y, (255, 170, 60), count=40, speed=11, life=650, size=7, gravity=0.2)
-        get_particles().spawn_burst(x, y, (90, 80, 75), count=22, speed=6, life=900, size=8, gravity=0.05)
-        get_impacts().pulse(x, y, radius, (255, 170, 60))
-        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        get_flash().trigger(c.Explosion.FLASH_AMOUNT, c.Explosion.FLASH_COLOR)
+        get_hitstop().trigger(c.Explosion.HITSTOP_MS)
+        get_particles().spawn_burst(
+            x, y, (255, 170, 60), count=c.Explosion.FIRE_PARTICLES, speed=13, life=650, size=8, gravity=0.2
+        )
+        get_particles().spawn_burst(
+            x, y, (90, 80, 75), count=c.Explosion.SMOKE_PARTICLES, speed=6, life=1100, size=10, gravity=0.03
+        )
+        get_particles().spawn_burst(
+            x,
+            y,
+            (150, 110, 70),
+            count=c.Explosion.DEBRIS_PARTICLES,
+            speed=15,
+            life=900,
+            size=6,
+            gravity=0.55,
+            shape="shard",
+        )
+        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS):
+            get_impacts().pulse(x, y, radius * frac, ring_color)
         if self.notify and depth == 0 and message:
             self.notify(message, (255, 170, 60))
 
@@ -896,6 +926,11 @@ class WorldCombat:
         if player_distance < radius:
             player.receive_damage(
                 round(blast_damage(player_distance) * player_mult), source=self._blast_source(by_player)
+            )
+            # The blast is not choosy about who it throws either: standing next to a keg
+            # costs the player the ground it puts between them and wherever they meant to be.
+            self._knockback(
+                player, c.Player.SIZE / 2, self._dir_from(x, y, player.x, player.y), knockback, self.blocked
             )
 
         if depth >= 3:
@@ -982,6 +1017,12 @@ class WorldCombat:
         victim.root(c.Traps.HOLD_MS)
 
         if victim is player:
+            # The jaws shut over the whole screen, because what a trap actually costs the
+            # player is the seconds afterwards, and a body that has simply stopped answering
+            # the keys reads as a bug rather than as being caught.
+            get_trap_fx().trigger()
+            get_shake().add(c.Traps.SNAP_FX_SHAKE)
+            get_hitstop().trigger(c.Traps.SNAP_FX_HITSTOP_MS)
             player.receive_damage(damage, source=trap)
             if self.notify:
                 self.notify("A bear trap snaps shut on your leg", c.Colors.RED)

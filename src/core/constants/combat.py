@@ -1,5 +1,7 @@
 from dataclasses import dataclass, replace
 
+from core.constants.player import Magic
+
 
 @dataclass(frozen=True)
 class Shield:
@@ -63,6 +65,9 @@ class Combat:
 
     # Player-hurt screen vignette: triggered amount decays back to 0 at this rate.
     VIGNETTE_DECAY: float = 0.90  # per-60fps-frame multiplier
+    # The white wash of a blast (core/screen_fx.py `ScreenFlash`) decays faster than the
+    # vignette: it is a flashbulb, not an injury.
+    FLASH_DECAY: float = 0.80
     PLAYER_HURT_VIGNETTE: float = 0.7
 
     # A cleaving swing does not hit everything it reaches equally. What stands where the
@@ -86,6 +91,22 @@ class Combat:
     # lining two of them up. Each body behind the first takes this much less of the blow.
     THRUST_LANE_WIDTH: float = 26.0
     THRUST_FALLOFF: float = 0.7
+
+    # A shove is an impulse, not a teleport. A weapon's `knockback` is the ground the blow
+    # is worth in total; the body is given a velocity that carries it exactly that far as it
+    # decays (v0 = distance * (1 - KNOCKBACK_DECAY)), stepped every frame with collision like
+    # any other movement. So the pole visibly throws somebody across a room and they slide to
+    # a halt, instead of blinking to the far end of it.
+    KNOCKBACK_DECAY: float = 0.82  # per-60fps-frame multiplier on the shove's velocity
+    # Below this much velocity left the shove is over and the body is walking again.
+    KNOCKBACK_REST_SPEED: float = 0.35
+    # ...and above this much it is still going somewhere it did not choose: it keeps facing
+    # and swinging, but its own step is skipped, which is the follow-through.
+    KNOCKBACK_STAGGER_SPEED: float = 1.6
+    # A shove worth this much ground kicks up dust where it started, so the impulse is seen
+    # leaving the weapon rather than only read off the body's new position.
+    KNOCKBACK_DUST_MIN: float = 18.0
+    KNOCKBACK_DUST_COLOR: tuple = (190, 180, 165)
     THRUST_TRAIL_COLOR: tuple = (215, 230, 245)
     THRUST_TRAIL_WIDTH: int = 5
 
@@ -99,14 +120,27 @@ class Explosion:
     included, so it is a decision rather than free damage.
     """
 
-    RADIUS: float = 165.0
+    RADIUS: float = 200.0
     DAMAGE: int = 55
     # Damage falls off from full at the centre to this share of it at the rim.
     EDGE_DAMAGE_FRAC: float = 0.35
     # The blast is not choosy: it takes this much of its damage off the player too.
     PLAYER_DAMAGE_MULT: float = 0.7
-    KNOCKBACK: float = 34.0
-    SHAKE: float = 22.0
+    KNOCKBACK: float = 90.0
+    SHAKE: float = 30.0
+    # A blast is the loudest thing that happens in this game and it should look it: the
+    # shockwave goes out as three rings of its own, a white flash washes the screen, the
+    # debris arcs and settles, and the freeze-frame is longer than any swing earns.
+    HITSTOP_MS: float = 170.0
+    # Ring radii as a share of the blast, drawn outward: the damage ring, then a wider
+    # shockwave that carries past what it hurt.
+    RING_FRACS: tuple = (1.0, 1.35, 1.7)
+    RING_COLORS: tuple = ((255, 220, 150), (255, 150, 50), (120, 100, 95))
+    FLASH_AMOUNT: float = 0.85
+    FLASH_COLOR: tuple = (255, 225, 180)
+    FIRE_PARTICLES: int = 70
+    SMOKE_PARTICLES: int = 40
+    DEBRIS_PARTICLES: int = 26
     # A keg inside the blast of another one goes off as well, which is what makes a
     # cluster of them worth lining up.
     CHAIN_RADIUS: float = 150.0
@@ -176,6 +210,9 @@ class WeaponArchetype:
     # `element` is only ever set on a staff, resolved from the weapon's own name below.
     projectile_style: str = "arrow"
     element: str = ""
+    # What one shot costs out of the player's mana pool (0 for everything that is not magic).
+    # A staff spends no ammo and closes no distance, so this is the whole of what it pays.
+    mana_cost: int = 0
 
 
 @dataclass(frozen=True)
@@ -273,7 +310,22 @@ WEAPON_ARCHETYPES: dict[str, WeaponArchetype] = {
     # here, so making a village tougher is never a question of what its people are holding.
     "tool": WeaponArchetype("tool", 0.85, 0.0, 0.8, 0.5, 560, 4, 0.03, False, 1.0, 2.0, False, False, 95.0),
     "staff": WeaponArchetype(
-        "staff", 1.0, 0.0, 1.0, 1.0, 420, 6, 0.10, False, 1.0, 2.0, True, False, 90.0, projectile_style="bolt"
+        "staff",
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        420,
+        6,
+        0.10,
+        False,
+        1.0,
+        2.0,
+        True,
+        False,
+        90.0,
+        projectile_style="bolt",
+        mana_cost=Magic.BOLT_COST,
     ),
     # Costs nothing to throw and only one is ever in the air: the flight is the cooldown.
     "boomerang": WeaponArchetype(

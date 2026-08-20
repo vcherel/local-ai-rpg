@@ -345,7 +345,7 @@ class NPC(Entity):
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
             return 0
 
-        if self.rooted:
+        if self.rooted or self.staggered:
             return 0
         moved_angle = self.wander.step(self, dt, self.home, c.Entities.NPC_SIZE / 2, blocked)
         # Face the way it actually moved, not the way it wanted to: a slider looks along
@@ -357,10 +357,11 @@ class NPC(Entity):
     def _step_towards(self, point, dt, blocked, speed_mult: float = 1.0) -> float:
         """Walk at a point, sliding along whatever is in the way. Returns the heading.
 
-        A villager caught in a bear trap still faces where they were going and still swings
-        at whatever comes into reach; they just don't get there."""
+        A villager caught in a bear trap, or still sliding from a blow that shoved them,
+        still faces where they were going and still swings at whatever comes into reach;
+        they just don't get there under their own power."""
         angle = math.atan2(point[1] - self.y, point[0] - self.x)
-        if self.rooted:
+        if self.rooted or self.staggered:
             return angle
         radius = c.Entities.NPC_SIZE / 2
         speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * self.chill_mult * dt * c.TARGET_FPS / 1000.0
