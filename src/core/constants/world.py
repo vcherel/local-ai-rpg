@@ -279,6 +279,10 @@ class Buildings:
     DOOR_WIDTH: int = 70
     # The entry trigger straddles the front wall, extending this far on each side of it.
     DOOR_DEPTH: int = 35
+    # An open leaf standing out against the facade: how thick it is, and how far out of the
+    # wall it swings as a fraction of the doorway's own width.
+    DOOR_LEAF_THICKNESS: int = 8
+    DOOR_LEAF_SWING: float = 0.6
 
     # Every door starts shut and blocks the doorway like any other wall. The player opens
     # and closes it with E; a monster that cannot reach the player through it beats it
@@ -598,6 +602,9 @@ class Scenery:
     BRIDGE_COLOR: tuple = (132, 100, 66)
     BRIDGE_PLANK_COLOR: tuple = (108, 80, 52)
     BRIDGE_RAIL_COLOR: tuple = (92, 66, 42)
+    # The rail down each side of a deck: drawn, and solid. A bridge is the one place the
+    # water is walked over, and a crossing you can step off the side of is just a plank.
+    BRIDGE_RAIL: int = 8
     # Nothing solid stands this close to a deck. A crossing walled in by a trunk at the end
     # of it is worse than no crossing at all, since the player walked to it.
     BRIDGE_CLEARANCE: int = 45
@@ -638,6 +645,13 @@ class Scenery:
     # one worn line rather than as stepping stones.
     ROAD_STEP: int = 16
     ROAD_WIDTH: tuple = (14, 22)
+    # A track is one worn line whose width swells and narrows as it goes, not a radius
+    # rolled per blob: how much it swells, over how long, and the shorter wave over that
+    # which keeps the edge from reading as a drawn curve.
+    ROAD_SWELL: float = 0.14
+    ROAD_SWELL_PERIOD: int = 520
+    ROAD_EDGE_NOISE: float = 0.06
+    ROAD_EDGE_PERIOD: int = 90
     # A road runs thousands of pixels between two settlements, so the bend has to be worth
     # that length: one long wave that grows with the distance, plus a shorter one over it.
     ROAD_WOBBLE: int = 260
@@ -686,6 +700,10 @@ class Villages:
     SLOT_W: int = 500
     SLOT_H: int = 520
     SLOT_JITTER: int = 30
+    # How many times the layout may shove overlapping buildings apart before it settles for
+    # what it has. A pass fixes every pair it sees, so a few of them clear even a street of
+    # L-shaped houses; the cap is only there so a pathological seed cannot loop forever.
+    SEPARATE_PASSES: int = 12
 
     # Relative pick weight per settlement size, and what each one is made of.
     SIZE_WEIGHTS: tuple = (("hamlet", 5), ("village", 4), ("town", 2))

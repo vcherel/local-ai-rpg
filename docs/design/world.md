@@ -44,12 +44,24 @@ in the way, and nothing solid is then generated within `ROAD_CLEARANCE` of a blo
 order is the whole trick: the wood grows around the road, so no route ever has to pick
 its way through anything, and a chunk still needs to know nothing about its neighbours.
 
+A route is held whole (`_route_line`, cached per route) rather than per chunk, and a chunk
+keeps the stretch of it that falls inside its own bounds. That is what makes the same track
+come out identical on both sides of a seam, and it is also what lets a crossing be counted
+along the whole line: the blobs of a route that stand in water are one unbroken run per
+river met, so a run is a bridge (`_route_crossings`) and a ford can never come out as a row
+of them. The width is a wave along the route rather than a radius rolled per blob, and each
+blob is drawn as a stretch of track laid along the way the route runs, which is the
+difference between a worn path and a string of beads.
+
 ## Water is a speed penalty, not a wall
 
 Water is the one piece of terrain that is neither a wall nor scenery. Nothing is stopped
 by a river, a pond or a lake (`blocked` never sees them), everything is slowed in one
 through `World.terrain_speed`, and a bridge over it takes the point back to ordinary
-ground (`World.water_at`, reading the same fine grid the trunks use).
+ground (`World.water_at`, reading the same fine grid the trunks use). A deck is the one
+exception to water blocking nothing: its two rails are solid (`Scenery._rail_blocks`), open
+only at the ends, since a crossing you can walk off the side of is a strip of floor rather
+than a bridge.
 
 Only the player ever gets better at it: `Stats.swim_multiplier` climbs from
 `Scenery.SWIM_SPEED` toward `SWIM_SPEED_MAX` as the swimming stat trains, and never
@@ -117,9 +129,14 @@ Three levers pulled together rather than one:
   wider as the player walks out.
 - *How many*: `World.roaming_cap`, eased over a long ramp out to
   `ROAMING_CAP_FAR_DISTANCE`.
-- *What has a name*: `Boss.LANDMARK_MIN_DISTANCE` puts the first world's guardian out on
-  the far side of the settled ring and `Boss.ROAM_MIN_DISTANCE` (which quest bosses are
-  also placed from, in a band outward) keeps every other boss well past it.
+- *What has a name*: `Boss.MIN_DIST_FROM_START` is the floor under every boss, the first
+  world's guardian at its landmark included, and `Boss.ROAM_MIN_DISTANCE` (which quest
+  bosses are also placed from, in a band outward) keeps a roaming one well past that.
+
+Every way a boss is spawned goes through `World.boss_spawn_ok`: never inside that ring,
+never on a settlement's grounds, never on somebody's floor. A boss does not despawn, so
+wherever one lands is where it stays, and a monster wandering into a village is a fight the
+militia can have while a boss in the plaza is the run over before it started.
 
 Night pulls the first lever and only the first: `DayNight.NIGHT_DANGER_BONUS` rolls a
 spawn as if the ground were deeper, capped at `NIGHT_DANGER_DISTANCE_FRAC` of how far out

@@ -1100,6 +1100,24 @@ class Building:
         for item in self.dropped_items:
             item.draw(screen, camera)
 
+    def _open_leaf(self, door: pygame.Rect) -> pygame.Rect:
+        """The door leaf swung open: hinged at one side of the doorway and standing out
+        against the front wall, in world coordinates. Outward is the wall's own normal, so
+        a door never opens into the room whichever wall it is in."""
+        nx, ny = self.outward()
+        # Along the wall, towards the side the leaf is hinged on.
+        ax, ay = ny, -nx
+        thick = c.Buildings.DOOR_LEAF_THICKNESS
+        span = door.height if nx else door.width
+        reach = round(span * c.Buildings.DOOR_LEAF_SWING)
+        if nx:
+            left = door.right if nx > 0 else door.left - reach
+            top = door.bottom - thick if ay > 0 else door.top
+            return pygame.Rect(left, top, reach, thick)
+        left = door.right - thick if ax > 0 else door.left
+        top = door.bottom if ny > 0 else door.top - reach
+        return pygame.Rect(left, top, thick, reach)
+
     def _draw_door(self, screen: pygame.Surface, camera: Camera):
         """The front door as it currently stands: shut (a planked leaf, cracking further
         with every blow it takes), open (swung out of the frame, the dark doorway showing)
@@ -1129,8 +1147,12 @@ class Building:
         if self.door_open:
             pygame.draw.rect(screen, dark, rect)
             # The leaf standing open against the facade, so an open house reads as open
-            # from across the street.
-            leaf = pygame.Rect(rect.right - 7, rect.bottom - 2, 8, round(door.width * 0.6))
+            # from across the street. Swung along the front wall's own normal like
+            # everything else about the facade: written as "down and to the right" it
+            # opened into the room on a house facing north, and was painted over the roof.
+            leaf = self._open_leaf(door)
+            lx, ly = camera.world_to_screen(leaf.left, leaf.top)
+            leaf = pygame.Rect(round(lx), round(ly), leaf.width, leaf.height)
             pygame.draw.rect(screen, c.Buildings.DOOR_COLOR, leaf)
             pygame.draw.rect(screen, frame, leaf, 1)
             return

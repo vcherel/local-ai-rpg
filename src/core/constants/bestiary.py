@@ -532,10 +532,11 @@ class Boss:
     ROAM_MIN_DISTANCE: int = 5500
     # How wide a band past that a quest's hunt target is placed in.
     QUEST_SPAWN_BAND: int = 2500
-    # The landmark guardian is the one boss standing on the settled ring from the first
-    # frame, so it gets its own floor: far enough out that finding it is a journey rather
-    # than something walked into on the way out of the starting town.
-    LANDMARK_MIN_DISTANCE: int = 2200
+    # No boss of any kind stands closer than this to the world centre, however it was
+    # spawned: the landmark guardian placed there from the first frame, a roaming one, a
+    # quest target, a world event. Finding one is meant to be a journey rather than
+    # something walked into on the way out of the starting town.
+    MIN_DIST_FROM_START: int = 2200
     ROAM_CHECK_INTERVAL_MS: int = 45_000
     ROAM_CHANCE: float = 0.25
     ROAM_SPAWN_MIN_DIST: int = 900

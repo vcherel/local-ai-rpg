@@ -646,6 +646,29 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 return c.Villages.DITCH_SPEED
         return 1.0
 
+    def quest_target_spot(self, x, y) -> tuple[float, float]:
+        """Where to put whatever a quest sends the player after, given where it was handed
+        over: open ground a real walk away (`Quests.MIN_TARGET_DISTANCE`), out of any
+        settlement and out of the water.
+
+        The chunk it lands in has almost certainly never been loaded, so most of what is
+        asked here can only answer for the ground already streamed in. That is the point:
+        the far ground is empty until it is generated, and a quest item lying in it is
+        picked up off whatever grows there later."""
+        best = (x, y)
+        for _ in range(40):
+            angle = random.uniform(0, 2 * math.pi)
+            distance = random.uniform(c.Quests.MIN_TARGET_DISTANCE, c.Quests.MAX_TARGET_DISTANCE)
+            tx, ty = x + math.cos(angle) * distance, y + math.sin(angle) * distance
+            best = (tx, ty)
+            if self.village_at(tx, ty, c.World.VILLAGE_SPAWN_MARGIN) is not None:
+                continue
+            if self.building_at(tx, ty) is not None or self.water_at(tx, ty):
+                continue
+            if not self.blocked(tx, ty, c.Entities.ITEM_SIZE):
+                return tx, ty
+        return best
+
     def free_spot_near(self, x, y, radius, rings: int | None = None) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
 
@@ -969,6 +992,22 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             threading.Thread(target=self._generate_boss_identity, args=(boss, announce), daemon=True).start()
         return boss
 
+    def boss_spawn_ok(self, x, y) -> bool:
+        """Whether a boss may be stood up here. Every way one is spawned asks this: a boss
+        never despawns, so anywhere it lands is somewhere it stays.
+
+        A settlement is not one of those places, and neither is the ground the player starts
+        on. A monster wandering into a village is a fight the militia can have; a boss
+        standing in the plaza of the first town is the run over before it started."""
+        center = c.World.WORLD_SIZE // 2
+        if math.hypot(x - center, y - center) < c.Boss.MIN_DIST_FROM_START:
+            return False
+        if self.village_at(x, y, c.World.VILLAGE_SPAWN_MARGIN) is not None:
+            return False
+        if self.building_at(x, y) is not None:
+            return False
+        return not self.blocked(x, y, c.MONSTER_MAX_SIZE)
+
     def _spawn_landmark_boss(self):
         """A guardian waits at the ruined landmark from the very first world. It's named
         later, once the world context has finished generating."""
@@ -991,7 +1030,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             dist = random.uniform(c.Boss.ROAM_MIN_DISTANCE, c.Boss.ROAM_MIN_DISTANCE + c.Boss.QUEST_SPAWN_BAND)
             x = center + math.cos(angle) * dist
             y = center + math.sin(angle) * dist
-            if not self.blocked(x, y, c.MONSTER_MAX_SIZE):
+            if self.boss_spawn_ok(x, y):
                 break
         # A boss never despawns, so unlike a monster it can't be left standing in a wall
         # if every roll was blocked: whatever came out of the loop is stepped clear first.
@@ -1042,7 +1081,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             dist = random.uniform(c.Boss.ROAM_SPAWN_MIN_DIST, c.Boss.ROAM_SPAWN_MAX_DIST)
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
-            if not self.blocked(x, y, c.MONSTER_MAX_SIZE):
+            if self.boss_spawn_ok(x, y):
                 self.spawn_boss(x, y, announce="A roaming terror, {name}, prowls the wilds")
                 return
 
@@ -1175,7 +1214,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             # wilderness. The starting town's ground is wider still (World.SAFE_RADIUS
             # around the world centre), since that is where every run begins and every
             # death sends the player back to.
-            if self._spawn_is_sheltered(x, y):
+            # Nothing is stood up on somebody's floor: `blocked` says nothing about a room,
+            # since a wall is solid and the boards inside it are not.
+            if self._spawn_is_sheltered(x, y) or self.building_at(x, y) is not None:
                 continue
             if not self.blocked(x, y, c.MONSTER_MAX_SIZE / 2):
                 # What crawls out after dark is what lives deeper in the wilds, but only
@@ -1197,7 +1238,8 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 for _ in range(random.randint(*leader.kind.group) - 1):
                     spread = c.World.PACK_SPREAD
                     mate_x, mate_y = x + random.uniform(-spread, spread), y + random.uniform(-spread, spread)
-                    if not self.blocked(mate_x, mate_y, leader.kind.size / 2):
+                    indoors = self.building_at(mate_x, mate_y) is not None
+                    if not indoors and not self.blocked(mate_x, mate_y, leader.kind.size / 2):
                         pack.append(Monster(mate_x, mate_y, leader.kind))
                 # Each member takes its own bearing around the player, evenly spread from a
                 # random start, so a pack closes in as a ring instead of a queue.
@@ -1218,13 +1260,16 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
             kind = pick_critter_kind(math.hypot(x - center, y - center))
-            if self.blocked(x, y, kind.size / 2):
+            # Nothing wild is stood up in somebody's front room either: the floor of a
+            # house is not blocked ground, which is what put a deer in a bedroom.
+            if self.blocked(x, y, kind.size / 2) or self.building_at(x, y) is not None:
                 continue
             for _ in range(random.randint(*kind.group)):
                 spread = c.Wildlife.GROUP_SPREAD
                 mate_x = x + random.uniform(-spread, spread)
                 mate_y = y + random.uniform(-spread, spread)
-                if not self.blocked(mate_x, mate_y, kind.size / 2):
+                indoors = self.building_at(mate_x, mate_y) is not None
+                if not indoors and not self.blocked(mate_x, mate_y, kind.size / 2):
                     self.critters.append(Critter(mate_x, mate_y, kind))
             return
 
@@ -1241,13 +1286,18 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             living = [cr for cr in self.critters if cr.village_key == key]
             hostile = any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y))
             for _ in range(wanted - len(living)):
-                angle = random.uniform(0, 2 * math.pi)
-                distance = random.uniform(village.radius * 0.15, village.radius * 0.5)
-                x, y = self.free_spot_near(
-                    village.x + math.cos(angle) * distance,
-                    village.y + math.sin(angle) * distance,
-                    c.CRITTER_KINDS_BY_NAME["dog"].size / 2,
-                )
+                # A dog lives in the street, not in the tavern: the spot is rolled again
+                # rather than settled for when it lands on somebody's floor.
+                for _attempt in range(8):
+                    angle = random.uniform(0, 2 * math.pi)
+                    distance = random.uniform(village.radius * 0.15, village.radius * 0.5)
+                    x, y = self.free_spot_near(
+                        village.x + math.cos(angle) * distance,
+                        village.y + math.sin(angle) * distance,
+                        c.CRITTER_KINDS_BY_NAME["dog"].size / 2,
+                    )
+                    if self.building_at(x, y) is None:
+                        break
                 dog = Critter(x, y, c.CRITTER_KINDS_BY_NAME["dog"], home=(x, y), village_key=key)
                 # A village that has already turned on the player doesn't hand back a
                 # friendly dog just because this one was stood up afterwards.

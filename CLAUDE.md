@@ -123,6 +123,8 @@ The short version. `docs/design/` explains each of these.
 - A door (and a gate) is the only obstacle a chaser may break. If a monster cannot reach the player, the answer is navigation, not demolition.
 - A weapon family answers a question rather than being a bigger number; a bigger number is a rarity roll.
 - Exactly one interaction prompt is on screen at a time, drawn from `Game.current_interaction`.
+- No boss is stood up near the start, on a settlement's grounds or on somebody's floor: every spawn goes through `World.boss_spawn_ok`.
+- A quest sends the player out of town (`World.quest_target_spot`) and the walk is what the coins pay for (`quest_system.coin_band`).
 - The minimap draws memory, not radar: explored cells only, plus rumour marks.
 - Nothing walks the whole building list per frame; go through `buildings_near`/`buildings_in_range`.
 - A monster's look is its kind's `shape`, an animal's behaviour is its `temperament`, an item's icon is derived from its name and type. Adding one means adding a table row, not a branch.

@@ -79,6 +79,18 @@ class Quests:
     # emptying a camp or killing a boss is the run's work, not an errand.
     ALWAYS_ITEM_TYPES: tuple = ("clear_camp", "slay_boss", "steal")
 
+    # How far out of town a quest puts whatever it sends the player after. An errand given
+    # in the square used to be finishable without leaving the square, which is a line of
+    # dialogue rather than a quest: the map is endless, and a quest is what makes the
+    # player walk into it.
+    MIN_TARGET_DISTANCE: int = 3000
+    MAX_TARGET_DISTANCE: int = 9000
+    # And what the walk is worth. The coin band of the quest's own type is multiplied by up
+    # to PAY_DISTANCE_BONUS, reached at PAY_FULL_DISTANCE, so a long errand pays for the
+    # journey rather than paying a village rate for a day's travel.
+    PAY_DISTANCE_BONUS: float = 1.8
+    PAY_FULL_DISTANCE: int = 8000
+
 
 @dataclass(frozen=True)
 class Potions:

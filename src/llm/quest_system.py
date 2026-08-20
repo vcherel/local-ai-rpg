@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 import re
 from typing import TYPE_CHECKING
@@ -16,6 +17,19 @@ from llm.llm_request_queue import generate_response_queued
 if TYPE_CHECKING:
     from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
+
+
+def coin_band(quest: Quest) -> tuple[int, int]:
+    """What handing this quest in is worth, as (floor, ceiling).
+
+    Its type's band (`c.QUEST_COIN_BANDS`) stretched by how far the errand actually sent
+    the player: the same parcel is not worth the same coins carried across the plaza and
+    carried across two days of wilderness. Read both by the NPC's own line, so the figure
+    they name is a figure they can pay, and by the payout that clamps it."""
+    floor, ceiling = c.QUEST_COIN_BANDS.get(quest.quest_type, c.Quests.DEFAULT_COIN_BAND)
+    reach = min(max(quest.travel_distance, 0.0) / c.Quests.PAY_FULL_DISTANCE, 1.0)
+    mult = 1.0 + reach * (c.Quests.PAY_DISTANCE_BONUS - 1.0)
+    return round(floor * mult), round(ceiling * mult)
 
 
 class QuestSystem:
@@ -152,6 +166,18 @@ class QuestSystem:
             **common,
         )
 
+    def _target_spot(self, npc) -> tuple[float, float]:
+        """Where to put this quest's objective: a long walk from whoever is giving it, or,
+        with no world to ask, anywhere on the map that is not inside a building."""
+        if self.world is None:
+            return random_open_coordinates()
+        return self.world.quest_target_spot(npc.x, npc.y)
+
+    @staticmethod
+    def _travel(npc, x, y) -> float:
+        """How far this quest sends the player, which is what it is paid for (`coin_band`)."""
+        return math.hypot(x - npc.x, y - npc.y)
+
     def _build_slay_boss(self, npc, quest_info, common, _names) -> Quest | None:
         # No world reference means we can't place the boss; drop the quest rather than
         # leave an untargetable objective.
@@ -164,13 +190,14 @@ class QuestSystem:
             target_monster_kind=boss.quest_tag,
             boss_name=boss.display_name,
             kill_count=1,
+            travel_distance=self._travel(npc, boss.x, boss.y),
             **common,
         )
 
     def _build_clear_camp(self, npc, quest_info, common, _names) -> Quest | None:
         # No world to look through, or no camp still held anywhere near: drop the quest
         # rather than send the player after a place that doesn't exist.
-        camp = self.world.find_bandit_camp(npc.x, npc.y) if self.world else None
+        camp = self.world.find_bandit_camp(npc.x, npc.y, c.Quests.MIN_TARGET_DISTANCE) if self.world else None
         if camp is None:
             return None
         return Quest(
@@ -180,6 +207,7 @@ class QuestSystem:
             target_x=camp.x,
             target_y=camp.y,
             kill_count=1,
+            travel_distance=self._travel(npc, camp.x, camp.y),
             **common,
         )
 
@@ -195,6 +223,7 @@ class QuestSystem:
             target_building_id=house.id,
             target_x=house.x,
             target_y=house.y,
+            travel_distance=self._travel(npc, house.x, house.y),
             **common,
         )
 
@@ -217,6 +246,7 @@ class QuestSystem:
             quest_type="deliver",
             recipient_npc_name=recipient.name,
             kill_count=1,
+            travel_distance=self._travel(npc, recipient.x, recipient.y),
             **common,
         )
 
@@ -225,7 +255,7 @@ class QuestSystem:
             return None
         # A fresh NPC, not one the player may have already met, so turning them
         # into a target on sight doesn't retroactively make a friendly NPC hostile.
-        thief = NPC(*random_open_coordinates())
+        thief = NPC(*self._target_spot(npc))
         thief.assign_name(npc_name_generator)
         thief.is_thief = True
         self.npcs.append(thief)
@@ -233,6 +263,7 @@ class QuestSystem:
             item_name=self._strip_article(quest_info["item_name"]),
             quest_type="recover_stolen",
             thief_npc_name=thief.name,
+            travel_distance=self._travel(npc, thief.x, thief.y),
             **common,
         )
 
@@ -241,9 +272,14 @@ class QuestSystem:
         if not quest_info.get("item_name"):
             return None
         item_name = self._strip_article(quest_info["item_name"])
-        quest_item = Item(*random_open_coordinates(), item_name)
+        quest_item = Item(*self._target_spot(npc), item_name)
         self.items.append(quest_item)
-        return Quest(item_name=item_name, item=quest_item, **common)
+        return Quest(
+            item_name=item_name,
+            item=quest_item,
+            travel_distance=self._travel(npc, quest_item.x, quest_item.y),
+            **common,
+        )
 
     def carried_item(self, quest: Quest) -> Item | None:
         """The item in the player's bag that hands this quest in, or None.
@@ -330,9 +366,9 @@ class QuestSystem:
     def extract_and_give_reward(self, last_message: str, quest: Quest) -> int:
         """Pay out the coins for a quest just handed in. The figure the NPC named is their
         word and is honoured, but it is clamped into the band its quest type is worth
-        (`c.QUEST_COIN_BANDS`) rather than trusted: the model has no sense of the economy
-        and would send the player across the map for three coins."""
-        floor, ceiling = c.QUEST_COIN_BANDS.get(quest.quest_type, c.Quests.DEFAULT_COIN_BAND)
+        (`coin_band`) rather than trusted: the model has no sense of the economy and would
+        send the player across the map for three coins."""
+        floor, ceiling = coin_band(quest)
         reward = min(max(self._promised_coins(last_message), floor), ceiling)
         self.player.add_coins(reward)
         return reward
