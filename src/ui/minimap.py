@@ -149,44 +149,55 @@ class Minimap:
             pygame.draw.circle(self.screen, (40, 32, 12), (round(x), round(y)), radius, 1)
 
     def _draw_strips(self, world: World, player: Player, top: int):
-        """The panels stacked under the map: the village standing on it, then the clock."""
+        """The panels stacked under the map: the village standing on it, how that village
+        feels about the player, then the clock.
+
+        Each one is laid under the last and `content_bottom` records where the stack actually
+        ended, since whatever hangs below this corner (the quest tracker) has no other way of
+        knowing how many strips were drawn this frame."""
         y = top + 4
         village = world.village_at(player.x, player.y)
         if village is not None and village.name and village.discovered:
-            suffix, color = self._village_mood(world, village)
-            text = self._fit_name(village.name, suffix, self.rect.width - c.Minimap.PADDING * 2)
-            label = c.Fonts.small.render(text, True, color)
-            strip = pygame.Rect(self.rect.left, y, self.rect.width, label.get_height() + 8)
-            widgets.draw_panel(self.screen, strip)
-            self.screen.blit(label, label.get_rect(center=strip.center))
-            y = strip.bottom + 4
+            y = self._draw_text_strip(self._fit(village.name), c.Colors.WHITE, y)
+            mood = self._village_mood(world, village)
+            if mood is not None:
+                y = self._draw_text_strip(mood, c.Colors.RED, y)
         self._draw_clock(world, y)
         self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
 
-    @staticmethod
-    def _village_mood(world: World, village) -> tuple:
-        """What this settlement's strip adds after its name: nothing, or how much longer it
-        wants the player dead. Anger runs out now, so the player needs somewhere to read how
-        long is left; the strip that already names the place they are standing in is it. A
-        grudge (somebody was killed here) has no countdown to show, and never will."""
-        angry = [npc for npc in world.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
-        if not angry:
-            return "", c.Colors.WHITE
-        if any(npc.grudge for npc in angry):
-            return ": never forgiven", c.Colors.RED
-        remaining = max(npc.anger_remaining for npc in angry)
-        return f": furious {int(remaining) // 60}:{int(remaining) % 60:02d}", c.Colors.RED
+    def _draw_text_strip(self, text: str, color: tuple, top: int) -> int:
+        """One line of its own under the map, returning where the next strip starts."""
+        label = c.Fonts.small.render(text, True, color)
+        strip = pygame.Rect(self.rect.left, top, self.rect.width, label.get_height() + 8)
+        widgets.draw_panel(self.screen, strip)
+        self.screen.blit(label, label.get_rect(center=strip.center))
+        return strip.bottom + 4
 
     @staticmethod
-    def _fit_name(name: str, suffix: str, width: int) -> str:
-        """Name plus mood, cut to the width of the strip. A long name with a countdown after
-        it used to run out of the panel and across the map, so the name is what gives: the
-        countdown is the part the player is reading."""
-        if c.Fonts.small.size(name + suffix)[0] <= width:
-            return name + suffix
-        while name and c.Fonts.small.size(name + "..." + suffix)[0] > width:
-            name = name[:-1]
-        return name + "..." + suffix
+    def _village_mood(world: World, village) -> str | None:
+        """How much longer this settlement wants the player dead, or None while it does not.
+
+        Its own strip rather than a suffix on the name: the panel is 180 pixels wide, and a
+        countdown appended to a name ate the name it was appended to. A grudge (somebody was
+        killed here) has no countdown to show, and never will."""
+        angry = [npc for npc in world.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
+        if not angry:
+            return None
+        if any(npc.grudge for npc in angry):
+            return "Never forgiven"
+        remaining = max(npc.anger_remaining for npc in angry)
+        return f"Furious for {int(remaining) // 60}:{int(remaining) % 60:02d}"
+
+    @staticmethod
+    def _fit(text: str) -> str:
+        """Cut to the width of a strip, so a long name ends in an ellipsis inside the panel
+        instead of running out of it and across the map."""
+        width = c.Minimap.SIZE - c.Minimap.PADDING * 2
+        if c.Fonts.small.size(text)[0] <= width:
+            return text
+        while text and c.Fonts.small.size(text + "...")[0] > width:
+            text = text[:-1]
+        return text + "..."
 
     def _draw_clock(self, world: World, top: int):
         """The time of day, as a dial swept once per cycle plus the name of the phase. The
