@@ -53,21 +53,24 @@ class GameRenderer:
         icon_y = self.HUD_PANEL_RECT.y + 10
         icon_x = self.HUD_PANEL_RECT.x + 10
         step = self.HUD_ICON_SIZE + self.HUD_ICON_GAP
-        self.inv_button_rect = pygame.Rect(icon_x, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
-        self.quest_button_rect = pygame.Rect(icon_x + step, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
-        self.stats_button_rect = pygame.Rect(icon_x + step * 2, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
-        self.lore_button_rect = pygame.Rect(icon_x + step * 3, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
-        self.help_button_rect = pygame.Rect(icon_x + step * 4, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
-        self.pause_button_rect = pygame.Rect(icon_x + step * 5, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE)
-        # (rect, icon glyph, tooltip label) for the icon dock row, in draw/hit-test order.
-        self.dock_buttons = (
-            (self.inv_button_rect, "bag", "Inventory (I)"),
-            (self.quest_button_rect, "scroll", "Quests (J)"),
-            (self.stats_button_rect, "person", "Character (C)"),
-            (self.lore_button_rect, "book", "Lore (L)"),
-            (self.help_button_rect, "question", "Help (H)"),
-            (self.pause_button_rect, "pause", "Pause (P)"),
+        # (action, rect, icon glyph, tooltip label) for the icon dock row, in draw/hit-test
+        # order. The action is what `Game.handle_input` looks the click up by, so a button
+        # is one row here rather than a rect named in this file and an `elif` naming it again
+        # over there.
+        self.dock_buttons = tuple(
+            (action, pygame.Rect(icon_x + step * i, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE), icon, tooltip)
+            for i, (action, icon, tooltip) in enumerate(
+                (
+                    ("inventory", "bag", "Inventory (I)"),
+                    ("quests", "scroll", "Quests (J)"),
+                    ("stats", "person", "Character (C)"),
+                    ("lore", "book", "Lore (L)"),
+                    ("help", "question", "Help (H)"),
+                    ("pause", "pause", "Pause (P)"),
+                )
+            )
         )
+        self.dock_bottom = icon_y + self.HUD_ICON_SIZE
 
         # Reused by `_draw_witness_cones` rather than reallocated per frame.
         self._cone_overlay: pygame.Surface | None = None
@@ -402,11 +405,11 @@ class GameRenderer:
 
         widgets.draw_panel(self.screen, self.HUD_PANEL_RECT)
         hovered_dock = None
-        for rect, icon, tooltip in self.dock_buttons:
+        for _action, rect, icon, tooltip in self.dock_buttons:
             if self._draw_dock_button(rect, icon, mouse_pos):
                 hovered_dock = (rect, tooltip)
 
-        stats_y = self.inv_button_rect.bottom + 10
+        stats_y = self.dock_bottom + 10
         x = self.HUD_PANEL_RECT.x + 10
         x = self._draw_stat_chip(x, stats_y, "coin", nb_coins)
         x = self._draw_stat_chip(x, stats_y, "bag", nb_items)

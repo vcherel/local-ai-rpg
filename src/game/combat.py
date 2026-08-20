@@ -368,7 +368,7 @@ class WorldCombat:
         building.window_hp.pop(idx, None)
         self._break_window(building, idx, window)
 
-    def blocking_door(self, chaser, player: Player) -> Building | None:
+    def _blocking_door(self, chaser, player: Player) -> Building | None:
         """The shut door standing between a chaser and the player, once the chaser is at it.
 
         A door is the one obstacle in the world that cannot be walked round, which is exactly
@@ -513,7 +513,7 @@ class WorldCombat:
                 or abs(monster.y - player.y) > c.World.DETECTION_RANGE
             ):
                 continue
-            building = self.blocking_door(monster, player)
+            building = self._blocking_door(monster, player)
             if building is None or now < monster.next_bash_ms:
                 continue
             monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
@@ -841,34 +841,7 @@ class WorldCombat:
 
         `depth` caps a chain so a shipment of kegs cannot recurse without end.
         """
-        # A blast is the loudest thing that happens in this game and everything here is
-        # about it looking it: the wash, the freeze, the shockwave going out past what it
-        # hurt, the fire, the smoke that hangs, and the debris that arcs and lands.
-        get_shake().add(shake)
-        play_sound("crate_break")
-        get_flash().trigger(c.Explosion.FLASH_AMOUNT, c.Explosion.FLASH_COLOR)
-        get_hitstop().trigger(c.Explosion.HITSTOP_MS)
-        get_particles().spawn_burst(
-            x, y, (255, 170, 60), count=c.Explosion.FIRE_PARTICLES, speed=13, life=650, size=8, gravity=0.2
-        )
-        get_particles().spawn_burst(
-            x, y, (90, 80, 75), count=c.Explosion.SMOKE_PARTICLES, speed=6, life=1100, size=10, gravity=0.03
-        )
-        get_particles().spawn_burst(
-            x,
-            y,
-            (150, 110, 70),
-            count=c.Explosion.DEBRIS_PARTICLES,
-            speed=15,
-            life=900,
-            size=6,
-            gravity=0.55,
-            shape="shard",
-        )
-        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS):
-            get_impacts().pulse(x, y, radius * frac, ring_color)
-        if self.notify and depth == 0 and message:
-            self.notify(message, (255, 170, 60))
+        self._blast_fx(x, y, radius, shake, message if depth == 0 else "")
 
         def blast_damage(distance: float) -> int:
             frac = max(0.0, 1.0 - distance / radius)
@@ -876,11 +849,12 @@ class WorldCombat:
             return max(1, round(damage * scale))
 
         def caught(entities, radius_of):
-            return [
-                (e, math.hypot(e.x - x, e.y - y))
-                for e in list(entities)
-                if math.hypot(e.x - x, e.y - y) < radius + radius_of(e)
-            ]
+            found = []
+            for entity in list(entities):
+                distance = math.hypot(entity.x - x, entity.y - y)
+                if distance < radius + radius_of(entity):
+                    found.append((entity, distance))
+            return found
 
         for group in (self.bosses, self.monsters):
             for monster, distance in caught(group, lambda m: m.kind.size / 2):
@@ -933,7 +907,7 @@ class WorldCombat:
                 player, c.Player.SIZE / 2, self._dir_from(x, y, player.x, player.y), knockback, self.blocked
             )
 
-        if depth >= 3:
+        if depth >= c.Explosion.MAX_CHAIN_DEPTH:
             return
         for keg in [
             b
@@ -945,6 +919,40 @@ class WorldCombat:
                 # A keg is still a keg whatever lit it, but the credit follows the hand that
                 # started the chain: nothing a creeper set off pays the player.
                 self.explode(keg.x, keg.y, player, quest_system, depth + 1, by_player=by_player)
+
+    def _blast_fx(self, x, y, radius: float, shake: float, message: str):
+        """How a blast looks and sounds, which is all of what makes it read as the loudest
+        thing in the game: the wash, the freeze, the shockwave going out past what it hurt,
+        the fire, the smoke that hangs, and the debris that arcs and lands.
+
+        Kept apart from `explode` so that method is the damage it is named for. Only the
+        blast that started a chain announces itself; the kegs it sets off are the same event.
+        """
+        get_shake().add(shake)
+        play_sound("crate_break")
+        get_flash().trigger(c.Explosion.FLASH_AMOUNT, c.Explosion.FLASH_COLOR)
+        get_hitstop().trigger(c.Explosion.HITSTOP_MS)
+        get_particles().spawn_burst(
+            x, y, (255, 170, 60), count=c.Explosion.FIRE_PARTICLES, speed=13, life=650, size=8, gravity=0.2
+        )
+        get_particles().spawn_burst(
+            x, y, (90, 80, 75), count=c.Explosion.SMOKE_PARTICLES, speed=6, life=1100, size=10, gravity=0.03
+        )
+        get_particles().spawn_burst(
+            x,
+            y,
+            (150, 110, 70),
+            count=c.Explosion.DEBRIS_PARTICLES,
+            speed=15,
+            life=900,
+            size=6,
+            gravity=0.55,
+            shape="shard",
+        )
+        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS):
+            get_impacts().pulse(x, y, radius * frac, ring_color)
+        if self.notify and message:
+            self.notify(message, (255, 170, 60))
 
     @staticmethod
     def _blast_source(by_player: bool) -> str:
