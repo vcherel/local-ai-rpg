@@ -367,7 +367,8 @@ class Breakables:
 
 @dataclass(frozen=True)
 class Tunnels:
-    """The dug-out under a village well (game/entities/tunnel.py).
+    """The dark under the world: the dug-out beneath a village well, and the cave mouth out
+    in the wilds that leads into the same kind of place (game/entities/tunnel.py).
 
     Not a separate game: a tunnel is a handful of rooms carved out of the same world space
     everything else stands in, only a very long way from any ground that is ever walked on,
@@ -378,14 +379,20 @@ class Tunnels:
     """
 
     # Not every well goes anywhere. A well that is only a well is what makes finding one
-    # that isn't worth the walk over to look.
+    # that isn't worth the walk over to look. A cave mouth always does: it is a landmark
+    # the player walked out into the wilds to find, not one of a settlement's fittings.
     CHANCE: float = 0.55
-    # The corner of world space the tunnels are laid out in, one grid slot per village
-    # chunk. Far enough out that nothing generated on the surface can ever reach it.
+    # The corner of world space the tunnels are laid out in, one grid slot per chunk. Far
+    # enough out that nothing generated on the surface can ever reach it, and the caves
+    # offset again from the wells so a landmark and a village sharing a chunk never share
+    # the ground under it.
     ORIGIN: int = 1_000_000
     SPACING: int = 20_000
+    CAVE_OFFSET: int = 400_000
 
-    ROOMS: tuple = (3, 5)
+    # How big the place is, by the way in. A cave is a real descent rather than a cellar
+    # somebody dug: more rooms, more guards, and the same hoard at the end of it.
+    ROOMS = {"well": (3, 5), "cave": (5, 8)}
     ROOM_SIZE: tuple = (420, 640)
     ROOM_GAP: tuple = (640, 900)
     # Comfortably wider than the broadest thing that walks: a corridor nothing fits down is
@@ -394,7 +401,7 @@ class Tunnels:
 
     # What lives down there, rolled once per tunnel and kept like a bandit camp's garrison:
     # the dark is a place to clear, and clearing it has to stay cleared.
-    GUARDS: tuple = (3, 5)
+    GUARDS = {"well": (3, 5), "cave": (5, 8)}
     # They roll their kind as if the tunnel stood this much deeper into the wilds, so what
     # is waiting under a village is not what is wandering the fields above it.
     GUARD_DANGER_BONUS: int = 2800
@@ -572,7 +579,10 @@ class Scenery:
     # Blobs laid well inside each other's width, so the channel reads as running water
     # rather than as a string of beads.
     RIVER_STEP: int = 12
-    RIVER_WIDTH: tuple = (52, 78)
+    # The width a lane of average size runs at; a lane rolls its own scale on top, so the
+    # map holds brooks and rivers rather than one width repeated everywhere.
+    RIVER_WIDTH: tuple = (96, 138)
+    RIVER_LANE_SCALE: tuple = (0.7, 2.1)
     RIVER_WOBBLE: int = 420  # how far the course wanders off a straight line
     RIVER_BANK_CLEARANCE: int = 30  # no trunk or boulder stands this close to the water
     # A river bends around a settlement's centre by this much rather than running through
@@ -583,7 +593,11 @@ class Scenery:
     # bridge is always findable; another wherever a road meets the water, since that is
     # where anyone would have built one.
     BRIDGE_INTERVAL: int = 2400
-    BRIDGE_LENGTH: int = 130  # along the river; comfortably wider than the water itself
+    # A deck is laid across the water it actually spans (`_deck_length`), since how broad a
+    # river is is rolled per lane: this is the shortest one ever built and how much wider
+    # than the water any of them is, so there is a landing at each end.
+    BRIDGE_MIN_LENGTH: int = 150
+    BRIDGE_SPAN: float = 1.45
     BRIDGE_WIDTH: int = 76
     BRIDGE_COLOR: tuple = (132, 100, 66)
     BRIDGE_PLANK_COLOR: tuple = (108, 80, 52)
@@ -602,10 +616,20 @@ class Scenery:
     SWIM_SPEED: float = 0.35
     SWIM_SPEED_MAX: float = 0.75
 
-    # Roads: each village site is joined to its nearest neighbour, and the chunk being
-    # generated lays down the packed earth of whatever passes through it. Nothing that
-    # blocks may stand within CLEARANCE of one, so a road is always walkable.
+    # Roads: every village site is joined to its nearest ROAD_LINKS neighbours, and the
+    # chunk being generated lays down the packed earth of whatever passes through it.
+    # Nothing that blocks may stand within CLEARANCE of one, so a road is always walkable.
     ROAD_SITE_CHUNK_RADIUS: int = 8
+    # More than one link per settlement is what makes the map a network rather than a
+    # chain, and the cap on a road's length is what keeps a lone village in the deep wilds
+    # from being joined to a town half a world away by a road nobody would have cut. Never
+    # longer than ROAD_SITE_CHUNK_RADIUS reaches, or a chunk in the middle of one would not
+    # know the road existed.
+    ROAD_LINKS: int = 3
+    ROAD_MAX_LENGTH: int = 7000
+    # How much dry ground a road keeps between itself and a settlement it is only passing:
+    # its own two ends are met at the gate, anything else in the way is bowed around.
+    ROAD_VILLAGE_CLEARANCE: int = 120
     # Blobs of packed earth laid closer together than they are wide, so the track reads as
     # one worn line rather than as stepping stones.
     ROAD_STEP: int = 16
@@ -617,6 +641,15 @@ class Scenery:
     ROAD_DETAIL: float = 0.22  # amplitude of the shorter wave, as a fraction of the wobble
     ROAD_CLEARANCE: int = 55
     ROAD_COLOR: tuple = (128, 106, 76)
+
+    # Footpaths: the tracks worn out to the landmarks, drawn exactly like a road but
+    # narrower. A landmark joins the settlement it is nearest to, or, out where there is
+    # none in reach, the next landmark along, so a string of them in the deep wilds is
+    # walkable and a landmark with nothing near it keeps no path at all.
+    PATH_WIDTH: tuple = (7, 11)
+    PATH_CHUNK_RADIUS: int = 3
+    PATH_MAX_LENGTH: int = 2600
+    PATH_POI_CLEARANCE: int = 70
 
 
 @dataclass(frozen=True)
@@ -826,7 +859,8 @@ class PointsOfInterest:
     who trades and points the way), and either way its fire can be rested at once the camp
     is settled. "farmstead" is a second lootable cache with its own look; "graveyard",
     "watchtower" and "stones" are places rather than rewards, each saying what it is the
-    first time it is walked up to; "signpost" reads out the way to somewhere unexplored.
+    first time it is walked up to; "signpost" reads out the way to somewhere unexplored;
+    "cave" is a way into the dark under the world for a player who is nowhere near a well.
     """
 
     # Points of interest stream in per chunk like the floor details, so the wilderness
@@ -858,7 +892,12 @@ class PointsOfInterest:
         ("watchtower", 2),
         ("stones", 2),
         ("signpost", 2),
+        ("cave", 2),
     )
+
+    # How close the player has to be to walk into a cave mouth. Wider than a shrine's reach
+    # because the mouth itself is wide.
+    CAVE_ENTER_DISTANCE: int = 130
 
     # A landmark shows its flavor line the first time the player gets this close. A
     # shrine's line always ends with what a shrine is for, because a landmark that never
@@ -882,6 +921,10 @@ class PointsOfInterest:
         "stones": (
             "Standing stones in a rough circle, humming faintly.",
             "These stones were raised on purpose, a very long time ago.",
+        ),
+        "cave": (
+            "A cave mouth in the rock. Something has worn a path to it. Enter (E).",
+            "A black opening in the hillside, colder than the air outside it. Enter (E).",
         ),
     }
     # Kept short on purpose: the two are toasted as one line, and a paragraph on the screen

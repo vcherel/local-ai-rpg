@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from game.entities.village import sites_near_chunk
+from game.entities.village import settlements_near_chunk, sites_near_chunk
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -58,7 +58,7 @@ class Scenery:
         if self.kind in c.Scenery.WATER_KINDS:
             return self._shape.get("reach", self.size)
         if self.kind == "bridge":
-            return max(c.Scenery.BRIDGE_LENGTH, c.Scenery.BRIDGE_WIDTH) / 2
+            return max(self.size, c.Scenery.BRIDGE_WIDTH) / 2
         return 0.0
 
     def covers(self, x: float, y: float) -> bool:
@@ -70,7 +70,7 @@ class Scenery:
             angle = self._shape["angle"]
             along = dx * math.cos(angle) + dy * math.sin(angle)
             across = -dx * math.sin(angle) + dy * math.cos(angle)
-            return abs(along) <= c.Scenery.BRIDGE_LENGTH / 2 and abs(across) <= c.Scenery.BRIDGE_WIDTH / 2
+            return abs(along) <= self.size / 2 and abs(across) <= c.Scenery.BRIDGE_WIDTH / 2
         if self.kind == "river":
             reach = self.size
             return dx * dx + dy * dy < reach * reach
@@ -253,7 +253,7 @@ class Scenery:
         angle = self._shape["angle"]
         along = (math.cos(angle), math.sin(angle))
         across = (-math.sin(angle), math.cos(angle))
-        half_len = c.Scenery.BRIDGE_LENGTH / 2
+        half_len = self.size / 2
         half_wid = c.Scenery.BRIDGE_WIDTH / 2
 
         def point(a, b):
@@ -347,54 +347,195 @@ def _pick(weights: Sequence[tuple[str, int]], rng: random.Random) -> str:
     return rng.choices(names, weights=values)[0]
 
 
+Endpoint = tuple[float, float, float]  # x, y, how much of the far end is left alone
+Route = tuple[Endpoint, Endpoint, str]  # from, to, "road" or "path"
+
+
 def road_points_for_chunk(cx: int, cy: int) -> list[tuple[float, float, float]]:
-    """The packed earth of every road crossing this chunk, as (x, y, width) blobs.
+    """The packed earth of every road and footpath crossing this chunk, as (x, y, width).
 
-    Each village site is joined to its nearest neighbour, both sites being pure functions
-    of their region, so the same road appears in every chunk it crosses without any
-    cross-chunk bookkeeping. The line is bent by a seeded sine so a road reads as a track
-    somebody wore into the ground rather than as a ruler laid across the map.
+    The network is drawn from three pure functions of the coordinates (`village_site`,
+    `site_grounds_radius`, `poi_site`), so the same track appears in every chunk it crosses
+    with no cross-chunk bookkeeping: a chunk works out which routes come near it and lays
+    down the stretch that falls inside its own bounds.
+
+    Routing is three rules. A road stops at the gate side of a settlement's grounds instead
+    of running through its houses and its wall; anywhere it would pass through a third
+    settlement it bows around it (`_dodge_grounds`); and nothing solid is ever generated
+    within `ROAD_CLEARANCE` of a blob, which is what keeps a wood from growing across a
+    road rather than the road having to pick its way through the wood.
     """
-    sites = sites_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS)
-    if len(sites) < 2:
-        return []
-
-    edges = set()
-    for site in sites:
-        nearest = min((other for other in sites if other != site), key=lambda o: math.dist(site, o))
-        edges.add(tuple(sorted((site, nearest))))
-
     size = c.World.CHUNK_SIZE
     bounds = pygame.Rect(cx * size, cy * size, size, size).inflate(c.Scenery.ROAD_WOBBLE * 2, c.Scenery.ROAD_WOBBLE * 2)
+    sites = settlements_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS)
+
     points: list[tuple[float, float, float]] = []
-    for start, end in edges:
-        length = math.dist(start, end)
-        if length < 1:
-            continue
-        rng = random.Random(f"road:{start}:{end}")
-        phase = rng.uniform(0, 2 * math.pi)
-        waves = rng.uniform(0.8, 1.8)
-        # How far a road may wander follows how far it is going: two sites a chunk apart
-        # have no room to bend, and a road crossing several has to earn its length or it
-        # reads as a ruler laid between two villages.
-        amplitude = rng.uniform(0.55, 1.0) * c.Scenery.ROAD_WOBBLE * min(1.0, length / c.Scenery.ROAD_WOBBLE_FULL)
-        detail_phase = rng.uniform(0, 2 * math.pi)
-        detail_waves = rng.uniform(4.0, 7.0)
-        dx, dy = (end[0] - start[0]) / length, (end[1] - start[1]) / length
-        for step in range(0, int(length), c.Scenery.ROAD_STEP):
-            t = step / length
-            # One long wave for where the road goes, a shorter one over it for how it got
-            # there, both pinched back to nothing at each end so it still meets its village.
-            bend = math.sin(phase + t * waves * 2 * math.pi) * amplitude
-            bend += math.sin(detail_phase + t * detail_waves * 2 * math.pi) * amplitude * c.Scenery.ROAD_DETAIL
-            bend *= math.sin(math.pi * t)
-            x = start[0] + dx * step - dy * bend
-            y = start[1] + dy * step + dx * bend
-            if not bounds.collidepoint(x, y):
-                continue
-            width = rng.uniform(*c.Scenery.ROAD_WIDTH)
-            points.append((x, y, width))
+    for route in _routes_near_chunk(cx, cy):
+        points.extend(_route_blobs(route, bounds, sites))
     return points
+
+
+def _routes_near_chunk(cx: int, cy: int) -> list[Route]:
+    """Every route that might cross this chunk, each one asked of the place it leaves from
+    rather than of the chunk asking, so two chunks either side of a border never disagree
+    about whether a road exists."""
+    routes: dict[tuple, Route] = {}
+    for x, y, scx, scy, radius in settlements_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS):
+        for route in _roads_from_site(x, y, scx, scy, radius):
+            routes[_route_key(route)] = route
+    reach = c.Scenery.PATH_CHUNK_RADIUS
+    for gx in range(cx - reach, cx + reach + 1):
+        for gy in range(cy - reach, cy + reach + 1):
+            route = _path_from_poi(gx, gy)
+            if route is not None:
+                routes[_route_key(route)] = route
+    return list(routes.values())
+
+
+def _route_key(route: Route) -> tuple:
+    """The same track asked for from either end is one track, not two laid on top of each
+    other: a road and the footpath joining the same two places would double its width."""
+    (ax, ay, _), (bx, by, _), kind = route
+    return (*sorted(((round(ax), round(ay)), (round(bx), round(by)))), kind)
+
+
+@lru_cache(maxsize=512)
+def _roads_from_site(x: float, y: float, cx: int, cy: int, radius: float) -> tuple[Route, ...]:
+    """The roads leaving one settlement: its nearest `ROAD_LINKS` neighbours within reach.
+
+    More than one link is what turns a chain of villages into a network, and the cap on the
+    length is what keeps a lone settlement in the deep wilds from being joined to a town
+    half a world away by a road nobody would have cut.
+    """
+    others = [s for s in settlements_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS) if (s[0], s[1]) != (x, y)]
+    others.sort(key=lambda s: math.dist((x, y), (s[0], s[1])))
+    routes = []
+    for ox, oy, _, _, oradius in others[: c.Scenery.ROAD_LINKS]:
+        if math.dist((x, y), (ox, oy)) > c.Scenery.ROAD_MAX_LENGTH:
+            break
+        routes.append(((x, y, radius), (ox, oy, oradius), "road"))
+    return tuple(routes)
+
+
+@lru_cache(maxsize=2048)
+def _path_from_poi(cx: int, cy: int) -> Route | None:
+    """The footpath worn from this chunk's landmark to whatever it is nearest to: the
+    settlement it stands outside, or the next landmark along.
+
+    Nearest of the two rather than the settlement by preference, so a string of landmarks
+    out in the wilds is joined into a track that leads somewhere instead of every one of
+    them sending its own spoke back to the same village. A landmark with nothing within
+    `PATH_MAX_LENGTH` keeps no path at all, which is what leaves the deep wilds trackless.
+    """
+    # Imported here rather than at the top: a landmark keeps out of the water, so poi.py
+    # asks this module where the rivers run, and this is the other half of that pair.
+    from game.entities.poi import poi_site
+
+    site = poi_site(cx, cy)
+    if site is None:
+        return None
+    x, y, _ = site
+
+    reach = c.Scenery.PATH_CHUNK_RADIUS
+    ends: list[Endpoint] = [(sx, sy, radius) for sx, sy, _, _, radius in settlements_near_chunk(cx, cy, reach)]
+    for gx in range(cx - reach, cx + reach + 1):
+        for gy in range(cy - reach, cy + reach + 1):
+            other = poi_site(gx, gy) if (gx, gy) != (cx, cy) else None
+            if other is not None:
+                ends.append((other[0], other[1], c.Scenery.PATH_POI_CLEARANCE))
+
+    end = min(ends, key=lambda e: math.dist((x, y), (e[0], e[1])), default=None)
+    if end is None or math.dist((x, y), (end[0], end[1])) > c.Scenery.PATH_MAX_LENGTH:
+        return None
+    return (x, y, c.Scenery.PATH_POI_CLEARANCE), end, "path"
+
+
+def _route_blobs(route: Route, bounds: pygame.Rect, sites) -> list[tuple[float, float, float]]:
+    """One route's packed earth, or nothing at all when it stays clear of this chunk.
+
+    The line is bent by a seeded sine so a road reads as a track somebody wore into the
+    ground rather than as a ruler laid across the map, pinched back to nothing at each end
+    so it still meets what it joins.
+    """
+    (ax, ay, a_clear), (bx, by, b_clear), kind = route
+    start = _approach(ax, ay, a_clear, bx, by)
+    end = _approach(bx, by, b_clear, ax, ay)
+    length = math.dist(start, end)
+    if length < 1 or not _crosses(bounds, start, end):
+        return []
+
+    rng = random.Random(f"{kind}:{start}:{end}")
+    phase = rng.uniform(0, 2 * math.pi)
+    waves = rng.uniform(0.8, 1.8)
+    # How far a road may wander follows how far it is going: two sites a chunk apart have
+    # no room to bend, and a road crossing several has to earn its length or it reads as a
+    # ruler laid between two villages.
+    amplitude = rng.uniform(0.55, 1.0) * c.Scenery.ROAD_WOBBLE * min(1.0, length / c.Scenery.ROAD_WOBBLE_FULL)
+    detail_phase = rng.uniform(0, 2 * math.pi)
+    detail_waves = rng.uniform(4.0, 7.0)
+    width_range = c.Scenery.PATH_WIDTH if kind == "path" else c.Scenery.ROAD_WIDTH
+    dx, dy = (end[0] - start[0]) / length, (end[1] - start[1]) / length
+
+    points: list[tuple[float, float, float]] = []
+    for step in range(0, int(length), c.Scenery.ROAD_STEP):
+        t = step / length
+        # One long wave for where the road goes, a shorter one over it for how it got there.
+        bend = math.sin(phase + t * waves * 2 * math.pi) * amplitude
+        bend += math.sin(detail_phase + t * detail_waves * 2 * math.pi) * amplitude * c.Scenery.ROAD_DETAIL
+        bend *= math.sin(math.pi * t)
+        x = start[0] + dx * step - dy * bend
+        y = start[1] + dy * step + dx * bend
+        if not bounds.collidepoint(x, y):
+            continue
+        x, y = _dodge_grounds(x, y, -dy, dx, sites, route)
+        points.append((x, y, rng.uniform(*width_range)))
+    return points
+
+
+def _approach(x: float, y: float, clearance: float, toward_x: float, toward_y: float) -> tuple[float, float]:
+    """Where a route meets one of its ends. A settlement is met at the middle of the side
+    facing the other end, which is where its gate stands and where its grounds stop: a road
+    that carried on to the plaza would have to be laid through the wall and the houses
+    behind it. A landmark is simply left a little room."""
+    if clearance <= 0:
+        return x, y
+    dx, dy = toward_x - x, toward_y - y
+    if abs(dx) >= abs(dy):
+        return x + math.copysign(clearance, dx), y
+    return x, y + math.copysign(clearance, dy)
+
+
+def _crosses(bounds: pygame.Rect, start, end) -> bool:
+    """Whether a route comes anywhere near this chunk, tested as the distance from the
+    chunk's centre to the segment. Laying out every road in the region per chunk is most of
+    what a chunk load would cost otherwise, and nearly all of them are nowhere near it."""
+    px, py = bounds.center
+    ax, ay = start
+    dx, dy = end[0] - ax, end[1] - ay
+    span = dx * dx + dy * dy
+    t = 0.0 if span == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / span))
+    reach = math.hypot(bounds.width, bounds.height) / 2 + c.Scenery.ROAD_WOBBLE
+    return math.hypot(px - (ax + dx * t), py - (ay + dy * t)) <= reach
+
+
+def _dodge_grounds(x: float, y: float, nx: float, ny: float, sites, route: Route) -> tuple[float, float]:
+    """Push a point of road out of any settlement's grounds it would otherwise run through,
+    sideways along the road's own normal.
+
+    Its two ends are exempt: a road is *meant* to arrive at those, and it already stops at
+    their gate. Anything else in the way is a third village the track never had any reason
+    to be cut through."""
+    for sx, sy, _, _, radius in sites:
+        if any(math.dist((sx, sy), (ex, ey)) < 1 for ex, ey, _ in route[:2]):
+            continue
+        clear = radius + c.Scenery.ROAD_VILLAGE_CLEARANCE
+        gap = math.hypot(x - sx, y - sy)
+        if gap >= clear:
+            continue
+        side = 1.0 if (x - sx) * nx + (y - sy) * ny >= 0 else -1.0
+        push = clear - gap
+        x, y = x + nx * side * push, y + ny * side * push
+    return x, y
 
 
 Blobs = list[tuple[float, float, float]]
@@ -409,12 +550,15 @@ def river_points_for_chunk(cx: int, cy: int) -> tuple[Blobs, Blobs]:
     to cross (`World.water_at`), which is what leaves a bridge worth walking to.
 
     A lane bends around any settlement it would otherwise run through, and carries a bridge
-    at fixed intervals whatever else is nearby, so a crossing is always findable.
+    at fixed intervals whatever else is nearby, so a crossing is always findable. How broad
+    the water is is rolled per lane (`RIVER_LANE_SCALE`) rather than shared: a brook and a
+    river worth walking a long way to a bridge for are the same course at two scales, and a
+    map where every river is the same width has only one of them on it.
     """
     size = c.World.CHUNK_SIZE
     span = c.Scenery.RIVER_LANE_CHUNKS * size
     bounds = pygame.Rect(cx * size, cy * size, size, size)
-    reach = c.Scenery.RIVER_WOBBLE + max(c.Scenery.RIVER_WIDTH)
+    reach = c.Scenery.RIVER_WOBBLE + max(c.Scenery.RIVER_WIDTH) * max(c.Scenery.RIVER_LANE_SCALE)
     sites = sites_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS)
 
     water: list[tuple[float, float, float]] = []
@@ -435,7 +579,8 @@ def river_points_for_chunk(cx: int, cy: int) -> tuple[Blobs, Blobs]:
             phase, period = rng.uniform(0, 2 * math.pi), rng.uniform(1600, 3400)
             phase2, period2 = rng.uniform(0, 2 * math.pi), rng.uniform(500, 900)
             amplitude = rng.uniform(0.55, 1.0) * c.Scenery.RIVER_WOBBLE
-            width_lo, width_hi = c.Scenery.RIVER_WIDTH
+            scale = rng.uniform(*c.Scenery.RIVER_LANE_SCALE)
+            width_lo, width_hi = (w * scale for w in c.Scenery.RIVER_WIDTH)
             bridge_offset = rng.uniform(0, c.Scenery.BRIDGE_INTERVAL)
 
             step = c.Scenery.RIVER_STEP
@@ -456,7 +601,7 @@ def river_points_for_chunk(cx: int, cy: int) -> tuple[Blobs, Blobs]:
                     # square across the current rather than along the lane's nominal line.
                     slope = math.cos(phase + t / period) * amplitude / period
                     flow = math.atan2(1.0, slope) if axis == 0 else math.atan2(slope, 1.0)
-                    bridges.append((x, y, flow + math.pi / 2))
+                    bridges.append((x, y, flow + math.pi / 2, _deck_length(width)))
     return water, bridges
 
 
@@ -464,25 +609,36 @@ def _dodge_villages(x: float, y: float, axis: int, sites: Sequence[tuple[int, in
     """Push a point of river out of any settlement it would run through, sideways.
 
     A river that stops at the village wall and starts again past it reads as two rivers;
-    one that bows around the place reads as why the place is there."""
+    one that bows around the place reads as why the place is there. The push is faded out
+    over the length of the bow rather than applied wherever the point happens to be inside
+    the circle, since a course that snapped back to its lane the instant it cleared the
+    last house left a notch cut out of the water."""
     clearance = c.Scenery.RIVER_VILLAGE_CLEARANCE
     for sx, sy in sites:
         dx, dy = x - sx, y - sy
-        dist = math.hypot(dx, dy)
-        if dist >= clearance:
+        along = dy if axis == 0 else dx
+        if math.hypot(dx, dy) >= clearance or abs(along) >= clearance:
             continue
         # Only the axis across the river's own direction may move: shifting it along its
         # course would bunch the blobs up instead of moving the water.
         side = 1.0 if (dx if axis == 0 else dy) >= 0 else -1.0
-        span = math.sqrt(max(1.0, clearance * clearance - (dy if axis == 0 else dx) ** 2))
+        span = math.sqrt(max(1.0, clearance * clearance - along * along))
+        blend = 1.0 - (along / clearance) ** 2
         if axis == 0:
-            x = sx + side * span
+            x += ((sx + side * span) - x) * blend
         else:
-            y = sy + side * span
+            y += ((sy + side * span) - y) * blend
     return x, y
 
 
-def _road_crossings(roads, river, bridges) -> list[tuple[float, float, float]]:
+def _deck_length(width: float) -> float:
+    """How long a deck has to be to span water this wide, with a landing at each end. A
+    river's width is rolled per lane now, so one fixed deck either stopped short of the far
+    bank of the big ones or stood on dry ground either side of the small ones."""
+    return max(c.Scenery.BRIDGE_MIN_LENGTH, width * c.Scenery.BRIDGE_SPAN)
+
+
+def _road_crossings(roads, river, bridges) -> list[tuple[float, float, float, float]]:
     """A bridge wherever a road runs into a river, one per crossing.
 
     A road that stops at the bank and picks up on the far side is a road nobody built, so
@@ -490,20 +646,20 @@ def _road_crossings(roads, river, bridges) -> list[tuple[float, float, float]]:
     cover is left alone."""
     if not roads or not river:
         return []
-    found: list[tuple[float, float, float]] = []
+    found: list[tuple[float, float, float, float]] = []
     taken = list(bridges)
     for i, (rx, ry, _) in enumerate(roads):
         wet = min(river, key=lambda blob: math.hypot(rx - blob[0], ry - blob[1]))
         if math.hypot(rx - wet[0], ry - wet[1]) > wet[2]:
             continue
-        if any(math.hypot(wet[0] - bx, wet[1] - by) < c.Scenery.BRIDGE_LENGTH for bx, by, _ in taken):
+        if any(math.hypot(wet[0] - bx, wet[1] - by) < _deck_length(wet[2] * 2) for bx, by, _, _ in taken):
             continue
         # The deck lies along the road, which is what makes it a crossing rather than a
         # plank dropped in the water at whatever angle the lane runs.
         heading = _road_heading(roads, i)
         if heading is None:
             continue
-        found.append((wet[0], wet[1], heading))
+        found.append((wet[0], wet[1], heading, _deck_length(wet[2] * 2)))
         taken.append(found[-1])
     return found
 
@@ -561,12 +717,11 @@ def generate_chunk_scenery(
     # Every deck within reach of this chunk, its own and its neighbours', as ground no
     # trunk or boulder may stand on: a crossing walled in at the end of it is worse than
     # no crossing at all, because the player walked over to use it.
-    bridge_reach = math.hypot(c.Scenery.BRIDGE_LENGTH, c.Scenery.BRIDGE_WIDTH) / 2 + c.Scenery.BRIDGE_CLEARANCE
     bridge_zones = [
-        (bx, by, bridge_reach)
+        (bx, by, math.hypot(length, c.Scenery.BRIDGE_WIDTH) / 2 + c.Scenery.BRIDGE_CLEARANCE)
         for ox in (-1, 0, 1)
         for oy in (-1, 0, 1)
-        for bx, by, _ in _chunk_terrain(cx + ox, cy + oy)[2]
+        for bx, by, _, length in _chunk_terrain(cx + ox, cy + oy)[2]
     ]
 
     # Circles nothing at all may stand in, and circles only solid things are kept out of.
@@ -606,8 +761,8 @@ def generate_chunk_scenery(
     # A crossing wherever the lane says so, plus one wherever a road runs into the water:
     # that is where anybody would have built one, and it keeps a road from stopping dead.
     # Both kinds are already in `bridges`, rolled by `_chunk_terrain`.
-    for bx, by, angle in bridges:
-        items.append(Scenery(bx, by, "bridge", chunk, biome=biome, angle=angle))
+    for bx, by, angle, length in bridges:
+        items.append(Scenery(bx, by, "bridge", chunk, size=length, biome=biome, angle=angle))
 
     def free(x: float, y: float, solid: bool) -> bool:
         for zx, zy, radius in solid_zones:

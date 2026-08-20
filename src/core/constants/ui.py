@@ -41,6 +41,7 @@ class Minimap:
         "watchtower": (170, 160, 145),
         "stones": (160, 150, 185),
         "signpost": (196, 168, 110),
+        "cave": (70, 66, 62),
     }
 
     # A rumour is the one thing on the map the player has not walked to: it is drawn

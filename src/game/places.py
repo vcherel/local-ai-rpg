@@ -244,7 +244,13 @@ class WorldPlaces:
         None for a well that is only a well."""
         if not has_tunnel(village.chunk):
             return None
-        tunnel = Tunnel(village.chunk)
+        return self.tunnel_at(village.chunk, "well")
+
+    def tunnel_at(self, chunk: tuple[int, int], kind: str) -> Tunnel:
+        """The tunnel reached from this chunk by `kind`, built on first use and kept from
+        then on. The one place a tunnel is ever made, so whatever it has already lost to the
+        player is put back on it whichever way in they used."""
+        tunnel = Tunnel(chunk, kind)
         cached = self.tunnels.get(tunnel.id)
         if cached is not None:
             return cached
@@ -254,28 +260,49 @@ class WorldPlaces:
         self.tunnels[tunnel.id] = tunnel
         return tunnel
 
-    def enter_tunnel(self, player: Player, village: Village) -> bool:
-        """Climb down the well. Returns False when it leads nowhere, which is most of them.
+    def cave_in_reach(self, player: Player) -> PointOfInterest | None:
+        """The cave mouth the player is standing at, or None. Unlike a well, every one of
+        them goes somewhere: a cave is what puts the dark within reach of somebody who has
+        walked out into the wilds rather than into a village."""
+        pos = player.get_pos()
+        caves = [
+            poi
+            for poi in self.pois
+            if poi.kind == "cave" and poi.distance_to_point(pos) < c.PointsOfInterest.CAVE_ENTER_DISTANCE
+        ]
+        return min(caves, key=lambda poi: poi.distance_to_point(pos), default=None)
 
-        Nothing is loaded or unloaded: the tunnel is already part of the world, just a very
-        long way from the ground the player was standing on, so this is a change of position
-        and of what `World.update` bothers doing. What is waiting down there is stood up now
-        rather than streamed, because nothing streams underground."""
+    def enter_cave(self, player: Player, poi: PointOfInterest):
+        """Walk in through a cave mouth, into the same dark a well leads down to."""
+        cx, cy = (int(part) for part in poi.id.split(":"))
+        self._go_underground(player, self.tunnel_at((cx, cy), "cave"))
+        if self.notify:
+            self.notify("You duck under the rock and into the dark", (170, 160, 200))
+
+    def enter_tunnel(self, player: Player, village: Village) -> bool:
+        """Climb down the well. Returns False when it leads nowhere, which is most of them."""
         tunnel = self.tunnel_for(village)
         if tunnel is None:
             if self.notify:
                 self.notify("You look down the well. Water, and a long way down to it.", c.Colors.MUTED)
             return False
 
+        self._go_underground(player, tunnel)
+        if self.notify:
+            self.notify("You climb down into the dark under the well", (170, 160, 200))
+        return True
+
+    def _go_underground(self, player: Player, tunnel: Tunnel):
+        """Be down there. Nothing is loaded or unloaded: the tunnel is already part of the
+        world, just a very long way from the ground the player was standing on, so this is a
+        change of position and of what `World.update` bothers doing. What is waiting is
+        stood up now rather than streamed, because nothing streams underground."""
         self.surface_return = (player.x, player.y)
         self.underground = tunnel
         player.x, player.y = tunnel.entrance
         self.projectiles.clear()
         self._populate_tunnel(tunnel)
         play_sound("door")
-        if self.notify:
-            self.notify("You climb down into the dark under the well", (170, 160, 200))
-        return True
 
     def leave_tunnel(self, player: Player):
         """Back up the ladder, to the well the player climbed down. The garrison stays where
@@ -318,7 +345,7 @@ class WorldPlaces:
         keeps them out of the save, out of the despawn and out of the roaming cap), so four of
         five killed survives climbing out, quitting and coming back."""
         if tunnel.guards_alive is None:
-            tunnel.guards_alive = random.randint(*c.Tunnels.GUARDS)
+            tunnel.guards_alive = random.randint(*tunnel.guard_count)
         rng = random.Random(f"tunnel-fill:{tunnel.id}")
 
         for x, y in tunnel.floor_spots(tunnel.guards_alive, rng):
@@ -338,15 +365,26 @@ class WorldPlaces:
         nothing, with no rock around them and no way back."""
         if not saved:
             return
-        village = next((v for v in self.villages if Tunnel(v.chunk).id == saved.get("id")), None)
-        if village is None:
-            return
-        tunnel = self.tunnel_for(village)
+        tunnel = self._tunnel_from_id(saved.get("id") or "")
         if tunnel is None:
             return
         self.underground = tunnel
         self.surface_return = tuple(saved.get("return") or tunnel.entrance)
         self._populate_tunnel(tunnel)
+
+    def _tunnel_from_id(self, tunnel_id: str) -> Tunnel | None:
+        """The tunnel a saved id names, rebuilt from the id alone: "tunnel:cx:cy" for a
+        well, "tunnel:cave:cx:cy" for a cave. Read back rather than looked up, since the
+        village or the landmark it belongs to may not be loaded at all."""
+        parts = tunnel_id.split(":")
+        if len(parts) not in (3, 4) or parts[0] != "tunnel":
+            return None
+        kind = "well" if len(parts) == 3 else parts[1]
+        try:
+            chunk = (int(parts[-2]), int(parts[-1]))
+        except ValueError:
+            return None
+        return self.tunnel_at(chunk, kind)
 
     def shrine_in_reach(self, player: Player) -> PointOfInterest | None:
         """The shrine the player could pray at right now: near enough, and not yet answered.

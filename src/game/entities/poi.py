@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import pygame
@@ -29,7 +30,9 @@ class PointOfInterest:
     standing near it. "farmstead" is a second lootable cache with a look of its own;
     "graveyard", "watchtower" and "stones" are places rather than rewards, each saying what
     it is the first time it is reached; "signpost" reads out the way to somewhere the player
-    has never walked and marks it on the map, like a rumour.
+    has never walked and marks it on the map, like a rumour. "cave" is a mouth in the rock
+    leading into the same dark a village well drops into (`World.enter_cave`), which is what
+    puts the underground within reach of somebody who never walked into a town.
     """
 
     def __init__(self, x, y, kind="ruins", poi_id=""):
@@ -138,6 +141,7 @@ class PointOfInterest:
             "watchtower": self._draw_watchtower,
             "stones": self._draw_stones,
             "signpost": self._draw_signpost,
+            "cave": self._draw_cave,
         }.get(self.kind, self._draw_ruins)
         drawer(screen, center)
 
@@ -172,6 +176,30 @@ class PointOfInterest:
         pygame.draw.rect(screen, (120, 92, 58), cart, border_radius=3)
         pygame.draw.circle(screen, (74, 56, 36), (cart.left + 6, cart.bottom), 7)
         pygame.draw.circle(screen, (74, 56, 36), (cart.right - 6, cart.bottom), 7)
+
+    def _draw_cave(self, screen, center):
+        """A shoulder of rock with a black mouth in it. The opening is drawn as flat black
+        rather than as shaded stone, because the one thing it has to say from across the
+        screen is that it goes somewhere."""
+        cx, cy = center
+        rng = random.Random(f"cave:{self.x},{self.y}")
+        face = pygame.Rect(0, 0, 128, 88)
+        face.center = (cx, cy)
+        pygame.draw.ellipse(screen, (118, 114, 106), face)
+        pygame.draw.ellipse(screen, (78, 76, 70), face, 3)
+        # Boulders piled either side of the opening, so the rock reads as a hillside rather
+        # than as one grey blob with a hole in it.
+        for side in (-1, 1):
+            for step in range(2):
+                pos = (round(cx + side * (58 + step * 20)), round(cy + 16 + step * 10))
+                grey = rng.randint(124, 146)
+                pygame.draw.circle(screen, (grey, grey - 4, grey - 12), pos, rng.randint(11, 18))
+        mouth = pygame.Rect(0, 0, 62, 58)
+        mouth.midbottom = (cx, cy + 36)
+        pygame.draw.ellipse(screen, (24, 22, 20), mouth)
+        # The lit lip over the opening, so the mouth reads as an overhang rather than as a
+        # hole painted on a rock.
+        pygame.draw.arc(screen, (152, 148, 138), mouth.inflate(10, 10), 0.2, math.pi - 0.2, 4)
 
     def _draw_graveyard(self, screen, center):
         cx, cy = center
@@ -340,19 +368,20 @@ class PointOfInterest:
             screen.blit(glow, (cx - 30, cy - 36))
 
 
-def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfInterest]:
-    """The points of interest belonging to one chunk, generated from its coordinates.
+@lru_cache(maxsize=2048)
+def poi_site(cx: int, cy: int) -> tuple[float, float, str] | None:
+    """Where this chunk's landmark stands and what kind it is, or None for a chunk that
+    holds none. A pure function of the coordinates, so it can be asked about a chunk nobody
+    has walked into: what the footpaths through the wilderness are drawn to, exactly as
+    `village_site` is what the roads between settlements are drawn from.
 
-    Deterministic, so a chunk looks the same every time the player walks back into it, and
-    endless, so there is always something to find however far out they go. At most one per
-    chunk, placed away from the chunk's own edges, which keeps neighbouring landmarks apart
-    without any cross-chunk lookups. Villages stay clear: the generated ones through
-    `buildings`, and the ones nobody has walked into yet through their sites, which are a
-    pure function of the chunk and so are known well before the village itself exists.
+    Everything that decides against a landmark is in here except the one test that needs
+    the world as it stands, the buildings already generated nearby, which `pois_for_chunk`
+    makes on top of this.
     """
     rng = random.Random(f"poi:{cx},{cy}")
     if rng.random() > c.PointsOfInterest.PER_CHUNK_CHANCE:
-        return []
+        return None
 
     size = c.World.CHUNK_SIZE
     margin = c.PointsOfInterest.CHUNK_MARGIN
@@ -361,11 +390,7 @@ def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfI
 
     center = c.World.WORLD_SIZE // 2
     if math.hypot(x - center, y - center) < c.PointsOfInterest.MIN_DIST_FROM_CENTER:
-        return []
-    if any(
-        math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING for b in buildings
-    ):
-        return []
+        return None
     for nx in range(cx - 2, cx + 3):
         for ny in range(cy - 2, cy + 3):
             site = village_site(nx, ny)
@@ -376,14 +401,33 @@ def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfI
             # how a graveyard used to be laid out against somebody's gate.
             clear = max(c.Villages.MIN_DIST_FROM_POI, site_grounds_radius(nx, ny) + c.PointsOfInterest.VILLAGE_MARGIN)
             if math.hypot(x - site[0], y - site[1]) < clear:
-                return []
+                return None
 
     # Nothing is built in the water. The river's course is a pure function of the chunk
     # like everything else here, so it can be asked about before the landmark exists.
     river, _ = river_points_for_chunk(cx, cy)
     if any(math.hypot(x - wx, y - wy) < radius + c.PointsOfInterest.MIN_DIST_FROM_WATER for wx, wy, radius in river):
-        return []
+        return None
 
     kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
-    kind = rng.choices(kinds, weights=weights)[0]
+    return x, y, rng.choices(kinds, weights=weights)[0]
+
+
+def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfInterest]:
+    """The points of interest belonging to one chunk, generated from its coordinates.
+
+    Deterministic, so a chunk looks the same every time the player walks back into it, and
+    endless, so there is always something to find however far out they go. At most one per
+    chunk, placed away from the chunk's own edges, which keeps neighbouring landmarks apart
+    without any cross-chunk lookups. Where it stands is `poi_site`; the one thing decided
+    here is whether a building already generated is standing on the spot.
+    """
+    site = poi_site(cx, cy)
+    if site is None:
+        return []
+    x, y, kind = site
+    if any(
+        math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING for b in buildings
+    ):
+        return []
     return [PointOfInterest(x, y, kind, poi_id=f"{cx}:{cy}")]

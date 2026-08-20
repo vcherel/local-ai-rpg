@@ -20,7 +20,8 @@ def has_tunnel(chunk: tuple[int, int]) -> bool:
 
 
 class Tunnel:
-    """The dug-out under a village well: a few rooms joined by corridors, in the dark.
+    """The dark under the world: a few rooms joined by corridors, reached either by climbing
+    down a village well or by walking into a cave mouth out in the wilds.
 
     It is not a separate place in any technical sense. A tunnel is carved out of ordinary
     world space, a very long way from any ground that streams in (`c.Tunnels.ORIGIN`), which
@@ -29,6 +30,10 @@ class Tunnel:
     read as underground is what `World` does while the player is in one: no chunks are
     generated, nothing wanders in, the sky is not drawn, and the only light is the player's.
 
+    `kind` is only where the way in was: a well's tunnel is a short dug-out under a
+    settlement, a cave is bigger and worse guarded, and the two are told apart in the id so
+    a village and a landmark sharing a chunk can never share a tunnel.
+
     Collision is the floor rather than the walls: everywhere outside the rooms and corridors
     is solid rock, so `blocks` asks whether a body of that size fits inside one of them. Its
     layout comes from the village's chunk alone; the two things a player changes about it,
@@ -36,19 +41,26 @@ class Tunnel:
     world saves.
     """
 
-    def __init__(self, chunk: tuple[int, int]):
+    def __init__(self, chunk: tuple[int, int], kind: str = "well"):
         self.chunk = (int(chunk[0]), int(chunk[1]))
+        self.kind = kind
         self.guards_alive: int | None = None
         self.hoard_placed = False
 
-        rng = random.Random(f"tunnel-layout:{self.chunk[0]},{self.chunk[1]}")
-        origin_x = c.Tunnels.ORIGIN + self.chunk[0] * c.Tunnels.SPACING
-        origin_y = c.Tunnels.ORIGIN + self.chunk[1] * c.Tunnels.SPACING
+        # A well's layout is seeded exactly as it always was, so a game saved standing in
+        # one loads back into the same rooms rather than into solid rock.
+        seed = f"tunnel-layout:{self.chunk[0]},{self.chunk[1]}"
+        rng = random.Random(seed if kind == "well" else f"tunnel-layout:{kind}:{self.chunk[0]},{self.chunk[1]}")
+        # A cave is dug in its own corner of that far-off space, so a landmark and a well
+        # that happen to share a chunk can never be laid out on top of each other.
+        origin = c.Tunnels.ORIGIN + (0 if kind == "well" else c.Tunnels.CAVE_OFFSET)
+        origin_x = origin + self.chunk[0] * c.Tunnels.SPACING
+        origin_y = origin + self.chunk[1] * c.Tunnels.SPACING
 
         self.rooms: list[pygame.Rect] = []
         self.corridors: list[pygame.Rect] = []
         x, y = origin_x, origin_y
-        for index in range(rng.randint(*c.Tunnels.ROOMS)):
+        for index in range(rng.randint(*c.Tunnels.ROOMS[kind])):
             width = rng.randint(*c.Tunnels.ROOM_SIZE)
             height = rng.randint(*c.Tunnels.ROOM_SIZE)
             room = pygame.Rect(0, 0, width, height)
@@ -66,7 +78,15 @@ class Tunnel:
 
     @property
     def id(self) -> str:
-        return f"tunnel:{self.chunk[0]}:{self.chunk[1]}"
+        # A well's tunnel keeps the id it has always had, so a save made before there were
+        # caves still finds the tunnel it left half cleared.
+        if self.kind == "well":
+            return f"tunnel:{self.chunk[0]}:{self.chunk[1]}"
+        return f"tunnel:{self.kind}:{self.chunk[0]}:{self.chunk[1]}"
+
+    @property
+    def guard_count(self) -> tuple[int, int]:
+        return c.Tunnels.GUARDS[self.kind]
 
     @staticmethod
     def _dig(start, end) -> list[pygame.Rect]:
@@ -172,11 +192,16 @@ class Tunnel:
             pygame.draw.circle(screen, dark, (screen_x, screen_y), rng.randint(3, 9))
 
     def _draw_shaft(self, screen: pygame.Surface, camera: Camera):
-        """The bottom of the well: daylight on the floor and the ladder standing in it, the
-        one thing down here the player has to be able to find again."""
+        """The way out: daylight on the floor, and the ladder standing in it under a well.
+        The one thing down here the player has to be able to find again, so it is drawn
+        whatever else the dark is hiding."""
         x, y = camera.world_to_screen(*self.entrance)
         pygame.draw.circle(screen, (108, 104, 88), (x, y), 54)
         pygame.draw.circle(screen, (146, 142, 118), (x, y), 38)
+        if self.kind != "well":
+            # A cave is walked out of rather than climbed: the daylight is the whole marker.
+            pygame.draw.circle(screen, (188, 184, 156), (x, y), 22)
+            return
         for rung in range(-2, 3):
             pygame.draw.line(screen, c.Tunnels.LADDER_COLOR, (x - 16, y + rung * 12), (x + 16, y + rung * 12), 3)
         for side in (-16, 16):
