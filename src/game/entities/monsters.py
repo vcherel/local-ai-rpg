@@ -8,6 +8,7 @@ import pygame
 
 import core.constants as c
 from core.audio import play_sound
+from core.utils import frames
 from game.entities.entities import Entity, push_apart
 from game.entities.monster_art import draw_monster, weapon_hand
 
@@ -185,6 +186,18 @@ class Monster(Entity):
                 return False
         return True
 
+    def _take_step(self, angle: float, speed: float, blocked, radius: float):
+        """Cover `speed` along `angle`, one axis at a time so a wall on one of them lets the
+        monster slide along it rather than stopping dead against it."""
+        step_x = math.cos(angle) * speed
+        step_y = math.sin(angle) * speed
+        if blocked is not None and blocked(self.x + step_x, self.y, radius):
+            step_x = 0
+        self.x += step_x
+        if blocked is not None and blocked(self.x, self.y + step_y, radius):
+            step_y = 0
+        self.y += step_y
+
     def _commit_side(self, side: int):
         self.steer_side = side
         self.steer_hold_ms = pygame.time.get_ticks() + c.World.STEER_COMMIT_MS
@@ -346,7 +359,7 @@ class Monster(Entity):
         senses = c.World.DETECTION_RANGE if detection is None else detection
         # Chilled by a frost bolt: it still turns, still swings and still shoots, it just
         # covers less ground doing it, exactly like the water and unlike a trap.
-        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult * self.chill_mult
+        move_factor = frames(dt) * terrain_mult * self.chill_mult
         # Caught in a bear trap, or still travelling under a shove: every step below is
         # scaled by this, so it turns, swings and shoots from where it stands and simply
         # cannot cross the ground to the player under its own power.
@@ -390,23 +403,14 @@ class Monster(Entity):
             if retreating:
                 speed *= c.Entities.RETREAT_SPEED_MULT
             move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
-            angle = self._steer(move_angle, blocked, radius, speed, goal_dist)
-            step_x = math.cos(angle) * speed
-            step_y = math.sin(angle) * speed
-            # Move one axis at a time so a wall on one axis lets the monster slide along it.
-            if blocked is not None and blocked(self.x + step_x, self.y, radius):
-                step_x = 0
-            self.x += step_x
-            if blocked is not None and blocked(self.x, self.y + step_y, radius):
-                step_y = 0
-            self.y += step_y
+            self._take_step(self._steer(move_angle, blocked, radius, speed, goal_dist), speed, blocked, radius)
 
         self._separate(crowd, blocked, radius)
 
         damage = 0
         # A detonator never swings: its whole attack is the blast the world sets off for it.
         swings = not self.kind.detonate and (not self.kind.ranged or cornered)
-        if swings and self.attack_token and dist < self.melee_reach * 10:
+        if swings and self.attack_token and dist < self.melee_reach * c.Entities.SWING_WINDUP_REACH_MULT:
             if self.start_attack_anim(dist):
                 damage = round(self.kind.damage * damage_mult)
 

@@ -7,6 +7,16 @@ import core.constants as c
 from core import llm_log
 
 
+def frames(dt: float) -> float:
+    """How many frames' worth of movement `dt` milliseconds is.
+
+    Everything that moves is tuned per frame at `TARGET_FPS` and then scaled by this, so the
+    world covers the same ground whatever the framerate is doing. One definition, because it
+    was written out by hand in every step routine in the game.
+    """
+    return dt * c.TARGET_FPS / 1000.0
+
+
 def random_color():
     h = random.random()
     s = 0.3 + 0.2 * random.random()

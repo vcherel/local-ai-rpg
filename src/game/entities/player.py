@@ -899,22 +899,39 @@ class Player(Entity):
         self.coins += amount
         self.save_system.update("coins", self.coins)
 
+    def _reflect(self, source, amount: int, color, count: int, speed: int, life: int):
+        """Send `amount` back at whatever landed the blow, stopping short of the kill.
+
+        A source is not always a body with health to take it: a blast names itself with a
+        plain string, and an arrow or a bear trap has no `hp` at all. Anything without one
+        is nothing to reflect at, which is what the `getattr` default says.
+        """
+        if amount <= 0 or getattr(source, "hp", 0) <= 0:
+            return
+        source.hp = max(1, source.hp - amount)
+        get_particles().spawn_burst(source.x, source.y, color, count=count, speed=speed, life=life, size=3)
+
+    def _shrug_off(self, color, count: int):
+        """The puff a hit that never landed leaves: the only sign the player gets that
+        something was thrown at them and stopped before it reached them."""
+        get_particles().spawn_burst(self.x, self.y, color, count=count, speed=3, life=250, size=3)
+
     def receive_damage(self, damage, source=None):
         now = time.time()
         # Spawn grace: the few seconds after arriving in the world or coming back from a
         # death, so a respawn can never chain straight into the next one.
         if now < self.invuln_until:
-            get_particles().spawn_burst(self.x, self.y, c.Colors.WHITE, count=4, speed=3, life=250, size=3)
+            self._shrug_off(c.Colors.WHITE, 4)
             return
 
         # Guardian's Ward: while its brief invulnerability window is up, nothing lands.
         if now < self.guardian_ward_invuln_until:
-            get_particles().spawn_burst(self.x, self.y, (255, 215, 120), count=6, speed=3, life=250, size=3)
+            self._shrug_off((255, 215, 120), 6)
             return
 
         # Armour's dodge affix can shrug a hit off entirely.
-        if self.dodge_chance() and random.random() < self.dodge_chance():
-            get_particles().spawn_burst(self.x, self.y, c.Colors.WHITE, count=5, speed=3, life=250, size=3)
+        if random.random() < self.dodge_chance():
+            self._shrug_off(c.Colors.WHITE, 5)
             return
 
         # A raised shield eats its share of a frontal blow before anything else looks at it.
@@ -966,19 +983,13 @@ class Player(Entity):
         get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
         get_vignette().trigger(c.Combat.PLAYER_HURT_VIGNETTE)
 
-        # Thorns reflects flat damage back at a melee attacker, but never lands the kill.
-        thorns = self.thorns_damage()
-        if source is not None and thorns > 0 and getattr(source, "hp", 0) > 0:
-            source.hp = max(1, source.hp - thorns)
-            get_particles().spawn_burst(source.x, source.y, (220, 220, 120), count=6, speed=3, life=300, size=3)
-
-        # Retribution reflects a fraction of the raw incoming damage, so a hard-hitting
-        # attacker takes a hard-hitting reflection back; still stops short of the kill.
+        # Thorns reflects flat damage back at a melee attacker; retribution reflects a
+        # fraction of the raw incoming damage, so a hard-hitting attacker takes a
+        # hard-hitting reflection back. Neither ever lands the kill.
+        self._reflect(source, self.thorns_damage(), (220, 220, 120), 6, 3, 300)
         retribution = self.retribution_frac()
-        if source is not None and retribution > 0 and getattr(source, "hp", 0) > 0:
-            reflect = max(1, int(damage * retribution))
-            source.hp = max(1, source.hp - reflect)
-            get_particles().spawn_burst(source.x, source.y, (255, 90, 40), count=8, speed=4, life=350, size=3)
+        if retribution > 0:
+            self._reflect(source, max(1, int(damage * retribution)), (255, 90, 40), 8, 4, 350)
 
     def gain_coins(self, amount: int):
         """Add coins from loot, boosted by the coin-find accessory."""

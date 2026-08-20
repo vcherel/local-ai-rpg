@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.utils import frames
 from game.entities.entities import Gait
 from game.entities.wander import Wander
 
@@ -190,7 +191,7 @@ class Critter:
         radius = self.size / 2
         # An animal in water is slowed like everything else: a deer that bolts across a
         # river is easier to catch there than on the bank, which is the point of the bank.
-        move_factor = dt * c.TARGET_FPS / 1000.0 * terrain_mult * self.chill_mult
+        move_factor = frames(dt) * terrain_mult * self.chill_mult
         now = pygame.time.get_ticks()
         dist = self.distance_to_point((player.x, player.y))
 

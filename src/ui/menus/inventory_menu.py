@@ -405,16 +405,16 @@ class InventoryMenu(BaseMenu):
         surface.blit(text, (pill.x + 5, pill.y + 1))
 
     def _draw_scrollbar(self, surface, g, rows):
-        track_x = g["start_x"] + g["width"] + 8
-        track_y = g["start_y"]
-        track_h = g["area_h"]
-        pygame.draw.rect(surface, c.Colors.SLOT_BG, (track_x, track_y, 6, track_h))
-
-        visible = max(1, len(self._visible_rows(rows)))
-        thumb_h = max(24, int(track_h * visible / len(rows)))
-        max_scroll = self._max_scroll(rows)
-        thumb_y = track_y + int((track_h - thumb_h) * (self.scroll_row / max_scroll)) if max_scroll else track_y
-        pygame.draw.rect(surface, c.Colors.ACCENT, (track_x, thumb_y, 6, thumb_h))
+        widgets.draw_scrollbar(
+            surface,
+            g["start_x"] + g["width"] + 8,
+            g["start_y"],
+            g["area_h"],
+            visible=max(1, len(self._visible_rows(rows))),
+            total=len(rows),
+            scroll=self.scroll_row,
+            max_scroll=self._max_scroll(rows),
+        )
 
     def _fit(self, surf, text, max_width, color):
         """Truncate a rendered label with an ellipsis so it fits `max_width`."""
