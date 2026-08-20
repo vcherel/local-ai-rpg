@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import random
 
+import core.constants as c
 from core.utils import frames
 
 
@@ -34,22 +35,39 @@ class Wander:
         self.target = None
         self.idle_timer = random.uniform(self.idle_min_ms, self.idle_max_ms)
 
+    def _pick(self, anchor, radius, blocked) -> tuple | None:
+        """Somewhere to stroll to: a random spot within `radius` of the anchor that the
+        owner could actually stand on, or None if a few tries found nowhere."""
+        for _ in range(c.Entities.WANDER_PICK_TRIES):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(0, self.radius)
+            spot = (anchor[0] + math.cos(angle) * dist, anchor[1] + math.sin(angle) * dist)
+            if blocked is None or not blocked(spot[0], spot[1], radius):
+                return spot
+        return None
+
     def step(self, entity, dt, anchor, radius, blocked) -> float | None:
         """Advance the owner one frame. Returns the angle it actually moved along, or None
         if it stayed put (idling, arriving, or pinned flat against a wall)."""
         if self.target is None:
             self.idle_timer -= dt
             if self.idle_timer <= 0:
-                angle = random.uniform(0, 2 * math.pi)
-                dist = random.uniform(0, self.radius)
-                self.target = (anchor[0] + math.cos(angle) * dist, anchor[1] + math.sin(angle) * dist)
+                self.target = self._pick(anchor, radius, blocked)
+                if self.target is None:
+                    # Hemmed in on every side this time: idle again and try later, rather
+                    # than set off at a spot that can never be reached.
+                    self._rest()
             return None
 
         dx = self.target[0] - entity.x
         dy = self.target[1] - entity.y
         step = self.speed * frames(dt)
         if math.hypot(dx, dy) <= step:
-            entity.x, entity.y = self.target
+            # The spot was clear when it was picked; the world moves in the meantime (a
+            # village is built, a door is shut), and arriving is the one movement here that
+            # does not test the ground it lands on.
+            if blocked is None or not blocked(self.target[0], self.target[1], radius):
+                entity.x, entity.y = self.target
             self._rest()
             return None
 

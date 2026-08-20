@@ -25,7 +25,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 
 ### game
 - `src/game/game.py`: `Game`, the main loop, input handling and state orchestration; `_handle_key` is the whole key map as one table, `_handle_left_click` dispatches HUD clicks by action, `current_interaction`/`_interact` are the one prompt and the one E, `_sweep_loot` the loot magnet, `save_data` the one path to disk, `_respawn` and `_sleep_until_dawn` the two things that move the player without walking
-- `src/game/world.py`: `World`, the state everything reads (entity lists, buildings, shops, saving) plus the per-frame `update`; four jobs are mixed in from `combat.py`, `projectiles.py`, `streaming.py` and `places.py`. Also here: chunk-bucketed building/wall lookup, chase navigation (`chase_waypoint`, `_detour_corner`), `assign_surround_slots`, spawn caps and safe placement, terrain speed and line of sight, village defence orders, impulses and `unstick`
+- `src/game/world.py`: `World`, the state everything reads (entity lists, buildings, shops, saving) plus the per-frame `update`; four jobs are mixed in from `combat.py`, `projectiles.py`, `streaming.py` and `places.py`. Also here: chunk-bucketed building/wall lookup, chase navigation (`chase_waypoint`, `_detour_corner` and the corner it commits to), who may let themselves through a shut door or a barred gate, `assign_surround_slots`, spawn caps and safe placement, terrain speed and line of sight, village defence orders, impulses and `unstick`
 - `src/game/combat.py`: `WorldCombat`, every blow and its aftermath: `handle_attack`, the target-group table, cleave falloff, thrust lanes, knockback, crits, gore, weapon affixes and elements, breakables/windows/gates/props, bear traps, and `explode`
 - `src/game/projectiles.py`: `WorldProjectiles`, everything in flight: `_fire_ranged` (mana, ammo, style), monster shots, and what each projectile strikes
 - `src/game/places.py`: `WorldPlaces`, what the player does at a place once they have walked to it: camps, campfire rest, shrines, wells and caves, tunnels, theft and witnesses, village anger, directions and rumours, explored cells, `pass_time`
@@ -43,7 +43,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/entities/monsters.py`: `Monster`, `pick_monster_kind` (spawn by distance, fading kinds out again), chasing and ring slots, steering, ranged kinds that keep distance, charge/flank/detonate behaviours, burn ticks
 - `src/game/entities/monster_art.py`: the vector art per silhouette (`humanoid`, `goblin`, `hulk`, `skeleton`, `wraith`, `blob`, `beast`, `robed`, `creeper`) behind `draw_monster`; shadow, breath and eyes are shared by all of them
 - `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam, bolt volley, summons), knockback immune
-- `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza, `defences()` (wall, gates, towers, outworks), `tier`, `grounds_radius`
+- `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza, `defences()` (wall, gates, towers, outworks), the gates' bar, swing and `gate_between`, `tier`, `grounds_radius`
 - `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L), facade offsets, interior layout and furniture, front door, windows, roof style; the footprint, floors and wall shell are worked out once and kept (`reset_geometry` drops them); `set_active_buildings`
 - `src/game/entities/scenery.py`: the wilderness: per-chunk biome clumps, trees/boulders/ponds/grass, roads and footpaths, rivers and bridges, plus the collision and water indexes
 - `src/game/entities/traps.py`: `BearTrap`, `traps_for_chunk`, the hunters' traps laid in a band around settlements; persisted only as which ones have shut
@@ -120,7 +120,8 @@ The short version. `docs/design/` explains each of these.
 - Violence against a villager is a whole-settlement event through `WorldCombat._resolve_npc_hit`. Theft is the one exception and turns exactly one witness.
 - Nothing the player did not do pays the player: `by_player=False` withholds every reward and consequence, never the kill.
 - Nothing in the world breaks in a single hit, and every hit-point pool draws its own wear through `core/damage_fx.py`.
-- A door (and a gate) is the only obstacle a chaser may break. If a monster cannot reach the player, the answer is navigation, not demolition.
+- A door (and a gate) is the only obstacle a chaser may break. If a monster cannot reach the player, the answer is navigation, not demolition. Its own people let themselves through instead of breaking it (`World.open_door_for`, `World.pass_gate_for`).
+- Nothing is ever sealed inside a leaf: whatever stands in a doorway or a gateway is stepped out of it before it shuts, and every mover unsticks each frame, the player included.
 - A weapon family answers a question rather than being a bigger number; a bigger number is a rarity roll.
 - Exactly one interaction prompt is on screen at a time, drawn from `Game.current_interaction`.
 - No boss is stood up near the start, on a settlement's grounds or on somebody's floor: every spawn goes through `World.boss_spawn_ok`.

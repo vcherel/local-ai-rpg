@@ -96,6 +96,12 @@ class World:
     # diameter farther out, so this covers a building's whole footprint and then some.
     FREE_SPOT_MAX_RINGS: int = 24
 
+    # How much cheaper the other way round an obstacle must be before a chaser gives up the
+    # corner it is already walking to (`World._detour_corner`). Both ways round cost within a
+    # pixel of each other from anywhere near the middle of a wall, so with no margin at all
+    # the answer flipped every frame and the chaser rocked on the spot instead of walking.
+    ROUTE_SWITCH_MARGIN: float = 0.85
+
     # How many of those rings World.unstick is allowed, which is deliberately far fewer.
     # A body standing inside a solid is meant to step out of what it is in, not to be
     # teleported across the house it was embedded in.
@@ -822,6 +828,17 @@ class Villages:
     # one part of a wall that can be broken, by the player hacking their way out or by a
     # pack beating its way in. Nothing else about a palisade ever gives.
     GATE_HP: int = 240
+    # A gate is a thing on hinges, so it is drawn swinging rather than blinking: the leaves
+    # take GATE_SWING_MS to open, and open means folded right back against the inside of
+    # their own wall, since a gate stands open nearly always and one left sticking into the
+    # street is a pair of planks in the way of every villager who never touches them.
+    # Purely what is drawn, never what is collided against: a barred gate is a wall from the
+    # frame it is barred (`Village.gate_closed`), the leaves only catch up with it.
+    GATE_SWING_MS: float = 260.0
+    GATE_SWING_DEG: float = 168.0
+    # How long a gate a villager has let themselves through stands open before it shuts
+    # again behind them (`Village.let_through`).
+    GATE_HOLD_MS: float = 900.0
 
     # Stakes outside the wall from tier 1, a ditch from tier 2. Both follow the wall
     # stretches only, so a gateway is never obstructed by either. Stakes prick whatever

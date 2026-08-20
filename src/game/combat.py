@@ -441,8 +441,8 @@ class WorldCombat:
                 continue
             village, index = hit
             # Only if it is actually what stands between them: inside looking out, or the
-            # other way about, the same test a door gets.
-            if village.contains_point(monster.x, monster.y) == village.contains_point(player.x, player.y):
+            # other way about, either side of the line the gateway is cut in.
+            if not village.gate_between(index, monster.x, monster.y, player.x, player.y):
                 continue
             monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
             Entity.start_attack_anim(monster)

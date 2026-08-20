@@ -23,6 +23,21 @@ way by costing both ways round the rect, its obstacles being the buildings plus
 merged by `_merge_rects` so a copse is one thing to walk round rather than a dozen, since
 routing round each trunk in turn is how a monster picks its way into the middle of a wood).
 
+A chaser holds the way round it picked. Both ways round a rect cost the same to within a
+pixel from anywhere near the middle of one, so the cheaper of the two flipped from frame to
+frame and the body rocked on the spot: `_detour_corner` remembers the corner on the chaser
+itself (`Entity.route_corner`) and gives it up only when the other way is properly shorter
+(`World.ROUTE_SWITCH_MARGIN`) or when nothing is in the way any more. It is `door_commit`
+for the open ground, and for the same reason.
+
+Whether a corner can be walked to is asked of the solid itself, while the corner returned
+stands off it by the body's radius. Asking the grown shell both questions meant a goal
+leaning against a wall was inside every candidate route's obstacle, every way round came
+back barred, and the chaser walked flat into the wall the player was standing at. The one
+goal allowed to lie inside a shell is the doorway of the building that shell belongs to,
+which `chase_waypoint` names (`through`): walking round that building would be walking away
+from its door.
+
 `Monster._steer` probes a lookahead distance rather than one step so a monster turns away from
 a wall early instead of grinding into it, never probing past the goal itself (a wall behind the
 player is not in the way), sampling along each probe's length rather than at the tip alone (a
@@ -35,6 +50,15 @@ into it.
 solid (every mover tests `blocked` at the point it wants to step to, so one already in a wall
 has every step refused and stays there for good). Its search is deliberately short
 (`World.UNSTICK_RINGS`) so a body steps out of what it is in rather than being moved through it.
+Every mover runs through it each frame, the player included: a leaf shutting on somebody is
+exactly how a body ends up inside a solid, and the player used to get one only on a chunk
+change, which is a step they cannot take while wedged.
+
+Nothing is ever sealed inside a leaf in the first place. `Game._use_door` already stepped the
+player out of a door they shut around themselves; `World.shut_door` (a villager taking shelter)
+and `World.clear_gateways` (a settlement barring itself) do the same for whoever else is standing
+in the opening, through `Building.clear_of_door` and `Village.gate_side_point`. Neither is a ring
+search: an opening is the one gap in that wall, so the way out of it is a single step in or out.
 
 ## A monster's look is its kind's `shape`, not its colour
 
