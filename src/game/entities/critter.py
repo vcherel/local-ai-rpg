@@ -305,7 +305,7 @@ class Critter:
     def _draw_small(self, screen, at, color, shade, size, sx, sy, walk: float = 0.0):
         # A rabbit does not walk, it hops: the body lifts with the stride and the head keeps
         # its place, which from above is the whole of the animation.
-        sy -= abs(walk) * size * 0.12
+        sy -= walk * walk * size * 0.12
         body = pygame.Rect(0, 0, round(size * 1.3), round(size * 0.85))
         body.center = (round(sx), round(sy))
         pygame.draw.ellipse(screen, color, body)

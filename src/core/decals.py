@@ -79,8 +79,13 @@ class DecalSystem:
                 alive.append(d)
         self.decals = alive
 
-    def draw(self, surface, camera):
+    def draw(self, surface, camera, hidden=None):
+        """`hidden(x, y)` is the same rule entities and items are drawn by
+        (GameRenderer._hidden_indoors): a splat on another building's floor is under a roof
+        that is still on, so it must not be painted over the top of that roof."""
         for d in self.decals:
+            if hidden is not None and hidden(d.x, d.y):
+                continue
             screen_x, screen_y = camera.world_to_screen(d.x, d.y)
             fade_start = d.max_life * 0.25
             fade = min(1.0, d.life / fade_start) if d.life < fade_start else 1.0
