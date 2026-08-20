@@ -103,6 +103,11 @@ class Entities:
     CORNERED_FRAC: float = 0.4
     RANGED_MELEE_RANGE: int = 8
     SWING_SPEED: float = 0.007
+    # How far out a monster starts winding a swing up, as a multiple of its own reach. The
+    # animation is deliberately begun long before the blow could land, so it connects on the
+    # frame the monster arrives rather than starting from nothing once it is already there;
+    # whether the swing actually hits is Monster.start_attack_anim's call, on the real reach.
+    SWING_WINDUP_REACH_MULT: float = 10.0
     # The walk cycle (game/entities/entities.py `Gait`), shared by the player, the villagers,
     # the monsters and the animals. Advanced by the ground actually covered rather than by
     # the clock, so a slowed, rooted or dead-stopped thing never moonwalks: one full cycle

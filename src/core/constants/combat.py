@@ -144,6 +144,9 @@ class Explosion:
     # A keg inside the blast of another one goes off as well, which is what makes a
     # cluster of them worth lining up.
     CHAIN_RADIUS: float = 150.0
+    # How far a chain may run before it stops, so a shipment of kegs cannot recurse without
+    # end. Counted in blasts, not in kegs: one blast may set off several at once.
+    MAX_CHAIN_DEPTH: int = 3
 
 
 @dataclass(frozen=True)
