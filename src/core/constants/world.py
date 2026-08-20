@@ -51,10 +51,9 @@ class World:
 
     # Obstacle avoidance: a monster probes this many steps ahead (never less than
     # STEER_MIN_PROBE past its own radius) so it turns away from a wall early instead
-    # of pressing into it, and heads for a door once within DOOR_APPROACH_DISTANCE of it.
+    # of pressing into it.
     STEER_LOOKAHEAD: float = 12.0
     STEER_MIN_PROBE: int = 26
-    DOOR_APPROACH_DISTANCE: int = 90
     # When every long probe is blocked (a corner, a gap between two pieces of furniture),
     # the same fan is tried again this far ahead: in a tight room there is usually exactly
     # one way out and the lookahead is too long to see it.
@@ -766,7 +765,6 @@ class Villages:
     # The block of wall thickened either side of a gateway. Solid like the rest, so
     # navigation routes round it for free.
     GATEHOUSE: int = 54
-    TOWER_RADIUS: int = 46
     WALL_COLOR: tuple = (118, 92, 62)
     WALL_TOP: tuple = (146, 116, 78)
     WALL_STONE: tuple = (128, 124, 116)
@@ -775,8 +773,8 @@ class Villages:
     GATE_POST: tuple = (92, 70, 46)
     GATE_LEAF: tuple = (104, 76, 48)
     # Somebody stands at each gate and each tower, always armed and always willing. They
-    # hold their post rather than strolling the way a villager does.
-    GUARDS_PER_GATE: int = 1
+    # hold their post rather than strolling the way a villager does; how many of them is the
+    # settlement's tier, through GUARDS_PER_POST_BY_TIER.
     GUARD_POST_RADIUS: int = 70
     GUARD_COLOR: tuple = (92, 104, 126)
 
