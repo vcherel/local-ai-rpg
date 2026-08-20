@@ -139,7 +139,7 @@ def draw_monster(
     lean = math.radians(c.Entities.GAIT_LEAN_DEG) * walk
     if angle or lean:
         sprite = pygame.transform.rotate(sprite, math.degrees(-(angle + lean)))
-    surface.blit(sprite, sprite.get_rect(center=(x, y - abs(walk) * c.Entities.GAIT_BOB)))
+    surface.blit(sprite, sprite.get_rect(center=(x, y - walk * walk * c.Entities.GAIT_BOB)))
 
 
 def _draw_shadow(surface, x, y, size):

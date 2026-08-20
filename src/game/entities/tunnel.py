@@ -19,6 +19,32 @@ def has_tunnel(chunk: tuple[int, int]) -> bool:
     return random.Random(f"tunnel:{int(chunk[0])},{int(chunk[1])}").random() < c.Tunnels.CHANCE
 
 
+_LANTERN_MASK: pygame.Surface | None = None
+
+
+def _lantern_mask() -> pygame.Surface:
+    """The player's light as one continuous gradient, built once and kept.
+
+    Drawn small and then scaled up: circles on an alpha surface overwrite rather than blend,
+    so any stack of them is a set of steps, and the scale up interpolates those steps into a
+    ramp. Alpha runs from clear at the middle to full dark at the radius, squared so the
+    light holds its ground close in and gives out quickly at the edge.
+    """
+    global _LANTERN_MASK
+    if _LANTERN_MASK is not None:
+        return _LANTERN_MASK
+
+    steps = 48
+    small = pygame.Surface((steps * 2, steps * 2), pygame.SRCALPHA)
+    small.fill((0, 0, 0, c.Tunnels.DARKNESS))
+    for step in range(steps, 0, -1):
+        alpha = round(c.Tunnels.DARKNESS * (step / steps) ** 2)
+        pygame.draw.circle(small, (0, 0, 0, alpha), (steps, steps), step)
+    size = c.Tunnels.LIGHT_RADIUS * 2
+    _LANTERN_MASK = pygame.transform.smoothscale(small, (size, size))
+    return _LANTERN_MASK
+
+
 class Tunnel:
     """The dark under the world: a few rooms joined by corridors, reached either by climbing
     down a village well or by walking into a cave mouth out in the wilds.
@@ -210,13 +236,17 @@ class Tunnel:
     @staticmethod
     def draw_dark(screen: pygame.Surface, camera: Camera, player):
         """Everything past the player's own light. Drawn over the entities, so a monster is
-        heard before it is seen and the dark is the tunnel's real difficulty."""
+        heard before it is seen and the dark is the tunnel's real difficulty.
+
+        The light is one gradient rather than a stack of circles: circles drawn onto an alpha
+        surface replace the pixels under them rather than blending, so each one left a hard
+        edge and the lantern read as a set of rings."""
         overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, c.Tunnels.DARKNESS))
         x, y = camera.world_to_screen(player.x, player.y)
-        steps = 24
-        for step in range(steps, 0, -1):
-            radius = round(c.Tunnels.LIGHT_RADIUS * step / steps)
-            alpha = round(c.Tunnels.DARKNESS * (step / steps) ** 2)
-            pygame.draw.circle(overlay, (0, 0, 0, alpha), (x, y), radius)
+        light = _lantern_mask()
+        # Taking the lower of the two alphas cuts the light out of the dark: inside the
+        # radius the gradient wins, outside it the mask is already full dark and nothing
+        # changes.
+        overlay.blit(light, light.get_rect(center=(x, y)), special_flags=pygame.BLEND_RGBA_MIN)
         screen.blit(overlay, (0, 0))

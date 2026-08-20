@@ -616,6 +616,14 @@ class Scenery:
     SWIM_SPEED: float = 0.35
     SWIM_SPEED_MAX: float = 0.75
 
+    # A canopy is overhead, so it is drawn in front of whatever stands under it and fades
+    # out while something does: a wood the player can walk into and be lost inside is a
+    # place to avoid rather than cover. The margin is how far past its own radius a canopy
+    # counts as being over a body, since its lobes are rolled out past that radius.
+    CANOPY_KINDS: tuple = ("tree", "pine")
+    CANOPY_FADE_ALPHA: int = 105
+    CANOPY_COVER_MARGIN: float = 1.35
+
     # Roads: every village site is joined to its nearest ROAD_LINKS neighbours, and the
     # chunk being generated lays down the packed earth of whatever passes through it.
     # Nothing that blocks may stand within CLEARANCE of one, so a road is always walkable.

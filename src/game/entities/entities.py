@@ -353,7 +353,9 @@ def draw_human(
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
 
     # The body lifts at each step. Applied after the rotation, so it is a bob on the screen
-    # rather than a slide along whatever way the sprite happens to be facing.
-    bob = abs(walk) * c.Entities.GAIT_BOB
+    # rather than a slide along whatever way the sprite happens to be facing. Squared rather
+    # than absolute: |sin| has a corner at every zero crossing, which is a jolt twice a
+    # stride, where sin squared rises and falls smoothly through the same two peaks.
+    bob = walk * walk * c.Entities.GAIT_BOB
     rect = char_surf.get_rect(center=(x, y - bob))
     surface.blit(char_surf, rect)

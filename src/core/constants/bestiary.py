@@ -110,12 +110,15 @@ class Entities:
     # body lifting GAIT_BOB off the ground at each stride. Movement under GAIT_DEADZONE a
     # frame is standing still, and the swing eases in and out at GAIT_EASE rather than
     # snapping, so stopping settles instead of freezing mid-step.
-    GAIT_STRIDE: float = 42.0
+    # A stride is long and the amplitudes are small on purpose: a short stride at a high
+    # amplitude is read as shaking rather than as walking, since the whole sprite is only a
+    # few dozen pixels across and every offset lands on a whole pixel when it is blitted.
+    GAIT_STRIDE: float = 64.0
     GAIT_DEADZONE: float = 0.35
-    GAIT_EASE: float = 0.15
-    GAIT_ARM: float = 5.0
-    GAIT_BOB: float = 1.8
-    GAIT_LEAN_DEG: float = 2.5
+    GAIT_EASE: float = 0.12
+    GAIT_ARM: float = 3.0
+    GAIT_BOB: float = 1.2
+    GAIT_LEAN_DEG: float = 1.6
     # How far a quadruped's feet carry fore and aft over a stride, in fractions of its own
     # size: legs are the one place an animal's walk can actually be drawn rather than implied.
     GAIT_LEG: float = 0.22

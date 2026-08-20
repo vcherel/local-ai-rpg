@@ -80,6 +80,24 @@ class Scenery:
         # swum in has to be the shape that was drawn, so every lobe is asked.
         return any(((dx - ox) / rx) ** 2 + ((dy - oy) / ry) ** 2 < 1.0 for ox, oy, rx, ry in self._shape["lobes"])
 
+    @property
+    def canopy_radius(self) -> float:
+        """How far the leaves of a tree reach, or 0 for anything that is not a canopy. The
+        lobes are rolled out past the radius they were rolled from, so the margin is part
+        of the answer rather than a fudge at the call site."""
+        if self.kind not in c.Scenery.CANOPY_KINDS:
+            return 0.0
+        return self._shape["radius"] * c.Scenery.CANOPY_COVER_MARGIN
+
+    def shades(self, x: float, y: float) -> bool:
+        """Whether a body standing at (x, y) is under this canopy, and therefore whether the
+        canopy has to fade to stay out of its way."""
+        reach = self.canopy_radius
+        if not reach:
+            return False
+        dx, dy = x - self.x, y - self.y
+        return dx * dx + dy * dy < reach * reach
+
     def blocks(self, x: float, y: float, radius: float) -> bool:
         # Squared distance rather than hypot: this runs for every solid thing near every
         # entity's every step, and a wood holds a lot more of them than a village holds
@@ -204,12 +222,23 @@ class Scenery:
 
     # ------------------------------------------------------------------ drawing
 
-    def draw(self, screen: pygame.Surface, camera: Camera):
+    def draw(self, screen: pygame.Surface, camera: Camera, alpha: int = 255):
+        """`alpha` under 255 is a canopy with something standing under it: the tree is drawn
+        onto its own small layer and blitted see-through, so whatever is walking beneath it
+        is never lost behind the leaves."""
         sx, sy = camera.world_to_screen(self.x, self.y)
         center = (round(sx), round(sy))
         drawer = _DRAWERS.get(self.kind)
-        if drawer is not None:
+        if drawer is None:
+            return
+        if alpha >= 255:
             drawer(self, screen, center)
+            return
+        reach = round(self.canopy_radius) + 20
+        layer = pygame.Surface((reach * 2, reach * 2), pygame.SRCALPHA)
+        drawer(self, layer, (reach, reach))
+        layer.set_alpha(alpha)
+        screen.blit(layer, (center[0] - reach, center[1] - reach))
 
     def _draw_path(self, screen, center):
         pygame.draw.circle(screen, c.Scenery.ROAD_COLOR, center, round(self.size))

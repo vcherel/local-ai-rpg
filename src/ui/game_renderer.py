@@ -139,7 +139,9 @@ class GameRenderer:
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
                 building.draw(self.screen, camera, player_inside=building is interior)
 
-        get_decals().draw(self.screen, camera)
+        # Filtered exactly as the entities and the items below are: a splat left on another
+        # building's floor is under a roof that is still on, and used to show through it.
+        get_decals().draw(self.screen, camera, hidden=lambda x, y: self._hidden_indoors(world, x, y, interior))
 
         # Up whenever the player is standing in somebody else's room, not only over a chest:
         # taking the furniture apart is watched exactly like emptying the chest is, and the
@@ -157,21 +159,69 @@ class GameRenderer:
             if self._on_screen(camera, breakable.x, breakable.y):
                 breakable.draw(self.screen, camera)
 
+        # A canopy is overhead, so it belongs in front of whatever stands under it: it is
+        # held back here and drawn after the entities, faded where anything is beneath it.
+        canopies = []
         for item in world.scenery_props_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 100):
-            if self._on_screen(camera, item.x, item.y, margin=70):
+            if not self._on_screen(camera, item.x, item.y, margin=70):
+                continue
+            if item.kind in c.Scenery.CANOPY_KINDS:
+                canopies.append(item)
+            else:
                 item.draw(self.screen, camera)
 
         for poi in world.pois:
             if self._on_screen(camera, poi.x, poi.y):
                 poi.draw(self.screen, camera)
 
-        self._draw_entities(camera, world, player, interior, interaction, quest_target)
+        self._draw_entities(
+            camera,
+            world,
+            player,
+            interior,
+            interaction,
+            quest_target,
+            overlay=lambda: self._draw_canopies(camera, world, player, canopies),
+        )
+
+    def _draw_canopies(self, camera: Camera, world: World, player: Player, canopies):
+        """The leaves, drawn over everything standing on the ground and faded out wherever
+        something is standing under them.
+
+        A tree that simply draws under the bodies never reads as a tree at all, since a
+        player walking through a wood is painted on top of every canopy; one that draws over
+        them swallows whatever it covers. Both are answered the same way: the canopy goes in
+        front and turns see-through the moment anything is beneath it."""
+        if not canopies:
+            return
+        bodies = [(player.x, player.y)]
+        for group in (world.npcs, world.monsters, world.bosses, world.critters):
+            bodies.extend((body.x, body.y) for body in group if self._on_screen(camera, body.x, body.y))
+        # Loot counts as something under the tree: a drop nobody can see is a drop nobody
+        # walks over, and the magnet only reaches what the player has come close to.
+        bodies.extend(
+            (item.x, item.y) for item in world.items if not item.picked_up and self._on_screen(camera, item.x, item.y)
+        )
+        for canopy in canopies:
+            shaded = any(canopy.shades(x, y) for x, y in bodies)
+            canopy.draw(self.screen, camera, alpha=c.Scenery.CANOPY_FADE_ALPHA if shaded else 255)
 
     def _draw_entities(
-        self, camera: Camera, world: World, player: Player, interior, interaction, quest_target, underground=False
+        self,
+        camera: Camera,
+        world: World,
+        player: Player,
+        interior,
+        interaction,
+        quest_target,
+        underground=False,
+        overlay=None,
     ):
         """Everything standing on whatever was drawn under it: the same pass indoors, outdoors
-        and underground, since all three are the one world and the one set of entity lists."""
+        and underground, since all three are the one world and the one set of entity lists.
+
+        `overlay` is whatever belongs over the bodies but under the HUD (the canopies), drawn
+        here rather than after the call so a prompt or an arrow is never buried by leaves."""
 
         def visible(x, y, margin=60) -> bool:
             return self._on_screen(camera, x, y, margin) and not self._hidden_indoors(world, x, y, interior)
@@ -214,6 +264,9 @@ class GameRenderer:
             world.underground.draw_dark(self.screen, camera, player)
 
         player.draw(self.screen)
+
+        if overlay is not None:
+            overlay()
 
         if interaction is not None:
             self._draw_interaction_prompt(camera, interaction)
