@@ -16,6 +16,10 @@ class Entities:
     NPC_WANDER_RADIUS: int = 250
     NPC_IDLE_MIN_MS: int = 2000
     NPC_IDLE_MAX_MS: int = 7000
+    # How many spots a wanderer may try before idling again rather than strolling into a
+    # wall. Inside a village half the ground around a villager's own home is their house,
+    # and a stroll that ends against it is a body shuffling on its own doorstep.
+    WANDER_PICK_TRIES: int = 5
     # NPCs stop wandering and face the player when he gets this close.
     NPC_WANDER_PAUSE_DISTANCE: int = 120
     # Hit a villager and the settlement turns on you: they drop what they were doing and

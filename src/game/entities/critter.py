@@ -87,6 +87,7 @@ class Critter:
         # The door it has committed to coming through, its own copy of the one every Entity
         # holds, for the same reason: a hunting dog routes through a doorway like anything else.
         self.door_commit = None
+        self.route_corner = None
         radius = c.Wildlife.DOG_WANDER_RADIUS if self.anchored else c.Wildlife.WANDER_RADIUS
         self.wander = Wander(kind.wander_speed, radius, c.Wildlife.IDLE_MIN_MS, c.Wildlife.IDLE_MAX_MS)
 

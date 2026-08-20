@@ -67,6 +67,11 @@ class Village:
         self.barred = False
         self.gate_broken: set[int] = set()
         self.gate_hp: dict[int, int] = {}
+        # How far each leaf has actually swung, 0 shut and 1 wide open, and how long a gate
+        # somebody has been let through still stands open for. Both session-only: a gate's
+        # position is drawn from `barred`, which is itself worked out afresh every frame.
+        self.gate_frac: dict[int, float] = {}
+        self.gate_hold: dict[int, float] = {}
         self._defences = None
 
     @staticmethod
@@ -211,6 +216,68 @@ class Village:
         A gate is only ever shut because the settlement wants the player out (or something
         else in the street), and a broken one never shuts again."""
         return self.barred and index not in self.gate_broken
+
+    def gate_ajar(self, index: int) -> bool:
+        """Whether this gateway is being held open for somebody. A barred gate is still a
+        wall to everything that collides with it; this is only ever true of a gate one of
+        the settlement's own people is walking through (`World.pass_gate_for`)."""
+        return self.gate_hold.get(index, 0.0) > 0.0
+
+    def let_through(self, index: int):
+        """Work a barred gate open for a moment. Its people know their own gate: they lift
+        the bar, walk out, and it shuts behind them, which is why the player hammering on
+        the far side of it is still shut out."""
+        if self.gate_closed(index):
+            self.gate_hold[index] = c.Villages.GATE_HOLD_MS
+
+    def advance_gates(self, dt):
+        """Carry every leaf one frame towards where it should be standing.
+
+        Nothing here is collided against: `gate_closed` flips the instant a settlement turns,
+        and this is the leaf catching up with it. A gate that shuts on the frame it is barred
+        is a wall appearing out of nothing; one that swings is a gate."""
+        for index in range(len(self.defences()["gates"])):
+            if self.gate_hold.get(index, 0.0) > 0.0:
+                self.gate_hold[index] -= dt
+            shut = self.gate_closed(index) and not self.gate_ajar(index)
+            frac = self.gate_frac.get(index, 0.0 if shut else 1.0)
+            step = dt / c.Villages.GATE_SWING_MS
+            self.gate_frac[index] = max(0.0, frac - step) if shut else min(1.0, frac + step)
+
+    def gate_open_frac(self, index: int) -> float:
+        """How far this gate is drawn open, 0 to 1."""
+        return self.gate_frac.get(index, 0.0 if self.gate_closed(index) else 1.0)
+
+    def gate_side_point(self, index: int, x, y, radius: float, across: bool) -> tuple:
+        """(x, y) stepped clear of this gate's leaf along the gateway's own line: to the far
+        side of it when `across` (somebody being let through), to the nearer side otherwise
+        (whatever a gate is being barred on top of).
+
+        Never a ring search, for the reason a doorway is never one either
+        (`Building.clear_of_door`): the gateway is the one gap in that wall, so the way out
+        of it is a single step in or a single step out, not a hunt for open ground."""
+        gate = self.defences()["gates"][index]
+        leaf = gate["rect"]
+        depth = (leaf.height if gate["along_x"] else leaf.width) / 2 + radius + 2
+        if gate["along_x"]:
+            side = 1.0 if y >= leaf.centery else -1.0
+            return x, leaf.centery + (-side if across else side) * depth
+        side = 1.0 if x >= leaf.centerx else -1.0
+        return leaf.centerx + (-side if across else side) * depth, y
+
+    def gate_between(self, index: int, ax, ay, bx, by) -> bool:
+        """Whether this gate's leaf is what stands between two points, meaning they are on
+        opposite sides of the line the gateway is cut in.
+
+        `contains_point` cannot answer this and reading it as though it could is what left a
+        pack standing quietly at a barred gate: the grounds are a circle drawn round the
+        whole settlement and reach well past the wall on each axis, so two bodies either
+        side of the north gate are both standing in them."""
+        gate = self.defences()["gates"][index]
+        leaf = gate["rect"]
+        if gate["along_x"]:
+            return (ay - leaf.centery) * (by - leaf.centery) < 0
+        return (ax - leaf.centerx) * (bx - leaf.centerx) < 0
 
     def gate_key(self, index: int) -> str:
         """Identity of one gate for `core.damage_fx`, which is keyed by string."""
@@ -406,36 +473,66 @@ class Village:
                 pygame.draw.rect(screen, (70, 66, 60), block, 1)
 
     def _draw_gate(self, screen: pygame.Surface, camera: Camera, index: int, gate: dict):
-        """One gateway: its two posts, and the barred leaf across it while it is shut."""
+        """One gateway: its two posts, and the pair of leaves hung between them at whatever
+        angle they have swung to. Shut is the two of them meeting in the middle of the gap,
+        open is both swung back inside the wall, and everything between is `advance_gates`
+        carrying them from one to the other."""
         gx, gy = gate["pos"]
         sx, sy = camera.world_to_screen(gx, gy)
+        along_x = gate["along_x"]
         for side in (-1, 1):
             post = pygame.Rect(0, 0, 18, 18)
             shift = side * c.Villages.GATE_WIDTH / 2
-            post.center = (round(sx + shift), round(sy)) if gate["along_x"] else (round(sx), round(sy + shift))
+            post.center = (round(sx + shift), round(sy)) if along_x else (round(sx), round(sy + shift))
             pygame.draw.rect(screen, c.Villages.GATE_POST, post)
             pygame.draw.rect(screen, (52, 40, 28), post, 2)
 
-        if not self.gate_closed(index):
+        if index in self.gate_broken:
+            # Beaten down: the gateway is a hole for good and there is nothing left to hang.
             return
+
         leaf = gate["rect"]
-        lx, ly = camera.world_to_screen(leaf.left, leaf.top)
-        rect = pygame.Rect(round(lx), round(ly), leaf.width, leaf.height)
-        pygame.draw.rect(screen, c.Villages.GATE_LEAF, rect)
-        pygame.draw.rect(screen, (46, 34, 22), rect, 3)
-        # The planks, and the crack that says how much of it is left.
-        for offset in range(10, (rect.width if gate["along_x"] else rect.height) - 6, 22):
-            if gate["along_x"]:
-                pygame.draw.line(
-                    screen, (66, 48, 30), (rect.left + offset, rect.top), (rect.left + offset, rect.bottom), 2
-                )
-            else:
-                pygame.draw.line(
-                    screen, (66, 48, 30), (rect.left, rect.top + offset), (rect.right, rect.top + offset), 2
-                )
+        half = c.Villages.GATE_WIDTH / 2
+        thickness = leaf.height if along_x else leaf.width
+        theta = math.radians(c.Villages.GATE_SWING_DEG) * self.gate_open_frac(index)
+        # Both leaves swing back into the settlement, so an open gateway reads as a way
+        # through from either side of the wall rather than as a leaf lying across one.
+        toward_middle = math.copysign(1.0, (self.y - gy) if along_x else (self.x - gx))
+        normal = (0.0, toward_middle) if along_x else (toward_middle, 0.0)
+        for side in (-1, 1):
+            hinge = (gx + side * half, gy) if along_x else (gx, gy + side * half)
+            axis = (-side, 0.0) if along_x else (0.0, -side)
+            self._draw_leaf(screen, camera, hinge, axis, normal, theta, half, thickness)
+
         health = self.gate_health(index)
-        if health < 1.0:
+        if health < 1.0 and self.gate_open_frac(index) < 0.05:
+            lx, ly = camera.world_to_screen(leaf.left, leaf.top)
+            rect = pygame.Rect(round(lx), round(ly), leaf.width, leaf.height)
             draw_cracks(screen, rect, health, self.gate_key(index))
+
+    @staticmethod
+    def _draw_leaf(screen, camera: Camera, hinge, axis, normal, theta: float, length: float, thickness: float):
+        """One leaf, hung on `hinge` and swung `theta` off the line of the gateway.
+
+        Written in the leaf's own two axes (`axis` along the gateway from the hinge inwards,
+        `normal` into the settlement) so the same few lines hang all eight leaves of a town,
+        whichever of the four walls they are in and whichever way round they open."""
+        cos, sin = math.cos(theta), math.sin(theta)
+
+        def point(along: float, across: float):
+            a = along * cos - across * sin
+            b = along * sin + across * cos
+            return camera.world_to_screen(
+                hinge[0] + axis[0] * a + normal[0] * b,
+                hinge[1] + axis[1] * a + normal[1] * b,
+            )
+
+        edge = thickness / 2
+        corners = [point(0, -edge), point(length, -edge), point(length, edge), point(0, edge)]
+        pygame.draw.polygon(screen, c.Villages.GATE_LEAF, corners)
+        pygame.draw.polygon(screen, (46, 34, 22), corners, 3)
+        for offset in range(20, int(length), 22):
+            pygame.draw.line(screen, (66, 48, 30), point(offset, -edge), point(offset, edge), 2)
 
     @staticmethod
     def _draw_well(screen: pygame.Surface, center):

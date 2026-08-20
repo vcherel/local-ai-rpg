@@ -76,6 +76,21 @@ which is when the player is inside a town that wants them dead, and
 in) on the same hit-point pool a front door uses. `gate_broken` is persisted, `gate_hp` is
 not, exactly as a door does it.
 
+A barred gate is a wall to the player and to every monster, and it is not one to the
+settlement's own people: `World.pass_gate_for` lets a villager who reaches their own gate work
+the bar and step across it, `Village.let_through` swings it open while they do and shuts it
+behind them. It is the same asymmetry as `open_door_for` against `bash_doors`, one street
+further out: the mob pours out after you, and the gate is still shut when you turn round.
+Whether a gate is what stands between two bodies is `Village.gate_between`, the side of the
+gateway's own line each of them is on. `contains_point` cannot answer that and reading it as
+though it could is what left a pack standing quietly at a barred gate: the grounds are a circle
+drawn round the whole settlement and reach well past the wall on every axis, so two bodies
+either side of the north gate are both standing in them.
+
+The leaves swing rather than blink (`Village.advance_gates`), open meaning folded back against
+the inside of their own wall, since a gate stands open nearly always. It is drawing alone:
+`gate_closed` flips on the frame a settlement turns and the leaves catch up with it.
+
 ## How well defended a settlement is is one number
 
 `Village.tier` is rolled once from the distance to the world centre and the size, then

@@ -70,6 +70,11 @@ class Entity:
         # it the goal flips between the doorstep and the threshold as the body crosses, and
         # the chaser shivers in the gap instead of coming through.
         self.door_commit = None
+        # The corner of an obstacle this one is currently walking round (World._detour_corner),
+        # dropped the moment nothing stands between it and what it is chasing. `door_commit`
+        # for the open ground: both ways round a wall cost the same from the middle of it,
+        # and a body that re-decides every frame rocks on the spot instead of walking.
+        self.route_corner = None
 
     def root(self, duration_ms: int):
         self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)

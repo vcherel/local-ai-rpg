@@ -700,15 +700,20 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         A blow hands its target a velocity rather than a new position (`WorldCombat._knockback`),
         which is what makes a pole's shove a thing that visibly happens rather than a body
         appearing at the far end of the room. Nothing here knows what did the shoving."""
-        bodies = (
+        for body, radius in self.bodies(player):
+            advance_impulse(body, dt, radius, self.blocked)
+
+    def bodies(self, player: Player) -> list:
+        """Everything standing in the world with a size, as (body, radius) pairs. The one
+        walk over all of them, shared by the shoves in flight and by anything that has to
+        know who is in the way of a leaf about to shut."""
+        return (
             [(m, m.kind.size / 2) for m in self.monsters]
             + [(b, b.kind.size / 2) for b in self.bosses]
             + [(n, c.Entities.NPC_SIZE / 2) for n in self.npcs]
             + [(cr, cr.size / 2) for cr in self.critters]
             + [(player, c.Player.SIZE / 2)]
         )
-        for body, radius in bodies:
-            advance_impulse(body, dt, radius, self.blocked)
 
     def unstick(self, body, radius: float) -> bool:
         """Put a body that has ended up inside something solid back onto open ground.
@@ -794,7 +799,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 # steered into the furniture and stuck there while the player stood in a
                 # corner two steps away.
                 solids = [rect for rect, _kind in monster_building.interior_layout()["solids"]]
-                corner = self._detour_corner(start, (player.x, player.y), radius, solids)
+                corner = self._detour_corner(start, (player.x, player.y), radius, solids, chaser=chaser)
                 # A room is small enough that the way round a table can be a point inside the
                 # wall behind it. Sending a monster at one is worse than sending it nowhere:
                 # steering gets round furniture on its own, it just needs the room to do it.
@@ -810,7 +815,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         else:
             goal = self._door_goal(player_building, monster, radius, leaving=False)
 
-        return self._detour_corner(start, goal, radius) or goal
+        # The one building whose shell the goal is allowed to be inside is the one whose
+        # doorway the goal *is*: walking round that one would be walking away from the door.
+        through = player_building.bounds if player_building is not None else None
+        return self._detour_corner(start, goal, radius, through=through, chaser=chaser) or goal
 
     def open_door_for(self, chaser):
         """A villager chasing the player into a house lets themselves in: the door is theirs
@@ -822,6 +830,73 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             door = building.door_rect()
             if math.hypot(chaser.x - door.centerx, chaser.y - door.centery) <= c.Buildings.DOOR_BASH_REACH:
                 building.door_open = True
+
+    def pass_gate_for(self, chaser, radius: float, target) -> bool:
+        """A villager reaching their own barred gate lets themselves through it.
+
+        The bar is theirs: they lift it, step across the gateway and it swings shut behind
+        them (`Village.let_through`), which is the difference between a wall that keeps the
+        player out and one that keeps its own people in. Nothing else in the world may do
+        this: a monster beats the leaf down instead (`WorldCombat.bash_gates`) and the player
+        hacks their way through it.
+
+        One step across, never a walk through: the leaf is solid to everything `blocked`
+        answers, this one included, so the way past it is the same short hop out of a
+        doorway that `Building.clear_of_door` is.
+        """
+        for village in self._village_solids_by_chunk.get(self._chunk_of(chaser.x, chaser.y), ()):
+            if not village.barred:
+                continue
+            for index, gate in enumerate(village.defences()["gates"]):
+                if not village.gate_closed(index):
+                    continue
+                leaf = gate["rect"]
+                nearest_x = min(max(chaser.x, leaf.left), leaf.right)
+                nearest_y = min(max(chaser.y, leaf.top), leaf.bottom)
+                if math.hypot(chaser.x - nearest_x, chaser.y - nearest_y) > c.Buildings.DOOR_BASH_REACH:
+                    continue
+                # Only if this gate is actually what stands between them, the same test a
+                # monster's swing at one gets.
+                if not village.gate_between(index, chaser.x, chaser.y, target.x, target.y):
+                    continue
+                x, y = village.gate_side_point(index, chaser.x, chaser.y, radius, across=True)
+                if self.blocked(x, y, radius):
+                    continue
+                village.let_through(index)
+                chaser.x, chaser.y = x, y
+                return True
+        return False
+
+    def shut_door(self, building: Building, player: Player):
+        """Shut a door, stepping whoever stands in the frame out of it first.
+
+        A leaf closing on a body seals it inside a solid, where every step it could take is
+        refused: this is the one way in the world a door is ever shut on somebody who did
+        not shut it themselves, and it is how a villager taking shelter used to trap the
+        player in their own doorway."""
+        building.door_open = False
+        for body, radius in self.bodies(player):
+            if building.door_overlaps(body.x, body.y, radius):
+                body.x, body.y = building.clear_of_door(body.x, body.y, radius)
+
+    def clear_gateways(self, village, player: Player):
+        """Step anything standing in a barred gateway out of it, to the side it is already
+        nearer. The gates bar themselves the moment a settlement turns (`_bar_gates`), with
+        no regard for who happened to be walking through one; the same rule holds as for a
+        door, that nothing is ever sealed inside a leaf."""
+        bodies = None
+        for index, gate in enumerate(village.defences()["gates"]):
+            if not village.gate_closed(index) or village.gate_ajar(index):
+                continue
+            leaf = gate["rect"]
+            if bodies is None:
+                bodies = self.bodies(player)
+            for body, radius in bodies:
+                if not leaf.inflate(radius * 2, radius * 2).collidepoint(body.x, body.y):
+                    continue
+                x, y = village.gate_side_point(index, body.x, body.y, radius, across=False)
+                if not self.blocked(x, y, radius):
+                    body.x, body.y = x, y
 
     @staticmethod
     def _door_goal(building: Building, monster: Monster, radius: float, leaving: bool):
@@ -928,7 +1003,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 rects.append(pygame.Rect(piece.x - reach, piece.y - reach, reach * 2, reach * 2))
         return _merge_rects(rects)
 
-    def _detour_corner(self, start, goal, radius: float, rects=None):
+    def _detour_corner(self, start, goal, radius: float, rects=None, through=None, chaser=None):
         """The corner to head for when something solid sits between `start` and `goal`, or
         None when the way is clear.
 
@@ -939,6 +1014,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
 
         `rects` is what stands in the way: the buildings around `start` by default, or a
         room's furniture when the chase is happening inside one.
+
+        `through` is the one obstacle the goal is allowed to be standing inside, and `chaser`
+        the body being routed, which is remembered so it holds the way round it picked.
         """
         if rects is None:
             rects = [building.bounds for building in self.buildings_in_range(*start, c.World.CHUNK_SIZE)]
@@ -950,33 +1028,56 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         for obstacle in rects:
             margin = radius + 8
             rect = obstacle.inflate(margin * 2, margin * 2)
-            # A goal inside the shell is that building's own doorway; walking round the
-            # building would be walking away from the door.
-            if rect.collidepoint(goal):
+            # The one goal allowed to lie inside a shell is the doorway of the building that
+            # shell belongs to: walking round that building would be walking away from its
+            # door. Everything else is routed round even with the goal pressed against it,
+            # which is what stops a chaser walking flat into the wall the player stands at.
+            if through is not None and obstacle == through and rect.collidepoint(goal):
                 continue
             # Tested against a hair-smaller rect so a leg running along an edge, corner to
             # corner, doesn't count as cutting through the building.
             inner = rect.inflate(-2, -2)
             if not inner.clipline(start, goal):
                 continue
+            # Whether a corner can be walked to is asked of the solid itself rather than of
+            # the shell grown round it. The shell is where a body may stand, and a goal
+            # standing against a wall is inside it: costed against the shell, every way
+            # round came back barred and the chaser walked into the wall the player was
+            # leaning on. Against the wall itself, the way round it is found.
 
+            solid = obstacle.inflate(4, 4)
             corners = [rect.topleft, rect.topright, rect.bottomright, rect.bottomleft]
-            best = None
+            committed = chaser.route_corner if chaser is not None else None
+            best = held = None
             for i, first in enumerate(corners):
-                if inner.clipline(start, first):
+                if solid.clipline(start, first):
                     continue
                 for last in (first, corners[(i + 1) % 4], corners[(i - 1) % 4]):
-                    if last is not first and inner.clipline(first, last):
+                    if last is not first and solid.clipline(first, last):
                         continue
-                    if inner.clipline(last, goal):
+                    if solid.clipline(last, goal):
                         continue
                     cost = math.dist(start, first) + math.dist(first, last) + math.dist(last, goal)
+                    # Aim at the next corner along once this one is effectively reached.
+                    target = first if math.dist(start, first) > radius + 6 else last
+                    route = (cost, target, first)
                     if best is None or cost < best[0]:
-                        # Aim at the next corner along once this one is effectively reached.
-                        target = first if math.dist(start, first) > radius + 6 else last
-                        best = (cost, target)
+                        best = route
+                    if committed is not None and math.dist(first, committed) < 1 and (held is None or cost < held[0]):
+                        held = route
             if best is not None:
+                # The way round already picked is kept unless the other one is properly
+                # shorter, not merely shorter this frame: from the middle of a wall the two
+                # cost the same to within a pixel, and re-deciding had the chaser rocking
+                # between them. Committing to a corner is `door_commit` for the open ground.
+                if held is not None and best[0] >= held[0] * c.World.ROUTE_SWITCH_MARGIN:
+                    best = held
+                if chaser is not None:
+                    chaser.route_corner = best[2]
                 return best[1]
+        # Nothing in the way: whatever corner was being walked to is behind them now.
+        if chaser is not None:
+            chaser.route_corner = None
         return None
 
     # ------------------------------------------------------------------ bosses
@@ -1367,7 +1468,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         defenders = [npc for npc in self.npcs if id(npc) in fight]
         self.assign_surround_slots(crowd, player)
         self._throw_stones(player, mob)
-        self._bar_gates()
+        self._bar_gates(player, dt)
         self._loose_arrows(fight, mob, player)
 
         for npc in self.npcs:
@@ -1413,6 +1514,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             if shelter is not None:
                 self.open_door_for(npc)
                 inside = (shelter.x, shelter.interior_rect().centery)
+                self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, _Point(*inside))
                 waypoint = self.chase_waypoint(npc, _Point(*inside), c.Entities.NPC_SIZE / 2)
                 npc.update(
                     player,
@@ -1423,8 +1525,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 )
                 if shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
                     # Behind the door and shutting it. The player can be shut out or shut in
-                    # with them; either way the street is emptier than it was.
-                    shelter.door_open = False
+                    # with them; either way the street is emptier than it was. Whoever is
+                    # standing in the frame is stepped out of it rather than sealed in it.
+                    self.shut_door(shelter, player)
                 continue
 
             # Only an angry villager actually closing on the player needs a route round
@@ -1432,6 +1535,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             chasing = id(npc) in mob
             if chasing:
                 self.open_door_for(npc)
+                self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, player)
             waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
             # A villager turns to greet the player in the street, but not through the wall of
             # a house they are standing in: a vision cone that always points at the player is
@@ -1478,9 +1582,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 orders[id(npc)] = reach if npc.is_militia else c.Villages.MOB_STANDOFF
         return orders
 
-    def _bar_gates(self):
+    def _bar_gates(self, player: Player, dt):
         """Shut the gates of any settlement that has turned on the player, open them again
-        once it has calmed down.
+        once it has calmed down, and carry every leaf a frame along its swing.
 
         A gate is the one part of a wall that is ever a wall to the player: while it is
         barred, getting out of a town you have set against you means hacking your way
@@ -1490,6 +1594,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             if not village.defended:
                 continue
             village.barred = any(npc.hostile and village.contains_point(npc.x, npc.y) for npc in self.npcs)
+            village.advance_gates(dt)
+            if village.barred:
+                self.clear_gateways(village, player)
 
     def _loose_arrows(self, fight: dict, mob: dict, player: Player):
         """The archers posted in the towers, shooting over their own wall.
@@ -1588,6 +1695,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # After dark everything hits harder and notices sooner, whenever it spawned: night
         # is a state of the world, not a property of the monsters standing in it.
         damage_mult = self.night_damage_mult()
+
+        # The same pass every villager, monster and animal gets, and for the same reason:
+        # from inside a solid every step is refused, so a player a door was shut on, or a
+        # village was built around, would otherwise stay wedged there for good.
+        self.unstick(player, player.size / 2)
 
         # Whatever is still travelling under a blow's shove is carried first, so a body
         # crosses the ground it was thrown across before it gets a step of its own.
