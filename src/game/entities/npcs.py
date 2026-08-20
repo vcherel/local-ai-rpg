@@ -85,6 +85,14 @@ class NPC(Entity):
         # A posted guard: stands their watch instead of wandering, always takes up arms,
         # and carries something a farmer does not (World._post_guards).
         self.is_guard = False
+        # A guard posted in a tower with a bow: everything a guard is, plus shots at
+        # whatever their settlement has turned on (World._post_guards, _loose_arrows).
+        self.is_archer = False
+        self.next_arrow_ms = 0
+        # How well defended the settlement this one belongs to is (`Village.tier`), which
+        # decides which weapon ladder they draw from. Nothing about a village's strength
+        # lives on the person: this only picks a pool.
+        self.defence_tier = 0
 
     @property
     def hostile(self) -> bool:
@@ -130,10 +138,13 @@ class NPC(Entity):
         flag, so the same house always turns out the same person with the same thing."""
         if self._weapon_name is None:
             rng = random.Random(f"weapon:{round(self.home[0])}:{round(self.home[1])}")
-            if self.is_guard:
-                pool = c.Entities.GUARD_WEAPONS
+            tier = max(0, min(self.defence_tier, len(c.Entities.GUARD_WEAPON_TIERS) - 1))
+            if self.is_archer:
+                pool = c.Entities.ARCHER_WEAPONS
+            elif self.is_guard:
+                pool = c.Entities.GUARD_WEAPON_TIERS[tier]
             elif self.is_militia:
-                pool = c.Entities.MILITIA_WEAPONS
+                pool = c.Entities.MILITIA_WEAPON_TIERS[tier]
             else:
                 pool = c.Entities.VILLAGER_WEAPONS
             self._weapon_name = rng.choice(pool)
@@ -192,11 +203,14 @@ class NPC(Entity):
             "y": self.y,
             "name": self.name,
             "hp": self.hp,
+            "max_hp": self.max_hp,
             "color": list(self.color),
             "orientation": self.orientation,
             "quest": self.quest.to_dict() if self.quest else None,
             "is_merchant": self.is_merchant,
             "is_guard": self.is_guard,
+            "is_archer": self.is_archer,
+            "defence_tier": self.defence_tier,
             "is_thief": self.is_thief,
             # Absolute wall clock, like the rest cooldowns: quitting while a village is
             # angry must not be a way of waiting the anger out.
@@ -213,6 +227,7 @@ class NPC(Entity):
     def from_dict(cls, data: dict, items_by_id: dict[str, Item]) -> NPC:
         npc = cls(data["x"], data["y"])
         npc.name = data["name"]
+        npc.max_hp = data.get("max_hp", npc.max_hp)
         npc.hp = data["hp"]
         npc.color = tuple(data["color"])
         npc.orientation = data["orientation"]
@@ -220,6 +235,8 @@ class NPC(Entity):
             npc.quest = Quest.from_dict(data["quest"], items_by_id)
         npc.is_merchant = data["is_merchant"]
         npc.is_guard = data.get("is_guard", False)
+        npc.is_archer = data.get("is_archer", False)
+        npc.defence_tier = data.get("defence_tier", 0)
         if npc.is_guard:
             # A guard holds their post rather than strolling the street, on a reload as
             # much as on the frame they were first stood there.

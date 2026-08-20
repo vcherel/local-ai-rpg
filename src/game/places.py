@@ -674,7 +674,12 @@ class WorldPlaces:
         houses = [
             building
             for building in self.buildings
-            if building.kind == "house" and not building.looted and village.contains_point(building.x, building.y)
+            # A room whose furniture had to be shuffled round the neck of an L can end up
+            # with nowhere to stand a chest: a quest may not send the player to rob one.
+            if building.kind == "house"
+            and not building.looted
+            and building.interior_layout()["chest"] is not None
+            and village.contains_point(building.x, building.y)
         ]
         return random.choice(houses) if houses else None
 

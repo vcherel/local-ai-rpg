@@ -40,6 +40,8 @@ class Projectile:
         owner_id=None,
         source_name="",
         max_range=None,
+        by_player=True,
+        over_walls=False,
     ):
         self.x = x
         self.y = y
@@ -63,6 +65,13 @@ class Projectile:
         # its path, whoever loosed it, which is what makes standing behind a wolf a
         # mistake for a goblin archer.
         self.hostile = hostile
+        # Whether a kill by this shot pays the player. A friendly arrow is normally the
+        # player's own, but a town archer's is not: it kills like any other and credits
+        # nobody, the same rule a monster's stray shot already followed.
+        self.by_player = by_player
+        # Loosed from a tower, over the settlement's own wall: this one is not stopped by a
+        # palisade (`World.blocked_over_walls`). Everything else in the world still stops it.
+        self.over_walls = over_walls
         # Pierce lets an arrow pass through this many targets before stopping (arrow-pierce accessory).
         self.pierce = 0
         # Whoever fired it, already counted as struck so a shot can never hit its own

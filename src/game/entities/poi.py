@@ -9,7 +9,7 @@ import pygame
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
 from game.entities.scenery import river_points_for_chunk
-from game.entities.village import village_site
+from game.entities.village import site_grounds_radius, village_site
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -176,20 +176,26 @@ class PointOfInterest:
     def _draw_graveyard(self, screen, center):
         cx, cy = center
         rng = random.Random(f"grave:{self.x},{self.y}")
-        # Laid out on rows rather than scattered: six stones dropped at random in a plot
-        # this size land on top of each other more often than not, and a graveyard is read
-        # from its rows. The jitter is what keeps them from being a spreadsheet.
-        columns, rows = 4, 2
+        # A graveyard is read from its rows, so the rows are real: one stone size, a fixed
+        # spacing and only enough jitter to say the ground settled unevenly. Stones dropped
+        # at random in a plot this size landed on top of each other and read as rubble.
+        columns, rows = 4, 3
+        step_x, step_y = 44, 46
+        width, height = 16, 24
+        plot = pygame.Rect(0, 0, columns * step_x + 34, rows * step_y + 40)
+        plot.center = (cx, cy)
+        pygame.draw.rect(screen, (74, 78, 62), plot, border_radius=6)
+        pygame.draw.rect(screen, (56, 52, 42), plot, 3, border_radius=6)
         for slot in range(columns * rows):
-            ox = -58 + (slot % columns) * (116 / (columns - 1)) + rng.uniform(-9, 9)
-            oy = -24 + (slot // columns) * 48 + rng.uniform(-4, 4)
-            stone = pygame.Rect(0, 0, rng.randint(14, 20), rng.randint(20, 28))
+            ox = (slot % columns - (columns - 1) / 2) * step_x + rng.uniform(-2, 2)
+            oy = (slot // columns - (rows - 1) / 2) * step_y + rng.uniform(-2, 2)
+            stone = pygame.Rect(0, 0, width, height)
             stone.center = (round(cx + ox), round(cy + oy))
-            grey = rng.randint(126, 152)
+            grey = rng.randint(132, 148)
             pygame.draw.rect(screen, (grey, grey, grey - 6), stone, border_top_left_radius=8, border_top_right_radius=8)
             pygame.draw.rect(screen, (78, 78, 74), stone, 2, border_top_left_radius=8, border_top_right_radius=8)
             # The mound in front of it, so the stones read as graves rather than as rubble.
-            mound = pygame.Rect(0, 0, stone.width + 8, 8)
+            mound = pygame.Rect(0, 0, width + 8, 8)
             mound.midtop = stone.midbottom
             pygame.draw.ellipse(screen, (78, 70, 54), mound)
 
@@ -360,10 +366,16 @@ def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfI
         math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING for b in buildings
     ):
         return []
-    for nx in range(cx - 1, cx + 2):
-        for ny in range(cy - 1, cy + 2):
+    for nx in range(cx - 2, cx + 3):
+        for ny in range(cy - 2, cy + 3):
             site = village_site(nx, ny)
-            if site is not None and math.hypot(x - site[0], y - site[1]) < c.Villages.MIN_DIST_FROM_POI:
+            if site is None:
+                continue
+            # Cleared by the settlement's real grounds, not by its centre point: a walled
+            # town's wall, towers and ditch reach further than any fixed distance, which is
+            # how a graveyard used to be laid out against somebody's gate.
+            clear = max(c.Villages.MIN_DIST_FROM_POI, site_grounds_radius(nx, ny) + c.PointsOfInterest.VILLAGE_MARGIN)
+            if math.hypot(x - site[0], y - site[1]) < clear:
                 return []
 
     # Nothing is built in the water. The river's course is a pure function of the chunk

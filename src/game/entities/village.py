@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.damage_fx import draw_cracks
 from game.entities.buildings import Building
 
 if TYPE_CHECKING:
@@ -24,7 +25,17 @@ class Village:
     has walked into it yet.
     """
 
-    def __init__(self, x, y, chunk: tuple[int, int], size: str = "village", radius: int = 700, extent: int = 0):
+    def __init__(
+        self,
+        x,
+        y,
+        chunk: tuple[int, int],
+        size: str = "village",
+        radius: int = 700,
+        extent: int = 0,
+        extent_y: int = 0,
+        tier: int | None = None,
+    ):
         self.x = x
         self.y = y
         # The chunk that owns this village, and its identity in the save: a chunk that
@@ -34,15 +45,57 @@ class Village:
         self.radius = radius
         self.name: str | None = None
         self.discovered = False
-        # Whether this one stands a palisade. Rolled from the size when the settlement is
+        # How well defended this one is, rolled once from how far out it stands and how big
+        # it is, then persisted like the wall itself. Everything that differs between a
+        # border hamlet and a deep wilds town reads this and nothing else.
+        self.tier = self._tier_for(x, y, size) if tier is None else int(tier)
+        # Whether this one stands a wall. Rolled from the size when the settlement is
         # built and then persisted, like everything else about a village: the wall is part
         # of what the place is, not something rederived from a seed.
         self.defended = size in c.Villages.WALLED_SIZES
-        # How far the outermost wall of the outermost building stands from the middle. The
-        # palisade is set from this rather than from `radius`, which is a diagonal and would
-        # leave a field of nothing between the last house and the wall.
-        self.extent = extent or radius
+        # How far the outermost wall of the outermost building stands from the middle, per
+        # axis. The wall is set from these rather than from `radius`, which is a diagonal
+        # and would leave a field of nothing between the last house and the palisade; two
+        # of them rather than one, so a settlement that spread out sideways is walled in a
+        # rectangle that follows it instead of a square around its longest side.
+        self.extent_x = extent or radius
+        self.extent_y = extent_y or self.extent_x
+        # The gates stand open while the settlement has nothing to fear and are barred the
+        # moment it turns on the player (`World.bar_gates`). Barred, a gate is the one part
+        # of a wall that gives: `gate_broken` is persisted like a beaten-down front door,
+        # the damage a standing one has taken is session-only like a crate's.
+        self.barred = False
+        self.gate_broken: set[int] = set()
+        self.gate_hp: dict[int, int] = {}
         self._defences = None
+
+    @staticmethod
+    def _tier_for(x, y, size: str) -> int:
+        """How well defended a settlement standing here is. Distance from the world centre
+        first, since that is the game's one measure of depth, nudged by how much there is
+        to defend: a deep hamlet is still a hamlet and a town is worth a better wall."""
+        center = c.World.WORLD_SIZE // 2
+        distance = math.hypot(x - center, y - center)
+        tier = sum(1 for threshold in c.Villages.TIER_DISTANCES if distance >= threshold)
+        tier += c.Villages.TIER_SIZE_BONUS.get(size, 0)
+        return max(0, min(c.Villages.MAX_TIER, tier))
+
+    @property
+    def extent(self) -> int:
+        """The settlement's footprint as one number, for everything that wants a radius."""
+        return max(self.extent_x, self.extent_y)
+
+    @property
+    def wall_style(self) -> str:
+        return c.Villages.WALL_STYLE_BY_TIER[self.tier]
+
+    @property
+    def wall_thickness(self) -> int:
+        return c.Villages.WALL_THICKNESS_BY_TIER[self.tier]
+
+    @property
+    def tower_radius(self) -> int:
+        return c.Villages.TOWER_RADIUS_BY_TIER[self.tier]
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -50,67 +103,180 @@ class Village:
     @property
     def grounds_radius(self) -> float:
         """How far the settlement's grounds reach. A walled town's grounds run out to its
-        palisade, not to the last house inside it: the wall, its towers and whoever is
-        posted on them are part of the place, so the same one call decides who turns on the
-        player, who defends it, where nothing hostile may be stood up and how far the trees
-        are cut back."""
+        wall, not to the last house inside it: the wall, its towers and whoever is posted on
+        them are part of the place, so the same one call decides who turns on the player,
+        who defends it, where nothing hostile may be stood up and how far the trees are cut
+        back. The stakes and the ditch outside the wall are counted in, since they belong to
+        the settlement as much as the gate does."""
         if not self.defended:
             return self.radius
-        return max(self.radius, self.extent + c.Villages.WALL_MARGIN + c.Villages.TOWER_RADIUS)
+        half_x = self.extent_x + c.Villages.WALL_MARGIN
+        half_y = self.extent_y + c.Villages.WALL_MARGIN
+        # The corner towers stand at the diagonal, further out than any side of the wall:
+        # anything short of that leaves the towers and whoever is posted in them outside
+        # the settlement they belong to, which is how a tower guard ended up unable to
+        # take his own village's side.
+        corner = math.hypot(half_x, half_y) + self.tower_radius
+        outworks = max(half_x, half_y) + c.Villages.DITCH_OFFSET + c.Villages.DITCH_WIDTH
+        if self.tier < c.Villages.DITCH_TIER:
+            outworks = 0.0
+        return max(self.radius, corner, outworks)
 
     def contains_point(self, x, y) -> bool:
         return math.hypot(self.x - x, self.y - y) <= self.grounds_radius
 
     def defences(self) -> dict:
-        """The palisade: its wall segments, the middle of each gate, and its towers. Built
-        once from the village's own radius, so nothing about it has to be saved.
+        """The wall: its stretches, its gates, its towers, and the stakes and ditch outside
+        it. Built once from the village's own footprint and tier, so nothing about it has to
+        be saved beyond which gates have been broken.
 
-        A square ring split by four gates, rather than an unbroken circle, for two reasons:
-        a chaser routes round a rectangle already (`World._detour_corner`), and a gate on
-        every side means walling a town in never turns an approach into a dead end."""
+        A ring split by four gates, rather than an unbroken circle, for two reasons: a chaser
+        routes round a rectangle already (`World._detour_corner`), and a gate on every side
+        means walling a town in never turns an approach into a dead end. What the tier
+        changes is what it is built of and what stands outside it, never the way in."""
         if self._defences is not None:
             return self._defences
         if not self.defended:
-            self._defences = {"walls": [], "gates": [], "towers": []}
+            self._defences = {"walls": [], "gates": [], "towers": [], "spikes": [], "ditch": []}
             return self._defences
 
-        half = self.extent + c.Villages.WALL_MARGIN
-        thickness = c.Villages.WALL_THICKNESS
+        half_x = self.extent_x + c.Villages.WALL_MARGIN
+        half_y = self.extent_y + c.Villages.WALL_MARGIN
+        thickness = self.wall_thickness
         gate = c.Villages.GATE_WIDTH
-        run = (2 * half - gate) / 2  # one stretch of wall, gate to corner
-        walls, gates, towers = [], [], []
+        house = c.Villages.GATEHOUSE
+        walls, gates, towers, spikes, ditch = [], [], [], [], []
+
         for nx, ny in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-            # The middle of this side, and the two stretches either side of its gateway.
-            mid = (self.x + nx * half, self.y + ny * half)
-            gates.append(mid)
+            along_x = nx == 0  # the wall on this side runs along x
+            half_along = half_x if along_x else half_y
+            mid = (self.x + nx * half_x, self.y + ny * half_y)
+            run = half_along - gate / 2  # one stretch, gate edge to corner
+
+            def piece(offset: float, length: float, depth: float) -> pygame.Rect:
+                """A block of wall `length` long, `offset` along the side from its gateway."""
+                rect = (
+                    pygame.Rect(0, 0, round(length), round(depth))
+                    if along_x
+                    else pygame.Rect(0, 0, round(depth), round(length))
+                )
+                rect.center = (
+                    (round(mid[0] + offset), round(mid[1])) if along_x else (round(mid[0]), round(mid[1] + offset))
+                )
+                return rect
+
             for side in (-1, 1):
-                offset = side * (gate / 2 + run / 2)
-                if nx:
-                    rect = pygame.Rect(0, 0, thickness, run)
-                    rect.center = (round(mid[0]), round(mid[1] + offset))
-                else:
-                    rect = pygame.Rect(0, 0, run, thickness)
-                    rect.center = (round(mid[0] + offset), round(mid[1]))
-                walls.append(rect)
+                walls.append(piece(side * (gate / 2 + run / 2), run, thickness))
+                # The gatehouse: the wall thickened where it meets the gateway, so a gate
+                # reads as a way through something rather than a hole in a fence. Solid like
+                # the rest, which is all navigation needs to know about it.
+                walls.append(piece(side * (gate / 2 + house / 2), house, thickness * 2.0))
+                if self.tier >= c.Villages.SPIKE_TIER:
+                    spikes.extend(self._stakes(mid, (nx, ny), along_x, side, gate, run))
+                if self.tier >= c.Villages.DITCH_TIER:
+                    trench = piece(side * (gate / 2 + run / 2), run, c.Villages.DITCH_WIDTH)
+                    trench.center = (
+                        trench.centerx + nx * c.Villages.DITCH_OFFSET,
+                        trench.centery + ny * c.Villages.DITCH_OFFSET,
+                    )
+                    ditch.append(trench)
+            leaf = piece(0, gate, thickness)
+            gates.append({"pos": mid, "rect": leaf, "along_x": along_x})
+
         for cx in (-1, 1):
             for cy in (-1, 1):
-                towers.append((self.x + cx * half, self.y + cy * half))
-        self._defences = {"walls": walls, "gates": gates, "towers": towers}
+                towers.append((self.x + cx * half_x, self.y + cy * half_y))
+        self._defences = {"walls": walls, "gates": gates, "towers": towers, "spikes": spikes, "ditch": ditch}
         return self._defences
 
+    @staticmethod
+    def _stakes(mid, normal, along_x: bool, side: int, gate: float, run: float) -> list:
+        """A row of sharpened stakes standing off one stretch of wall, outside it."""
+        nx, ny = normal
+        out = c.Villages.SPIKE_OFFSET
+        points = []
+        step = c.Villages.SPIKE_SPACING
+        count = max(0, int(run // step))
+        for i in range(count):
+            offset = side * (gate / 2 + step / 2 + i * step)
+            px = mid[0] + (offset if along_x else 0) + nx * out
+            py = mid[1] + (0 if along_x else offset) + ny * out
+            points.append((px, py))
+        return points
+
+    # ------------------------------------------------------------------ gates
+
+    def gate_closed(self, index: int) -> bool:
+        """True while this gateway is shut: a wall to anything trying to walk through it.
+        A gate is only ever shut because the settlement wants the player out (or something
+        else in the street), and a broken one never shuts again."""
+        return self.barred and index not in self.gate_broken
+
+    def gate_key(self, index: int) -> str:
+        """Identity of one gate for `core.damage_fx`, which is keyed by string."""
+        return f"gate:{self.chunk[0]}:{self.chunk[1]}:{index}"
+
+    def gate_at(self, x, y, reach: float) -> int | None:
+        """The barred gate a blow at (x, y) lands on, or None. The only part of a wall that
+        answers a swing at all."""
+        for index, gate in enumerate(self.defences()["gates"]):
+            if not self.gate_closed(index):
+                continue
+            rect = gate["rect"]
+            nearest_x = min(max(x, rect.left), rect.right)
+            nearest_y = min(max(y, rect.top), rect.bottom)
+            if math.hypot(x - nearest_x, y - nearest_y) < reach:
+                return index
+        return None
+
+    def damage_gate(self, index: int, damage: int) -> bool:
+        """Land a blow on a barred gate. True on the blow that finally puts it through, from
+        then on the gateway is a hole for good, exactly like a beaten-down front door."""
+        if not self.gate_closed(index):
+            return False
+        remaining = self.gate_hp.get(index, c.Villages.GATE_HP) - damage
+        if remaining > 0:
+            self.gate_hp[index] = remaining
+            return False
+        self.gate_hp.pop(index, None)
+        self.gate_broken.add(index)
+        return True
+
+    def gate_health(self, index: int) -> float:
+        """How much of this gate is left, as a fraction, for the cracks drawn over it."""
+        return self.gate_hp.get(index, c.Villages.GATE_HP) / c.Villages.GATE_HP
+
+    # ------------------------------------------------------------------ terrain
+
+    def spike_hit(self, x, y, radius: float) -> bool:
+        """Whether a body standing here is in the stakes outside the wall."""
+        if not self.defended or self.tier < c.Villages.SPIKE_TIER:
+            return False
+        reach = c.Villages.SPIKE_RADIUS + radius
+        return any(math.hypot(x - sx, y - sy) < reach for sx, sy in self.defences()["spikes"])
+
+    def in_ditch(self, x, y) -> bool:
+        """Whether this point lies in the ditch dug outside the wall. Like water, a ditch
+        costs speed rather than passage: it slows an approach, it never stops one."""
+        if not self.defended or self.tier < c.Villages.DITCH_TIER:
+            return False
+        return any(trench.collidepoint(x, y) for trench in self.defences()["ditch"])
+
     def blocks(self, x, y, radius) -> bool:
-        """The well in the middle of the plaza is solid, and so is the palisade around a
-        walled town; everything else in a village is a building, collided against by the
-        buildings themselves."""
+        """The well in the middle of the plaza is solid, and so is the wall around a walled
+        town, its towers and any gate currently barred; everything else in a village is a
+        building, collided against by the buildings themselves."""
         if math.hypot(self.x - x, self.y - y) < c.Villages.WELL_RADIUS + radius:
             return True
         if not self.defended:
             return False
         defences = self.defences()
         for tower in defences["towers"]:
-            if math.hypot(tower[0] - x, tower[1] - y) < c.Villages.TOWER_RADIUS + radius:
+            if math.hypot(tower[0] - x, tower[1] - y) < self.tower_radius + radius:
                 return True
-        for wall in defences["walls"]:
+        solids = list(defences["walls"])
+        solids += [gate["rect"] for index, gate in enumerate(defences["gates"]) if self.gate_closed(index)]
+        for wall in solids:
             nearest_x = min(max(x, wall.left), wall.right)
             nearest_y = min(max(y, wall.top), wall.bottom)
             if math.hypot(x - nearest_x, y - nearest_y) < radius:
@@ -124,10 +290,13 @@ class Village:
             "chunk": list(self.chunk),
             "size": self.size,
             "radius": self.radius,
-            "extent": self.extent,
+            "extent": self.extent_x,
+            "extent_y": self.extent_y,
+            "tier": self.tier,
             "name": self.name,
             "discovered": self.discovered,
             "defended": self.defended,
+            "gate_broken": sorted(self.gate_broken),
         }
 
     @classmethod
@@ -139,10 +308,13 @@ class Village:
             data.get("size", "village"),
             data.get("radius", 700),
             data.get("extent", 0),
+            data.get("extent_y", 0),
+            data.get("tier"),
         )
         village.name = data.get("name")
         village.discovered = data.get("discovered", False)
         village.defended = data.get("defended", village.defended)
+        village.gate_broken = set(data.get("gate_broken", []))
         return village
 
     def draw(self, screen: pygame.Surface, camera: Camera):
@@ -168,44 +340,60 @@ class Village:
         self._draw_defences(screen, camera)
 
     def _draw_defences(self, screen: pygame.Surface, camera: Camera):
-        """The palisade and its towers, drawn under everything that walks over the ground.
-        Stakes along the top of each stretch, so a wall reads as a row of sharpened logs
-        rather than as a brown bar, and a gate reads as a gap with a post either side."""
+        """The wall and everything that belongs to it, drawn under whatever walks over the
+        ground. A palisade is a row of sharpened logs, a stone wall is coursed blocks: the
+        material is how far out the settlement stands, read before anything is fought."""
         defences = self.defences()
         if not defences["walls"]:
             return
 
+        stone = self.wall_style == "stone"
+        body = c.Villages.WALL_STONE if stone else c.Villages.WALL_COLOR
+        top = c.Villages.WALL_STONE_TOP if stone else c.Villages.WALL_TOP
+        edge = (78, 76, 70) if stone else (68, 52, 34)
+
+        for trench in defences["ditch"]:
+            sx, sy = camera.world_to_screen(trench.left, trench.top)
+            rect = pygame.Rect(round(sx), round(sy), trench.width, trench.height)
+            # A lip of turned earth round the edge and a darker floor, so a ditch reads as
+            # something dug rather than as a shadow lying on the grass.
+            pygame.draw.rect(screen, (104, 88, 62), rect)
+            pygame.draw.rect(screen, c.Villages.DITCH_COLOR, rect.inflate(-10, -10))
+            pygame.draw.rect(screen, (56, 46, 32), rect.inflate(-26, -26))
+
         for wall in defences["walls"]:
             sx, sy = camera.world_to_screen(wall.left, wall.top)
             rect = pygame.Rect(round(sx), round(sy), wall.width, wall.height)
-            pygame.draw.rect(screen, c.Villages.WALL_COLOR, rect)
+            pygame.draw.rect(screen, body, rect)
             along_x = rect.width > rect.height
             span = rect.width if along_x else rect.height
-            for offset in range(4, span - 4, 14):
-                log = (
-                    pygame.Rect(rect.left + offset, rect.top, 10, rect.height)
+            step = 18 if stone else 14
+            for offset in range(4, max(5, span - 4), step):
+                block = (
+                    pygame.Rect(rect.left + offset, rect.top, step - 4, rect.height)
                     if along_x
-                    else pygame.Rect(rect.left, rect.top + offset, rect.width, 10)
+                    else pygame.Rect(rect.left, rect.top + offset, rect.width, step - 4)
                 )
-                pygame.draw.rect(screen, c.Villages.WALL_TOP, log)
-                pygame.draw.rect(screen, (74, 56, 38), log, 1)
-            pygame.draw.rect(screen, (68, 52, 34), rect, 2)
+                pygame.draw.rect(screen, top, block)
+                pygame.draw.rect(screen, edge, block, 1)
+            pygame.draw.rect(screen, edge, rect, 2)
 
-        # The gateposts: the ends of the two stretches either side of each gap, marked so a
-        # way through is visible from across the field.
-        for gx, gy in defences["gates"]:
-            sx, sy = camera.world_to_screen(gx, gy)
-            for side in (-1, 1):
-                horizontal = abs(gx - self.x) < abs(gy - self.y)
-                post = pygame.Rect(0, 0, 14, 14)
-                shift = side * c.Villages.GATE_WIDTH / 2
-                post.center = (round(sx + shift), round(sy)) if horizontal else (round(sx), round(sy + shift))
-                pygame.draw.rect(screen, c.Villages.GATE_POST, post)
-                pygame.draw.rect(screen, (52, 40, 28), post, 2)
+        for sx, sy in defences["spikes"]:
+            px, py = camera.world_to_screen(sx, sy)
+            length = c.Villages.SPIKE_LENGTH
+            base = (round(px), round(py))
+            pygame.draw.circle(screen, (52, 42, 30), base, 6)
+            pygame.draw.line(screen, (62, 48, 32), base, (base[0], base[1] - length), 8)
+            pygame.draw.line(screen, c.Villages.SPIKE_COLOR, base, (base[0], base[1] - length), 5)
+            # The point, catching the light: a stake read from above is a pale tip.
+            pygame.draw.line(screen, (238, 230, 210), (base[0], base[1] - length), (base[0], base[1] - length + 6), 3)
+
+        for index, gate in enumerate(defences["gates"]):
+            self._draw_gate(screen, camera, index, gate)
 
         for tx, ty in defences["towers"]:
             sx, sy = camera.world_to_screen(tx, ty)
-            radius = c.Villages.TOWER_RADIUS
+            radius = self.tower_radius
             pygame.draw.circle(screen, (60, 52, 44), (round(sx), round(sy)), radius + 3)
             pygame.draw.circle(screen, c.Villages.TOWER_STONE, (round(sx), round(sy)), radius)
             pygame.draw.circle(screen, (104, 100, 94), (round(sx), round(sy)), round(radius * 0.6))
@@ -216,6 +404,38 @@ class Village:
                 block.center = (round(sx + math.cos(angle) * radius), round(sy + math.sin(angle) * radius))
                 pygame.draw.rect(screen, (168, 164, 156), block)
                 pygame.draw.rect(screen, (70, 66, 60), block, 1)
+
+    def _draw_gate(self, screen: pygame.Surface, camera: Camera, index: int, gate: dict):
+        """One gateway: its two posts, and the barred leaf across it while it is shut."""
+        gx, gy = gate["pos"]
+        sx, sy = camera.world_to_screen(gx, gy)
+        for side in (-1, 1):
+            post = pygame.Rect(0, 0, 18, 18)
+            shift = side * c.Villages.GATE_WIDTH / 2
+            post.center = (round(sx + shift), round(sy)) if gate["along_x"] else (round(sx), round(sy + shift))
+            pygame.draw.rect(screen, c.Villages.GATE_POST, post)
+            pygame.draw.rect(screen, (52, 40, 28), post, 2)
+
+        if not self.gate_closed(index):
+            return
+        leaf = gate["rect"]
+        lx, ly = camera.world_to_screen(leaf.left, leaf.top)
+        rect = pygame.Rect(round(lx), round(ly), leaf.width, leaf.height)
+        pygame.draw.rect(screen, c.Villages.GATE_LEAF, rect)
+        pygame.draw.rect(screen, (46, 34, 22), rect, 3)
+        # The planks, and the crack that says how much of it is left.
+        for offset in range(10, (rect.width if gate["along_x"] else rect.height) - 6, 22):
+            if gate["along_x"]:
+                pygame.draw.line(
+                    screen, (66, 48, 30), (rect.left + offset, rect.top), (rect.left + offset, rect.bottom), 2
+                )
+            else:
+                pygame.draw.line(
+                    screen, (66, 48, 30), (rect.left, rect.top + offset), (rect.right, rect.top + offset), 2
+                )
+        health = self.gate_health(index)
+        if health < 1.0:
+            draw_cracks(screen, rect, health, self.gate_key(index))
 
     @staticmethod
     def _draw_well(screen: pygame.Surface, center):
@@ -285,6 +505,46 @@ def village_site(cx: int, cy: int) -> tuple[int, int] | None:
     return site[2], site[3]
 
 
+@lru_cache(maxsize=8)
+def _worst_case_footprint(size: str) -> tuple[int, int, int]:
+    """The biggest (radius, extent_x, extent_y) a settlement of this size can lay out.
+
+    Rolled without an rng: every count is taken at its maximum, every building at its
+    largest and the jitter at its worst, so the answer is an upper bound on a village that
+    has not been generated yet rather than a guess at the one that will be."""
+    composition = c.Villages.START_COMPOSITION if size == "start" else c.Villages.COMPOSITION[size]
+    count = sum(high for _low, high in composition.values())
+    slots = _plaza_slots(count, random.Random(0))
+    jitter = c.Villages.SLOT_JITTER
+    kinds = [kind for kind, (_low, high) in composition.items() if high]
+    max_w = max(c.Buildings.SIZES[kind][0][1] for kind in kinds)
+    max_h = max(c.Buildings.SIZES[kind][1][1] for kind in kinds)
+    radius = round(max((math.hypot(ox, oy) for ox, oy in slots), default=0) + jitter + c.Villages.SLOT_W / 2)
+    extent_x = round(max((abs(ox) for ox, _oy in slots), default=0) + jitter + max_w / 2)
+    extent_y = round(max((abs(oy) for _ox, oy in slots), default=0) + jitter + max_h / 2)
+    return radius, extent_x, extent_y
+
+
+@lru_cache(maxsize=4096)
+def site_grounds_radius(cx: int, cy: int) -> float:
+    """How far the grounds of the village chunk (cx, cy) offers will reach, asked before the
+    settlement exists. 0 for a chunk that holds no site.
+
+    A pure function of the coordinates like `village_site` itself: the size is the first
+    draw `generate_village` makes off the same seed, and the footprint is that size at its
+    largest. Anything placed in the wilderness (a landmark, a graveyard) clears this rather
+    than clearing the site point by a fixed distance, which is how a row of tombstones
+    ended up against a town's gate."""
+    site = village_site(cx, cy)
+    if site is None:
+        return 0.0
+    rng = random.Random(f"village-layout:{cx},{cy}")
+    sizes, weights = zip(*c.Villages.SIZE_WEIGHTS)
+    size = rng.choices(sizes, weights=weights)[0]
+    radius, extent_x, extent_y = _worst_case_footprint(size)
+    return Village(site[0], site[1], (cx, cy), size, radius, extent_x, extent_y).grounds_radius
+
+
 def sites_near_chunk(cx: int, cy: int, chunk_radius: int) -> list[tuple[int, int]]:
     """Every village site within `chunk_radius` chunks of (cx, cy), generated or not.
 
@@ -315,22 +575,45 @@ def _building_kinds(composition: dict, rng: random.Random) -> list[str]:
 
 
 def _plaza_slots(count: int, rng: random.Random) -> list[tuple[float, float]]:
-    """Offsets from the plaza for `count` buildings: a grid centred on the village with its
-    middle slot left open, ordered nearest the plaza first and jittered so the result reads
-    as a settlement rather than a spreadsheet."""
-    columns = max(2, math.ceil(math.sqrt(count + 1)))
-    rows = math.ceil((count + 1) / columns)
-    slots = []
-    for row in range(rows):
-        for column in range(columns):
-            ox = (column - (columns - 1) / 2) * c.Villages.SLOT_W
-            oy = (row - (rows - 1) / 2) * c.Villages.SLOT_H
-            slots.append((ox, oy))
+    """Offsets from the plaza for `count` buildings: a grid centred on the village with the
+    middle of it left open, ordered nearest the plaza first and jittered so the result reads
+    as a settlement rather than a spreadsheet.
+
+    The open middle is a keep-out rather than "the first slot in the list": a grid with an
+    even number of columns has no centre slot at all, so dropping the nearest one deleted an
+    arbitrary house and left the four around it free to reach across the well."""
+    slots: list[tuple[float, float]] = []
+    spare = 1
+    while len(slots) < count:
+        columns = max(2, math.ceil(math.sqrt(count + spare)))
+        rows = math.ceil((count + spare) / columns)
+        slots = []
+        for row in range(rows):
+            for column in range(columns):
+                ox = (column - (columns - 1) / 2) * c.Villages.SLOT_W
+                oy = (row - (rows - 1) / 2) * c.Villages.SLOT_H
+                if abs(ox) < c.Villages.SLOT_W and abs(oy) < c.Villages.SLOT_H / 2:
+                    continue
+                slots.append((ox, oy))
+        spare += 1
 
     slots.sort(key=lambda slot: math.hypot(*slot))
-    slots = slots[1:]  # the middle slot is the plaza itself
     jitter = c.Villages.SLOT_JITTER
     return [(ox + rng.uniform(-jitter, jitter), oy + rng.uniform(-jitter, jitter)) for ox, oy in slots[:count]]
+
+
+def _clear_of_plaza(ox: float, oy: float, w: int, h: int) -> tuple[float, float]:
+    """The same offset, pushed out until the building standing on it no longer covers the
+    plaza. Whichever axis needs the smaller shove is the one that gives, so a house steps
+    off the square rather than being flung to the edge of the village."""
+    keep = c.Villages.PLAZA_RADIUS
+    need_x = keep + w / 2 - abs(ox)
+    need_y = keep + h / 2 - abs(oy)
+    if need_x <= 0 or need_y <= 0:
+        return ox, oy
+    if need_x <= need_y:
+        return ox + math.copysign(need_x, ox or 1.0), oy
+    return ox, oy + math.copysign(need_y, oy or 1.0)
 
 
 def _facing_towards_plaza(ox: float, oy: float) -> str:
@@ -342,21 +625,58 @@ def _facing_towards_plaza(ox: float, oy: float) -> str:
     return "N" if oy > 0 else "S"
 
 
+def _separate(buildings: list[Building], center: tuple[float, float], gap: int = 90):
+    """Push overlapping buildings apart, outward from the middle of the village.
+
+    The grid the slots come off is spaced for a plain rect; a building with a wing on it is
+    wider than its slot, and two of them side by side used to end up sharing ground, which
+    is a broken room rather than a tight street. Each pass shoves the one further from the
+    plaza, so the settlement spreads outward instead of the layout shifting off centre."""
+    for _ in range(4):
+        moved = False
+        order = sorted(buildings, key=lambda b: math.hypot(b.x - center[0], b.y - center[1]))
+        for i, first in enumerate(order):
+            for second in order[i + 1 :]:
+                a, b = first.bounds.inflate(gap, gap), second.bounds
+                if not a.colliderect(b):
+                    continue
+                dx = second.x - first.x
+                dy = second.y - first.y
+                overlap_x = (a.width + b.width) / 2 - abs(dx)
+                overlap_y = (a.height + b.height) / 2 - abs(dy)
+                if overlap_x <= overlap_y:
+                    second.x += round(math.copysign(overlap_x, dx or 1.0))
+                else:
+                    second.y += round(math.copysign(overlap_y, dy or 1.0))
+                second.reset_geometry()
+                moved = True
+        if not moved:
+            return
+
+
 def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> tuple[Village, list[Building]]:
     kinds = _building_kinds(composition, rng)
     slots = _plaza_slots(len(kinds), rng)
-    buildings = [
-        Building(round(x + ox), round(y + oy), kind, facing=_facing_towards_plaza(ox, oy))
-        for kind, (ox, oy) in zip(kinds, slots)
-    ]
-    radius = round(max((math.hypot(ox, oy) for ox, oy in slots), default=0) + c.Villages.SLOT_W / 2)
-    extent = round(
-        max(
-            (max(abs(b.x - x) + b.w / 2, abs(b.y - y) + b.h / 2) for b in buildings),
-            default=c.Villages.PLAZA_RADIUS,
-        )
+    buildings = []
+    for kind, (ox, oy) in zip(kinds, slots):
+        building = Building(round(x + ox), round(y + oy), kind, facing=_facing_towards_plaza(ox, oy))
+        # Built, then stepped off the square if its footprint reached over it: the plaza and
+        # the well in the middle of it belong to the village, and a house standing on the
+        # well made the one thing every settlement has impossible to walk up to.
+        ox, oy = _clear_of_plaza(ox, oy, building.bounds.width, building.bounds.height)
+        building.x, building.y = round(x + ox), round(y + oy)
+        building.reset_geometry()
+        buildings.append(building)
+    _separate(buildings, (x, y))
+
+    radius = round(max((math.hypot(b.x - x, b.y - y) for b in buildings), default=0) + c.Villages.SLOT_W / 2)
+    extent_x = round(
+        max((max(abs(b.bounds.left - x), abs(b.bounds.right - x)) for b in buildings), default=c.Villages.PLAZA_RADIUS)
     )
-    return Village(x, y, chunk, size, radius, extent), buildings
+    extent_y = round(
+        max((max(abs(b.bounds.top - y), abs(b.bounds.bottom - y)) for b in buildings), default=c.Villages.PLAZA_RADIUS)
+    )
+    return Village(x, y, chunk, size, radius, extent_x, extent_y), buildings
 
 
 def generate_village(x, y, chunk: tuple[int, int]) -> tuple[Village, list[Building]]:
@@ -398,11 +718,11 @@ def _place_landmark(village: Village, buildings: list[Building]) -> Building | N
         y = random.randint(margin, c.World.WORLD_SIZE - margin)
         if math.hypot(x - center, y - center) < c.Boss.LANDMARK_MIN_DISTANCE:
             continue
-        if village.distance_to_point((x, y)) < village.radius + c.Buildings.MIN_GAP:
+        if village.distance_to_point((x, y)) < village.grounds_radius + c.Buildings.MIN_GAP:
             continue
         candidate = Building(x, y, "landmark")
         gap = c.Buildings.MIN_GAP
-        if any(candidate.rect.inflate(gap * 2, gap * 2).colliderect(other.rect) for other in buildings):
+        if any(candidate.bounds.inflate(gap * 2, gap * 2).colliderect(other.bounds) for other in buildings):
             continue
         return candidate
     return None

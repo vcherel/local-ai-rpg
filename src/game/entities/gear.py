@@ -25,6 +25,7 @@ WEAPON_LENGTH = {
     "bow": 1.0,
     "pole": 1.9,
     "boomerang": 0.8,
+    "tool": 1.25,
 }
 
 GRIP_COLOR = (85, 62, 40)
@@ -123,6 +124,15 @@ _WEAPON_PARTS = {
         (
             "poly",
             [(-L * 0.09, -L * 0.34), (L * 0.09, -L * 0.34), (L * 0.09, -L * 0.84), (0, -L), (-L * 0.09, -L * 0.84)],
+            "metal",
+        ),
+    ],
+    # A haft with a crosspiece head: a hoe, a rake, a poker, whatever was on the wall.
+    "tool": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.86)), "grip"),
+        (
+            "poly",
+            [(-L * 0.22, -L * 0.84), (L * 0.22, -L * 0.84), (L * 0.22, -L * 0.96), (-L * 0.22, -L * 0.96)],
             "metal",
         ),
     ],

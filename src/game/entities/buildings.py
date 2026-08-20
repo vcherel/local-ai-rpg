@@ -58,30 +58,88 @@ class _RoomSpace:
     turns it onto the wall the door is actually in afterwards. Furniture is added through
     `add` so it keeps its placement order, which is what `broken_props` indexes."""
 
-    def __init__(self, rng: random.Random, floor: pygame.Rect, door_path: pygame.Rect):
+    def __init__(self, rng: random.Random, floors: list[pygame.Rect], keep_clear: list[pygame.Rect]):
         self.rng = rng
-        self.floor = floor
-        # Kept clear of furniture, so the way in from the door is never walled off.
-        self.door_path = door_path
+        # The main room, which every arrangement below is written against ("against the back
+        # wall", "by the door"), and every piece of floor there is, which is what a stray
+        # crate may be dropped on: an L has a second one round the corner.
+        self.floor = floors[0]
+        self.floors = floors
+        # Kept clear of furniture, so no way through the room is ever walled off: the
+        # corridor in from the door, and the neck between the two halves of an L.
+        self.keep_clear = keep_clear
         self.solids: list = []
         self.beds: list[pygame.Rect] = []
         self.crates: list[pygame.Rect] = []
         self.chest: pygame.Rect | None = None
 
-    def add(self, rect: pygame.Rect, kind: str):
-        self.solids.append((rect, kind))
+    def add(self, rect: pygame.Rect, kind: str) -> pygame.Rect | None:
+        """Put one piece of furniture down, stepped out of any way through the room first.
+
+        The arrangements below place their fixed pieces (a bed against the back wall, a
+        shop's counter) by measurement rather than by search, so this is where they are kept
+        off the corridor in from the door and out of the neck of an L. Returns where the
+        piece actually ended up, or None if there was nowhere for it to go."""
+        placed = self._nudge_clear(rect)
+        if placed is None:
+            return None
+        self.solids.append((placed, kind))
+        return placed
+
+    def _nudge_clear(self, rect: pygame.Rect) -> pygame.Rect | None:
+        """The same piece, moved off whatever way through the room it is standing in, by the
+        shortest step that still leaves it on the floor."""
+        for _ in range(3):
+            band = next((clear for clear in self.keep_clear if rect.colliderect(clear)), None)
+            if band is None:
+                return rect
+            moves = [
+                (band.left - rect.right, 0),
+                (band.right - rect.left, 0),
+                (0, band.top - rect.bottom),
+                (0, band.bottom - rect.top),
+            ]
+            candidates = [rect.move(dx, dy) for dx, dy in moves]
+            candidates = [cand for cand in candidates if any(floor.contains(cand) for floor in self.floors)]
+            if not candidates:
+                return None
+            rect = min(candidates, key=lambda cand: abs(cand.x - rect.x) + abs(cand.y - rect.y))
+        return None
+
+    @property
+    def crowded_side(self) -> int:
+        """Which side of the main room the neck of an L runs along: -1 left, 1 right, 0 for
+        a plain box. An arrangement that has a choice of sides takes the other one, so the
+        bed and the chest are put down where nothing has to be nudged out of the way."""
+        for clear in self.keep_clear[1:]:
+            return -1 if clear.centerx < self.floor.centerx else 1
+        return 0
+
+    def on_floor(self, rect: pygame.Rect) -> bool:
+        """Whether a piece this size and place stands on the floor at all: inside one of the
+        room's rects and out of every way through it."""
+        if not any(floor.contains(rect) for floor in self.floors):
+            return False
+        return not any(rect.colliderect(clear) for clear in self.keep_clear)
 
     def fits(self, rect: pygame.Rect) -> bool:
-        if not self.floor.contains(rect) or rect.colliderect(self.door_path):
+        if not self.on_floor(rect):
             return False
         return all(not rect.colliderect(other.inflate(40, 40)) for other, _ in self.solids)
 
     def try_place(self, w: int, h: int) -> pygame.Rect | None:
-        """A free spot for a piece this size, or None once fifty tries have failed."""
+        """A free spot for a piece this size, or None once fifty tries have failed. Rolled
+        over every piece of floor by area, so the wing of an L is furnished too rather than
+        standing empty behind the room the arrangement was written for."""
+        floors = [floor for floor in self.floors if floor.width > w + 20 and floor.height > h + 20]
+        if not floors:
+            return None
+        weights = [floor.width * floor.height for floor in floors]
         for _ in range(50):
+            floor = self.rng.choices(floors, weights=weights)[0]
             rect = pygame.Rect(
-                self.rng.randint(self.floor.left + 10, self.floor.right - 10 - w),
-                self.rng.randint(self.floor.top + 10, self.floor.bottom - 10 - h),
+                self.rng.randint(floor.left + 10, floor.right - 10 - w),
+                self.rng.randint(floor.top + 10, floor.bottom - 10 - h),
                 w,
                 h,
             )
@@ -95,8 +153,29 @@ class _RoomSpace:
         for _ in range(count):
             crate = self.try_place(40, 40)
             if crate:
-                self.add(crate, "crate")
-                self.crates.append(crate)
+                self.crates.append(self.add(crate, "crate") or crate)
+
+
+def _subtract(seg: pygame.Rect, hole: pygame.Rect) -> list[pygame.Rect]:
+    """What is left of one wall segment once a hole is cut through it, as up to two rects.
+
+    Segments are thin and axis aligned, so the cut only ever splits the long axis: this is
+    how the wall between the two halves of an L is taken out without rebuilding the shell
+    as a polygon."""
+    if not seg.colliderect(hole):
+        return [seg]
+    pieces = []
+    if seg.width >= seg.height:
+        if hole.left > seg.left:
+            pieces.append(pygame.Rect(seg.left, seg.top, hole.left - seg.left, seg.height))
+        if hole.right < seg.right:
+            pieces.append(pygame.Rect(hole.right, seg.top, seg.right - hole.right, seg.height))
+    else:
+        if hole.top > seg.top:
+            pieces.append(pygame.Rect(seg.left, seg.top, seg.width, hole.top - seg.top))
+        if hole.bottom < seg.bottom:
+            pieces.append(pygame.Rect(seg.left, hole.bottom, seg.width, seg.bottom - hole.bottom))
+    return pieces
 
 
 class Building:
@@ -134,6 +213,10 @@ class Building:
         self.dropped_items: list[Item] = []
         self._layout = None
         self._ruin = None
+        # The second rect an L-shaped building is built of, rolled from the id on first
+        # ask like the style: None until asked, False once rolled and refused.
+        self._wing: pygame.Rect | bool | None = None
+        self._canon_wing: pygame.Rect | None = None
         # How this one is built (roof material and form, wall tint, extras). Rolled from
         # the building's own id on first draw, so a street is a row of different houses
         # and each of them keeps its look for good.
@@ -146,6 +229,90 @@ class Building:
     @property
     def has_door(self) -> bool:
         return self.kind != "landmark"
+
+    def wing(self) -> pygame.Rect | None:
+        """The second rect that makes this building an L, or None for a plain box.
+
+        Rolled from the building's own id like its roof, so it survives a save without a
+        field of its own, and described in the canonical room (door at the bottom) before
+        being turned onto the real facing: a wing always grows out of the *back* half of one
+        side, which is what keeps the facade one straight wall. The door, the windows, the
+        awning and the doorstep therefore know nothing about any of this."""
+        if self._wing is not None:
+            return self._wing or None
+        rng = random.Random(f"wing:{self.id}")
+        if self.kind not in c.Buildings.WING_KINDS or rng.random() > c.Buildings.WING_CHANCE:
+            self._wing = False
+            return None
+        canon = self._canon_rect()
+        depth = rng.randint(*c.Buildings.WING_DEPTH)
+        length = round(canon.height * rng.uniform(*c.Buildings.WING_LENGTH_FRAC))
+        side = rng.choice((-1, 1))
+        cwing = pygame.Rect(0, 0, depth, length)
+        if side > 0:
+            cwing.topleft = (canon.right, canon.top)
+        else:
+            cwing.topright = (canon.left, canon.top)
+        self._canon_wing = cwing
+        self._wing = self._place(cwing, canon, self.rect)
+        return self._wing
+
+    def _canon_opening(self) -> pygame.Rect | None:
+        """`_wing_opening` in the canonical room, where the wing is always out to one side:
+        what the furniture is laid out over before `_place` turns the room onto its facing."""
+        if self.wing() is None:
+            return None
+        wall = c.Buildings.WALL_THICKNESS
+        canon, cwing = self._canon_rect(), self._canon_wing
+        opening = cwing.inflate(-wall * 2, -wall * 2)
+        opening.width += wall * 3
+        if cwing.left >= canon.right - 1:
+            opening.left = cwing.left - wall * 2
+        return opening
+
+    def reset_geometry(self):
+        """Forget everything derived from where this building stands: its wing and its
+        interior. Called by the village layout, which moves a building after building it."""
+        self._wing = None
+        self._canon_wing = None
+        self._layout = None
+
+    def _canon_rect(self) -> pygame.Rect:
+        """This building's own footprint seen with its door in the bottom wall: the frame
+        every layout is written in before `_place` turns it onto the real facing."""
+        canon = self.rect.copy()
+        if self.facing in ("E", "W"):
+            canon.size = (self.rect.height, self.rect.width)
+        return canon
+
+    def footprint(self) -> list[pygame.Rect]:
+        """Every rect this building is built of: one for a plain box, two for an L. The
+        walls, the floor and the collision shell are all built off this rather than off
+        `rect`, which stays the main block the facade hangs on."""
+        wing = self.wing()
+        return [self.rect] if wing is None else [self.rect, wing]
+
+    @property
+    def bounds(self) -> pygame.Rect:
+        """The box the whole building fits in, wing included. What anything outside this
+        file wants when it asks where the building is: the chunk index, a chase detour, the
+        clearances that keep trees and bear traps off it."""
+        wing = self.wing()
+        return self.rect if wing is None else self.rect.union(wing)
+
+    def _wing_opening(self) -> pygame.Rect | None:
+        """The gap between the two halves of an L: the wing's own floor, carried far enough
+        into the main room to swallow the wall that would otherwise stand between them.
+
+        One rect does both jobs. Subtracted from the wall shell it is the opening; taken as
+        a floor it is what joins the two rooms into one, the same trick a tunnel's corridors
+        use to stay walkable across a doorway. Turned out of the canonical room like
+        everything else, so the floor a body walks on and the floor the furniture was laid
+        out over can never disagree."""
+        opening = self._canon_opening()
+        if opening is None:
+            return None
+        return self._place(opening, self._canon_rect(), self.rect)
 
     def outward(self) -> tuple:
         """The unit vector pointing out of the front wall. Everything about the facade (the
@@ -264,7 +431,11 @@ class Building:
     def _wall_segments(self) -> list[pygame.Rect]:
         """The building's solid shell as a few thin rects, with a permanent door-sized
         gap cut from the front wall. The landmark ruin has no door, so its whole
-        footprint stays one solid block."""
+        footprint stays one solid block.
+
+        An L is the same shell twice over, minus the wall the two halves would otherwise
+        have between them: `_wing_opening` is cut out of every segment, which turns two
+        boxes standing against each other into one room with a corner in it."""
         r = self.rect
         if not self.has_door:
             return [r]
@@ -286,6 +457,18 @@ class Building:
         else:
             segments.append(pygame.Rect(r.left, door.top, door.left - r.left, wall))
             segments.append(pygame.Rect(door.right, door.top, r.right - door.right, wall))
+
+        wing = self.wing()
+        if wing is not None:
+            segments += [
+                pygame.Rect(wing.left, wing.top, wing.width, wall),
+                pygame.Rect(wing.left, wing.bottom - wall, wing.width, wall),
+                pygame.Rect(wing.left, wing.top, wall, wing.height),
+                pygame.Rect(wing.right - wall, wing.top, wall, wing.height),
+            ]
+            opening = self._wing_opening()
+            segments = [piece for seg in segments for piece in _subtract(seg, opening)]
+
         # A shut door is part of the shell; open it or break it and the gap is back.
         if self.door_closed:
             segments.append(self.door_rect())
@@ -299,7 +482,7 @@ class Building:
             nearest_y = min(max(y, seg.top), seg.bottom)
             if math.hypot(x - nearest_x, y - nearest_y) < radius:
                 return True
-        if self.has_door and self.interior_rect().collidepoint(x, y):
+        if self.has_door and self.contains_point(x, y):
             for rect, _kind in self.interior_layout()["solids"]:
                 nearest_x = min(max(x, rect.left), rect.right)
                 nearest_y = min(max(y, rect.top), rect.bottom)
@@ -339,13 +522,20 @@ class Building:
     # ------------------------------------------------------------------ interior
 
     def interior_rect(self) -> pygame.Rect:
-        """The walkable floor, in world coordinates: the footprint inset by the wall shell."""
+        """The main room's walkable floor, in world coordinates: the block the facade hangs
+        on, inset by the wall shell. A wing is a second floor beside it (`interior_rects`)."""
         wall = c.Buildings.WALL_THICKNESS
         return self.rect.inflate(-wall * 2, -wall * 2)
 
+    def interior_rects(self) -> list[pygame.Rect]:
+        """Every piece of floor in the building. Two of them for an L, overlapping where
+        the wing meets the main room so the union is one connected space to walk over."""
+        opening = self._wing_opening()
+        return [self.interior_rect()] if opening is None else [self.interior_rect(), opening]
+
     def contains_point(self, x, y) -> bool:
         """True once (x, y) has stepped past the wall onto this building's floor."""
-        return self.has_door and self.interior_rect().collidepoint(x, y)
+        return self.has_door and any(floor.collidepoint(x, y) for floor in self.interior_rects())
 
     def _place(self, rect: pygame.Rect, canon: pygame.Rect, floor: pygame.Rect) -> pygame.Rect:
         """Carry one piece of furniture out of the canonical room (door at the bottom) into
@@ -388,7 +578,14 @@ class Building:
         door_path = pygame.Rect(
             round(floor.centerx - corridor_w / 2), floor.centery, corridor_w, floor.bottom - floor.centery
         )
-        space = _RoomSpace(rng, floor, door_path)
+        opening = self._canon_opening()
+        floors = [floor] if opening is None else [floor, opening]
+        keep_clear = [door_path]
+        if opening is not None:
+            # The way through to the wing, kept clear exactly as the way in from the door
+            # is: a table dropped in the neck of an L walls half the building off.
+            keep_clear.append(opening.clip(floor).inflate(c.Buildings.WING_NECK_CLEAR, c.Buildings.WING_NECK_CLEAR))
+        space = _RoomSpace(rng, floors, keep_clear)
 
         if self.kind == "house":
             self._lay_out_house(space)
@@ -425,23 +622,22 @@ class Building:
     @staticmethod
     def _lay_out_house(space: _RoomSpace):
         floor = space.floor
-        bed_left = space.rng.random() < 0.5
+        bed_left = space.crowded_side > 0 if space.crowded_side else space.rng.random() < 0.5
         bed_x = floor.left + 20 if bed_left else floor.right - 90
         # The household's own bed, which the player can sleep in for nothing at all,
         # provided nobody outside sees them do it (Game._sleep_in_bed).
-        house_bed = pygame.Rect(bed_x, floor.top + 15, 70, 100)
-        space.add(house_bed, "bed")
-        space.beds.append(house_bed)
+        house_bed = space.add(pygame.Rect(bed_x, floor.top + 15, 70, 100), "bed")
+        if house_bed:
+            space.beds.append(house_bed)
         space.add(pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf")
         chest_x = floor.right - 55 if bed_left else floor.left + 20
-        space.chest = pygame.Rect(chest_x, floor.bottom - 70, 40, 32)
-        space.add(space.chest, "chest")
+        space.chest = space.add(pygame.Rect(chest_x, floor.bottom - 70, 40, 32), "chest")
         table = space.try_place(80, 60)
         if table:
-            space.add(table, "table")
+            table = space.add(table, "table") or table
             for chair_x in (table.left - 30, table.right + 8):
                 chair = pygame.Rect(chair_x, table.centery - 13, 26, 26)
-                if floor.contains(chair) and not chair.colliderect(space.door_path):
+                if space.on_floor(chair):
                     space.add(chair, "chair")
 
     @staticmethod
@@ -450,6 +646,7 @@ class Building:
         space.add(pygame.Rect(round(floor.centerx - 85), floor.top + 90, 170, 32), "counter")
         space.add(pygame.Rect(floor.left + 25, floor.top + 6, 100, 22), "shelf")
         space.add(pygame.Rect(floor.right - 125, floor.top + 6, 100, 22), "shelf")
+
         space.add_crates(3)
 
     @staticmethod
@@ -459,9 +656,12 @@ class Building:
         bed_w, bed_h = 60, 95
         span = floor.width - 80 - bed_w
         for i in range(nb_beds):
-            bed = pygame.Rect(floor.left + 40 + round(span * i / max(1, nb_beds - 1)), floor.top + 15, bed_w, bed_h)
-            space.add(bed, "bed")
-            space.beds.append(bed)
+            bed = space.add(
+                pygame.Rect(floor.left + 40 + round(span * i / max(1, nb_beds - 1)), floor.top + 15, bed_w, bed_h),
+                "bed",
+            )
+            if bed:
+                space.beds.append(bed)
         space.add(pygame.Rect(floor.right - 190, floor.bottom - 80, 170, 32), "counter")
         for _ in range(2):
             table = space.try_place(80, 60)
@@ -524,6 +724,14 @@ class Building:
         r = self.rect
         sx, sy = camera.world_to_screen(r.left, r.top)
         srect = pygame.Rect(sx, sy, r.width, r.height)
+        # The wing first, so the main block's roof reads as the higher of the two where
+        # they meet: an L is a house with something built onto the back of it.
+        wing = self.wing()
+        if wing is not None:
+            wx, wy = camera.world_to_screen(wing.left, wing.top)
+            wrect = pygame.Rect(wx, wy, wing.width, wing.height)
+            pygame.draw.rect(screen, style["wall"], wrect)
+            self._draw_roof(screen, wrect.inflate(-12, -12), style)
         pygame.draw.rect(screen, style["wall"], srect)
 
         roof = srect.inflate(-16, -16)
@@ -817,14 +1025,15 @@ class Building:
             tl = camera.world_to_screen(rect.left, rect.top)
             return pygame.Rect(tl[0], tl[1], rect.width, rect.height)
 
-        floor = self.interior_rect()
-        pygame.draw.rect(screen, c.Buildings.WALL_COLOR, to_screen(self.rect))
-        floor_screen = to_screen(floor)
-        pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, floor_screen)
+        for block in self.footprint():
+            pygame.draw.rect(screen, c.Buildings.WALL_COLOR, to_screen(block))
         plank = tuple(round(v * 0.88) for v in c.Buildings.FLOOR_COLOR)
-        for x in range(floor.left + 50, floor.right, 50):
-            wx, _ = camera.world_to_screen(x, floor.top)
-            pygame.draw.line(screen, plank, (wx, floor_screen.top), (wx, floor_screen.bottom - 1), 2)
+        for floor in self.interior_rects():
+            floor_screen = to_screen(floor)
+            pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, floor_screen)
+            for x in range(floor.left + 50, floor.right, 50):
+                wx, _ = camera.world_to_screen(x, floor.top)
+                pygame.draw.line(screen, plank, (wx, floor_screen.top), (wx, floor_screen.bottom - 1), 2)
 
         # Doorway through the front wall: a floor-coloured gap, matching the collision gap,
         # with whatever is left of the door drawn in it.
