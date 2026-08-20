@@ -35,7 +35,7 @@ def random_open_coordinates() -> tuple:
     return x, y
 
 
-def draw_label(screen: pygame.Surface, text: str, center: tuple):
+def _draw_label(screen: pygame.Surface, text: str, center: tuple):
     label = c.Fonts.small.render(text, True, c.Colors.WHITE)
     label_rect = label.get_rect(center=center)
     bg_rect = label_rect.inflate(12, 6)
@@ -1013,7 +1013,7 @@ class Building:
             pygame.draw.circle(screen, (110, 110, 105), (cx + px, cy + py), radius)
             pygame.draw.circle(screen, (80, 80, 76), (cx + px, cy + py), radius, 2)
         if self.name:
-            draw_label(screen, self.name, (cx, cy + self.h / 2 + 30))
+            _draw_label(screen, self.name, (cx, cy + self.h / 2 + 30))
 
     def _draw_interior(self, screen: pygame.Surface, camera: Camera):
         """Cutaway view of this one building: wall shell, floor and furniture drawn at its

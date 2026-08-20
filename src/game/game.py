@@ -88,6 +88,16 @@ class Game:
         self.save_system = save_system
         self.world = World(self.save_system, self.context_window, self.loot_notification.show)
         self.game_renderer = GameRenderer(self.screen)
+        # What each icon in the HUD dock does, keyed by the action its row in
+        # `GameRenderer.dock_buttons` carries, so the two lists are read against each other.
+        self.dock_actions = {
+            "inventory": self.inventory_menu.toggle,
+            "quests": self.quest_menu.toggle,
+            "stats": self.stats_menu.toggle,
+            "lore": self._show_lore,
+            "help": self.help_menu.toggle,
+            "pause": self.pause_menu.toggle,
+        }
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
         # A new game spawns at the fixed world centre, which the starting town's grid often
@@ -179,34 +189,7 @@ class Game:
             if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
-                        if self.game_renderer.inv_button_rect.collidepoint(event.pos):
-                            self.inventory_menu.toggle()
-
-                        elif self.game_renderer.quest_button_rect.collidepoint(event.pos):
-                            self.quest_menu.toggle()
-
-                        elif self.dialogue_manager.quest_tracker.handle_event(
-                            event, self.dialogue_manager.quest_system
-                        ):
-                            pass
-
-                        elif self.game_renderer.stats_button_rect.collidepoint(event.pos):
-                            self.stats_menu.toggle()
-
-                        elif self.game_renderer.lore_button_rect.collidepoint(event.pos):
-                            self._show_lore()
-
-                        elif self.game_renderer.help_button_rect.collidepoint(event.pos):
-                            self.help_menu.toggle()
-
-                        elif self.game_renderer.pause_button_rect.collidepoint(event.pos):
-                            self.pause_menu.toggle()
-
-                        elif self.game_renderer.loading_indicator.rect.collidepoint(event.pos):
-                            self.game_renderer.show_llm_tasks = not self.game_renderer.show_llm_tasks
-
-                        else:
-                            self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
+                        self._handle_left_click(event)
 
                     elif event.button == 3:  # Right click: ranged weapon
                         self.world.handle_attack(self.player, self.dialogue_manager.quest_system, ranged=True)
@@ -221,6 +204,27 @@ class Game:
             self.dialogue_manager.shop_requested = False
 
         return True
+
+    def _handle_left_click(self, event):
+        """A left click in the world: a HUD button if it landed on one, a swing otherwise.
+
+        The dock buttons are looked up by action out of `GameRenderer.dock_buttons`, so a new
+        one is one row there and one row in `self.dock_actions` rather than a rect named in
+        this file and named again over there.
+        """
+        for action, rect, _icon, _tooltip in self.game_renderer.dock_buttons:
+            if rect.collidepoint(event.pos):
+                self.dock_actions[action]()
+                return
+
+        if self.dialogue_manager.quest_tracker.handle_event(event, self.dialogue_manager.quest_system):
+            return
+
+        if self.game_renderer.loading_indicator.rect.collidepoint(event.pos):
+            self.game_renderer.show_llm_tasks = not self.game_renderer.show_llm_tasks
+            return
+
+        self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
     def _handle_key(self, event):
         """One in-world key press. The two ranges (the weapon bar's number keys, the
@@ -351,6 +355,15 @@ class Game:
         def reach_of(x, y) -> float:
             return math.hypot(self.player.x - x, self.player.y - y)
 
+        self._offer_indoors(offer, reach_of)
+        self._offer_doors(offer, reach_of)
+        self._offer_underground(offer, reach_of)
+        self._offer_places(offer, reach_of)
+        self._offer_npc(offer, reach_of)
+        return None if best is None else best[1]
+
+    def _offer_indoors(self, offer, reach_of):
+        """The chest and the beds of the room the player is standing in, if they are in one."""
         if self.interior is not None:
             indoor_reach = c.Buildings.INTERACT_DISTANCE
             layout = self.interior.interior_layout()
@@ -368,6 +381,8 @@ class Game:
                 if dist <= indoor_reach:
                     offer(Interaction("bed", bed, self._bed_label(), bed.centerx, bed.top), dist)
 
+    def _offer_doors(self, offer, reach_of):
+        """Every front door in reach, and whether E would open it or shut it."""
         for building in self.world.buildings_near(self.player.x, self.player.y):
             if not building.has_door or building.door_broken:
                 continue
@@ -385,6 +400,9 @@ class Game:
                 label = "E: close the door" if building.door_open else "E: open the door"
             offer(Interaction("door", building, label, door.centerx, door.top - 10), dist)
 
+    def _offer_underground(self, offer, reach_of):
+        """The two ends of the dark: the way back up when down there, the two ways down when
+        on the surface. Never both, since one of them is always somewhere else."""
         if self.world.underground is not None:
             # The one way back up, and the only thing to interact with down there besides
             # what is lying on the floor.
@@ -409,6 +427,9 @@ class Game:
                     reach_of(cave.x, cave.y),
                 )
 
+    def _offer_places(self, offer, reach_of):
+        """A campfire to rest at and a shrine to pray at: the places that answer once and
+        then go quiet for a while."""
         camp = self.world.camp_in_reach(self.player)
         if camp is not None:
             cooling = self.world.rest_ready_in(camp.id)
@@ -422,6 +443,8 @@ class Game:
                 reach_of(shrine.x, shrine.y),
             )
 
+    def _offer_npc(self, offer, reach_of):
+        """Whoever is close enough to talk to, and the reason they won't when they won't."""
         npc = self.world.npc_in_reach(self.player)
         # A merchant still waiting on its stock, someone who has turned on the player, or a
         # world whose context hasn't generated yet: no prompt for something the key wouldn't do.
@@ -443,8 +466,6 @@ class Game:
                 label = f"E: talk to {npc.name}" if npc.name else "E: talk"
             hint = "B: trade" if npc.is_merchant else ""
             offer(Interaction("npc", npc, label, npc.x, npc.y - c.Entities.NPC_SIZE, hint), reach_of(npc.x, npc.y))
-
-        return None if best is None else best[1]
 
     def _interact(self):
         """Run whatever the on-screen prompt is offering."""
