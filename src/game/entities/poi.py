@@ -133,17 +133,7 @@ class PointOfInterest:
         # blows land visibly instead of the pile sitting untouched until it gives.
         offset = get_damage_fx().offset(f"poi:{self.id}")
         center = (round(sx) + offset[0], round(sy) + offset[1])
-        drawer = {
-            "camp": self._draw_camp,
-            "shrine": self._draw_shrine,
-            "farmstead": self._draw_farmstead,
-            "graveyard": self._draw_graveyard,
-            "watchtower": self._draw_watchtower,
-            "stones": self._draw_stones,
-            "signpost": self._draw_signpost,
-            "cave": self._draw_cave,
-        }.get(self.kind, self._draw_ruins)
-        drawer(screen, center)
+        _DRAWERS.get(self.kind, PointOfInterest._draw_ruins)(self, screen, center)
 
         if self.has_loot and not self.looted and self.cache_hp < c.PointsOfInterest.CACHE_HP:
             wear = pygame.Rect(0, 0, 56, 44)
@@ -366,6 +356,22 @@ class PointOfInterest:
             glow = pygame.Surface((60, 60), pygame.SRCALPHA)
             pygame.draw.circle(glow, (230, 220, 150, round(45 * pulse)), (30, 30), 26)
             screen.blit(glow, (cx - 30, cy - 36))
+
+
+# What draws each kind, named explicitly rather than off the kind's own name, so a search
+# for `_draw_cave` finds both ends of it. Built once here rather than per draw call: this
+# used to be a dict literal rebuilt for every landmark on screen, every frame. Anything not
+# listed is a ruins pile.
+_DRAWERS = {
+    "camp": PointOfInterest._draw_camp,
+    "shrine": PointOfInterest._draw_shrine,
+    "farmstead": PointOfInterest._draw_farmstead,
+    "graveyard": PointOfInterest._draw_graveyard,
+    "watchtower": PointOfInterest._draw_watchtower,
+    "stones": PointOfInterest._draw_stones,
+    "signpost": PointOfInterest._draw_signpost,
+    "cave": PointOfInterest._draw_cave,
+}
 
 
 @lru_cache(maxsize=2048)

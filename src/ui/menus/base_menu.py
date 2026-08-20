@@ -6,12 +6,14 @@ from ui import widgets
 # Height of the title band drawn at the top of a menu when it has a title.
 HEADER_HEIGHT = 56
 
+# The dim wash drawn behind every open menu, built on first use and reused; see draw_overlay.
+_OVERLAY: pygame.Surface | None = None
+
 
 class BaseMenu:
     def __init__(self, screen: pygame.Surface, width: int, height: int):
         self.screen = screen
         self.active = False
-        self.just_active = False
         self.width = width
         self.height = height
         self.padding = 20
@@ -22,7 +24,6 @@ class BaseMenu:
 
     def toggle(self):
         self.active = not self.active
-        self.just_active = True
 
     def close(self):
         self.active = False
@@ -33,11 +34,16 @@ class BaseMenu:
         return menu_x, menu_y
 
     def draw_overlay(self):
-        """Dim the world behind the menu every frame."""
-        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
-        overlay.fill(c.Colors.OVERLAY_DIM)
-        self.screen.blit(overlay, (0, 0))
-        self.just_active = False
+        """Dim the world behind the menu every frame.
+
+        The wash is built once and kept: it never changes, and a fresh screen-sized alpha
+        surface per frame is an allocation the size of the window for a flat colour.
+        """
+        global _OVERLAY
+        if _OVERLAY is None:
+            _OVERLAY = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
+            _OVERLAY.fill(c.Colors.OVERLAY_DIM)
+        self.screen.blit(_OVERLAY, (0, 0))
 
     def create_menu_surface(self, title: str | None = None) -> pygame.Surface:
         surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
@@ -70,7 +76,7 @@ class BaseMenu:
     @property
     def content_top(self) -> int:
         """First y inside the panel below the header band."""
-        return (self.header_height or 0) + 18
+        return self.header_height + 18
 
     def draw_hint(self, surface: pygame.Surface, text: str):
         hint = c.Fonts.small.render(text, True, c.Colors.MUTED)
@@ -83,10 +89,7 @@ class BaseMenu:
     def draw_wrapped_text(
         self, surface: pygame.Surface, text: str, x: int, y: int, max_width: int, font=None, line_spacing: int = 25
     ):
-        """
-        Draw text with word wrapping at specified position.
-        Returns the final y position after all lines.
-        """
+        """Returns the y the text ended at, so whatever follows it doesn't have to guess."""
         if font is None:
             font = c.Fonts.text
 
