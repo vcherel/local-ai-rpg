@@ -36,6 +36,13 @@ _SOUND_SPECS = {
     "discover": ([(523, 0.08), (784, 0.10), (1047, 0.18)], 0.28, "sine"),
     "rest": ([(392, 0.12), (330, 0.14), (262, 0.22)], 0.25, "sine"),
     "fuse": ([(700, 0.06), (880, 0.06), (1100, 0.08), (1400, 0.10)], 0.22, "square"),
+    # Steel jaws: a bright snap over a low thunk, so a trap shutting is heard before the
+    # health bar is read.
+    "trap_snap": ([(1700, 0.02), (900, 0.03), (240, 0.06), (120, 0.12)], 0.40, "square"),
+    # A villager shouting the player off before their street turns on them.
+    "shout": ([(330, 0.05), (392, 0.05), (294, 0.09)], 0.30, "square"),
+    # Something arriving where nothing was: a boss's summons clawing out of the ground.
+    "summon": ([(120, 0.08), (180, 0.07), (260, 0.07), (150, 0.12)], 0.30, "square"),
 }
 
 

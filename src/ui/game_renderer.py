@@ -229,6 +229,11 @@ class GameRenderer:
         def visible(x, y, margin=60) -> bool:
             return self._on_screen(camera, x, y, margin) and not self._hidden_indoors(world, x, y, interior)
 
+        # Under everything alive: a boss's summons opens the ground before anything stands
+        # up out of it, so the mark belongs with the shadows rather than over the bodies.
+        for boss in world.bosses:
+            boss.draw_summon_marks(self.screen, camera)
+
         for critter in world.critters:
             if visible(critter.x, critter.y):
                 critter.draw(self.screen, camera)
@@ -267,6 +272,7 @@ class GameRenderer:
             world.underground.draw_dark(self.screen, camera, player)
 
         player.draw(self.screen)
+        self._draw_struggle_bar(player)
 
         if overlay is not None:
             overlay()
@@ -275,6 +281,24 @@ class GameRenderer:
             self._draw_interaction_prompt(camera, interaction)
         self.draw_offscreen_indicators(camera, quest_target)
         self.draw_boss_bar(world, player)
+
+    def _draw_struggle_bar(self, player: Player):
+        """What is left of a bear trap's hold, over the player's head.
+
+        Drawn only while the jaws are on them, and only because escaping is something they
+        do: every movement key pressed takes a bite out of this bar (`Game._struggle`), and
+        without it the effort would be a body that has stopped answering the keys for a
+        while. Not a prompt, so it never competes with the one on-screen interaction."""
+        if not player.rooted:
+            return
+        width, height = 90, 9
+        x = c.Screen.ORIGIN_X - width // 2
+        y = c.Screen.ORIGIN_Y - c.Player.SIZE - 34
+        pygame.draw.rect(self.screen, (24, 22, 20), (x - 2, y - 2, width + 4, height + 4), border_radius=3)
+        pygame.draw.rect(self.screen, c.Traps.PLATE_COLOR, (x, y, width, height))
+        pygame.draw.rect(self.screen, c.Traps.JAW_COLOR, (x, y, round(width * player.root_progress), height))
+        label = c.Fonts.small.render("Struggle!", True, c.Colors.WHITE)
+        self.screen.blit(label, label.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
 
     def _draw_witness_cones(self, camera: Camera, world: World, player: Player):
         """What every villager who could catch the player stealing can actually see, drawn on

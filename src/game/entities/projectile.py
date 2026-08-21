@@ -73,6 +73,15 @@ class Projectile:
         # Loosed from a tower, over the settlement's own wall: this one is not stopped by a
         # palisade (`World.blocked_over_walls`). Everything else in the world still stops it.
         self.over_walls = over_walls
+        # Loosed by a villager: a town archer's arrow, a stone out of a mob's hands. An
+        # arrow is not choosy about what it meets, but a village is: nobody in it shoots a
+        # neighbour, so these pass through their own people rather than through the wall of
+        # bodies an angry street puts between the player and the tower.
+        self.from_npc = False
+        # Which stat the player trains off a hit with this, decided by the weapon that
+        # loosed it rather than by the fact it was fired: a bolt out of a staff is magic and
+        # an arrow is strength, so training one never quietly pays for the other.
+        self.skill = "strength"
         # Pierce lets an arrow pass through this many targets before stopping (arrow-pierce accessory).
         self.pierce = 0
         # Whoever fired it, already counted as struck so a shot can never hit its own

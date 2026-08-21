@@ -74,6 +74,15 @@ class NPC(Entity):
         self.attack_token = True
         # The next stone this one may throw, for those who keep their distance instead.
         self.next_stone_ms = 0
+        # Until when this one is looking down whatever they just put in the air. Aiming and
+        # facing are the same act (`aim_at`), and this is what stops the ordinary wander
+        # and greet turning the body back the other way while the shot is still leaving it.
+        self.aim_until_ms = 0
+        # The shout hanging over this one's head after the player's first offence: they are
+        # warning the player rather than fighting them, and the village is still calm. Set
+        # by `warn`, worn for `Villages.WARNING_MS`, and never saved: a warning is the
+        # moment, the strike it recorded is what the village remembers (World.village_strikes).
+        self.warned_until_ms = 0
         # Whether this one takes up arms when a monster walks into their settlement, rolled
         # off their home so the same house always sends the same person out. Cached because
         # it is asked every frame.
@@ -129,8 +138,13 @@ class NPC(Entity):
             return True
         if self._militia is None:
             seed = f"militia:{round(self.home[0])}:{round(self.home[1])}"
-            self._militia = not self.is_merchant and random.Random(seed).random() < c.Villages.MILITIA_FRACTION
+            fraction = c.Villages.MILITIA_FRACTION_BY_TIER[self._tier_index(c.Villages.MILITIA_FRACTION_BY_TIER)]
+            self._militia = not self.is_merchant and random.Random(seed).random() < fraction
         return self._militia
+
+    def _tier_index(self, ladder) -> int:
+        """This one's settlement tier, clamped to whatever ladder is being read off it."""
+        return max(0, min(self.defence_tier, len(ladder) - 1))
 
     @property
     def weapon_name(self) -> str:
@@ -138,15 +152,14 @@ class NPC(Entity):
         flag, so the same house always turns out the same person with the same thing."""
         if self._weapon_name is None:
             rng = random.Random(f"weapon:{round(self.home[0])}:{round(self.home[1])}")
-            tier = max(0, min(self.defence_tier, len(c.Entities.GUARD_WEAPON_TIERS) - 1))
             if self.is_archer:
                 pool = c.Entities.ARCHER_WEAPONS
             elif self.is_guard:
-                pool = c.Entities.GUARD_WEAPON_TIERS[tier]
+                pool = c.Entities.GUARD_WEAPON_TIERS[self._tier_index(c.Entities.GUARD_WEAPON_TIERS)]
             elif self.is_militia:
-                pool = c.Entities.MILITIA_WEAPON_TIERS[tier]
+                pool = c.Entities.MILITIA_WEAPON_TIERS[self._tier_index(c.Entities.MILITIA_WEAPON_TIERS)]
             else:
-                pool = c.Entities.VILLAGER_WEAPONS
+                pool = c.Entities.VILLAGER_WEAPON_TIERS[self._tier_index(c.Entities.VILLAGER_WEAPON_TIERS)]
             self._weapon_name = rng.choice(pool)
         return self._weapon_name
 
@@ -165,6 +178,33 @@ class NPC(Entity):
                 "outline": c.Entities.WEAPON_OUTLINE,
             }
         }
+
+    def aim_at(self, x: float, y: float) -> float:
+        """Turn to face (x, y) and hold that facing while the shot leaves, returning the
+        bearing a `Projectile` wants (measured from straight up, clockwise).
+
+        The one place a villager's aim is worked out, so what they are drawn looking at and
+        what they actually loose at can never be two different directions. Sprites face up,
+        which is the quarter turn."""
+        angle = math.atan2(y - self.y, x - self.x)
+        self.orientation = angle + math.pi / 2
+        self.aim_until_ms = pygame.time.get_ticks() + c.Entities.NPC_AIM_HOLD_MS
+        return math.atan2(x - self.x, self.y - y)
+
+    @property
+    def aiming(self) -> bool:
+        return pygame.time.get_ticks() < self.aim_until_ms
+
+    def warn(self, x: float, y: float):
+        """The player's first offence against this one's village: turn on them, shout, and
+        leave it there. Nobody goes hostile off a warning, which is the whole point of it."""
+        self.warned_until_ms = pygame.time.get_ticks() + c.Villages.WARNING_MS
+        self.aim_at(x, y)
+        self.start_attack_anim("left")
+
+    @property
+    def warning(self) -> bool:
+        return pygame.time.get_ticks() < self.warned_until_ms
 
     def sees(self, x: float, y: float, radius: float) -> bool:
         """Whether (x, y) falls inside this one's field of view: near enough, and inside the
@@ -290,7 +330,21 @@ class NPC(Entity):
         if self.name is None:
             self.name = npc_name_generator.get_name()
 
-    def update(
+    def update(self, player: Player, dt, *args, **kwargs):
+        """One frame, with whatever this one is aiming at held in front of them.
+
+        Everything below picks a facing from what it is doing: walking, greeting, swinging.
+        A villager who has just loosed an arrow or thrown a stone is doing none of those,
+        and turning them back to face their footsteps on the next frame is what had archers
+        shooting sideways. So the aim wins for as long as it is held, and the frame is run
+        underneath it."""
+        aimed = self.orientation if self.aiming else None
+        damage = self._act(player, dt, *args, **kwargs)
+        if aimed is not None:
+            self.orientation = aimed
+        return damage
+
+    def _act(
         self,
         player: Player,
         dt,
@@ -453,6 +507,10 @@ class NPC(Entity):
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""
         if self.hostile:
             return c.Fonts.badge, "!", c.Colors.RED
+        # Not angry yet, and saying so. Orange rather than red: the difference between the
+        # two badges is the difference between a warning and a fight.
+        if self.warning:
+            return c.Fonts.badge, "!", c.Colors.ORANGE
         if self.has_active_quest:
             return c.Fonts.badge, "!", c.Colors.YELLOW
         if self.is_thief:

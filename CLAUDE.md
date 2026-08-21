@@ -28,7 +28,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/world.py`: `World`, the state everything reads (entity lists, buildings, shops, saving) plus the per-frame `update`; four jobs are mixed in from `combat.py`, `projectiles.py`, `streaming.py` and `places.py`. Also here: chunk-bucketed building/wall lookup, chase navigation (`chase_waypoint`, `_detour_corner` and the corner it commits to), who may let themselves through a shut door or a barred gate, `assign_surround_slots`, spawn caps and safe placement, terrain speed and line of sight, village defence orders, impulses and `unstick`
 - `src/game/combat.py`: `WorldCombat`, every blow and its aftermath: `handle_attack`, the target-group table, cleave falloff, thrust lanes, knockback, crits, gore, weapon affixes and elements, breakables/windows/gates/props, bear traps, and `explode`
 - `src/game/projectiles.py`: `WorldProjectiles`, everything in flight: `_fire_ranged` (mana, ammo, style), monster shots, and what each projectile strikes
-- `src/game/places.py`: `WorldPlaces`, what the player does at a place once they have walked to it: camps, campfire rest, shrines, wells and caves, tunnels, theft and witnesses, village anger, directions and rumours, explored cells, `pass_time`
+- `src/game/places.py`: `WorldPlaces`, what the player does at a place once they have walked to it: camps, campfire rest, shrines, wells and caves, tunnels, theft and witnesses, the warning ladder (`strike_village`, `shout_warning`) and village anger (`provoke_village`, `hold_grudge`, `pacify_village`), directions and rumours, explored cells, `pass_time`
 - `src/game/streaming.py`: `WorldStreaming`, how the map appears around the player: chunk load/unload, scenery reindexing, village creation, `prepare`, and the background naming/lore threads
 - `src/game/events.py`: `EventSystem`, random world events (travelling merchant, treasure, blood night, rumours, village crisis); `blood_intensity` is the one number the blood night is read through
 - `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss/clear_camp/steal/deliver) and its (de)serialisation; `COUNTED_QUEST_TYPES` is the one list of counter-finished types
@@ -38,11 +38,11 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/entities/entities.py`: `Entity` base (hp, damage, attack anim, `root`, `chill`), impulses and stagger, `push_apart`, `Gait` (the one walk cycle), `draw_human`
 - `src/game/entities/gear.py`: drawing the gear a character visibly wears: weapon per hand by archetype, shield, armour ring, accessory gem
 - `src/game/entities/player.py`: `Player`, movement, inventory and stacking, equip slots (two melee plus ranged, shield, armor, accessory, ammo), the weapon bar and potion quickbar, potions and buffs, mana, shield block, affix effects, death weakness, spawn grace, `gear()`
-- `src/game/entities/npcs.py`: `NPC`, villagers: timed hostility and grudges, hunting/routing/stone throwing, the vision cone, militia and guard roles, weapons rolled off the home seed, affinity, shop stock and restock clock, wandering
+- `src/game/entities/npcs.py`: `NPC`, villagers: timed hostility and grudges, the shout that comes before them (`warn`), hunting/routing/stone throwing, `aim_at` (the one place facing and firing are decided together), the vision cone, militia and guard roles, weapons rolled off the home seed by settlement tier, affinity, shop stock and restock clock, wandering
 - `src/game/entities/wander.py`: `Wander`, the idle-then-stroll movement shared by NPCs and critters
 - `src/game/entities/monsters.py`: `Monster`, `pick_monster_kind` (spawn by distance, fading kinds out again), chasing and ring slots, steering, ranged kinds that keep distance, charge/flank/detonate behaviours, burn ticks
 - `src/game/entities/monster_art.py`: the vector art per silhouette (`humanoid`, `goblin`, `hulk`, `skeleton`, `wraith`, `blob`, `beast`, `robed`, `creeper`) behind `draw_monster`; shadow, breath and eyes are shared by all of them
-- `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam, bolt volley, summons), knockback immune
+- `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam, bolt volley, summons marked on the ground before they arrive), knockback immune
 - `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza, `defences()` (wall, gates, towers, outworks), the gates' bar, swing and `gate_between`, `tier`, `grounds_radius`
 - `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L), facade offsets, interior layout and furniture, front door, windows, roof style; the footprint, floors and wall shell are worked out once and kept (`reset_geometry` drops them); `set_active_buildings`
 - `src/game/entities/scenery.py`: the wilderness: per-chunk biome clumps, trees/boulders/ponds/grass, roads and footpaths, rivers and bridges, plus the collision and water indexes
@@ -53,7 +53,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/entities/critter.py`: `Critter`, `pick_critter_kind`, all wildlife: temperament-driven behaviour, fleeing with stamina, quadruped drawing
 - `src/game/entities/items.py`: `Item` and everything about one: types, stacking, potions, rarity and affix rolling, accessory flavors, `base_value`, inventory sections, `icon_shape`, coin purses, the ground marker and magnet
 - `src/game/entities/item_icons.py`: `draw_shape_with_border`, the vector art behind every item icon, one function per shape in `_SHAPES`
-- `src/game/entities/projectile.py`: `Projectile`, an arrow/bolt/stone/boomerang in flight; hops no longer than it is wide, `hostile`/`by_player`/`over_walls`/`pierce` flags, boomerang return
+- `src/game/entities/projectile.py`: `Projectile`, an arrow/bolt/stone/boomerang in flight; hops no longer than it is wide, `hostile`/`by_player`/`from_npc`/`over_walls`/`pierce` flags, the `skill` a hit trains, boomerang return
 - `src/game/entities/stats.py`: `Stats`, use-based progression (xp, training, derived bonuses, magic and swimming), queueing `pending_levelups`
 
 ### llm
@@ -116,8 +116,8 @@ The short version. `docs/design/` explains each of these.
 - Difficulty is distance from the world centre, pulled by three levers (which kinds, how many, what has a name). Nothing scales a monster's own stat block.
 - The spawn point is protected three ways at once: nothing hostile spawned near it, the player placed by `safe_spot_near`, and `Death.SPAWN_GRACE_S` of grace.
 - Healing is scarce and each source has one job (potion, campfire, bed, slow passive trickle). New healing goes through one of the four, not beside them.
-- A crowd surrounds rather than queues: everything chasing one target goes through `World.assign_surround_slots`.
-- Violence against a villager is a whole-settlement event through `WorldCombat._resolve_npc_hit`. Theft is the one exception and turns exactly one witness.
+- A crowd surrounds rather than queues: everything chasing one target goes through `World.assign_surround_slots`. Only the villagers the player is standing among join it (`Villages.MOB_ENGAGE_RANGE`); the rest of an angry village goes on with its day.
+- Violence against a villager is a whole-settlement event through `WorldCombat._resolve_npc_hit`, and every settlement warns once before it turns (`WorldPlaces.strike_village`). Theft is the one exception and turns exactly one witness, on the same ladder. Dying to a settlement is it getting its own back, so that one forgets (`pacify_village`).
 - Nothing the player did not do pays the player: `by_player=False` withholds every reward and consequence, never the kill.
 - Nothing in the world breaks in a single hit, and every hit-point pool draws its own wear through `core/damage_fx.py`.
 - A door (and a gate) is the only obstacle a chaser may break. If a monster cannot reach the player, the answer is navigation, not demolition. Its own people let themselves through instead of breaking it (`World.open_door_for`, `World.pass_gate_for`).

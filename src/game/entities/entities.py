@@ -51,6 +51,7 @@ class Entity:
         # roots). Session-only and shared by everything that moves, since the trap does not
         # care what it caught: whoever is rooted still turns, still swings, still bleeds.
         self.rooted_until_ms = 0
+        self.root_span_ms = 0
         # Slowed rather than held: a frost staff's bolt leaves whatever it touched walking
         # at `chill_mult` of its pace until this tick. Read by every mover the same way
         # `rooted` is, and deliberately never a stop, since a bear trap is the only thing
@@ -77,11 +78,31 @@ class Entity:
         self.route_corner = None
 
     def root(self, duration_ms: int):
-        self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)
+        now = pygame.time.get_ticks()
+        self.rooted_until_ms = max(self.rooted_until_ms, now + duration_ms)
+        # How long the hold was when it was put on, kept fixed so working it shorter shows
+        # as the bar emptying rather than as the same bar over a shorter clock.
+        self.root_span_ms = max(self.root_span_ms if self.rooted else 0, self.rooted_until_ms - now)
 
     @property
     def rooted(self) -> bool:
         return pygame.time.get_ticks() < self.rooted_until_ms
+
+    @property
+    def root_progress(self) -> float:
+        """How much of the hold is left, 1 just caught to 0 free. What the struggle bar over
+        a caught player draws, so working a leg loose is visible rather than felt."""
+        if self.root_span_ms <= 0 or not self.rooted:
+            return 0.0
+        return min(1.0, (self.rooted_until_ms - pygame.time.get_ticks()) / self.root_span_ms)
+
+    def shorten_root(self, ms: int) -> bool:
+        """Work a foot loose by that much, never past free. False when nothing is holding
+        this one, so a caller can tell a struggle from a keypress into thin air."""
+        if not self.rooted:
+            return False
+        self.rooted_until_ms = max(pygame.time.get_ticks(), self.rooted_until_ms - ms)
+        return True
 
     def chill(self, duration_ms: int, factor: float):
         """Slow this thing down for a while. A fresh chill takes the harsher of the two

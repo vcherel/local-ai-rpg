@@ -452,7 +452,13 @@ class Traps:
     SIZE: int = 26
     TRIGGER_RADIUS: int = 26
     DAMAGE: int = 16
-    HOLD_MS: int = 2400
+    # Long enough that being caught is a real event rather than a stutter, because the
+    # player is not meant to sit it out: every movement key pressed while the jaws are on
+    # them works the foot loose by STRUGGLE_MS, so escaping is something they do. Anything
+    # else the trap catches has no keys to press and simply waits out the whole hold.
+    HOLD_MS: int = 4200
+    STRUGGLE_MS: int = 260
+    STRUGGLE_SHAKE: float = 3.0
     JAW_COLOR: tuple = (118, 116, 112)
     PLATE_COLOR: tuple = (86, 84, 80)
     SPRUNG_COLOR: tuple = (96, 92, 86)
@@ -748,12 +754,36 @@ class Villages:
     ANGER_S: float = 240.0
     ANGER_CAP_S: float = 900.0
 
+    # Nobody turns on the player over one blow any more. The first offence against a
+    # settlement (a swing that lands, a theft somebody sees) is a warning: the victim
+    # shouts, an exclamation goes up over their head and the place stays calm. The next one
+    # inside STRIKE_WINDOW_S is what provokes it. A killing skips the ladder entirely, as
+    # does a second strike after the window has run out, which resets to a fresh warning.
+    STRIKES_BEFORE_ANGER: int = 2
+    STRIKE_WINDOW_S: float = 30.0
+    # How long the shout hangs over the villager who gave it, and what it says.
+    WARNING_MS: int = 2600
+    WARNING_SHOUTS: tuple = (
+        "Hey! Touch me again and you're done.",
+        "Watch yourself, stranger.",
+        "Try that once more and we'll all be on you.",
+        "That's your one warning.",
+    )
+    THEFT_SHOUTS: tuple = (
+        "Hands off that!",
+        "I saw that. Put it back.",
+        "Thief! Next time I call the whole street.",
+    )
+
     # A village defends itself. Only some of its people take up arms (rolled per NPC off
     # their home, so the same house always sends the same person out); the rest run for the
     # nearest door and shut it. A monster inside a settlement's grounds plus this margin is
     # an intruder, a militiaman walks this far from where they stand to meet one, and anyone
     # else bolts once one is this close.
-    MILITIA_FRACTION: float = 0.45
+    # How many of them take up arms, by the settlement's own tier: a deep wilds town turns
+    # out more people as well as better armed ones, since living out there is what teaches
+    # a village to answer for itself.
+    MILITIA_FRACTION_BY_TIER: tuple = (0.35, 0.5, 0.65)
     DEFEND_MARGIN: float = 300.0
     DEFEND_RADIUS: float = 620.0
     PANIC_RADIUS: float = 520.0
@@ -764,6 +794,13 @@ class Villages:
     # to answer with a sword. Anyone cut down to this fraction of their health has had
     # enough and runs for a door, so a mob thins out as it loses rather than fighting to
     # the last farmer.
+    # Only the people the player is actually standing among fight them. An angry village is
+    # angry everywhere, but a farmer three streets away carries on with their day rather
+    # than converging on the player from across the settlement: whoever is inside this
+    # radius takes up the fight, everyone else stays where they are and does what they were
+    # doing. Once engaged they are held by the longer `Entities.NPC_HOSTILE_RANGE` leash, so
+    # a fight the player walks away from is broken off rather than dropped on the spot.
+    MOB_ENGAGE_RANGE: float = 430.0
     MOB_STANDOFF: float = 250.0
     MOB_STONE_RANGE: float = 340.0
     MOB_STONE_DAMAGE: int = 5
@@ -819,9 +856,18 @@ class Villages:
     # A wall long enough to matter is not covered from its corners alone, so the best
     # defended settlements also stand somebody on each stretch between a gate and a tower.
     ARCHERS_PER_WALL_BY_TIER: tuple = (0, 1, 1)
-    ARCHER_RANGE: float = 720.0
+    # How far the arrow itself carries, still short of the player's own bow (Projectile.RANGE)
+    # so outranging a wall is a real option. What they will loose at is deliberately less
+    # than that (FIRE_FRAC of it): a shot taken at the exact limit of its flight dies in the
+    # air the moment its target takes a step, which reads as an arrow that falls short.
+    ARCHER_RANGE: float = 950.0
+    ARCHER_FIRE_FRAC: float = 0.85
     ARCHER_DAMAGE: int = 12
     ARCHER_COOLDOWN_MS: tuple = (1500, 2600)
+    # How wide a corridor around the line to the target has to be clear of their own people
+    # before an archer or a stone-thrower lets go. Nobody in a village shoots a neighbour in
+    # the back, and nothing they put in the air can hit one either (Projectile.from_npc).
+    FRIENDLY_LANE_WIDTH: float = 44.0
 
     # The gates stand open while a settlement has nothing to fear. Turn the place against
     # you and they are barred, which is when a gate is a wall with a hit-point pool: the

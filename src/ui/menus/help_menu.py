@@ -13,6 +13,7 @@ ROW_GAP = 8
 CONTROLS = [
     ("W / Z", "Move forward (aim with mouse)"),
     ("S", "Move backward"),
+    ("W Z S Space", "Mash to pull free of a bear trap"),
     ("Shift", "Run"),
     ("Left Click", "Attack with melee weapon"),
     ("Right Click", "Fire equipped bow/staff"),
