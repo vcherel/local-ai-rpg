@@ -97,6 +97,7 @@ class WorldProjectiles:
         # What the shot does beyond damage, carried by the projectile rather than looked up
         # again when it lands: the weapon that threw it may well have been swapped by then.
         proj.element = arch.element
+        proj.skill = "magic" if arch.mana_cost else "strength"
         proj.pierce = player.pierce_count()
         if style == "boomerang":
             proj.owner = player
@@ -180,7 +181,10 @@ class WorldProjectiles:
                 continue
             if self._projectile_hits_critter(proj, player, by_player):
                 continue
-            if self._projectile_hits_npc(proj, player, quest_system, by_player):
+            # A villager's own shot passes through villagers: an angry street is a crowd,
+            # and an arrow that stopped in the first neighbour standing in the way had a
+            # town shooting itself to pieces the moment it turned on the player.
+            if not proj.from_npc and self._projectile_hits_npc(proj, player, quest_system, by_player):
                 continue
             self._projectile_hits_keg(proj, player, quest_system)
 
@@ -213,7 +217,7 @@ class WorldProjectiles:
             return False
 
         if by_player:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            player.stats.train(proj.skill, c.Stats.XP_PER_HIT)
         kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
         died = self._resolve_monster_hit(
             target,
@@ -243,9 +247,13 @@ class WorldProjectiles:
         critter = self._projectile_target(proj, self.critters, lambda cr: cr.hit_radius)
         if critter is None or critter.dead:
             return False
+        # A village's own dogs are its own people for this: a shot out of the towers passes
+        # through them exactly as it passes through the villagers standing in the street.
+        if proj.from_npc and critter.village_key:
+            return False
 
         if by_player:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            player.stats.train(proj.skill, c.Stats.XP_PER_HIT)
             get_shake().add(proj.shake)
         kb_dir = self._dir_from(0, 0, proj.vx, proj.vy)
         self._pop_damage(critter.x, critter.y - critter.size / 2, proj.damage, False)
@@ -270,7 +278,7 @@ class WorldProjectiles:
             return False
 
         if by_player:
-            player.stats.train("strength", c.Stats.XP_PER_HIT)
+            player.stats.train(proj.skill, c.Stats.XP_PER_HIT)
         self._resolve_npc_hit(
             npc,
             proj.damage,

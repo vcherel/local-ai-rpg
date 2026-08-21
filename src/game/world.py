@@ -142,6 +142,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # by id. Session-only, like a projectile: nothing about standing in a ditch of
         # sharpened sticks is worth saving.
         self._spike_ready: dict[int, int] = {}
+        # Everyone who was in the fight with the player last frame, by `id`. A villager
+        # joins because the player came near them (`Villages.MOB_ENGAGE_RANGE`) and leaves
+        # only at the far longer leash, so a mob is the street the player is standing in
+        # rather than every angry person in the settlement. Session-only: who is swinging
+        # right now is not something a save has any business remembering.
+        self._engaged: set = set()
         # Every village generated so far. Unlike POIs these are kept, not regenerated: a
         # settlement's NPCs carry affinity, quests and shop stock that a chunk seed can't
         # rebuild. `village_site` still decides where they go, so the map itself is endless.
@@ -206,6 +212,16 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         # needs saving.
         self.poi_state = self.save_system.load("pois", {})
         self.trap_state = self.save_system.load("traps", {})
+        # How much patience each settlement has left with the player, by village key:
+        # {"cx:cy": {"count": int, "at": wall-clock seconds}}. A village warns before it
+        # turns (`WorldPlaces.strike_village`), and the warning has to survive a save the
+        # way the anger it leads to does, or quitting would be a way of starting over on a
+        # clean slate. Strikes older than the window are dropped rather than loaded.
+        self.village_strikes = {
+            key: record
+            for key, record in self.save_system.load("village_strikes", {}).items()
+            if time.time() - record.get("at", 0) < c.Villages.STRIKE_WINDOW_S
+        }
         self.tunnel_state = self.save_system.load("tunnels", {})
         # Grid cells the player has walked through (Fog.CELL wide), the memory the minimap
         # draws; everything outside it stays black.
@@ -460,6 +476,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 else {"id": self.underground.id, "return": list(self.surface_return or self.underground.entrance)}
             ),
             "camp_rest": {key: until for key, until in self.rest_cooldowns.items() if until > time.time()},
+            "village_strikes": {
+                key: record
+                for key, record in self.village_strikes.items()
+                if time.time() - record["at"] < c.Villages.STRIKE_WINDOW_S
+            },
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
@@ -1566,7 +1587,21 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
         breaks rather than dying to the last of them."""
         orders: dict = {}
         for npc in self.npcs:
-            if not npc.hostile or npc.distance_to_point((player.x, player.y)) > c.Entities.NPC_HOSTILE_RANGE:
+            if not npc.hostile:
+                continue
+            distance = npc.distance_to_point((player.x, player.y))
+            # A village is angry everywhere, but only the people the player is standing
+            # among fight them: someone whose street this is not carries on with their day
+            # rather than walking the length of the settlement to join a fight they cannot
+            # see. Whoever is already in it keeps it out to the longer leash, so a fight the
+            # player walks away from is broken off rather than dropped the moment they cross
+            # a line. An archer is the exception and answers at the range of their bow: they
+            # are posted on the wall precisely to shoot what is too far off to reach.
+            if npc.is_archer:
+                limit = c.Villages.ARCHER_RANGE
+            else:
+                limit = c.Entities.NPC_HOSTILE_RANGE if id(npc) in self._engaged else c.Villages.MOB_ENGAGE_RANGE
+            if distance > limit:
                 continue
             if npc.routed:
                 shelter = self._refuge_for(npc)
@@ -1580,6 +1615,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 orders[id(npc)] = c.Villages.ARCHER_RANGE * 0.7
             else:
                 orders[id(npc)] = reach if npc.is_militia else c.Villages.MOB_STANDOFF
+        self._engaged = set(orders)
         return orders
 
     def _bar_gates(self, player: Player, dt):
@@ -1617,29 +1653,33 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
             if target is None:
                 continue
             dx, dy = target.x - npc.x, target.y - npc.y
-            if math.hypot(dx, dy) > c.Villages.ARCHER_RANGE:
+            # Deliberately shorter than the arrow's own flight: a shot loosed at the very
+            # limit of its range dies in the air as soon as its target takes a step away.
+            if math.hypot(dx, dy) > c.Villages.ARCHER_RANGE * c.Villages.ARCHER_FIRE_FRAC:
                 continue
             if not self.line_of_sight(npc.x, npc.y, target.x, target.y, over_walls=True):
+                continue
+            if not self._lane_clear(npc, target):
                 continue
             npc.next_arrow_ms = now + random.randint(*c.Villages.ARCHER_COOLDOWN_MS)
             npc.start_attack_anim()
             play_sound("shoot")
-            self.projectiles.append(
-                Projectile(
-                    npc.x,
-                    npc.y,
-                    math.atan2(dx, -dy),
-                    c.Villages.ARCHER_DAMAGE,
-                    color=ARROW_COLOR,
-                    shake=c.Combat.PLAYER_HURT_SHAKE / 2,
-                    hostile=target is player,
-                    owner_id=id(npc),
-                    source_name=npc.name or "a town archer",
-                    max_range=c.Villages.ARCHER_RANGE,
-                    by_player=False,
-                    over_walls=True,
-                )
+            arrow = Projectile(
+                npc.x,
+                npc.y,
+                npc.aim_at(target.x, target.y),
+                c.Villages.ARCHER_DAMAGE,
+                color=ARROW_COLOR,
+                shake=c.Combat.PLAYER_HURT_SHAKE / 2,
+                hostile=target is player,
+                owner_id=id(npc),
+                source_name=npc.name or "a town archer",
+                max_range=c.Villages.ARCHER_RANGE,
+                by_player=False,
+                over_walls=True,
             )
+            arrow.from_npc = True
+            self.projectiles.append(arrow)
 
     def _throw_stones(self, player: Player, mob: dict):
         """The back of the mob doing what a crowd with no swords does: throwing things.
@@ -1656,25 +1696,50 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces):
                 continue
             if not self.line_of_sight(npc.x, npc.y, player.x, player.y):
                 continue
+            if not self._lane_clear(npc, player):
+                continue
             npc.next_stone_ms = now + random.randint(*c.Villages.MOB_STONE_COOLDOWN_MS)
             npc.start_attack_anim()
             play_sound("shoot")
-            self.projectiles.append(
-                Projectile(
-                    npc.x,
-                    npc.y,
-                    # Projectile angles are measured from straight up, clockwise.
-                    math.atan2(dx, -dy),
-                    c.Villages.MOB_STONE_DAMAGE,
-                    style="stone",
-                    color=STONE_COLOR,
-                    shake=c.Combat.PLAYER_HURT_SHAKE / 2,
-                    hostile=True,
-                    owner_id=id(npc),
-                    source_name=npc.name or "a villager",
-                    max_range=c.Villages.MOB_STONE_RANGE,
-                )
+            stone = Projectile(
+                npc.x,
+                npc.y,
+                npc.aim_at(player.x, player.y),
+                c.Villages.MOB_STONE_DAMAGE,
+                style="stone",
+                color=STONE_COLOR,
+                shake=c.Combat.PLAYER_HURT_SHAKE / 2,
+                hostile=True,
+                owner_id=id(npc),
+                source_name=npc.name or "a villager",
+                max_range=c.Villages.MOB_STONE_RANGE,
             )
+            stone.from_npc = True
+            self.projectiles.append(stone)
+
+    def _lane_clear(self, shooter: NPC, target) -> bool:
+        """Whether a villager has a clear lane to what they are shooting at, meaning none of
+        their own people standing in it.
+
+        Their shot cannot wound a neighbour any more (`Projectile.from_npc`), but loosing
+        one straight through the back of somebody's head still looks like a mistake, and a
+        crowded street should thin the volley coming out of the towers rather than leaving
+        it untouched. Perpendicular distance to the segment, and only what lies between the
+        two of them counts: someone standing behind the shooter is not in the way."""
+        dx, dy = target.x - shooter.x, target.y - shooter.y
+        span = math.hypot(dx, dy)
+        if span == 0:
+            return True
+        for other in self.npcs:
+            if other is shooter or other is target:
+                continue
+            along = ((other.x - shooter.x) * dx + (other.y - shooter.y) * dy) / span
+            if not 0 < along < span:
+                continue
+            across = abs((other.x - shooter.x) * dy - (other.y - shooter.y) * dx) / span
+            if across < c.Villages.FRIENDLY_LANE_WIDTH:
+                return False
+        return True
 
     def update(self, player: Player, dt, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Particles/floating text/screen fx update once per frame in Game.run() instead of

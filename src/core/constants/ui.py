@@ -63,6 +63,9 @@ class Colors:
     RED: tuple = (201, 30, 22)
     WHITE: tuple = (255, 255, 255)
     YELLOW: tuple = (255, 255, 0)
+    # A warning rather than a fight: the badge and the toast a villager gives the player
+    # before their village actually turns on them.
+    ORANGE: tuple = (238, 140, 40)
     CYAN: tuple = (0, 255, 255)
 
     # Boss health bar: deep crimson, turning to a hotter orange-red once the boss enrages.

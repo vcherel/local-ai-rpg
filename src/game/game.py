@@ -38,6 +38,11 @@ if TYPE_CHECKING:
     from game.entities.items import Item
 
 
+# The keys a player mashes to work a leg out of a bear trap: the same ones they walk with,
+# since that is what a body pinned in the grass would be trying to do with them.
+_STRUGGLE_KEYS = (pygame.K_z, pygame.K_w, pygame.K_s, pygame.K_SPACE)
+
+
 class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
@@ -231,6 +236,10 @@ class Game:
         potion quickbar's letters) are checked first because they read the key rather than
         name it; everything else is a plain key to a method, and `HelpMenu.CONTROLS` is
         what tells the player about it."""
+        # A movement key pressed while the jaws are on the player is a struggle rather than
+        # a step: the trap takes the seconds back one press at a time.
+        if event.key in _STRUGGLE_KEYS and self._struggle():
+            return
         if pygame.K_1 <= event.key <= pygame.K_1 + c.Player.WEAPON_SLOTS - 1:
             self._select_weapon(event.key - pygame.K_1)
             return
@@ -254,6 +263,20 @@ class Game:
         }.get(event.key)
         if action is not None:
             action()
+
+    def _struggle(self) -> bool:
+        """One tug against a bear trap's jaws, and whether there was anything to tug at.
+
+        A trap is the only thing in the world that takes movement away, so the seconds it
+        costs are not meant to be sat out: every press works the leg further loose
+        (`Traps.STRUGGLE_MS`), with the jaws jerking so the effort reads as progress. The
+        bar over the player's head is drawn from what is left of the hold."""
+        if not self.player.shorten_root(c.Traps.STRUGGLE_MS):
+            return False
+        get_particles().spawn_burst(self.player.x, self.player.y, c.Traps.JAW_COLOR, count=5, speed=4, life=260, size=3)
+        get_shake().add(c.Traps.STRUGGLE_SHAKE)
+        play_sound("bush_rustle")
+        return True
 
     def _show_lore(self):
         if self.world.context:
@@ -734,11 +757,15 @@ class Game:
 
         The one place a single NPC turns hostile on their own: whoever saw it comes for the
         player, and the rest of the village never hears about it. Swinging back at them is
-        what turns the whole settlement, through the usual `World.provoke_village`."""
+        what turns the whole settlement, through the usual `World.provoke_village`.
+
+        The first time is a warning rather than a knife (`World.strike_village`), and a
+        villager who has only shouted still has their quest and still talks."""
         witness = self.world.theft_witness(self.player.x, self.player.y)
         if witness is None:
             return
-        self.world.catch_thief(witness)
+        if self.world.catch_thief(witness, self.player) is None:
+            return
         # Nobody sees a task through for someone they are trying to kill.
         self.dialogue_manager.quest_system.remove_quest(witness)
         play_sound("player_hurt")
@@ -752,6 +779,9 @@ class Game:
         """Death has a real cost, not just a free full-heal at the same spot: dock coins,
         weaken the player for a while, and put them back at world spawn so they can't keep
         swinging at what killed them. The run carries on from there."""
+        # Read before the player is moved: whichever settlement they fell in front of is the
+        # one that lets its anger go, since dying to a town is the town getting its own back.
+        self.world.pacify_village(self.player.x, self.player.y)
         coins_lost = self.player.apply_death_penalty()
         # Read before anything else touches the player: the screen wants to know what killed
         # them, and the taunt was written long before this death happened.

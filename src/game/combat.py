@@ -730,7 +730,7 @@ class WorldCombat:
         self._break_effects(rect.centerx, rect.centery, (150, 110, 70), 20)
         # Wrecking somebody's room is a crime like emptying their chest: whoever sees it
         # comes for the player alone, and the rest of the street never hears about it.
-        self.report_crime(rect.centerx, rect.centery)
+        self.report_crime(rect.centerx, rect.centery, player)
         if kind not in c.Buildings.FURNITURE_LOOT:
             return
         coins, loot_item = break_crate()
@@ -1018,7 +1018,7 @@ class WorldCombat:
         are for as long as it takes to work a foot free. Bosses are deliberately not checked
         by the caller, for the same reason nothing knocks them back."""
         trap.sprung = True
-        play_sound("hit")
+        play_sound("trap_snap")
         get_shake().add(c.Combat.CRATE_SHAKE)
         get_particles().spawn_burst(trap.x, trap.y, c.Traps.JAW_COLOR, count=14, speed=5, life=450, size=4)
         damage = c.Traps.DAMAGE
@@ -1033,7 +1033,7 @@ class WorldCombat:
             get_hitstop().trigger(c.Traps.SNAP_FX_HITSTOP_MS)
             player.receive_damage(damage, source=trap)
             if self.notify:
-                self.notify("A bear trap snaps shut on your leg", c.Colors.RED)
+                self.notify("A bear trap snaps shut on your leg. Struggle!", c.Colors.RED)
             return
         if isinstance(victim, Critter):
             if victim.dead:
@@ -1302,7 +1302,11 @@ class WorldCombat:
         which is the one thing no clock ever runs out on."""
         if npc.dead:
             return True
-        if by_player:
+        # A settlement warns before it turns (`WorldPlaces.strike_village`): the first blow
+        # the player lands there is answered with a shout and nothing else, so snapping at
+        # somebody in the street is a thing the player is told they are about to do rather
+        # than something they discover a moment too late. A killing skips the ladder below.
+        if by_player and self.strike_village(npc, player):
             for provoked in self.provoke_village(npc):
                 # Nobody hands in a task to someone they are trying to kill; drop it rather
                 # than leave an uncompletable quest in the log.

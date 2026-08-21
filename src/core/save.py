@@ -46,6 +46,9 @@ class SaveSystem:
           {"id": "tunnel:cx:cy", "return": [x, y]} (dict | None)
         - explored: Grid cells the player has walked through, as "gx:gy" strings (Fog.CELL
           wide). The minimap draws these and blacks out everything else (list[str])
+        - village_strikes: How much patience each settlement has left with the player, by
+          village key: {"cx:cy": {"count": int, "at": wall-clock seconds}}. A village warns
+          before it turns hostile, and the warning outlives a quit like the anger does (dict)
         - camp_rest: When each place the player rested will serve them again, by POI id for a
           campfire and by building id for a villager's bed (wall-clock seconds)
         - death_taunts: Mocking death-screen lines written ahead of need, not yet used (list[str])

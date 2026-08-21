@@ -10,6 +10,7 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
+from core.impact_fx import get_impacts
 from core.particles import get_particles
 from game.entities.monster_art import draw_monster
 from game.entities.monsters import Monster
@@ -61,6 +62,10 @@ class Boss(Monster):
         self.ability_cd = random.uniform(*c.Boss.ABILITY_COOLDOWN_RANGE_MS)
         # Milliseconds left in a slam's warning telegraph; 0 when no slam is winding up.
         self.slam_windup = 0.0
+        # Spots marked for a summons that has not arrived yet, each carrying where it lands,
+        # what lands there and how long is left of its telegraph. Session-only: a fight left
+        # mid-cast is a fight the player walked out of.
+        self.pending_summons: list[dict] = []
 
     # ------------------------------------------------------------------ identity / save
 
@@ -144,6 +149,9 @@ class Boss(Monster):
         else:
             self.update_attack_anim(dt)
 
+        # Last, so anything arriving this frame is stood up after the boss has had its own.
+        self._advance_summons(world, dt)
+
     def _apply_enrage_stats(self):
         self.enraged = True
         self.kind = replace(
@@ -219,15 +227,60 @@ class Boss(Monster):
             )
 
     def _summon_adds(self, world: World):
-        play_sound("monster_death")
+        """Call for help, and mark the ground it is coming out of.
+
+        Nothing is stood up on the frame the ability fires. Each spot is marked instead, and
+        what arrives there arrives when the mark has run its course (`_advance_summons`): a
+        fight that grows three bodies with no warning reads as a spawn bug, where a ring
+        opening in the dirt reads as the boss doing something and gives the player the room
+        to walk out of it."""
+        play_sound("summon")
         kind = next((k for k in c.MONSTER_KINDS if k.name == self.template.summon_kind), c.MONSTER_KINDS[0])
         for _ in range(c.Boss.SUMMON_COUNT):
             angle = random.uniform(0, 2 * math.pi)
             x = self.x + math.cos(angle) * c.Boss.SUMMON_RADIUS
             y = self.y + math.sin(angle) * c.Boss.SUMMON_RADIUS
-            if not world.blocked(x, y, kind.size / 2):
-                world.monsters.append(Monster(x, y, kind))
+            if world.blocked(x, y, kind.size / 2):
+                continue
+            self.pending_summons.append({"x": x, "y": y, "kind": kind, "left": c.Boss.SUMMON_TELEGRAPH_MS})
+            get_impacts().pulse(x, y, kind.size, self.template.aura)
+            get_particles().spawn_burst(x, y, self.template.aura, count=10, speed=3, life=520, size=4)
         get_particles().spawn_burst(self.x, self.y, self.template.color, count=18, speed=5, life=500, size=5)
+        if self.pending_summons and world.notify:
+            world.notify(f"{self.name} calls something up!", self.template.aura)
+
+    def _advance_summons(self, world: World, dt):
+        """Carry every marked spot a frame along, and stand up whatever has finished
+        arriving. Runs whether or not the player is still in range: a summons already called
+        for is on its way, and walking off is meant to buy distance, not cancel it."""
+        for summon in list(self.pending_summons):
+            summon["left"] -= dt
+            if summon["left"] > 0:
+                continue
+            self.pending_summons.remove(summon)
+            kind = summon["kind"]
+            if world.blocked(summon["x"], summon["y"], kind.size / 2):
+                continue
+            monster = Monster(summon["x"], summon["y"], kind)
+            # Held where it stands for a moment: it is climbing out of the ground, and a
+            # body that runs on the frame it appears never reads as having arrived at all.
+            monster.root(c.Boss.SUMMON_EMERGE_MS)
+            world.monsters.append(monster)
+            get_impacts().pulse(summon["x"], summon["y"], kind.size * 1.4, self.template.aura)
+            get_particles().spawn_burst(
+                summon["x"], summon["y"], self.template.color, count=16, speed=6, life=420, size=5
+            )
+            play_sound("monster_death")
+
+    def draw_summon_marks(self, screen, camera: Camera):
+        """The ground opening where something is about to stand: a ring drawing itself shut
+        as the arrival gets closer, under everything alive like the shadow it is."""
+        for summon in self.pending_summons:
+            progress = 1.0 - max(0.0, summon["left"]) / c.Boss.SUMMON_TELEGRAPH_MS
+            x, y = camera.world_to_screen(summon["x"], summon["y"])
+            radius = round(summon["kind"].size * (0.5 + progress * 0.6))
+            pygame.draw.circle(screen, (18, 14, 20), (x, y), radius)
+            pygame.draw.circle(screen, self.template.aura, (x, y), radius, max(1, round(2 + progress * 3)))
 
     # ------------------------------------------------------------------ drawing
 

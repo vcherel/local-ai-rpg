@@ -22,6 +22,9 @@ class Entities:
     WANDER_PICK_TRIES: int = 5
     # NPCs stop wandering and face the player when he gets this close.
     NPC_WANDER_PAUSE_DISTANCE: int = 120
+    # How long a villager keeps looking down the shot they just took (`NPC.aim_at`), rather
+    # than being turned back to face their own footsteps by the next frame of wandering.
+    NPC_AIM_HOLD_MS: int = 700
     # Hit a villager and the settlement turns on you: they drop what they were doing and
     # come at you with whatever is to hand. Slower and weaker than a bandit one on one,
     # dangerous because a village holds a dozen of them.
@@ -40,7 +43,15 @@ class Entities:
     # is dangerous in numbers, in health and behind its wall, never in what its people are
     # holding, which is why the militia and guard pools are ladders indexed by the
     # settlement's own defence tier (`Village.tier`) rather than one list for the world.
-    VILLAGER_WEAPONS: tuple = ("Hoe", "Shovel", "Rake", "Sickle", "Rolling Pin", "Fire Poker", "Broom")
+    # Even the ones who never trained arm themselves better the further out they live: a
+    # border farmer has a broom, someone whose street is walked by wolves keeps a hatchet by
+    # the door and someone in a deep wilds town owns an actual blade. Indexed by the
+    # settlement's tier like the two ladders below it.
+    VILLAGER_WEAPON_TIERS: tuple = (
+        ("Hoe", "Shovel", "Rake", "Sickle", "Rolling Pin", "Fire Poker", "Broom"),
+        ("Hoe", "Sickle", "Fire Poker", "Hatchet", "Mallet", "Cudgel"),
+        ("Hatchet", "Cudgel", "Pitchfork", "Woodaxe", "Knife", "Sword"),
+    )
     MILITIA_WEAPON_TIERS: tuple = (
         ("Pitchfork", "Hatchet", "Cudgel", "Woodaxe"),
         ("Spear", "Sword", "Axe", "Mace"),
@@ -521,9 +532,15 @@ class Boss:
     VOLLEY_SPREAD_DEG: float = 44.0
     VOLLEY_DAMAGE: int = 14
 
-    # Summon: adds spawned in a ring around the boss.
+    # Summon: adds spawned in a ring around the boss. Nothing appears out of nothing: each
+    # spot is marked first and the thing standing there arrives when the mark has finished
+    # (`Boss._summon_adds`), so a fight that suddenly has three more bodies in it is
+    # something the player watched happen and could step away from. Whatever arrives is held
+    # where it stands for a moment while it climbs out, which is what the mark promised.
     SUMMON_COUNT: int = 3
     SUMMON_RADIUS: int = 170
+    SUMMON_TELEGRAPH_MS: float = 750.0
+    SUMMON_EMERGE_MS: int = 350
 
     # A slain boss always drops a lootbox of this rarity, on top of the usual roll.
     REWARD_RARITY: str = "legendary"
