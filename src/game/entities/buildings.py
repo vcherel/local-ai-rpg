@@ -9,6 +9,7 @@ import pygame
 
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
+from core.text_fx import draw_outlined_text
 from core.utils import random_coordinates
 
 if TYPE_CHECKING:
@@ -36,13 +37,7 @@ def random_open_coordinates() -> tuple:
 
 
 def _draw_label(screen: pygame.Surface, text: str, center: tuple):
-    label = c.Fonts.small.render(text, True, c.Colors.WHITE)
-    label_rect = label.get_rect(center=center)
-    bg_rect = label_rect.inflate(12, 6)
-    bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-    pygame.draw.rect(bg_surface, c.Colors.TRANSPARENT, bg_surface.get_rect(), border_radius=6)
-    screen.blit(bg_surface, bg_rect)
-    screen.blit(label, label_rect)
+    draw_outlined_text(screen, text, c.Fonts.small, c.Colors.WHITE, center=center)
 
 
 # Which wall the front door sits in, as the outward direction of that wall. A building is

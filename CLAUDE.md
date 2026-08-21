@@ -67,19 +67,23 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 ### core
 - `src/core/constants/`: all game constants in one flat namespace (`import core.constants as c`), split into `ui.py`, `player.py`, `combat.py`, `bestiary.py`, `world.py` and `items.py`, so a constant is filed by what it tunes. `Fonts` is the one name rebound at runtime by `__main__`
 - `src/core/save.py`: `SaveSystem`, atomic thread-safe JSON saving; the key list at the top is the record of what the save owns
+- `src/core/settings.py`: `Settings`, the preferences that outlive a playthrough (music on/off), written to `saves/settings.json`
 - `src/core/camera.py`: `Camera` world-to-screen translation plus `ScreenShake`/`get_shake`
-- `src/core/screen_fx.py`: `Hitstop`, `HurtVignette`, `ScreenFlash` and `TrapSnap`, the four full-screen effects, all read once a frame in `Game.run`
+- `src/core/screen_fx.py`: `Hitstop`, `HurtVignette`, `ScreenFlash`, `TrapSnap` and `EventBanner`, the full-screen effects read once a frame in `Game.run`, plus `draw_blood_veil`, the red a blood night is seen through
 - `src/core/damage_fx.py`: the flinch, flash and cracks drawn on a struck prop, keyed by string in a session-only registry
 - `src/core/swing_arcs.py`: the trail a melee attack leaves, over exactly the wedge or lane the hit test accepts
 - `src/core/impact_fx.py`: `ImpactRing`, the ring and bolts an area effect draws so several damage numbers have something visible behind them
 - `src/core/daynight.py`: `DayNightCycle`, elapsed time in the cycle, `darkness`/`is_night`/`phase`/`time_until`, and the ambient night tint
-- `src/core/decals.py`: capped session-only ground blood splats, including the directional `spawn_spray` a kill throws
+- `src/core/decals.py`: capped session-only ground blood splats, each painted once at spawn and wet while fresh, including the directional `spawn_spray` and the long `spawn_arcs` a kill throws
 - `src/core/floating_text.py`: rising damage numbers, bigger and gold on a crit
 - `src/core/utils.py`: `ConversationHistory`, `frames(dt)` (the one definition of a delta in frames), random helpers, and the LLM response parsers
 - `src/core/dialogue_log.py`: `write_conversation`, finished conversations written to `logs/dialogues/`
 - `src/core/llm_log.py`: `log_call` / `log_parse_failure`, every generation appended to `logs/llm_calls.jsonl`
 - `src/core/particles.py`: world-space particle bursts, omnidirectional or in a cone, with optional gravity and shard shapes
 - `src/core/audio.py`: `SoundManager`, procedural sound effects synthesised in memory
+- `src/core/music.py`: `MusicPlayer`, the two chord pads rendered in memory on a worker thread and crossfaded by the day/night cycle
+- `src/core/status_fx.py`: `draw_bubbles` and the `EFFECTS` table, the status icons floating over anything carrying a timed effect
+- `src/core/text_fx.py`: `draw_outlined_text`, world-space text readable without a panel behind it
 
 ### ui
 - `src/ui/widgets.py`: shared menu/HUD draw primitives (panels, buttons, slots, icons), `EQUIP_SLOTS` as the one definition of the equip slots, `wrap_text`, `draw_scrollbar`
@@ -91,10 +95,10 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/ui/loading_indicator.py`: `LoadingIndicator`, the spinner shown while the LLM is generating
 
 ### ui/menus
-- `src/ui/menus/base_menu.py`: `BaseMenu`, shared menu scaffolding and the reused dim overlay
+- `src/ui/menus/base_menu.py`: `BaseMenu`, shared menu scaffolding and the reused dim overlay; `EQUIP_BEST_KEY`/`SELL_VALUABLES_KEY`/`SELL_GEAR_KEY`, the keys the repeated one-click actions answer to wherever their button is drawn
 - `src/ui/menus/menu_scene.py`: `MenuScene`, the live village the title screen stands over, rolled fresh per launch and holding no save and no player
 - `src/ui/menus/main_menu.py`: `MainMenu`, `run_main_menu`, the title screen; returns "new_game"/"continue" and leaves save handling to `__main__`
-- `src/ui/menus/pause_menu.py`: `PauseMenu`, with a manual Save game button
+- `src/ui/menus/pause_menu.py`: `PauseMenu`, with a manual Save game button and the music toggle
 - `src/ui/menus/context_menu.py`: `ContextMenu`, the world lore: written onto black as an intro at session start, an ordinary panel when asked for with L
 - `src/ui/menus/inventory_menu.py`: `InventoryMenu`, the sectioned item grid, equip/unequip, drinking a potion, right-click bar assignment, Equip best, the paper-doll and the hover tooltip
 - `src/ui/menus/shop_menu.py`: `ShopMenu`, buy/sell with bartering and affinity pricing, restock countdown, bulk-sell buttons, two independently scrolling columns
@@ -124,6 +128,8 @@ The short version. `docs/design/` explains each of these.
 - Nothing is ever sealed inside a leaf: whatever stands in a doorway or a gateway is stepped out of it before it shuts, and every mover unsticks each frame, the player included.
 - A weapon family answers a question rather than being a bigger number; a bigger number is a rarity roll.
 - Exactly one interaction prompt is on screen at a time, drawn from `Game.current_interaction`.
+- A playthrough goes in the save, a preference goes in `core/settings.py`: New game wipes one and must not touch the other.
+- The player's own health bar is HUD drawn in world space, so it goes over the canopies (`Player.draw_health_bar_overlay`), never inside the entity pass.
 - No boss is stood up near the start, on a settlement's grounds or on somebody's floor: every spawn goes through `World.boss_spawn_ok`.
 - A quest sends the player out of town (`World.quest_target_spot`) and the walk is what the coins pay for (`quest_system.coin_band`).
 - The minimap draws memory, not radar: explored cells only, plus rumour marks.

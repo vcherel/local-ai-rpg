@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.text_fx import draw_outlined_text
 from core.utils import frames, random_color
 from game.entities.entities import Entity, push_apart
 from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
@@ -35,6 +36,9 @@ AFFINITY_TIERS = (
 
 
 class NPC(Entity):
+    # Clear of the quest/hostility badge, which already bobs over a villager's head.
+    STATUS_BUBBLE_LIFT = 52
+
     def __init__(self, x, y):
         super().__init__(x, y, random_color(), c.Entities.NPC_SIZE, c.Entities.NPC_HP, c.Entities.NPC_HP)
         self.name = None
@@ -548,15 +552,15 @@ class NPC(Entity):
             screen.blit(text, text_rect)
 
         if self.name:
-            name_surface = c.Fonts.small.render(self.name, True, c.Colors.WHITE)
-            name_rect = name_surface.get_rect(center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30))
-            bg_rect = name_rect.inflate(10, 4)
-            bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(bg_surface, c.Colors.TRANSPARENT, bg_surface.get_rect(), border_radius=6)
-            screen.blit(bg_surface, bg_rect)
-            screen.blit(name_surface, name_rect)
+            name_rect = draw_outlined_text(
+                screen,
+                self.name,
+                c.Fonts.small,
+                c.Colors.WHITE,
+                center=(screen_x, screen_y + c.Entities.NPC_SIZE // 2 + 30),
+            )
 
             # Only shown once the player's actions have actually moved the relationship,
             # so untouched NPCs don't clutter the world with a neutral marker.
             if self.affinity != c.Affinity.START:
-                pygame.draw.circle(screen, self.affinity_tier_color(), (bg_rect.left - 8, bg_rect.centery), 5)
+                pygame.draw.circle(screen, self.affinity_tier_color(), (name_rect.left - 13, name_rect.centery), 5)

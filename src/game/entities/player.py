@@ -14,6 +14,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_vignette
+from core.text_fx import draw_outlined_text
 from game.entities.entities import Entity
 from game.entities.items import (
     POTION_EFFECT_LABELS,
@@ -972,7 +973,10 @@ class Player(Entity):
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
         get_decals().spawn(self.x, self.y, radius=c.Decals.PLAYER_HURT_RADIUS)
-        get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=8, speed=4, life=350, size=4, gravity=0.3)
+        # The player bleeds onto the ground like anything else: no direction, since what hit
+        # them is not always something they were facing.
+        get_decals().spawn_spray(self.x, self.y, count=5, distance=(12.0, 60.0), radius=(2.0, 6.0))
+        get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=14, speed=5, life=420, size=5, gravity=0.3)
         if warded:
             get_particles().spawn_burst(
                 self.x, self.y, (255, 215, 120), count=22, speed=6, life=600, size=5, gravity=0.2
@@ -1082,6 +1086,8 @@ class Player(Entity):
         pygame.draw.circle(halo, (*c.Colors.WHITE, alpha), (radius + 2, radius + 2), radius, 3)
         screen.blit(halo, halo.get_rect(center=(c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y)))
 
+    BAR_WIDTH = 800
+
     def draw(self, screen):
         self._draw_spawn_grace(screen)
         super().draw(
@@ -1093,10 +1099,57 @@ class Player(Entity):
             self.orientation,
             self.attack_progress,
             self.attack_hand,
-            bar_width=800,
-            bar_height=c.Player.HEALTH_BAR_HEIGHT,
-            health_bar_offset=c.Player.HEALTH_BAR_OFFSET,
-            bar_color=c.Colors.RED,
-            bar_border_width=4,
             gear=self.gear(),
+            # Drawn later by `draw_health_bar_overlay`, over the canopies: the player's own
+            # bar is HUD, and a tree is not allowed to stand in front of it.
+            health_bar=False,
         )
+
+    def status_effects(self) -> list:
+        """The bubbles over the player: what the world put on them, then what they drank."""
+        effects = super().status_effects()
+        if self.is_weakened():
+            effects.append("weakened")
+        effects.extend(effect for effect, _remaining, _magnitude in self.active_buffs())
+        return effects
+
+    def health_bar_rect(self) -> pygame.Rect:
+        """Where the bar sits, so the mana bar and the chips under it have one thing to hang
+        from instead of each recomputing the same geometry."""
+        return pygame.Rect(
+            c.Screen.ORIGIN_X - self.BAR_WIDTH // 2,
+            c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + c.Player.HEALTH_BAR_OFFSET,
+            self.BAR_WIDTH,
+            c.Player.HEALTH_BAR_HEIGHT,
+        )
+
+    def draw_health_bar_overlay(self, screen):
+        """The player's health bar, its points, and the bubbles over their head.
+
+        The bar is scaled to the health vitality has earned rather than to the current
+        maximum, so the slice dying took off stays on screen as a dead grey tail instead of
+        the whole bar quietly shrinking and the loss being invisible.
+        """
+        rect = self.health_bar_rect()
+        base_max = max(1, self.stats.max_hp())
+        usable = max(0.0, min(1.0, self.max_hp / base_max))
+
+        pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, rect)
+        if usable < 1.0:
+            kept = round(rect.width * usable)
+            lost = pygame.Rect(rect.x + kept, rect.y, rect.width - kept, rect.height)
+            # Darker than the empty part of the bar, not lighter: what is missing here is
+            # the pool itself, not health waiting to be regained.
+            pygame.draw.rect(screen, (28, 20, 22), lost)
+            pygame.draw.line(screen, (168, 72, 72), (lost.x, rect.y), (lost.x, rect.bottom - 1), 3)
+        pygame.draw.rect(
+            screen,
+            c.Colors.RED,
+            (rect.x, rect.y, round(rect.width * max(0.0, self.hp / base_max)), rect.height),
+        )
+        pygame.draw.rect(screen, c.Colors.BORDER, rect, 4)
+
+        label = f"{int(self.hp)}/{self.max_hp}"
+        draw_outlined_text(screen, label, c.Fonts.small, c.Colors.WHITE, center=rect.center)
+
+        self.draw_status_bubbles(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Player.SIZE)

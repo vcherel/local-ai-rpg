@@ -7,7 +7,7 @@ import pygame
 import core.constants as c
 from game.entities.items import ACCESSORY_FLAVOR_LABELS, base_value, potion_description, rarity_color
 from ui import widgets
-from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
+from ui.menus.base_menu import EQUIP_BEST_KEY, HEADER_HEIGHT, SELL_GEAR_KEY, SELL_VALUABLES_KEY, BaseMenu
 
 if TYPE_CHECKING:
     from game.entities.items import Item
@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 PANEL_GAP = 20
 ROW_HEIGHT = 60
+# Kept clear on the right of every row for the price.
+PRICE_COLUMN = 74
 # Room below the column labels for the first row.
 LABEL_GAP = 30
 # Strip at the bottom of the panel kept clear for the hint line and the sell-all buttons.
@@ -153,6 +155,14 @@ class ShopMenu(BaseMenu):
                 self._scroll(-1, *pygame.mouse.get_pos())
             elif event.key == pygame.K_DOWN:
                 self._scroll(1, *pygame.mouse.get_pos())
+            # The three buttons under the columns, on the keys printed in them: clearing a
+            # bag after a long trip is the most repeated thing anyone does in a shop.
+            elif event.key == EQUIP_BEST_KEY:
+                self.player.auto_equip_best()
+            elif event.key == SELL_VALUABLES_KEY:
+                self._sell_all(self._valuables())
+            elif event.key == SELL_GEAR_KEY:
+                self._sell_all(self._unused_gear())
 
         elif event.type == pygame.MOUSEWHEEL:
             # MOUSEWHEEL carries no position; the column under the cursor scrolls.
@@ -318,7 +328,7 @@ class ShopMenu(BaseMenu):
         widgets.draw_button(
             surface,
             rect,
-            f"Equip best ({pending})" if pending else "Equip best",
+            f"[{pygame.key.name(EQUIP_BEST_KEY).upper()}] Equip best ({pending})" if pending else "Equip best",
             c.Fonts.small,
             hovered=bool(pending) and rect.collidepoint(rel),
             text_color=c.Colors.WHITE if pending else c.Colors.MUTED,
@@ -331,10 +341,13 @@ class ShopMenu(BaseMenu):
         mouse_x, mouse_y = pygame.mouse.get_pos()
         rel = (mouse_x - menu_x, mouse_y - menu_y)
 
-        batches = (("Valuables", self._valuables()), ("Unused gear", self._unused_gear()))
-        for rect, (caption, items) in zip(self._bulk_button_rects(), batches):
+        batches = (
+            ("Valuables", self._valuables(), pygame.key.name(SELL_VALUABLES_KEY).upper()),
+            ("Unused gear", self._unused_gear(), pygame.key.name(SELL_GEAR_KEY).upper()),
+        )
+        for rect, (caption, items, key) in zip(self._bulk_button_rects(), batches):
             total = sum(self._sell_price(item) for item in items)
-            label = f"Sell {caption.lower()}  {total}g" if items else f"No {caption.lower()}"
+            label = f"[{key}] Sell {caption.lower()}  {total}g" if items else f"No {caption.lower()}"
             widgets.draw_button(
                 surface,
                 rect,
@@ -388,10 +401,10 @@ class ShopMenu(BaseMenu):
         name = f"{item.name} x{item.quantity}" if item.quantity > 1 else item.name
         name_surf = c.Fonts.text.render(name, True, name_color)
         surface.blit(name_surf, (r.x + 58, r.y + 8))
-        if equipped:
-            tag = c.Fonts.small.render("equipped", True, c.Colors.ACCENT)
-            surface.blit(tag, (r.right - tag.get_width() - 8, r.y + 8))
-
+        # The second line: what the item does, then whether it is being worn. On the same
+        # line as the name, "equipped" ran under the price, which is what the right edge of
+        # a row is for.
+        sub = None
         if item.bonus > 0 and item.item_type in ("weapon", "armor", "shield", "accessory"):
             label = {"weapon": "atk", "armor": "def", "shield": "block"}.get(
                 item.item_type, ACCESSORY_FLAVOR_LABELS.get(item.accessory_flavor, item.accessory_flavor)
@@ -399,14 +412,20 @@ class ShopMenu(BaseMenu):
             stat = f"+{item.bonus} {label}"
             if item.affixes:
                 stat += f"  +{len(item.affixes)} fx"
-            stat_surf = c.Fonts.small.render(stat, True, c.Colors.MUTED)
-            surface.blit(stat_surf, (r.x + 58, r.y + 30))
+            sub = c.Fonts.small.render(stat, True, c.Colors.MUTED)
         elif item.item_type == "potion":
-            stat_surf = c.Fonts.small.render(potion_description(item), True, c.Colors.MUTED)
-            surface.blit(stat_surf, (r.x + 58, r.y + 30))
+            sub = c.Fonts.small.render(potion_description(item), True, c.Colors.MUTED)
         elif item.item_type == "misc":
-            stat_surf = c.Fonts.small.render("valuable", True, c.Colors.MUTED)
-            surface.blit(stat_surf, (r.x + 58, r.y + 30))
+            sub = c.Fonts.small.render("valuable", True, c.Colors.MUTED)
+
+        sub_x = r.x + 58
+        if sub is not None:
+            surface.blit(sub, (sub_x, r.y + 30))
+            sub_x += sub.get_width() + 12
+        if equipped:
+            tag = c.Fonts.small.render("equipped", True, c.Colors.ACCENT)
+            if sub_x + tag.get_width() < r.right - PRICE_COLUMN:
+                surface.blit(tag, (sub_x, r.y + 30))
 
         price_surf = c.Fonts.text.render(f"{price}g", True, price_color)
         surface.blit(price_surf, (r.right - price_surf.get_width() - 8, r.centery - price_surf.get_height() // 2))

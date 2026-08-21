@@ -1094,11 +1094,20 @@ class WorldCombat:
             distance=c.Decals.BOSS_SPRAY_DISTANCE if boss else c.Decals.KILL_SPRAY_DISTANCE,
             radius=c.Decals.BOSS_SPRAY_RADIUS if boss else c.Decals.KILL_SPRAY_RADIUS,
         )
+        # The long throws over the fan: a few streaks reaching well past the body, which is
+        # what makes a kill read from a distance rather than up close.
+        decals.spawn_arcs(
+            x,
+            y,
+            direction,
+            count=c.Decals.BOSS_ARCS if boss else c.Decals.KILL_ARCS,
+            length=c.Decals.BOSS_ARC_LENGTH if boss else c.Decals.ARC_LENGTH,
+        )
 
         blood = (178, 26, 26)
-        count = 34 if boss else 22
-        speed = 12 if boss else 9
-        size = 6 if boss else 5
+        count = 52 if boss else 34
+        speed = 15 if boss else 12
+        size = 7 if boss else 6
         if direction:
             get_particles().spawn_directional_burst(
                 x,
@@ -1115,7 +1124,12 @@ class WorldCombat:
         else:
             get_particles().spawn_burst(x, y, blood, count=count, speed=speed, life=700, size=size, gravity=0.32)
         # Chunks of the thing itself, so a slime still bleeds green over the red.
-        get_particles().spawn_burst(x, y, body_color, count=16 if boss else 12, speed=6, life=550, size=5, gravity=0.42)
+        get_particles().spawn_burst(x, y, body_color, count=22 if boss else 16, speed=7, life=550, size=6, gravity=0.42)
+        # A slow, dark mist hanging where the body was, under the fast stuff: it lingers
+        # after the droplets have landed, so the moment does not end on the same frame.
+        get_particles().spawn_burst(
+            x, y, (96, 12, 12), count=18 if boss else 12, speed=2, life=1100, size=9 if boss else 7, gravity=0.02
+        )
 
     def _kill_monster(
         self, monster, monster_list, player: Player, quest_system: QuestSystem, direction=None, by_player: bool = True
@@ -1374,11 +1388,14 @@ class WorldCombat:
         if crit:
             get_hitstop().trigger(c.Combat.HITSTOP_CRIT_MS)
         get_decals().spawn(x, y, radius=c.Decals.HIT_RADIUS)
+        # Even a hit that does not kill throws blood: a short fan along the blow, so a long
+        # fight paints the ground it was fought over instead of leaving one dot per hit.
+        get_decals().spawn_spray(x, y, direction, count=6 if crit else 3, distance=(10.0, 52.0), radius=(2.0, 5.0))
         color = (255, 240, 160) if crit else (255, 180, 180)
-        count = 12 if crit else 6
-        speed = 4 if crit else 3
-        life = 350 if crit else 300
-        size = 4 if crit else 3
+        count = 18 if crit else 10
+        speed = 5 if crit else 4
+        life = 420 if crit else 340
+        size = 5 if crit else 4
         if direction:
             angle = math.atan2(direction[1], direction[0])
             get_particles().spawn_directional_burst(

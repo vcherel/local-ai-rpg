@@ -25,6 +25,8 @@ CONTROLS = [
     ("1 - 3", "Draw the weapon in that bar slot"),
     ("X", "Swap to your other melee weapon"),
     ("Q R T Y", "Drink the potion in that quickbar slot"),
+    ("E", "In the bag or a shop: equip the best of everything carried"),
+    ("S / U", "In a shop: sell every valuable / every unused piece of gear"),
     ("I", "Inventory"),
     ("J", "Quests"),
     ("C", "Character"),

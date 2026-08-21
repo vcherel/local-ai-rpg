@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import core.constants as c
+from core.screen_fx import get_banner
 from core.utils import parse_response_quest_analysis
 from game.entities.items import Item
 from game.entities.npcs import NPC
@@ -259,6 +260,10 @@ class EventSystem:
     def _start_blood_night(self):
         self.blood_night_timer = c.Events.BLOOD_NIGHT_DURATION_MS
         self.notify("A blood night falls: monsters grow bolder and loot flows more freely", c.Colors.RED)
+        # The one event that changes how the whole night behaves, so it gets the banner as
+        # well as the toast. Same guard as `notify`: the session it was rolled in may be over.
+        if not self.world.closed:
+            get_banner().trigger("BLOOD NIGHT", "Monsters grow bolder, and the dead pay better", c.Colors.RED)
 
     def _blood_night_with_presage(self):
         text = self._generate_lore_line("In one short ominous sentence, warn that a night of blood is coming soon.")

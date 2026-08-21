@@ -92,6 +92,12 @@ class Monster(Entity):
         self.aggro = False
         self.art_phase = random.random()
 
+    def status_effects(self) -> list:
+        effects = super().status_effects()
+        if self.burn_ticks_remaining > 0:
+            effects.insert(0, "burn")
+        return effects
+
     def apply_burn(self, damage: int):
         """(Re)ignite this monster: refresh the tick count and take the stronger burn."""
         self.burn_damage = max(self.burn_damage, damage)
@@ -454,6 +460,7 @@ class Monster(Entity):
             self.kind.color,
             2,
         )
+        self.draw_status_bubbles(screen, screen_x, screen_y, self.kind.size)
 
     def _fuse_color(self, color) -> tuple:
         """The body whitening out as the fuse burns, faster the closer it is to going off.

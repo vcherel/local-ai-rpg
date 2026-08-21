@@ -5,6 +5,7 @@ import pygame
 
 import core.constants as c
 from core.audio import get_audio
+from core.music import get_music
 from core.save import SaveSystem
 from game.game import Game
 from llm.llm_request_queue import get_llm_queue
@@ -60,6 +61,9 @@ def main():
     c.Fonts = c.Fonts.load()
 
     get_audio()
+    # Started here rather than with the first game: the pads render on their own thread and
+    # the title screen is exactly the dead time that costs nothing.
+    get_music()
     run_loading_screen(screen, clock)
 
     while True:
