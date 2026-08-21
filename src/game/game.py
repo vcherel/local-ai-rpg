@@ -11,8 +11,9 @@ from core.camera import Camera, get_shake
 from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
+from core.music import get_music
 from core.particles import get_particles
-from core.screen_fx import get_flash, get_hitstop, get_trap_fx, get_vignette
+from core.screen_fx import draw_blood_veil, get_banner, get_flash, get_hitstop, get_trap_fx, get_vignette
 from core.swing_arcs import get_swings
 from game.entities.items import rarity_color, roll_rarity
 from game.entities.player import Player
@@ -892,8 +893,11 @@ class Game:
         self.update_camera()
         for system in (get_shake(), get_particles(), get_swings(), get_impacts()):
             system.update(dt)
-        for system in (get_floating_text(), get_decals(), get_vignette(), get_flash(), get_trap_fx()):
+        for system in (get_floating_text(), get_decals(), get_vignette(), get_flash(), get_trap_fx(), get_banner()):
             system.update(dt)
+        # The music answers the same clock the sky does: the pads crossfade through dusk
+        # and dawn rather than switching when the tint does.
+        get_music().update(dt, self.world.daynight.darkness)
 
     def _draw_frame(self):
         """The world, then the sky over it, then the HUD, then whatever menu is open. Drawn
@@ -910,11 +914,14 @@ class Game:
         # No sky underground: the tunnel draws its own darkness around the player instead.
         if self.world.underground is None:
             self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
+        # Underground or not: a blood night is on the world, and the tunnel is world space.
+        draw_blood_veil(self.screen, self.world.events.blood_intensity)
         get_vignette().draw(self.screen)
         # Over the sky and the vignette, under the HUD: a blast's wash and a trap's jaws are
         # things happening to the world, not readouts.
         get_flash().draw(self.screen)
         get_trap_fx().draw(self.screen)
+        get_banner().draw(self.screen)
 
         if not self.active_menu:
             self.game_renderer.draw_ui(

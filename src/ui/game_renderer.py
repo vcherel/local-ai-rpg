@@ -266,16 +266,21 @@ class GameRenderer:
 
         # Over everything alive and under the player: what is out past the lantern is not
         # seen at all, which is the tunnel's real difficulty and the reason to go back up.
-        # The player themselves is drawn on top of it, because the player's health bar is
-        # part of that sprite and the HUD is not something the dark may swallow.
+        # The player themselves is drawn on top of it, and their bar later still, because
+        # the HUD is not something the dark or the leaves may swallow.
         if underground:
             world.underground.draw_dark(self.screen, camera, player)
 
         player.draw(self.screen)
-        self._draw_struggle_bar(player)
 
         if overlay is not None:
             overlay()
+
+        # Over the canopies: the player's health bar, the points on it and the struggle bar
+        # are HUD that happens to be drawn in the world, and leaves may not sit on top of
+        # them. Everything else about the player is a body and stays under the branches.
+        player.draw_health_bar_overlay(self.screen)
+        self._draw_struggle_bar(player)
 
         if interaction is not None:
             self._draw_interaction_prompt(camera, interaction)

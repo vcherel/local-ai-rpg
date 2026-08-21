@@ -411,23 +411,38 @@ class Decals:
     LIFE_MS: float = 18_000.0
     # Oldest decal is dropped once the list grows past this, so a long fight
     # never leaves an unbounded number of splats to draw.
-    MAX_COUNT: int = 300
+    MAX_COUNT: int = 520
 
-    HIT_RADIUS: int = 7
-    KILL_RADIUS: int = 22
+    HIT_RADIUS: int = 9
+    KILL_RADIUS: int = 26
     BOSS_KILL_RADIUS: int = 38
     PLAYER_HURT_RADIUS: int = 11
 
     # A kill throws a fan of droplets out along the killing blow rather than leaving one
     # tidy circle: the pool marks where it died, the spray says how it went.
     SPRAY_SPREAD_DEG: float = 110.0
-    KILL_SPRAY_COUNT: int = 10
+    KILL_SPRAY_COUNT: int = 18
     KILL_SPRAY_DISTANCE: tuple = (16.0, 105.0)
     KILL_SPRAY_RADIUS: tuple = (3.0, 9.0)
     # A boss bleeds across half the arena.
-    BOSS_SPRAY_COUNT: int = 24
+    BOSS_SPRAY_COUNT: int = 36
     BOSS_SPRAY_DISTANCE: tuple = (25.0, 210.0)
     BOSS_SPRAY_RADIUS: tuple = (5.0, 15.0)
     # Deep arterial red, darker than the bright particle spray so the two read as
     # "still in the air" versus "already on the ground".
     BLOOD_COLOR: tuple = (128, 16, 16)
+
+    # How opaque a splat is at its wettest. Blood on the ground is the record of a fight,
+    # so it is meant to be read from across the clearing.
+    ALPHA: int = 205
+    # How much a droplet is pulled along its own flight at the far end of a spray: the
+    # difference between a dot and a smear pointing where the blow went.
+    SMEAR_STRETCH: float = 2.2
+    # The long arterial throws a kill adds on top of the fan.
+    ARC_SPREAD_DEG: float = 70.0
+    KILL_ARCS: int = 4
+    BOSS_ARCS: int = 7
+    ARC_LENGTH: tuple = (90.0, 250.0)
+    BOSS_ARC_LENGTH: tuple = (110.0, 320.0)
+    # The share of a splat's life it still looks wet for.
+    SHEEN_FRACTION: float = 0.18

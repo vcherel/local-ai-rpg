@@ -135,6 +135,11 @@ class Events:
     BOSS_EVENT_MIN_DIST: int = 800
     BOSS_EVENT_MAX_DIST: int = 1200
 
+    # The banner an event that changes the rules opens with, and how long each end of it
+    # spends fading. A toast says something happened; this says the night is different now.
+    BANNER_DURATION_MS: float = 4200.0
+    BANNER_FADE_MS: float = 900.0
+
     # Chance a treasure or blood night is preceded by a short lore warning instead of striking instantly.
     PRESAGE_CHANCE: float = 0.5
     PRESAGE_DELAY_RANGE_S: tuple = (8, 15)

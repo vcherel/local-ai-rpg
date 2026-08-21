@@ -196,14 +196,22 @@ def draw_weapon(surface, hand_pos, spec: dict, size: int, hand: str, attack_prog
 def draw_shield(surface, hand_pos, body_center, spec: dict, size: int):
     """Draw the offhand shield: carried out at the arm's side while it's down, swung
     across the front of the body while it's raised, which is how the player reads that
-    the block is actually up."""
+    the block is actually up.
+
+    It hangs off its own point beside the arm rather than on the hand itself: that same
+    hand carries the bow, and a shield centred on the grip simply painted over it. Strapped
+    to the outside of the forearm and set back from the grip, both are visible at once.
+    """
     raised = spec.get("raised")
     width, height = size * 0.62, size * 0.78
+    # Which way is away from the body, so the strap side is right whichever arm holds it.
+    outward = -1 if hand_pos[0] <= body_center[0] else 1
     if raised:
-        cx = (hand_pos[0] + body_center[0]) / 2
-        cy = body_center[1] - size * 0.5
+        cx = (hand_pos[0] + body_center[0]) / 2 + outward * size * 0.16
+        cy = body_center[1] - size * 0.42
     else:
-        cx, cy = hand_pos[0], hand_pos[1] + size * 0.1
+        cx = hand_pos[0] + outward * size * 0.30
+        cy = hand_pos[1] + size * 0.26
         width, height = width * 0.85, height * 0.85
 
     face = [

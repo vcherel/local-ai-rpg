@@ -6,6 +6,13 @@ from ui import widgets
 # Height of the title band drawn at the top of a menu when it has a title.
 HEADER_HEIGHT = 56
 
+# The keys the repeated one-click actions answer to, wherever their button is drawn. Kept
+# here rather than in each menu so the inventory and the shop cannot drift apart on the
+# same action, and so the label a button prints comes from the key it is bound to.
+EQUIP_BEST_KEY = pygame.K_e
+SELL_VALUABLES_KEY = pygame.K_s
+SELL_GEAR_KEY = pygame.K_u
+
 # The dim wash drawn behind every open menu, built on first use and reused; see draw_overlay.
 _OVERLAY: pygame.Surface | None = None
 

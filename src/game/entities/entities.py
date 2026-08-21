@@ -4,6 +4,7 @@ import random
 import pygame
 
 import core.constants as c
+from core.status_fx import draw_bubbles
 from core.utils import frames
 from game.entities.gear import draw_accessory, draw_armor_band, draw_shield, draw_weapon, gear_padding
 
@@ -119,6 +120,26 @@ class Entity:
     def chill_mult(self) -> float:
         return self.chill_factor if self.chilled else 1.0
 
+    def status_effects(self) -> list:
+        """Which status bubbles float over this body right now, worst first.
+
+        The base pair is what every mover can catch; a kind that carries more of its own
+        (a monster burning, the player's flasks) extends this rather than replacing it.
+        """
+        effects = []
+        if self.rooted:
+            effects.append("root")
+        if self.chilled:
+            effects.append("chill")
+        return effects
+
+    # How far over the head the bubbles float. Raised by anything that already flies a
+    # marker up there (a villager's badge), so the two never sit on each other.
+    STATUS_BUBBLE_LIFT = 26
+
+    def draw_status_bubbles(self, screen, x, y, size):
+        draw_bubbles(screen, x, y - size // 2 - self.STATUS_BUBBLE_LIFT, self.status_effects())
+
     @property
     def staggered(self) -> bool:
         """Still travelling under a shove hard enough that it is not walking anywhere of its
@@ -192,13 +213,18 @@ class Entity:
         bar_color=None,
         bar_border_width=2,
         gear=None,
+        health_bar=True,
     ):
+        """`health_bar` off leaves the bar to the caller, which is how the player's own bar
+        is kept out of this pass and drawn over the canopies instead."""
         walk = self.gait.step(self.x, self.y)
         draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand, gear, walk)
 
-        bar_x = x - bar_width // 2
-        bar_y = y + size // 2 + health_bar_offset
-        self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, bar_color or color, bar_border_width)
+        if health_bar:
+            bar_x = x - bar_width // 2
+            bar_y = y + size // 2 + health_bar_offset
+            self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, bar_color or color, bar_border_width)
+            self.draw_status_bubbles(screen, x, y, size)
 
 
 # How far a shove is allowed to carry a body between two collision tests.

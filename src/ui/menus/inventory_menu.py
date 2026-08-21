@@ -18,7 +18,7 @@ from game.entities.items import (
     rarity_tier,
 )
 from ui import widgets
-from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
+from ui.menus.base_menu import EQUIP_BEST_KEY, HEADER_HEIGHT, BaseMenu
 
 if TYPE_CHECKING:
     from game.entities.items import Item
@@ -249,6 +249,8 @@ class InventoryMenu(BaseMenu):
                 self.scroll_row = max(0, self.scroll_row - 1)
             elif event.key == pygame.K_DOWN:
                 self.scroll_row = min(self._max_scroll(rows), self.scroll_row + 1)
+            elif event.key == EQUIP_BEST_KEY:
+                player.auto_equip_best()
 
         return True
 
@@ -329,7 +331,7 @@ class InventoryMenu(BaseMenu):
         are sitting in the bag unworn."""
         rect = self._auto_equip_rect()
         pending = player.pending_upgrades()
-        label = f"Equip best ({pending})" if pending else "Equip best"
+        label = f"[{pygame.key.name(EQUIP_BEST_KEY).upper()}] Equip best ({pending})" if pending else "Equip best"
         widgets.draw_button(
             surface,
             rect,
