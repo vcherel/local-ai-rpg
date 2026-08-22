@@ -304,6 +304,24 @@ class GameRenderer:
         label = c.Fonts.small.render("Struggle!", True, c.Colors.WHITE)
         self.screen.blit(label, label.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
 
+    def _draw_lift_bar(self, progress: float):
+        """How far the beam across a barred gate has come up, over the player's head.
+
+        The same bar a bear trap's hold is drawn as, for the same reason: the effort is
+        something the player is doing rather than something being done to them, and without
+        it a held key is a body that has stopped answering. Nothing is drawn until they have
+        actually started, so a gate they are only standing at is only a prompt."""
+        if progress <= 0:
+            return
+        width, height = 90, 9
+        x = c.Screen.ORIGIN_X - width // 2
+        y = c.Screen.ORIGIN_Y - c.Player.SIZE - 34
+        pygame.draw.rect(self.screen, (24, 22, 20), (x - 2, y - 2, width + 4, height + 4), border_radius=3)
+        pygame.draw.rect(self.screen, (58, 52, 44), (x, y, width, height))
+        pygame.draw.rect(self.screen, c.Villages.GATE_LEAF, (x, y, round(width * min(1.0, progress)), height))
+        label = c.Fonts.small.render("Lifting the bar...", True, c.Colors.WHITE)
+        self.screen.blit(label, label.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
+
     def _draw_witness_cones(self, camera: Camera, world: World, player: Player):
         """What every villager who could catch the player stealing can actually see, drawn on
         the ground while a chest or a bed is in reach.
@@ -426,7 +444,17 @@ class GameRenderer:
         self.screen.blit(label, (text_x, y + icon_size - label.get_height() // 2))
         return text_x + label.get_width() + 22
 
-    def draw_ui(self, nb_items, nb_coins, nb_quests, llm_tasks, player: Player, world: World, saved_ms: int = 0):
+    def draw_ui(
+        self,
+        nb_items,
+        nb_coins,
+        nb_quests,
+        llm_tasks,
+        player: Player,
+        world: World,
+        saved_ms: int = 0,
+        gate_lift: float = 0.0,
+    ):
         active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
 
@@ -455,6 +483,7 @@ class GameRenderer:
             self._draw_tooltip(*hovered_dock)
 
         self._draw_save_marker(saved_ms)
+        self._draw_lift_bar(gate_lift)
 
         self.loading_indicator.update()
         if active_task_count > 0:

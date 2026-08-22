@@ -87,6 +87,23 @@ class NPC(Entity):
         # by `warn`, worn for `Villages.WARNING_MS`, and never saved: a warning is the
         # moment, the strike it recorded is what the village remembers (World.village_strikes).
         self.warned_until_ms = 0
+        # Cut down and done fighting, in whichever way this one answers for
+        # (`Villages.ROUT_HP_FRAC`). Someone who took up arms for the place falls back
+        # shouting, and the shout is spent once (`called_help`). Everyone else yields: they
+        # drop what they are holding and kneel under a white flag until this runs out, and
+        # while it does they are nobody's enemy, not even their own village's. Neither is
+        # saved: a fight is a moment, and what a village remembers is its anger.
+        self.surrender_until = 0.0
+        self.called_help = False
+        # Whether this one has already thrown down their weapon once. Nobody yields twice:
+        # once they are back on their feet they run for a door like anyone else, which is
+        # what stops a surrender being a farmer kneeling on a loop.
+        self.yielded = False
+        # Where this one stood last frame, and how long they have meant to move without
+        # managing it: what says a body is wedged in a corner it is standing on legally
+        # (`WorldNavigation.unwedge`). Session-only, like everything else about a step.
+        self.wedge_spot: tuple | None = None
+        self.wedge_ms = 0.0
         # Whether this one takes up arms when a monster walks into their settlement, rolled
         # off their home so the same house always sends the same person out. Cached because
         # it is asked every frame.
@@ -109,7 +126,22 @@ class NPC(Entity):
 
     @property
     def hostile(self) -> bool:
-        return self.grudge or time.time() < self.hostile_until
+        # Somebody kneeling with their hands up is not fighting anyone, whatever their
+        # village decided a minute ago: a surrender outranks even a grudge for as long as it
+        # lasts, which is what makes sparing them a thing the player can actually do.
+        return not self.surrendered and (self.grudge or time.time() < self.hostile_until)
+
+    @property
+    def surrendered(self) -> bool:
+        """Down on one knee with a white flag up, and out of the fight while it lasts."""
+        return time.time() < self.surrender_until
+
+    def surrender(self):
+        """Yield: drop what is in your hands and kneel. A farmer's answer to being cut down
+        to nothing, where a militiaman's is to fall back shouting for help."""
+        self.surrender_until = time.time() + c.Villages.SURRENDER_S
+        self.yielded = True
+        self.warned_until_ms = 0
 
     @property
     def anger_remaining(self) -> float:
@@ -175,6 +207,10 @@ class NPC(Entity):
         """What is drawn in this one's hands, in the shape `draw_human` wants. A villager
         carries one thing and it is always melee: the stones a mob throws are picked up off
         the ground, not kept in a quiver."""
+        if self.surrendered:
+            # The one thing a surrender has to read as from across the street: their hands
+            # are empty.
+            return {}
         return {
             "melee": {
                 "kind": self.weapon.name,
@@ -503,6 +539,8 @@ class NPC(Entity):
 
     def _badge(self) -> tuple | None:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""
+        if self.surrendered:
+            return None  # a white flag is drawn instead, and it is not a badge
         if self.hostile:
             return c.Fonts.badge, "!", c.Colors.RED
         # Not angry yet, and saying so. Orange rather than red: the difference between the
@@ -517,6 +555,19 @@ class NPC(Entity):
             color = (100, 255, 100) if self.shop_ready else (120, 120, 80)
             return c.Fonts.badge_small, "$", color
         return None
+
+    @staticmethod
+    def _draw_white_flag(screen: pygame.Surface, x: float, y: float):
+        """The one cue that says this one has yielded, and the reason it is not a badge: an
+        exclamation mark in another colour is a thing to read, a rag on a stick is a thing to
+        recognise. It waves, because a still flag over a still body reads as neither."""
+        wave = math.sin(time.time() * 3) * 3
+        top = y - c.Entities.NPC_SIZE // 2 - 26
+        pole = (round(x - 10), round(top))
+        pygame.draw.line(screen, (120, 96, 66), pole, (round(x - 10), round(top + 26)), 3)
+        cloth = ((pole[0], pole[1]), (pole[0] + 22 + wave, pole[1] + 6), (pole[0], pole[1] + 13))
+        pygame.draw.polygon(screen, (238, 238, 232), cloth)
+        pygame.draw.polygon(screen, (150, 150, 145), cloth, 1)
 
     def draw(self, screen: pygame.Surface, camera: Camera, health_bar: bool = True):
         """`health_bar` off is the title screen's village, where nobody is fighting anyone
@@ -534,6 +585,9 @@ class NPC(Entity):
             health_bar=health_bar,
             gear=self.gear(),
         )
+
+        if self.surrendered:
+            self._draw_white_flag(screen, screen_x, screen_y)
 
         badge = self._badge()
         if badge is not None:

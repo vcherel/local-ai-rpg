@@ -28,6 +28,16 @@ class Entities:
     # wall. Inside a village half the ground around a villager's own home is their house,
     # and a stroll that ends against it is a body shuffling on its own doorstep.
     WANDER_PICK_TRIES: int = 5
+    # A body that means to be moving and is not: wedged in the corner of a building, in
+    # the neck of an L, against a wall its slide cannot carry it round. Nothing detects that
+    # from geometry, because it is standing on legal ground; only time says so. Move less
+    # than WEDGE_STEP pixels a frame for WEDGE_MS while meaning to move and you are prised
+    # out onto open ground (`WorldNavigation.unwedge`).
+    WEDGE_MS: float = 1600.0
+    WEDGE_STEP: float = 0.35
+    # How much clearance that search asks for, as a multiple of the body's own radius: a
+    # corner is legal ground, so a spot is only worth moving to if it has room around it.
+    WEDGE_CLEARANCE: float = 1.7
     # NPCs stop wandering and face the player when he gets this close.
     NPC_WANDER_PAUSE_DISTANCE: int = 120
     # How long a villager keeps looking down the shot they just took (`NPC.aim_at`), rather

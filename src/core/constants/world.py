@@ -233,6 +233,11 @@ class Crime:
     # How long the one villager who catches the player stays angry about it. Shorter than a
     # whole settlement's anger: it is their chest, and it is only their business.
     THEFT_ANGER_S: float = 180.0
+    # Sleeping in a bed is not an instant somebody either saw or missed: it is a night, and
+    # a settlement's people come and go through one. So the bed is answered by who is near
+    # it by morning rather than by who was looking at it (`WorldPlaces.squatter_witness`),
+    # which is what makes a tavern room something taken rather than something free.
+    SQUAT_WITNESS_RADIUS: float = 620.0
 
 
 @dataclass(frozen=True)
@@ -333,7 +338,7 @@ class Buildings:
     # somebody's savings) rather than props, and a player who smashed either would only have
     # removed something they wanted. What is here pays nothing but splinters, apart from the
     # two that hold wares.
-    FURNITURE_HP = {"crate": 22, "shelf": 16, "table": 26, "chair": 12, "counter": 34}
+    FURNITURE_HP = {"crate": 22, "shelf": 16, "table": 26, "chair": 12, "counter": 34, "bed": 30}
     # The ones with something in them: the same odds a shop crate has always had.
     FURNITURE_LOOT: tuple = ("crate", "shelf")
     WINDOW_HP: int = 10

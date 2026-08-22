@@ -48,7 +48,7 @@ class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
 
-    kind: str  # "npc" | "chest" | "bed" | "door" | "camp" | "shrine" |
+    kind: str  # "npc" | "chest" | "bed" | "door" | "gate" | "camp" | "shrine" |
     # "well" (climb down into the tunnel) | "ladder" (climb back out). Loot is not on this
     # list: it is collected by the magnet in Game._sweep_loot, never by a key.
     target: object
@@ -139,6 +139,12 @@ class Game:
         # What E would act on this frame (Game.current_interaction), recomputed each update
         # and drawn as the single on-screen prompt.
         self.interaction: Interaction | None = None
+        # How far the player has got with the beam across a barred gate, 0 to 1. The one
+        # interaction in the game that is held rather than pressed, so it is the one that
+        # needs a frame-by-frame state of its own; taking a hit costs part of it, and letting
+        # go loses all of it (`_lift_gate`).
+        self.gate_lift = 0.0
+        self._lift_hp = 0
 
         # The whole key map as one table, built once now that every menu it points into
         # exists. `HelpMenu.CONTROLS` is what tells the player about it.
@@ -384,6 +390,7 @@ class Game:
 
         self._offer_indoors(offer, reach_of)
         self._offer_doors(offer, reach_of)
+        self._offer_gate(offer, reach_of)
         self._offer_underground(offer, reach_of)
         self._offer_places(offer, reach_of)
         self._offer_npc(offer, reach_of)
@@ -426,6 +433,19 @@ class Game:
             else:
                 label = "E: close the door" if building.door_open else "E: open the door"
             offer(Interaction("door", building, label, door.centerx, door.top - 10), dist)
+
+    def _offer_gate(self, offer, reach_of):
+        """The barred gate the player is standing at, and the only prompt in the game that
+        is held rather than pressed. A town that has shut itself is not a box: the beam can
+        be heaved up from the inside, it just takes long enough that doing it with a mob at
+        your back is a decision (`_lift_gate`)."""
+        found = self.world.barred_gate_in_reach(self.player)
+        if found is None:
+            return
+        village, index = found
+        leaf = village.defences()["gates"][index]["rect"]
+        label = f"Hold E: heave the bar up ({int((1 - self.gate_lift) * c.Villages.GATE_LIFT_S) + 1}s)"
+        offer(Interaction("gate", found, label, leaf.centerx, leaf.top - 10), reach_of(leaf.centerx, leaf.centery))
 
     def _offer_underground(self, offer, reach_of):
         """The two ends of the dark: the way back up when down there, the two ways down when
@@ -507,6 +527,10 @@ class Game:
             self._sleep_in_bed()
         elif interaction.kind == "door":
             self._use_door(interaction.target)
+        elif interaction.kind == "gate":
+            # A beam is not lifted by tapping a key: the hold in `_lift_gate` is the whole
+            # interaction, and the prompt says so.
+            pass
         elif interaction.kind == "well":
             self.world.enter_tunnel(self.player, interaction.target)
             self.save_data()
@@ -714,9 +738,42 @@ class Game:
         self.player.max_hp = self.player.effective_max_hp()
         self.player.hp = self.player.max_hp
         self.loot_notification.show("You sleep until dawn and wake fully rested", c.Colors.GREEN)
-        self._check_witness()
+        # Not a theft, and never worded as one: the household finds a stranger in the bed.
+        self._check_witness("squatting")
         # A night is hours of world clocks moved on; nobody wants to sleep it twice.
         self.save_data()
+
+    def _lift_gate(self, dt):
+        """Heaving the bar off a gate the town shut on the player, one frame at a time.
+
+        A settlement that has turned is not a box the player is locked in until they have
+        chopped their way out: the beam can be lifted from the inside. It just takes
+        `Villages.GATE_LIFT_S` of standing still with both hands on it, and a blow landing
+        costs a share of that (`Villages.GATE_LIFT_HIT_LOSS`), so doing it with a mob behind
+        you is a decision rather than an escape hatch. Walking away or letting go of the key
+        loses the lot: this is a beam, not a progress bar that waits.
+
+        Once it is up, the player steps through the way the settlement's own people do
+        (`Village.gate_side_point`), and it drops back into place behind them."""
+        hurt = self.player.hp < self._lift_hp
+        self._lift_hp = self.player.hp
+        holding = self.interaction is not None and self.interaction.kind == "gate"
+        if not holding or not pygame.key.get_pressed()[pygame.K_e]:
+            self.gate_lift = 0.0
+            return
+        if hurt:
+            self.gate_lift = max(0.0, self.gate_lift - c.Villages.GATE_LIFT_HIT_LOSS)
+        self.gate_lift += dt / 1000 / c.Villages.GATE_LIFT_S
+        if self.gate_lift < 1.0:
+            return
+        self.gate_lift = 0.0
+        village, index = self.interaction.target
+        village.lift_bar(index)
+        play_sound("door")
+        radius = c.Player.SIZE / 2
+        self.player.x, self.player.y = village.gate_side_point(index, self.player.x, self.player.y, radius, across=True)
+        self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, radius)
+        self.loot_notification.show("You heave the bar up and slip through", c.Colors.GREEN)
 
     def _sleep_threat(self) -> bool:
         """Whether anything hostile is close enough to make lying down absurd. Shared by the
@@ -756,7 +813,7 @@ class Game:
         pygame.event.clear()
         self.player.clear_buffs()
 
-    def _check_witness(self):
+    def _check_witness(self, offence: str = "theft"):
         """See whether anyone caught the player helping themselves in someone's house.
 
         The one place a single NPC turns hostile on their own: whoever saw it comes for the
@@ -764,11 +821,17 @@ class Game:
         what turns the whole settlement, through the usual `World.provoke_village`.
 
         The first time is a warning rather than a knife (`World.strike_village`), and a
-        villager who has only shouted still has their quest and still talks."""
-        witness = self.world.theft_witness(self.player.x, self.player.y)
+        villager who has only shouted still has their quest and still talks. Which ledger it
+        is spent on is `offence`: a bed taken for the night is not a hand in a chest, and
+        the two are counted apart.
+
+        A bed is found rather than watched (`World.squatter_witness`): a night is hours of a
+        household coming and going, not the instant a lid is lifted."""
+        finder = self.world.squatter_witness if offence == "squatting" else self.world.theft_witness
+        witness = finder(self.player.x, self.player.y)
         if witness is None:
             return
-        if self.world.catch_thief(witness, self.player) is None:
+        if self.world.catch_thief(witness, self.player, offence) is None:
             return
         # Nobody sees a task through for someone they are trying to kill.
         self.dialogue_manager.quest_system.remove_quest(witness)
@@ -893,6 +956,7 @@ class Game:
         self.interior = self.world.building_at(self.player.x, self.player.y)
         self._sweep_loot(gameplay_dt)
         self.interaction = self.current_interaction()
+        self._lift_gate(gameplay_dt)
         self.update_camera()
         for system in (get_shake(), get_particles(), get_swings(), get_impacts()):
             system.update(dt)
@@ -935,6 +999,7 @@ class Game:
                 self.player,
                 self.world,
                 self.last_save_ms,
+                self.gate_lift,
             )
 
         self.context_window.update()

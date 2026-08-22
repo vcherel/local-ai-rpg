@@ -60,6 +60,22 @@ and `World.clear_gateways` (a settlement barring itself) do the same for whoever
 in the opening, through `Building.clear_of_door` and `Village.gate_side_point`. Neither is a ring
 search: an opening is the one gap in that wall, so the way out of it is a single step in or out.
 
+## A body that means to move and does not is prised out
+
+`World.unstick` answers a body standing *inside* something solid: from in there every step is
+refused, so it never gets out on its own. `WorldNavigation.unwedge` answers the other half,
+which nothing could see. The inside corner of an L, the neck between two houses, the pocket
+behind a doorstep: the body is on perfectly legal ground there and every test it makes passes,
+it simply has a wall on both axes and a slide (`step_along`) that carries it into neither. A
+villager wedged in the corner of a building stayed there for the rest of the session looking
+like a bug, because from the inside it is not one.
+
+Only time tells the two apart, so time is what is measured: meaning to move and covering less
+than `Entities.WEDGE_STEP` a frame for `Entities.WEDGE_MS` is being wedged, and the way out is
+a spot with real clearance round it (`Entities.WEDGE_CLEARANCE`), which is exactly what a
+corner does not have. Whatever it was strolling to is dropped with it: that target was the
+reason it walked in there.
+
 ## A monster's look is its kind's `shape`, not its colour
 
 Every hostile thing used to be the same circle with two smaller circles for arms, which meant a

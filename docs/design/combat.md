@@ -73,9 +73,12 @@ furniture/windows keep theirs session-only (the save records what broke, not how
 rest are).
 
 Every stick of furniture in a room comes apart, not only the crates
-(`Buildings.FURNITURE_HP` per kind), because a room where one box out of six reacts to a sword
-reads as scenery with a bug in it; the bed and the chest are the exceptions, both being
-mechanics the player would only be removing from themselves. Wrecking somebody's room is a
+(`Buildings.FURNITURE_HP` per kind), because a room where one box out of six reacts to a
+sword reads as scenery with a bug in it. The bed is in that list too, and a broken one drops
+out of `interior_layout()["beds"]`, so the room loses the night's rest with it: that is the
+player's to spend if they want to, and an exception carved out for it would have been the
+one piece of a room that ignores a sword. The chest is the only thing left out, being a
+container rather than furniture. Wrecking somebody's room is a
 crime like emptying their chest (`World.report_crime`), which is why the witness cones are on
 the ground the whole time the player is standing indoors rather than only over a chest, and a
 POI's `cache_hp` is session-only because a POI is rebuilt from its chunk seed anyway.

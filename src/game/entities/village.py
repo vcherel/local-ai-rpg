@@ -227,6 +227,17 @@ class Village:
         the settlement's own people is walking through (`World.pass_gate_for`)."""
         return self.gate_hold.get(index, 0.0) > 0.0
 
+    def lift_bar(self, index: int):
+        """The player heaving the beam up from the inside. The same held-open gate its own
+        people walk through (`let_through`), held longer: the bar is off, the leaves swing,
+        and it drops back into place a moment later.
+
+        This is the way out of a town that has shut itself, and the reason breaking a gate is
+        no longer the only one. It is slow to earn (`Game._lift_gate`) rather than slow to
+        use: a beam is either up or it is not."""
+        if self.gate_closed(index):
+            self.gate_hold[index] = c.Villages.GATE_LIFT_HOLD_MS
+
     def let_through(self, index: int):
         """Work a barred gate open for a moment. Its people know their own gate: they lift
         the bar, walk out, and it shuts behind them, which is why the player hammering on
