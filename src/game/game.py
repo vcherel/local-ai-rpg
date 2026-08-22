@@ -132,6 +132,10 @@ class Game:
         # Set when the window is closed: the process exits instead of returning to the menu.
         self.quit_app = False
 
+        # Until when the music is still calling this a fight. Set by anything hostile being
+        # near and read a few seconds later, so a pack picked off one at a time stays one
+        # fight instead of crossfading in and out of the combat pad between kills.
+        self._combat_until = 0
         # The building the player is currently standing inside, or None outdoors. Recomputed
         # every frame from the player's position; a building's interior is just its own
         # footprint in world space, so there is no separate coordinate space or mode switch.
@@ -962,9 +966,37 @@ class Game:
             system.update(dt)
         for system in (get_floating_text(), get_decals(), get_vignette(), get_flash(), get_trap_fx(), get_banner()):
             system.update(dt)
-        # The music answers the same clock the sky does: the pads crossfade through dusk
-        # and dawn rather than switching when the tint does.
-        get_music().update(dt, self.world.daynight.darkness)
+        # The music answers what is happening rather than only what time it is: the pads
+        # crossfade between contexts, and through dusk and dawn when nothing louder is going
+        # on than the sky changing.
+        get_music().update(dt, self.world.daynight.darkness, self._music_context())
+
+    def _music_context(self) -> str:
+        """What the world is doing, as one of `core.music.CONTEXTS`.
+
+        A priority rather than a blend, because two of these at once is the ordinary case: a
+        boss on a blood night is a boss, and a fight in a street is a fight. The order is
+        what is most immediately about to kill the player first, and where they are standing
+        last. `_combat_until` is a short hold, so a pack picked off one at a time is one
+        fight rather than eight crossfades."""
+        player = self.player
+        if any(boss.distance_to_point(player.get_pos()) < c.Music.BOSS_RANGE for boss in self.world.bosses):
+            return "boss"
+        if self.world.events.blood_intensity > 0:
+            return "blood"
+        now = pygame.time.get_ticks()
+        pos = player.get_pos()
+        near = c.Music.COMBAT_RANGE
+        hostile = any(monster.distance_to_point(pos) < near for monster in self.world.monsters) or any(
+            npc.hostile and npc.distance_to_point(pos) < near for npc in self.world.npcs
+        )
+        if hostile:
+            self._combat_until = now + c.Music.COMBAT_HOLD_MS
+        if now < self._combat_until:
+            return "combat"
+        if self.world.underground is None and self.world.village_at(player.x, player.y) is not None:
+            return "village"
+        return "night" if self.world.daynight.darkness > 0.5 else "day"
 
     def _draw_frame(self):
         """The world, then the sky over it, then the HUD, then whatever menu is open. Drawn

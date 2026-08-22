@@ -11,6 +11,7 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.daynight import DayNightCycle
+from core.decals import get_decals
 from game.combat import WorldCombat
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
@@ -1351,7 +1352,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 continue
             angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
             village.barred = any(npc.grudge for npc in angry) or len(angry) >= c.Villages.BAR_GATES_MOB
-            village.advance_gates(dt)
+            village.advance_gates(dt, (player.x, player.y))
             if village.barred:
                 self.clear_gateways(village, player)
 
@@ -1502,11 +1503,30 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # actually ended up this frame rather than on where they set off from.
         self.snap_traps(player, quest_system)
         self.prick_spikes(player, quest_system)
+        self._track_bloody_feet(player)
 
         # Restocking is the surface's alone: a tunnel holds what was put in it when the
         # player climbed down, and nothing wanders in after them.
         if self.underground is None:
             self._restock_surface(player, dt)
+
+    def _track_bloody_feet(self, player: Player):
+        """Anything walking through fresh blood picks it up and prints it out again for the
+        next few strides (`DecalSystem.track_walkers`).
+
+        Only what is near enough to be on screen: a trail nobody can see is bookkeeping, and
+        the whole point of the prints is reading which way something walked away from a
+        body. Called after everything has taken its step, like the traps, so a foot is
+        judged on where it actually ended up this frame."""
+        reach = c.World.CHUNK_SIZE
+        walkers = [(id(player), player.x, player.y)]
+        for group in (self.monsters, self.npcs, self.critters):
+            walkers.extend(
+                (id(body), body.x, body.y)
+                for body in group
+                if abs(body.x - player.x) <= reach and abs(body.y - player.y) <= reach
+            )
+        get_decals().track_walkers(walkers)
 
     def _update_monsters(self, player: Player, dt, quest_system: QuestSystem, damage_mult: float):
         """Every monster near enough to react, plus the bosses, the burns ticking on both

@@ -24,9 +24,9 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session
 
 ### game
-- `src/game/game.py`: `Game`, the main loop, input handling and state orchestration; `_handle_key` is the whole key map as one table, `_handle_left_click` dispatches HUD clicks by action, `current_interaction`/`_interact` are the one prompt and the one E, `_sweep_loot` the loot magnet, `save_data` the one path to disk, `_respawn` and `_sleep_until_dawn` the two things that move the player without walking
+- `src/game/game.py`: `Game`, the main loop, input handling and state orchestration; `_handle_key` is the whole key map as one table, `_handle_left_click` dispatches HUD clicks by action, `current_interaction`/`_interact` are the one prompt and the one E, `_sweep_loot` the loot magnet, `save_data` the one path to disk, `_respawn` and `_sleep_until_dawn` the two things that move the player without walking, `_music_context` what the score is told the world is doing
 - `src/game/world.py`: `World`, the state everything reads (entity lists, buildings, shops, saving) plus the per-frame `update`; five jobs are mixed in from `combat.py`, `projectiles.py`, `streaming.py`, `places.py` and `navigation.py`. Also here: chunk-bucketed building lookup, `blocked` and what is solid where, spawn caps and safe placement, terrain speed, village defence orders, impulses and `unstick`
-- `src/game/combat.py`: `WorldCombat`, every blow and its aftermath: `handle_attack`, the target-group table, cleave falloff, thrust lanes, knockback, crits, gore, weapon affixes and elements, breakables/windows/gates/props, bear traps, and `explode`
+- `src/game/combat.py`: `WorldCombat`, every blow and its aftermath: `handle_attack`, the target-group table, cleave falloff, thrust lanes, knockback, crits, gore (`blow_style` is the weapon family a wound is drawn from), weapon affixes and elements, breakables/windows/gates/props, bear traps, and `explode`
 - `src/game/projectiles.py`: `WorldProjectiles`, everything in flight: `_fire_ranged` (mana, ammo, style), monster shots, and what each projectile strikes
 - `src/game/places.py`: `WorldPlaces`, what the player does at a place once they have walked to it: camps, campfire rest, shrines, wells and caves, tunnels, theft and witnesses (`theft_witness`, `squatter_witness`), the per-offence warning ladder (`strike_village`, `shout_warning`, `warnings_at`) and village anger (`provoke_village`, `hold_grudge`, `pacify_village`, `yield_to_player`, `call_for_help`), the barred gate the player can heave open (`barred_gate_in_reach`), directions and rumours, explored cells, `pass_time`
 - `src/game/streaming.py`: `WorldStreaming`, how the map appears around the player: chunk load/unload, scenery reindexing, village creation, `prepare`, and the background naming/lore threads
@@ -44,7 +44,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/entities/monsters.py`: `Monster`, `pick_monster_kind` (spawn by distance, fading kinds out again), chasing and ring slots, steering, ranged kinds that keep distance, charge/flank/detonate behaviours, burn ticks
 - `src/game/entities/monster_art.py`: the vector art per silhouette (`humanoid`, `goblin`, `hulk`, `skeleton`, `wraith`, `blob`, `beast`, `robed`, `creeper`) behind `draw_monster`; shadow, breath and eyes are shared by all of them
 - `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam, bolt volley, summons marked on the ground before they arrive), knockback immune
-- `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza with the specials spread by `_assign_slots` and every doorstep kept clear, the lanes between the houses (`plan_streets`), `defences()` (wall, gates, towers, outworks), the gates' bar, swing and `gate_between`, `tier`, `grounds_radius`; also the site registry (`register_world_sites`) the starting town and its ruin are put on the map through
+- `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza with the specials spread by `_assign_slots` and every doorstep kept clear, the lanes between the houses (`plan_streets`), `defences()` (wall, gates, towers, outworks), the gates' bar, swing (slow shut, quick open, its own going-over animation once beaten down) and `gate_between`, `tier`, `grounds_radius`; also the site registry (`register_world_sites`) the starting town and its ruin are put on the map through
 - `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L, the wing snapped flush to its block), facade offsets, interior layout and furniture, front door and its `doorstep`, windows, `covers` (what the building stands on, as against `blocks`); the footprint, floors and wall shell are worked out once and kept (`reset_geometry` drops them); `set_active_buildings`
 - `src/game/entities/building_art.py`: `BuildingArt`, mixed into `Building`: everything a building's look is made of, from the roof and its texture to the awning, the ruin, the open door leaf, the broken pane and the furniture in the cutaway; `style()` rolls the whole look off the building's id
 - `src/game/entities/scenery.py`: `Scenery`, one piece of wilderness (tree, boulder, pond, road, bridge, grass): what it covers, what it blocks, what shades it casts, and how it draws
@@ -70,21 +70,21 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 ### core
 - `src/core/constants/`: all game constants in one flat namespace (`import core.constants as c`), split into `ui.py`, `player.py`, `combat.py`, `bestiary.py`, `world.py`, `villages.py` and `items.py`, so a constant is filed by what it tunes. `Fonts` is the one name rebound at runtime by `__main__`
 - `src/core/save.py`: `SaveSystem`, atomic thread-safe JSON saving; the key list at the top is the record of what the save owns
-- `src/core/settings.py`: `Settings`, the preferences that outlive a playthrough (music on/off), written to `saves/settings.json`
+- `src/core/settings.py`: `Settings`, the preferences that outlive a playthrough (music on/off, sound on/off), written to `saves/settings.json`
 - `src/core/camera.py`: `Camera` world-to-screen translation plus `ScreenShake`/`get_shake`
 - `src/core/screen_fx.py`: `Hitstop`, `HurtVignette`, `ScreenFlash`, `TrapSnap` and `EventBanner`, the full-screen effects read once a frame in `Game.run`, plus `draw_blood_veil`, the red a blood night is seen through
 - `src/core/damage_fx.py`: the flinch, flash and cracks drawn on a struck prop, keyed by string in a session-only registry
-- `src/core/swing_arcs.py`: the trail a melee attack leaves, over exactly the wedge or lane the hit test accepts
-- `src/core/impact_fx.py`: `ImpactRing`, the ring and bolts an area effect draws so several damage numbers have something visible behind them
+- `src/core/swing_arcs.py`: the trail a melee attack leaves, over exactly the wedge or lane the hit test accepts; `SwingArc` is the sweep, `ThrustTrail` the lunge a spear is drawn as
+- `src/core/impact_fx.py`: `ImpactPulse`, the wave of particles an area effect throws out to its own damage radius plus a bolt to each thing it caught, so several damage numbers have something visible behind them
 - `src/core/daynight.py`: `DayNightCycle`, elapsed time in the cycle, `darkness`/`is_night`/`phase`/`time_until`, and the ambient night tint
-- `src/core/decals.py`: capped session-only ground blood splats, each painted once at spawn and wet while fresh, including the directional `spawn_spray` and the long `spawn_arcs` a kill throws
+- `src/core/decals.py`: capped session-only ground blood, each splat a torn shape painted once at spawn: `_SPLAT_STYLES` (one recipe per weapon family) behind `splash`, the directional `spawn_spray` and the long `spawn_arcs` a kill throws, plus `track_walkers`, the prints anything walking through fresh blood leaves behind it
 - `src/core/floating_text.py`: rising damage numbers, bigger and gold on a crit
 - `src/core/utils.py`: `ConversationHistory`, `frames(dt)` (the one definition of a delta in frames), random helpers, and the LLM response parsers
 - `src/core/dialogue_log.py`: `write_conversation`, finished conversations written to `logs/dialogues/`
 - `src/core/llm_log.py`: `log_call` / `log_parse_failure`, every generation appended to `logs/llm_calls.jsonl`
-- `src/core/particles.py`: world-space particle bursts, omnidirectional or in a cone, with optional gravity and shard shapes
-- `src/core/audio.py`: `SoundManager`, procedural sound effects synthesised in memory
-- `src/core/music.py`: `MusicPlayer`, the two chord pads rendered in memory on a worker thread and crossfaded by the day/night cycle
+- `src/core/particles.py`: world-space particle bursts, omnidirectional or in a cone, with optional gravity and shard shapes; `emit_over` is the same burst kept up for as long as something takes
+- `src/core/audio.py`: `SoundManager`, procedural sound effects synthesised in memory (`_SOUND_SPECS` is the whole list), silent while the sound preference is off
+- `src/core/music.py`: `MusicPlayer`, a chord pad per context (`CONTEXTS`: day, night, village, combat, boss, blood) with several progressions each, rendered in memory on a worker thread and crossfaded on two reserved channels; what is playing is resolved by `Game._music_context`
 - `src/core/status_fx.py`: `draw_bubbles` and the `EFFECTS` table, the status icons floating over anything carrying a timed effect
 - `src/core/text_fx.py`: `draw_outlined_text`, world-space text readable without a panel behind it
 
@@ -101,7 +101,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/ui/menus/base_menu.py`: `BaseMenu`, shared menu scaffolding and the reused dim overlay; `EQUIP_BEST_KEY`/`SELL_VALUABLES_KEY`/`SELL_GEAR_KEY`, the keys the repeated one-click actions answer to wherever their button is drawn
 - `src/ui/menus/menu_scene.py`: `MenuScene`, the live village the title screen stands over, rolled fresh per launch and holding no save and no player
 - `src/ui/menus/main_menu.py`: `MainMenu`, `run_main_menu`, the title screen; returns "new_game"/"continue" and leaves save handling to `__main__`
-- `src/ui/menus/pause_menu.py`: `PauseMenu`, with a manual Save game button and the music toggle
+- `src/ui/menus/pause_menu.py`: `PauseMenu`, with a manual Save game button and the music and sound toggles
 - `src/ui/menus/context_menu.py`: `ContextMenu`, the world lore: written onto black as an intro at session start, an ordinary panel when asked for with L
 - `src/ui/menus/inventory_menu.py`: `InventoryMenu`, the sectioned item grid, equip/unequip, drinking a potion, right-click bar assignment, Equip best, the paper-doll and the hover tooltip
 - `src/ui/menus/shop_menu.py`: `ShopMenu`, buy/sell with bartering and affinity pricing, restock countdown, bulk-sell buttons, two independently scrolling columns
@@ -127,6 +127,8 @@ The short version. `docs/design/` explains each of these.
 - Violence against a villager is a whole-settlement event through `WorldCombat._resolve_npc_hit`, and every settlement warns once per kind of offence before it turns (`WorldPlaces.strike_village`, one ledger per `Villages.OFFENCES` entry, each with its own wording and its own visible countdown). Theft and trespass are the exceptions and turn exactly one witness, on the same ladder. Striking somebody who has yielded skips it entirely. Dying to a settlement is it getting its own back, so that one forgets (`pacify_village`).
 - Nothing the player did not do pays the player: `by_player=False` withholds every reward and consequence, never the kill.
 - Nothing in the world breaks in a single hit, and every hit-point pool draws its own wear through `core/damage_fx.py`.
+- A wound is drawn from the weapon that made it: one recipe per family in `core/decals.py`, picked through `WorldCombat.blow_style`, and a kill is that recipe several times over.
+- The music answers what is happening (`Game._music_context` into `core/music.py`), as a priority and never a blend.
 - A door (and a gate) is the only obstacle a chaser may break. If a monster cannot reach the player, the answer is navigation, not demolition. Its own people let themselves through instead of breaking it (`World.open_door_for`, `World.pass_gate_for`), and the player heaves the bar up (`Game._lift_gate`, held not pressed). Gates only bar on a grudge or a real mob (`Villages.BAR_GATES_MOB`).
 - Nothing is ever sealed inside a leaf: whatever stands in a doorway or a gateway is stepped out of it before it shuts, and every mover unsticks each frame, the player included. A villager who means to move and cannot is prised out too (`World.unwedge`); a tower archer is the one body exempt from both, because the tower is where they belong.
 - A weapon family answers a question rather than being a bigger number; a bigger number is a rarity roll.

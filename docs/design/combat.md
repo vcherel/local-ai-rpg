@@ -111,6 +111,12 @@ stand on it springs it, and it resolves `by_player=False` because the player did
 That is also the whole of what makes it a tactic rather than a hazard: the seconds it buys are
 usable by whoever is not in it.
 
+The bite is deliberately heavy (`Traps.DAMAGE`) and it bleeds like any other wound, so a careless
+walk out of town costs a real part of the health bar and not only the wait. The wait itself is the
+player's to take back: every movement key pressed works the leg loose, and the keys to press are
+drawn under the struggle bar (`GameRenderer._draw_struggle_keys`), because a bar draining on its
+own says "wait" and the whole point of the trap is that it does not have to.
+
 ## Projectiles
 
 An arrow is not choosy about whose it is: a monster's shot that misses the player hits whatever

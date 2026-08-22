@@ -260,6 +260,12 @@ class Scenery:
         drawer(self, layer, (reach, reach))
         layer.set_alpha(alpha)
         screen.blit(layer, (center[0] - reach, center[1] - reach))
+        # The trunk goes back on at full strength over the faded leaves: the canopy fades so
+        # the player can be seen under it, but the trunk is what actually stops them, and a
+        # see-through obstacle is a wall you walk into twice.
+        if self.blocking_radius:
+            pygame.draw.circle(screen, (88, 62, 38), center, round(self.blocking_radius))
+            pygame.draw.circle(screen, (58, 40, 24), center, round(self.blocking_radius), 2)
 
     def _draw_path(self, screen, center):
         """One stretch of track: a bar laid along the way the route runs, as long as the gap

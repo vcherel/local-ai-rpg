@@ -16,6 +16,8 @@ PATH = "./saves/settings.json"
 
 DEFAULTS = {
     "music": True,
+    # Every sound effect the game makes, apart from the music, which has its own switch.
+    "sound": True,
 }
 
 

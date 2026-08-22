@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import array
 import math
+import random
 
 import pygame
+
+from core.settings import get_settings
 
 SAMPLE_RATE = 44100
 
@@ -43,6 +46,15 @@ _SOUND_SPECS = {
     "shout": ([(330, 0.05), (392, 0.05), (294, 0.09)], 0.30, "square"),
     # Something arriving where nothing was: a boss's summons clawing out of the ground.
     "summon": ([(120, 0.08), (180, 0.07), (260, 0.07), (150, 0.12)], 0.30, "square"),
+    # The wet burst of a body opening up. Noise rather than a tone: a kill is the one sound
+    # in the game that must not be musical.
+    "gore": ([(220, 0.05), (130, 0.08), (70, 0.14)], 0.45, "noise"),
+    # A gate beaten off its hinges: splintering over the thud of the leaf going down.
+    "gate_break": ([(400, 0.05), (260, 0.07), (150, 0.10), (70, 0.18)], 0.45, "noise"),
+    # And the same gate shutting itself: a long creak onto a heavy thump.
+    "gate_close": ([(150, 0.16), (120, 0.14), (90, 0.10), (60, 0.14)], 0.34, "square"),
+    # Sitting down at a fire: not a chime, just the wood settling under a pot.
+    "fire_crackle": ([(320, 0.04), (180, 0.06), (240, 0.05)], 0.20, "noise"),
 }
 
 
@@ -55,6 +67,10 @@ def _synth(segments, volume, wave) -> array.array:
             envelope = 1.0 - i / count  # fade each segment out to avoid clicks
             if wave == "square":
                 shape = 1.0 if math.sin(2 * math.pi * freq * t) >= 0 else -1.0
+            elif wave == "noise":
+                # Band-limited only by the tone it is mixed with: the frequency sets a dull
+                # body under the hiss, so a splatter still has a pitch to it.
+                shape = math.sin(2 * math.pi * freq * t) * 0.35 + random.uniform(-1.0, 1.0) * 0.65
             else:
                 shape = math.sin(2 * math.pi * freq * t)
             value = int(shape * envelope * volume * 32767)
@@ -77,7 +93,9 @@ class SoundManager:
             self.enabled = False
 
     def play(self, name: str):
-        if not self.enabled:
+        """Silent while the sound preference is off: muting is a preference, not a state of
+        the mixer, so it is read here rather than by every call site."""
+        if not self.enabled or not get_settings().get("sound"):
             return
         sound = self.sounds.get(name)
         if sound is not None:

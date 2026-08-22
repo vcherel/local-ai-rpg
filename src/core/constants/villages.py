@@ -290,7 +290,18 @@ class Villages:
     # Purely what is drawn, never what is collided against: a barred gate is a wall from the
     # frame it is barred (`Village.gate_closed`), the leaves only catch up with it.
     GATE_SWING_MS: float = 260.0
+    # Shutting is the slow half: a leaf that big is heaved open in a hurry and then leans
+    # itself closed, and the difference is most of what tells the player which of the two
+    # is happening. A creak while it travels, a thud when it lands.
+    GATE_CLOSE_MS: float = 1500.0
+    # How far off a gate can be heard shutting. Beyond it the leaves still move, quietly:
+    # a town two chunks away closing up is not an event in this street.
+    GATE_SOUND_RANGE: float = 1100.0
     GATE_SWING_DEG: float = 168.0
+    # A gate that has been beaten down does not simply vanish: the leaves are kicked outward
+    # off their hinges and go over, and only then is the gateway a hole.
+    GATE_BREAK_MS: float = 620.0
+    GATE_BREAK_DEG: float = 96.0
     # How long a gate a villager has let themselves through stands open before it shuts
     # again behind them (`Village.let_through`).
     GATE_HOLD_MS: float = 900.0

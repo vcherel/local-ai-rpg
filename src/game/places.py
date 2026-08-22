@@ -239,9 +239,39 @@ class WorldPlaces:
         player.heal(player.max_hp * c.PointsOfInterest.REST_HEAL_FRAC)
         player.clear_death_debuff()
         play_sound("rest")
-        get_particles().spawn_burst(poi.x + 40, poi.y + 12, (255, 170, 60), count=18, speed=3, life=700, size=4)
+        play_sound("fire_crackle")
+        self._rest_animation(poi.x + 40, poi.y + 12, player)
         if self.notify:
             self.notify("You rest at the fire. Some wounds close, nerves steadied.", (255, 190, 110))
+
+    @staticmethod
+    def _rest_animation(fire_x, fire_y, player: Player):
+        """The couple of seconds a rest takes to look like one: the fire flaring up, embers
+        going off it, and the warmth rising off the player who sat down at it.
+
+        Cosmetic from end to end. The health and the cleared weakness are already theirs
+        (the fire is what is on cooldown, not the player), so nothing here can be lost by
+        walking away in the middle of it, and nothing has to be checked for interruption."""
+        particles = get_particles()
+        duration = c.PointsOfInterest.REST_ANIM_MS
+        particles.emit_over(
+            fire_x, fire_y, duration, interval_ms=110, color=(255, 170, 60), count=5, speed=3, life=800, size=4
+        )
+        # The embers that get away from it, slower and darker, drifting up off the flame.
+        particles.emit_over(
+            fire_x, fire_y, duration, interval_ms=180, color=(200, 90, 40), count=2, speed=1.5, life=1400, size=3
+        )
+        particles.emit_over(
+            player.x,
+            player.y,
+            duration,
+            interval_ms=240,
+            color=(180, 230, 190),
+            count=2,
+            speed=1.2,
+            life=900,
+            size=3,
+        )
 
     # ------------------------------------------------------------------ under the well
 

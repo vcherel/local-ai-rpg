@@ -10,7 +10,7 @@ import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
 from core.damage_fx import get_damage_fx
-from core.decals import get_decals
+from core.decals import get_decals, style_for_weapon
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.particles import get_particles
@@ -42,6 +42,13 @@ class WorldCombat:
     class is world state and lookups.
     """
 
+    # The weapon family whose wound is being drawn right now, one of `core.decals`'
+    # splat styles. Set for the length of one blow by whatever started it (a swing, a
+    # shot) and read by the gore, so a spear leaves a spear's mess without every damage
+    # path having to carry an archetype down to the decal. Anything nobody set it for (a
+    # burn tick, a monster's bite, a fall) bleeds generically.
+    blow_style = "generic"
+
     def handle_attack(self, player: Player, quest_system: QuestSystem, ranged: bool = False):
         """The weapon's archetype (constants.weapon_archetype) drives reach, damage, cadence,
         crit, knockback and cleave, so different weapon families feel different to swing.
@@ -56,11 +63,14 @@ class WorldCombat:
             if weapon is None:
                 return
             player.end_spawn_grace()
-            self._fire_ranged(player, c.weapon_archetype(weapon.name))
+            arch = c.weapon_archetype(weapon.name)
+            self.blow_style = style_for_weapon(arch)
+            self._fire_ranged(player, arch)
             return
 
         weapon = player.active_melee_weapon()
         arch = c.weapon_archetype(weapon.name if weapon else None)
+        self.blow_style = style_for_weapon(arch)
 
         now = pygame.time.get_ticks()
         if now < player.attack_ready_ms:  # still on cooldown from the previous swing
@@ -91,6 +101,11 @@ class WorldCombat:
             get_swings().spawn_thrust(
                 origin[0], origin[1], player.orientation, reach + hit_radius, arch.min_hit_distance
             )
+            # And the player goes with it: a short shove down their own facing, spent through
+            # the same collision a step is, so a thrust into a wall stays where the wall is.
+            # A lunge is what the blind spot is paid for, and standing perfectly still while
+            # driving a spear out is the one part of it that never read.
+            apply_impulse(player, (math.sin(player.orientation), -math.cos(player.orientation)), c.Combat.THRUST_LUNGE)
         else:
             get_swings().spawn(origin[0], origin[1], player.orientation, reach, arch.arc_deg, arch.cleave)
 
@@ -404,18 +419,26 @@ class WorldCombat:
                 rect.centerx, rect.centery, c.Villages.GATE_LEAF, "crate_break", village.gate_key(index), angle
             )
             return
-        get_shake().add(c.Combat.CRATE_SHAKE)
-        play_sound("crate_break")
+        # A gate going over is not a crate breaking: it gets its own sound, its own kick and
+        # its own animation (`Village.gate_fall_progress`), so beating one down never reads
+        # as the same event as somebody opening it.
+        get_shake().add(c.Combat.CRATE_SHAKE * 2.0)
+        get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
+        play_sound("gate_break")
         get_particles().spawn_burst(
             rect.centerx,
             rect.centery,
             c.Villages.GATE_LEAF,
-            count=26,
-            speed=7,
-            life=560,
-            size=5,
+            count=44,
+            speed=9,
+            life=800,
+            size=6,
             gravity=0.5,
             shape="shard",
+        )
+        # The dust off a beam that size going down, hanging after the splinters have landed.
+        get_particles().spawn_burst(
+            rect.centerx, rect.centery, (120, 105, 88), count=20, speed=3, life=1100, size=9, gravity=0.03
         )
         if self.notify:
             self.notify("The gate gives way", c.Colors.WHITE)
@@ -1033,6 +1056,12 @@ class WorldCombat:
         play_sound("trap_snap")
         get_shake().add(c.Combat.CRATE_SHAKE)
         get_particles().spawn_burst(trap.x, trap.y, c.Traps.JAW_COLOR, count=14, speed=5, life=450, size=4)
+        # Teeth through a leg bleed like anything else does, and from where the leg is: a
+        # trap that took a third of the health bar with nothing on the grass to show for it
+        # was the one wound in the world that left no mark. Pierced, and thrown outward,
+        # since nobody swung this.
+        get_decals().splash(trap.x, trap.y, "pierce", direction=None, fatal=False)
+        get_particles().spawn_burst(trap.x, trap.y, (178, 26, 26), count=22, speed=6, life=620, size=5, gravity=0.35)
         damage = c.Traps.DAMAGE
         victim.root(c.Traps.HOLD_MS)
 
@@ -1076,38 +1105,23 @@ class WorldCombat:
             self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
         return False
 
-    @staticmethod
-    def _spill_blood(x, y, body_color, direction=None, boss: bool = False):
+    def _spill_blood(self, x, y, body_color, direction=None, boss: bool = False):
         """The gore of a kill: a pool where it dropped, a fan of droplets thrown along the
         killing blow, and a spray still in the air over both.
 
         `direction` is the blow's (dx, dy) unit vector, so the mess points away from the
         player instead of ringing the corpse. A kill with no direction (a burn tick, an
-        execute) bursts outward instead."""
-        decals = get_decals()
-        decals.spawn(x, y, radius=c.Decals.BOSS_KILL_RADIUS if boss else c.Decals.KILL_RADIUS)
-        decals.spawn_spray(
-            x,
-            y,
-            direction,
-            count=c.Decals.BOSS_SPRAY_COUNT if boss else c.Decals.KILL_SPRAY_COUNT,
-            distance=c.Decals.BOSS_SPRAY_DISTANCE if boss else c.Decals.KILL_SPRAY_DISTANCE,
-            radius=c.Decals.BOSS_SPRAY_RADIUS if boss else c.Decals.KILL_SPRAY_RADIUS,
-        )
-        # The long throws over the fan: a few streaks reaching well past the body, which is
-        # what makes a kill read from a distance rather than up close.
-        decals.spawn_arcs(
-            x,
-            y,
-            direction,
-            count=c.Decals.BOSS_ARCS if boss else c.Decals.KILL_ARCS,
-            length=c.Decals.BOSS_ARC_LENGTH if boss else c.Decals.ARC_LENGTH,
-        )
+        execute) bursts outward instead. What the mess is shaped like comes from the weapon
+        that made it (`blow_style`), so a spear kill and a hammer kill leave different
+        ground behind them."""
+        style = self.blow_style
+        get_decals().splash(x, y, style, direction, fatal=True, boss=boss)
+        play_sound("gore")
 
         blood = (178, 26, 26)
-        count = 52 if boss else 34
-        speed = 15 if boss else 12
-        size = 7 if boss else 6
+        count = 78 if boss else 52
+        speed = 17 if boss else 14
+        size = 8 if boss else 7
         if direction:
             get_particles().spawn_directional_burst(
                 x,
@@ -1117,19 +1131,20 @@ class WorldCombat:
                 color=blood,
                 count=count,
                 speed=speed,
-                life=700,
+                life=780,
                 size=size,
                 gravity=0.32,
             )
         else:
-            get_particles().spawn_burst(x, y, blood, count=count, speed=speed, life=700, size=size, gravity=0.32)
+            get_particles().spawn_burst(x, y, blood, count=count, speed=speed, life=780, size=size, gravity=0.32)
         # Chunks of the thing itself, so a slime still bleeds green over the red.
-        get_particles().spawn_burst(x, y, body_color, count=22 if boss else 16, speed=7, life=550, size=6, gravity=0.42)
+        get_particles().spawn_burst(x, y, body_color, count=30 if boss else 22, speed=8, life=600, size=7, gravity=0.42)
         # A slow, dark mist hanging where the body was, under the fast stuff: it lingers
         # after the droplets have landed, so the moment does not end on the same frame.
         get_particles().spawn_burst(
-            x, y, (96, 12, 12), count=18 if boss else 12, speed=2, life=1100, size=9 if boss else 7, gravity=0.02
+            x, y, (96, 12, 12), count=24 if boss else 16, speed=2, life=1200, size=10 if boss else 8, gravity=0.02
         )
+        get_shake().add(c.Combat.KILL_SHAKE_BONUS * (2.0 if boss else 1.0))
 
     def _kill_monster(
         self, monster, monster_list, player: Player, quest_system: QuestSystem, direction=None, by_player: bool = True
@@ -1384,18 +1399,16 @@ class WorldCombat:
         else:
             self.notify(f"{npc.name or 'The body'} drops a purse", c.Colors.WHITE)
 
-    @staticmethod
-    def _hit_feedback(x, y, crit: bool, direction=None):
+    def _hit_feedback(self, x, y, crit: bool, direction=None):
         """Sound + particle burst for a non-fatal hit; crits read brighter and louder.
         `direction` (attacker -> target unit vector), if given, sprays the particles as a
         cone away from the hit instead of a plain omnidirectional poof."""
         play_sound("crit" if crit else "hit")
         if crit:
             get_hitstop().trigger(c.Combat.HITSTOP_CRIT_MS)
-        get_decals().spawn(x, y, radius=c.Decals.HIT_RADIUS)
         # Even a hit that does not kill throws blood: a short fan along the blow, so a long
         # fight paints the ground it was fought over instead of leaving one dot per hit.
-        get_decals().spawn_spray(x, y, direction, count=6 if crit else 3, distance=(10.0, 52.0), radius=(2.0, 5.0))
+        get_decals().splash(x, y, self.blow_style, direction, fatal=False)
         color = (255, 240, 160) if crit else (255, 180, 180)
         count = 18 if crit else 10
         speed = 5 if crit else 4

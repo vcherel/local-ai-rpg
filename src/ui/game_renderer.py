@@ -301,8 +301,29 @@ class GameRenderer:
         pygame.draw.rect(self.screen, (24, 22, 20), (x - 2, y - 2, width + 4, height + 4), border_radius=3)
         pygame.draw.rect(self.screen, c.Traps.PLATE_COLOR, (x, y, width, height))
         pygame.draw.rect(self.screen, c.Traps.JAW_COLOR, (x, y, round(width * player.root_progress), height))
-        label = c.Fonts.small.render("Struggle!", True, c.Colors.WHITE)
+        label = c.Fonts.small.render("Caught!", True, c.Colors.WHITE)
         self.screen.blit(label, label.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
+        # What to actually do about it. A bar draining on its own says "wait"; the keys say
+        # the seconds are the player's to take back, which is the whole of how a trap works.
+        self._draw_struggle_keys(y + height + 8)
+
+    def _draw_struggle_keys(self, top: int):
+        """The keys to mash, drawn as chips under the struggle bar and pulsing so they read
+        as an instruction rather than as a readout."""
+        keys = ("W", "S", "Space")
+        pulse = 0.6 + 0.4 * math.sin(pygame.time.get_ticks() / 110.0)
+        chips = [c.Fonts.small.render(key, True, c.Colors.WHITE) for key in keys]
+        tail = c.Fonts.small.render("to break free", True, c.Colors.WHITE)
+        gap, pad = 5, 5
+        total = sum(chip.get_width() + pad * 2 for chip in chips) + gap * len(chips) + tail.get_width()
+        x = c.Screen.ORIGIN_X - total // 2
+        for chip in chips:
+            rect = pygame.Rect(x, top, chip.get_width() + pad * 2, chip.get_height() + 2)
+            pygame.draw.rect(self.screen, (40, 36, 32), rect, border_radius=3)
+            pygame.draw.rect(self.screen, tuple(round(v * pulse) for v in c.Traps.JAW_COLOR), rect, 1, border_radius=3)
+            self.screen.blit(chip, (rect.x + pad, rect.y + 1))
+            x = rect.right + gap
+        self.screen.blit(tail, (x, top + 1))
 
     def _draw_lift_bar(self, progress: float):
         """How far the beam across a barred gate has come up, over the player's head.

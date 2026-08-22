@@ -175,6 +175,9 @@ class WorldProjectiles:
                     continue
 
             by_player = proj.by_player and not proj.hostile
+            # Whatever this arrow opens up bleeds the way something struck from a distance
+            # does, not the way the last sword swing did.
+            self.blow_style = "shot"
             if self._projectile_hits_monster(proj, self.monsters, player, quest_system, by_player):
                 continue
             if self._projectile_hits_monster(proj, self.bosses, player, quest_system, by_player):

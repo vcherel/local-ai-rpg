@@ -46,6 +46,9 @@ class Combat:
     CRIT_MULT: float = 1.8
     # Extra screen shake added on top of a weapon's base shake when a hit crits.
     CRIT_SHAKE_BONUS: float = 6.0
+    # And on the blow that finishes something off, so a kill lands harder than the four
+    # hits that led to it.
+    KILL_SHAKE_BONUS: float = 7.0
     PLAYER_HURT_SHAKE: float = 5.0
     # Kick when a shop crate is smashed.
     CRATE_SHAKE: float = 5.0
@@ -108,7 +111,18 @@ class Combat:
     KNOCKBACK_DUST_MIN: float = 18.0
     KNOCKBACK_DUST_COLOR: tuple = (190, 180, 165)
     THRUST_TRAIL_COLOR: tuple = (215, 230, 245)
-    THRUST_TRAIL_WIDTH: int = 5
+    THRUST_TRAIL_WIDTH: int = 14
+    # A thrust is drawn as a lunge rather than a line: the head drives out to the end of the
+    # lane over the first part of its life, the shaft stretches behind it, and the whole
+    # thing outlives a sweep slightly, because reach is the spear's entire argument.
+    THRUST_MS: float = 260.0
+    THRUST_DRIVE_FRAC: float = 0.42
+    THRUST_HEAD: float = 34.0
+    THRUST_CORE_COLOR: tuple = (255, 255, 255)
+    THRUST_WIND_SPREAD: float = 13.0
+    THRUST_DUST: int = 9
+    # How far the player is carried forward by their own thrust.
+    THRUST_LUNGE: float = 18.0
 
 
 @dataclass(frozen=True)
@@ -164,11 +178,21 @@ class DamageFx:
 
 @dataclass(frozen=True)
 class ImpactFx:
-    """The ring an area effect draws as it goes out (core/impact_fx.py)."""
+    """The wave an area effect throws out, and the bolts naming what it caught
+    (core/impact_fx.py)."""
 
     RING_MS: float = 320.0
-    RING_WIDTH: int = 6
-    # The bolts naming what the pulse caught only last the first part of the ring's life.
+    # The wave: particles scattered round the source out to the radius the damage covered,
+    # rather than one drawn circle, which reads as a HUD element over the fight.
+    WAVE_PER_PIXELS: float = 7.0
+    WAVE_MIN: int = 8
+    # How far in from the edge the scatter starts, as a fraction of the radius.
+    WAVE_INNER: float = 0.55
+    WAVE_SPEED: float = 4.5
+    WAVE_LIFE_MS: int = 420
+    WAVE_SIZE: int = 5
+    CORE_PARTICLES: int = 8
+    # The bolts naming what the pulse caught only last the first part of its life.
     BOLT_LIFE_FRAC: float = 0.55
     BOLT_SEGMENTS: int = 4
     BOLT_JITTER: float = 9.0
@@ -411,23 +435,22 @@ class Decals:
     LIFE_MS: float = 18_000.0
     # Oldest decal is dropped once the list grows past this, so a long fight
     # never leaves an unbounded number of splats to draw.
-    MAX_COUNT: int = 520
+    MAX_COUNT: int = 600
 
-    HIT_RADIUS: int = 9
-    KILL_RADIUS: int = 26
-    BOSS_KILL_RADIUS: int = 38
-    PLAYER_HURT_RADIUS: int = 11
+    HIT_RADIUS: int = 10
+    KILL_RADIUS: int = 28
+    # How much harder a kill splashes than the hit that came before it, and a boss than
+    # anything else: the same recipe, laid on until it reads from across the clearing.
+    KILL_SCALE: float = 1.9
+    BOSS_SCALE: float = 3.0
 
-    # A kill throws a fan of droplets out along the killing blow rather than leaving one
-    # tidy circle: the pool marks where it died, the spray says how it went.
+    # A wound throws a fan of droplets out along the blow rather than leaving one tidy
+    # circle: the pool marks where it was struck, the spray says how it went. Each weapon
+    # family scales these by its own row in `core.decals._SPLAT_STYLES`.
     SPRAY_SPREAD_DEG: float = 110.0
-    KILL_SPRAY_COUNT: int = 18
-    KILL_SPRAY_DISTANCE: tuple = (16.0, 105.0)
-    KILL_SPRAY_RADIUS: tuple = (3.0, 9.0)
-    # A boss bleeds across half the arena.
-    BOSS_SPRAY_COUNT: int = 36
-    BOSS_SPRAY_DISTANCE: tuple = (25.0, 210.0)
-    BOSS_SPRAY_RADIUS: tuple = (5.0, 15.0)
+    SPRAY_COUNT: int = 12
+    SPRAY_DISTANCE: tuple = (14.0, 95.0)
+    SPRAY_RADIUS: tuple = (3.0, 9.0)
     # Deep arterial red, darker than the bright particle spray so the two read as
     # "still in the air" versus "already on the ground".
     BLOOD_COLOR: tuple = (128, 16, 16)
@@ -438,11 +461,26 @@ class Decals:
     # How much a droplet is pulled along its own flight at the far end of a spray: the
     # difference between a dot and a smear pointing where the blow went.
     SMEAR_STRETCH: float = 2.2
+    # How far a splat's outline wanders off its own radius. Blood does not land in circles,
+    # and this is the whole difference between a splat and a sticker.
+    RAGGED: float = 0.42
     # The long arterial throws a kill adds on top of the fan.
     ARC_SPREAD_DEG: float = 70.0
     KILL_ARCS: int = 4
     BOSS_ARCS: int = 7
     ARC_LENGTH: tuple = (90.0, 250.0)
     BOSS_ARC_LENGTH: tuple = (110.0, 320.0)
-    # The share of a splat's life it still looks wet for.
-    SHEEN_FRACTION: float = 0.18
+
+    # Blood is something to stand in: a splat this size or bigger marks the ground it
+    # landed on as wet for a few seconds, and anything crossing that ground picks it up.
+    WET_MS: float = 7000.0
+    WET_MIN_RADIUS: float = 7.0
+    WET_CELL: int = 26
+    WET_MAX_CELLS: int = 400
+    # One print per stride, alternating sides, the sole running dry over the next few
+    # steps: a trail that says which way something walked away, not a permanent stain.
+    FOOT_STRIDE: float = 30.0
+    FOOT_OFFSET: float = 7.0
+    FOOT_RADIUS: float = 6.5
+    FOOT_LIFE_MS: float = 7000.0
+    FOOT_FADE_PER_STEP: float = 0.14
