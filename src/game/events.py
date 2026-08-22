@@ -151,16 +151,19 @@ class EventSystem:
     def _road_point_near(self, player: Player, min_dist, max_dist):
         """Somewhere on a road within the band around the player, or None if no road runs
         near enough. A trader met on the track reads as a traveller; the same man standing
-        in the middle of a field reads as a spawn."""
+        in the middle of a field reads as a spawn.
+
+        The band starts beyond the corner of the screen, so the pair are stood up out of
+        sight and walk into view rather than appearing in front of the player."""
         size = c.World.CHUNK_SIZE
         cx, cy = int(player.x // size), int(player.y // size)
         reach = int(max_dist // size) + 1
         points = []
         for dx in range(-reach, reach + 1):
             for dy in range(-reach, reach + 1):
-                for x, y, _width, _ in road_points_for_chunk(cx + dx, cy + dy):
-                    if min_dist <= math.hypot(x - player.x, y - player.y) <= max_dist:
-                        points.append((x, y))
+                for blob in road_points_for_chunk(cx + dx, cy + dy):
+                    if min_dist <= math.hypot(blob.x - player.x, blob.y - player.y) <= max_dist:
+                        points.append((blob.x, blob.y))
         random.shuffle(points)
         for x, y in points:
             if not self.world.blocked(x, y, c.Entities.NPC_SIZE / 2):

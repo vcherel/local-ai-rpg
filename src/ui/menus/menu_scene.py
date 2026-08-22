@@ -11,7 +11,7 @@ from core.daynight import DayNightCycle
 from game.entities.critter import Critter
 from game.entities.npcs import NPC
 from game.entities.terrain import generate_chunk_scenery
-from game.entities.village import generate_village
+from game.entities.village import clear_registered_sites, generate_village, register_settlement
 
 
 class _Nobody:
@@ -60,6 +60,13 @@ class MenuScene:
         size = c.World.CHUNK_SIZE
         self.center = ((chunk[0] + 0.5) * size, (chunk[1] + 0.5) * size)
         self.village, self.buildings = generate_village(self.center[0], self.center[1], chunk)
+        # The title screen's village stands in the middle of its chunk rather than wherever
+        # that chunk's region would have put one, so the roads and the river laid out from
+        # the sites know nothing about it: without this one is drawn straight through the
+        # houses. Registering it is also what `World` does with the starting town, and
+        # `World` clears the registry when a game begins, so nothing here leaks into it.
+        clear_registered_sites()
+        register_settlement(chunk, self.village.x, self.village.y, self.village.grounds_radius)
 
         self.scenery = []
         for dx in (-1, 0, 1):
@@ -91,14 +98,20 @@ class MenuScene:
         return npcs
 
     def _dogs(self) -> list:
+        """The village's dogs, in the street rather than on the roofs: a spot inside a
+        footprint is rolled again, the same rule `World._ensure_village_dogs` follows."""
         dogs = []
         kind = c.CRITTER_KINDS_BY_NAME["dog"]
         for _ in range(random.randint(*c.Wildlife.VILLAGE_DOGS)):
-            angle = random.uniform(0, 2 * math.pi)
-            distance = random.uniform(self.village.radius * 0.2, self.village.radius * 0.5)
-            x = self.village.x + math.cos(angle) * distance
-            y = self.village.y + math.sin(angle) * distance
-            dogs.append(Critter(x, y, kind, home=(x, y)))
+            for _attempt in range(10):
+                angle = random.uniform(0, 2 * math.pi)
+                distance = random.uniform(self.village.radius * 0.2, self.village.radius * 0.5)
+                x = self.village.x + math.cos(angle) * distance
+                y = self.village.y + math.sin(angle) * distance
+                if self._blocked(x, y, kind.size / 2) or any(b.covers(x, y, kind.size / 2) for b in self.buildings):
+                    continue
+                dogs.append(Critter(x, y, kind, home=(x, y)))
+                break
         return dogs
 
     def _blocked(self, x, y, radius) -> bool:

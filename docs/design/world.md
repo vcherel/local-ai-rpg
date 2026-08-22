@@ -69,7 +69,10 @@ reaches walking pace, so a river stays a real answer to being chased and a bridg
 the fast way over for the whole game. That is why navigation needed no changes: nothing
 has to route around water, it crosses slowly. Rivers are generated like roads (a pure
 function of the lane index) and bend around settlements rather than being cut off at
-them; landmarks and cover keep out of the water instead.
+them, by that settlement's own grounds plus a margin rather than by one number for every
+village there is; landmarks and cover keep out of the water instead. The starting town is
+chosen off the water as well as bowed around, since the course of a river can be asked
+about before the town exists.
 
 ## The underground is a far corner of this world
 

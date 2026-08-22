@@ -270,8 +270,19 @@ class Scenery:
         dx, dy = math.cos(self.angle) * half, math.sin(self.angle) * half
         start = (round(center[0] - dx), round(center[1] - dy))
         end = (round(center[0] + dx), round(center[1] + dy))
-        pygame.draw.line(screen, c.Scenery.ROAD_COLOR, start, end, max(2, round(self.size * 2)))
-        pygame.draw.circle(screen, c.Scenery.ROAD_COLOR, center, round(self.size))
+
+        def stretch(color, radius):
+            pygame.draw.line(screen, color, start, end, max(2, round(radius * 2)))
+            pygame.draw.circle(screen, color, center, round(radius))
+
+        # A road between two settlements is the one track meant to be seen from a distance
+        # and followed, so it is laid wider, in its own colour, on a trodden verge; a
+        # footpath out to a landmark is a line worn in the grass and nothing more.
+        if self.kind == "road":
+            stretch(c.Scenery.ROAD_VERGE_COLOR, self.size + c.Scenery.ROAD_VERGE)
+            stretch(c.Scenery.ROAD_MAIN_COLOR, self.size)
+            return
+        stretch(c.Scenery.ROAD_COLOR, self.size)
 
     def _draw_patch(self, screen, center):
         cx, cy = center
@@ -389,6 +400,7 @@ class Scenery:
 # blades, a tree and a pine the same canopy: only the shape rolled for them differs.
 _DRAWERS = {
     "path": Scenery._draw_path,
+    "road": Scenery._draw_path,
     "patch": Scenery._draw_patch,
     "pond": Scenery._draw_pond,
     "lake": Scenery._draw_lake,

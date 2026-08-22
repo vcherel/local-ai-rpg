@@ -131,7 +131,9 @@ class GameRenderer:
         for village in world.villages:
             # A walled town is drawn from a long way outside its plaza: the palisade stands
             # at the edge of the settlement, not at the middle of it.
-            reach = village.grounds_radius + 40 if village.defended else c.Villages.PLAZA_RADIUS + 40
+            # Its grounds either way: the streets between the houses belong to the village
+            # and reach every door, so a hamlet culled on its plaza alone lost its lanes.
+            reach = village.grounds_radius + 40
             if self._on_screen(camera, village.x, village.y, margin=reach):
                 village.draw(self.screen, camera)
 

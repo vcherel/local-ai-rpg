@@ -94,6 +94,17 @@ class WorldStreaming:
         self.start_shop_generation()
         self._start_village_naming()
 
+    def _plan_streets(self):
+        """Wear the lanes between the houses of every settlement the world holds.
+
+        A village's streets are worked out from where its buildings ended up, so they come
+        back with the buildings rather than being saved; a village generated during play
+        already has them (`village.generate_village`), and this is for the ones loaded out
+        of a save."""
+        for village in self.villages:
+            if not village.streets:
+                village.plan_streets([b for b in self.buildings if village.contains_point(b.x, b.y)])
+
     def _clear_scenery_for(self, village: Village, buildings: list[Building]):
         """Cut back the wilderness a new settlement has just been built in.
 
