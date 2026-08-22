@@ -25,17 +25,18 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 
 ### game
 - `src/game/game.py`: `Game`, the main loop, input handling and state orchestration; `_handle_key` is the whole key map as one table, `_handle_left_click` dispatches HUD clicks by action, `current_interaction`/`_interact` are the one prompt and the one E, `_sweep_loot` the loot magnet, `save_data` the one path to disk, `_respawn` and `_sleep_until_dawn` the two things that move the player without walking
-- `src/game/world.py`: `World`, the state everything reads (entity lists, buildings, shops, saving) plus the per-frame `update`; four jobs are mixed in from `combat.py`, `projectiles.py`, `streaming.py` and `places.py`. Also here: chunk-bucketed building/wall lookup, chase navigation (`chase_waypoint`, `_detour_corner` and the corner it commits to), who may let themselves through a shut door or a barred gate, `assign_surround_slots`, spawn caps and safe placement, terrain speed and line of sight, village defence orders, impulses and `unstick`
+- `src/game/world.py`: `World`, the state everything reads (entity lists, buildings, shops, saving) plus the per-frame `update`; five jobs are mixed in from `combat.py`, `projectiles.py`, `streaming.py`, `places.py` and `navigation.py`. Also here: chunk-bucketed building lookup, `blocked` and what is solid where, spawn caps and safe placement, terrain speed, village defence orders, impulses and `unstick`
 - `src/game/combat.py`: `WorldCombat`, every blow and its aftermath: `handle_attack`, the target-group table, cleave falloff, thrust lanes, knockback, crits, gore, weapon affixes and elements, breakables/windows/gates/props, bear traps, and `explode`
 - `src/game/projectiles.py`: `WorldProjectiles`, everything in flight: `_fire_ranged` (mana, ammo, style), monster shots, and what each projectile strikes
 - `src/game/places.py`: `WorldPlaces`, what the player does at a place once they have walked to it: camps, campfire rest, shrines, wells and caves, tunnels, theft and witnesses, the warning ladder (`strike_village`, `shout_warning`) and village anger (`provoke_village`, `hold_grudge`, `pacify_village`), directions and rumours, explored cells, `pass_time`
 - `src/game/streaming.py`: `WorldStreaming`, how the map appears around the player: chunk load/unload, scenery reindexing, village creation, `prepare`, and the background naming/lore threads
+- `src/game/navigation.py`: `WorldNavigation`, how anything gets from where it is to where it wants to be: `line_of_sight`, `walls_near`, `chase_waypoint`, `_detour_corner` and the corner it commits to, `assign_surround_slots`, and who may let themselves through a shut door or a barred gate (`open_door_for`, `pass_gate_for`, `clear_gateways`); `Point` is the bare coordinate a chase can be aimed at
 - `src/game/events.py`: `EventSystem`, random world events (travelling merchant, treasure, blood night, rumours, village crisis); `blood_intensity` is the one number the blood night is read through
 - `src/game/quest.py`: `Quest` dataclass (fetch/kill_mob/loot_mob/recover_stolen/slay_boss/clear_camp/steal/deliver) and its (de)serialisation; `COUNTED_QUEST_TYPES` is the one list of counter-finished types
 - `src/game/loot.py`: every loot roll (lootbox, crate, POI cache, villager purse, quest reward, shop stock), all drawing from one `_roll_loot_item` table and taking the player's `loot_luck`
 
 ### game/entities
-- `src/game/entities/entities.py`: `Entity` base (hp, damage, attack anim, `root`, `chill`), impulses and stagger, `push_apart`, `Gait` (the one walk cycle), `draw_human`
+- `src/game/entities/entities.py`: `Entity` base (hp, damage, attack anim, `root`, `chill`), impulses and stagger, `push_apart`, `step_along`/`step_towards` (the one wall slide everything walks by), `Gait` (the one walk cycle), `draw_human`
 - `src/game/entities/gear.py`: drawing the gear a character visibly wears: weapon per hand by archetype, shield, armour ring, accessory gem
 - `src/game/entities/player.py`: `Player`, movement, inventory and stacking, equip slots (two melee plus ranged, shield, armor, accessory, ammo), the weapon bar and potion quickbar, potions and buffs, mana, shield block, affix effects, death weakness, spawn grace, `gear()`
 - `src/game/entities/npcs.py`: `NPC`, villagers: timed hostility and grudges, the shout that comes before them (`warn`), hunting/routing/stone throwing, `aim_at` (the one place facing and firing are decided together), the vision cone, militia and guard roles, weapons rolled off the home seed by settlement tier, affinity, shop stock and restock clock, wandering
@@ -44,8 +45,10 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/game/entities/monster_art.py`: the vector art per silhouette (`humanoid`, `goblin`, `hulk`, `skeleton`, `wraith`, `blob`, `beast`, `robed`, `creeper`) behind `draw_monster`; shadow, breath and eyes are shared by all of them
 - `src/game/entities/boss.py`: `Boss(Monster)`, a named LLM-titled boss with an enrage phase and telegraphed abilities (slam, bolt volley, summons marked on the ground before they arrive), knockback immune
 - `src/game/entities/village.py`: `Village`, `village_site`, `generate_village`, `generate_starting_world`; grid layout round a plaza, `defences()` (wall, gates, towers, outworks), the gates' bar, swing and `gate_between`, `tier`, `grounds_radius`
-- `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L), facade offsets, interior layout and furniture, front door, windows, roof style; the footprint, floors and wall shell are worked out once and kept (`reset_geometry` drops them); `set_active_buildings`
-- `src/game/entities/scenery.py`: the wilderness: per-chunk biome clumps, trees/boulders/ponds/grass, roads and footpaths, rivers and bridges, plus the collision and water indexes
+- `src/game/entities/buildings.py`: `Building`, one building's footprint (one rect or an L), facade offsets, interior layout and furniture, front door, windows; the footprint, floors and wall shell are worked out once and kept (`reset_geometry` drops them); `set_active_buildings`
+- `src/game/entities/building_art.py`: `BuildingArt`, mixed into `Building`: everything a building's look is made of, from the roof and its texture to the awning, the ruin, the open door leaf, the broken pane and the furniture in the cutaway; `style()` rolls the whole look off the building's id
+- `src/game/entities/scenery.py`: `Scenery`, one piece of wilderness (tree, boulder, pond, road, bridge, grass): what it covers, what it blocks, what shades it casts, and how it draws
+- `src/game/entities/terrain.py`: where all of it stands: per-chunk biome clumps, roads and footpaths between settlements and landmarks, rivers and their crossings, `generate_chunk_scenery`, and the collision and water indexes
 - `src/game/entities/traps.py`: `BearTrap`, `traps_for_chunk`, the hunters' traps laid in a band around settlements; persisted only as which ones have shut
 - `src/game/entities/tunnel.py`: `Tunnel`, `has_tunnel`, the rooms dug far out in world space, reached by a village well or a wilderness cave; floor-based collision, the exit shaft, and the player's own light
 - `src/game/entities/breakables.py`: `Breakable`, `generate_breakables`, outdoor props near buildings (barrel, powder keg, planted decoration), each with persisted hp
@@ -65,7 +68,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/llm/death_taunts.py`: `DeathTauntGenerator`, the death-screen line, written ahead of need and buffered like names
 
 ### core
-- `src/core/constants/`: all game constants in one flat namespace (`import core.constants as c`), split into `ui.py`, `player.py`, `combat.py`, `bestiary.py`, `world.py` and `items.py`, so a constant is filed by what it tunes. `Fonts` is the one name rebound at runtime by `__main__`
+- `src/core/constants/`: all game constants in one flat namespace (`import core.constants as c`), split into `ui.py`, `player.py`, `combat.py`, `bestiary.py`, `world.py`, `villages.py` and `items.py`, so a constant is filed by what it tunes. `Fonts` is the one name rebound at runtime by `__main__`
 - `src/core/save.py`: `SaveSystem`, atomic thread-safe JSON saving; the key list at the top is the record of what the save owns
 - `src/core/settings.py`: `Settings`, the preferences that outlive a playthrough (music on/off), written to `saves/settings.json`
 - `src/core/camera.py`: `Camera` world-to-screen translation plus `ScreenShake`/`get_shake`
@@ -115,7 +118,7 @@ The short version. `docs/design/` explains each of these.
 - `src/` is the package root; all imports are relative to it (e.g. `import core.constants as c`).
 - No tests exist; skip the pre-push hook accordingly.
 - Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it. To self-check a rendering change, a throwaway script that renders to an offscreen `Surface` is fine, with `SDL_VIDEODRIVER=dummy` set before `pygame.init()`.
-- `World` is one class split across four files by mixin (`world.py` state, `combat.py` blows, `streaming.py` the map, `places.py` what happens at a place). They share the same entity lists; pick the file by what you are changing, not by defaulting to `world.py`.
+- `World` is one class split across five files by mixin (`world.py` state, `combat.py` blows, `streaming.py` the map, `places.py` what happens at a place, `navigation.py` getting there). They share the same entity lists; pick the file by what you are changing, not by defaulting to `world.py`.
 - The map is endless and deterministic, what stands on it is generated on demand and kept. Anything regenerated from a chunk seed must stay a pure function of `(cx, cy)`, with player changes in `World.poi_state`. Villages are the exception and go through `World._ensure_village`.
 - Difficulty is distance from the world centre, pulled by three levers (which kinds, how many, what has a name). Nothing scales a monster's own stat block.
 - The spawn point is protected three ways at once: nothing hostile spawned near it, the player placed by `safe_spot_near`, and `Death.SPAWN_GRACE_S` of grace.

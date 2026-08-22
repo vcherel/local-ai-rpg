@@ -8,7 +8,7 @@ import core.constants as c
 from core.audio import play_sound
 from game.entities.breakables import generate_breakables
 from game.entities.poi import pois_for_chunk
-from game.entities.scenery import blocking_index, generate_chunk_scenery, water_index
+from game.entities.terrain import blocking_index, generate_chunk_scenery, water_index
 from game.entities.traps import traps_for_chunk
 from game.entities.village import generate_village, village_site
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 import threading
-import time
 from typing import TYPE_CHECKING
 
 import core.constants as c
@@ -47,13 +46,9 @@ class DeathTauntGenerator:
         threading.Thread(target=self._generate_background, daemon=True).start()
 
     def _generate_background(self):
-        context = None
-        while context is None:
-            if self.closed:
-                return
-            context = self.save_system.load("context", None)
-            if context is None:
-                time.sleep(0.1)  # avoid busy waiting
+        context = self.save_system.await_context(lambda: self.closed)
+        if context is None:
+            return
 
         with self.cond:
             already = list(self.ready_taunts)
@@ -68,10 +63,9 @@ class DeathTauntGenerator:
 
         taunt = generate_response_queued("Write one death screen taunt.", system_prompt, "Death taunt").strip()
         taunt = taunt.strip('"').strip()
-        if taunt:
-            with self.cond:
-                self.ready_taunts.append(taunt)
         with self.cond:
+            if taunt:
+                self.ready_taunts.append(taunt)
             self.is_generating = False
         self.persist()
         if not taunt:

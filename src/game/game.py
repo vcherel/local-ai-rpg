@@ -140,6 +140,23 @@ class Game:
         # and drawn as the single on-screen prompt.
         self.interaction: Interaction | None = None
 
+        # The whole key map as one table, built once now that every menu it points into
+        # exists. `HelpMenu.CONTROLS` is what tells the player about it.
+        self.key_actions = {
+            pygame.K_e: self._interact,
+            pygame.K_b: self._trade_nearby,
+            pygame.K_f: self._equip_pending_upgrade,
+            pygame.K_x: self._swap_melee,
+            pygame.K_i: self.inventory_menu.toggle,
+            pygame.K_j: self.quest_menu.toggle,
+            pygame.K_c: self.stats_menu.toggle,
+            pygame.K_l: self._show_lore,
+            pygame.K_h: self.help_menu.toggle,
+            pygame.K_m: self.game_renderer.minimap.toggle,
+            pygame.K_p: self.pause_menu.toggle,
+            pygame.K_ESCAPE: self.pause_menu.toggle,
+        }
+
         self._restore_player_state()
 
     def _restore_player_state(self):
@@ -235,8 +252,7 @@ class Game:
     def _handle_key(self, event):
         """One in-world key press. The two ranges (the weapon bar's number keys, the
         potion quickbar's letters) are checked first because they read the key rather than
-        name it; everything else is a plain key to a method, and `HelpMenu.CONTROLS` is
-        what tells the player about it."""
+        name it; everything else is a plain key looked up in `self.key_actions`."""
         # A movement key pressed while the jaws are on the player is a struggle rather than
         # a step: the trap takes the seconds back one press at a time.
         if event.key in _STRUGGLE_KEYS and self._struggle():
@@ -248,20 +264,7 @@ class Game:
             self._drink_quick_potion(c.Potions.QUICK_KEYS.index(event.unicode.lower()))
             return
 
-        action = {
-            pygame.K_e: self._interact,
-            pygame.K_b: self._trade_nearby,
-            pygame.K_f: self._equip_pending_upgrade,
-            pygame.K_x: self._swap_melee,
-            pygame.K_i: self.inventory_menu.toggle,
-            pygame.K_j: self.quest_menu.toggle,
-            pygame.K_c: self.stats_menu.toggle,
-            pygame.K_l: self._show_lore,
-            pygame.K_h: self.help_menu.toggle,
-            pygame.K_m: self.game_renderer.minimap.toggle,
-            pygame.K_p: self.pause_menu.toggle,
-            pygame.K_ESCAPE: self.pause_menu.toggle,
-        }.get(event.key)
+        action = self.key_actions.get(event.key)
         if action is not None:
             action()
 

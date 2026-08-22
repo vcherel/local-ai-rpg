@@ -9,7 +9,7 @@ import pygame
 
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
-from game.entities.scenery import river_points_for_chunk
+from game.entities.terrain import river_points_for_chunk
 from game.entities.village import site_grounds_radius, village_site
 
 if TYPE_CHECKING:

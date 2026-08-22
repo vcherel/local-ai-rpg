@@ -15,7 +15,7 @@ from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_vignette
 from core.text_fx import draw_outlined_text
-from game.entities.entities import Entity
+from game.entities.entities import Entity, step_along
 from game.entities.items import (
     POTION_EFFECT_LABELS,
     potion_duration,
@@ -249,16 +249,7 @@ class Player(Entity):
 
             speed = actual_speed if forward else -actual_speed / 1.5
             move_factor = dt * c.TARGET_FPS / 1000.0
-            step_x = dx * speed * move_factor
-            step_y = dy * speed * move_factor
-            # Move one axis at a time so a wall on one axis lets the player slide along it.
-            radius = c.Player.SIZE / 2
-            if blocked is not None and blocked(self.x + step_x, self.y, radius):
-                step_x = 0
-            self.x += step_x
-            if blocked is not None and blocked(self.x, self.y + step_y, radius):
-                step_y = 0
-            self.y += step_y
+            step_along(self, dx * speed * move_factor, dy * speed * move_factor, blocked, c.Player.SIZE / 2)
 
             # Running is what trains speed; plain walking does not. Swimming is trained by
             # the only thing anyone ever learns it from: being in the water.
@@ -1086,8 +1077,6 @@ class Player(Entity):
         pygame.draw.circle(halo, (*c.Colors.WHITE, alpha), (radius + 2, radius + 2), radius, 3)
         screen.blit(halo, halo.get_rect(center=(c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y)))
 
-    BAR_WIDTH = 800
-
     def draw(self, screen):
         self._draw_spawn_grace(screen)
         super().draw(
@@ -1117,9 +1106,9 @@ class Player(Entity):
         """Where the bar sits, so the mana bar and the chips under it have one thing to hang
         from instead of each recomputing the same geometry."""
         return pygame.Rect(
-            c.Screen.ORIGIN_X - self.BAR_WIDTH // 2,
+            c.Screen.ORIGIN_X - c.Player.HEALTH_BAR_WIDTH // 2,
             c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + c.Player.HEALTH_BAR_OFFSET,
-            self.BAR_WIDTH,
+            c.Player.HEALTH_BAR_WIDTH,
             c.Player.HEALTH_BAR_HEIGHT,
         )
 

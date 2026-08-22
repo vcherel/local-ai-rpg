@@ -117,11 +117,8 @@ class GameRenderer:
         for x, y, kind in world.floor_details:
             if not self._on_screen(camera, x, y, margin=5):
                 continue
-            screen_x, screen_y = camera.world_to_screen(x, y)
-            if kind == "stone":
-                pygame.draw.circle(self.screen, (100, 100, 100), (screen_x, screen_y), 3)
-            else:
-                pygame.draw.circle(self.screen, (255, 0, 0), (screen_x, screen_y), 2)
+            color, radius = c.World.FLOOR_DETAILS[kind]
+            pygame.draw.circle(self.screen, color, camera.world_to_screen(x, y), radius)
 
         # Roads, ponds, grass and flowers: the ground itself, so they go under everything
         # standing on it (the props they came with are drawn further down, with the barrels).

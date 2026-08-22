@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import time
 
 
 class SaveSystem:
@@ -77,6 +78,23 @@ class SaveSystem:
 
     def load(self, key, default=None):
         return self.data.get(key, default)
+
+    def await_context(self, abandoned) -> str | None:
+        """Block until the world context has been written, then return it.
+
+        The context is generated once at startup on its own thread, and the background
+        writers that need it (NPC names, death taunts) are started before it lands. They
+        all wait here rather than each keeping their own poll loop. `abandoned` is asked
+        between polls: a session that has been closed gives up and gets None back, so a
+        thread still waiting when the player quits does not write into the next game.
+        """
+        while True:
+            if abandoned():
+                return None
+            context = self.load("context", None)
+            if context is not None:
+                return context
+            time.sleep(0.1)
 
     def save_all(self):
         with self._write_lock:

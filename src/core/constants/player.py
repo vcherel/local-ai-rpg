@@ -24,6 +24,7 @@ class Player:
     # copies of the same number.
     HEALTH_BAR_OFFSET: int = 330
     HEALTH_BAR_HEIGHT: int = 30
+    HEALTH_BAR_WIDTH: int = 800
 
     INTERACTION_DISTANCE: int = 30
     # Loot is not picked up by a key at all: anything lying within MAGNET_RADIUS flies to

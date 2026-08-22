@@ -10,7 +10,7 @@ import pygame
 import core.constants as c
 from core.text_fx import draw_outlined_text
 from core.utils import frames, random_color
-from game.entities.entities import Entity, push_apart
+from game.entities.entities import Entity, push_apart, step_towards
 from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 from game.entities.wander import Wander
 from game.quest import Quest
@@ -423,13 +423,7 @@ class NPC(Entity):
             return angle
         radius = c.Entities.NPC_SIZE / 2
         speed = c.Entities.NPC_HOSTILE_SPEED * speed_mult * self.chill_mult * frames(dt)
-        step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
-        if blocked is not None and blocked(self.x + step_x, self.y, radius):
-            step_x = 0
-        self.x += step_x
-        if blocked is not None and blocked(self.x, self.y + step_y, radius):
-            step_y = 0
-        self.y += step_y
+        step_towards(self, angle, speed, blocked, radius)
         return angle
 
     def _run_to(self, refuge, dt, blocked=None):
@@ -537,9 +531,7 @@ class NPC(Entity):
             self.orientation,
             attack_progress=self.attack_progress,
             attack_hand=self.attack_hand,
-            bar_width=60 if health_bar else 0,
-            bar_height=8 if health_bar else 0,
-            health_bar_offset=10,
+            health_bar=health_bar,
             gear=self.gear(),
         )
 
