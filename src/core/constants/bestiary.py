@@ -10,6 +10,14 @@ class Entities:
     MONSTER_SPEED_SCALE: float = 0.8
     NPC_SIZE: int = 30
     ITEM_SIZE: int = 25
+    # The health bar floating under anything that can be hurt. One geometry for the whole
+    # bestiary and every villager: a bar that changed size by kind would read as a status
+    # of its own rather than as the same measure taken of a different body. The player's
+    # own bar is HUD and sized separately (`Player.HEALTH_BAR_WIDTH`).
+    HEALTH_BAR_WIDTH: int = 60
+    HEALTH_BAR_HEIGHT: int = 8
+    HEALTH_BAR_OFFSET: int = 10
+    HEALTH_BAR_BORDER: int = 2
     # NPCs wander around their spawn point: walk to a random spot within
     # NPC_WANDER_RADIUS, then idle for a random duration before moving again.
     NPC_WANDER_SPEED: float = 1.5

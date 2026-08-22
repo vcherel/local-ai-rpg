@@ -207,28 +207,60 @@ class Entity:
         angle=0.0,
         attack_progress=0.0,
         attack_hand=None,
-        bar_width=60,
-        bar_height=8,
-        health_bar_offset=10,
-        bar_color=None,
-        bar_border_width=2,
         gear=None,
         health_bar=True,
     ):
         """`health_bar` off leaves the bar to the caller, which is how the player's own bar
-        is kept out of this pass and drawn over the canopies instead."""
+        is kept out of this pass and drawn over the canopies instead, and how the title
+        screen's village shows a street of people with no HUD floating under them."""
         walk = self.gait.step(self.x, self.y)
         draw_human(screen, x, y, size, self.flash_color(color), angle, attack_progress, attack_hand, gear, walk)
 
         if health_bar:
-            bar_x = x - bar_width // 2
-            bar_y = y + size // 2 + health_bar_offset
-            self.draw_health_bar(screen, bar_x, bar_y, bar_width, bar_height, bar_color or color, bar_border_width)
+            self.draw_health_bar(
+                screen,
+                x - c.Entities.HEALTH_BAR_WIDTH // 2,
+                y + size // 2 + c.Entities.HEALTH_BAR_OFFSET,
+                c.Entities.HEALTH_BAR_WIDTH,
+                c.Entities.HEALTH_BAR_HEIGHT,
+                color,
+                c.Entities.HEALTH_BAR_BORDER,
+            )
             self.draw_status_bubbles(screen, x, y, size)
 
 
 # How far a shove is allowed to carry a body between two collision tests.
 KNOCKBACK_STEP = 8.0
+
+
+def step_along(body, step_x: float, step_y: float, blocked, radius: float) -> tuple[float, float]:
+    """Move `body` by (step_x, step_y), one axis at a time. Returns the step actually taken.
+
+    Testing the axes separately is what lets a wall on one of them stop that axis and leave
+    the other running, so a body walking into a house slides along its front instead of
+    grinding to a halt against it. The one definition of that, shared by everything that
+    walks: the player, villagers, monsters and animals all move by it, so a change to how a
+    wall is met is a change in one place.
+
+    What comes back is what was left of the step after the walls took their share, which is
+    how a wanderer knows it is grinding against something and should pick somewhere else to
+    stroll to (`Wander.step`). Everything else just moves and ignores it.
+
+    A free function rather than an `Entity` method because a `Critter` is not an Entity and
+    still has to walk, the same reason `push_apart` and `advance_impulse` are free.
+    """
+    if blocked is not None and blocked(body.x + step_x, body.y, radius):
+        step_x = 0
+    body.x += step_x
+    if blocked is not None and blocked(body.x, body.y + step_y, radius):
+        step_y = 0
+    body.y += step_y
+    return step_x, step_y
+
+
+def step_towards(body, angle: float, speed: float, blocked, radius: float) -> tuple[float, float]:
+    """`step_along` for the callers that have a heading and a pace rather than a vector."""
+    return step_along(body, math.cos(angle) * speed, math.sin(angle) * speed, blocked, radius)
 
 
 def apply_impulse(body, kb_dir, distance: float):

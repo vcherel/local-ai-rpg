@@ -8,7 +8,7 @@ import pygame
 
 import core.constants as c
 from core.utils import frames
-from game.entities.entities import Gait
+from game.entities.entities import Gait, step_towards
 from game.entities.wander import Wander
 
 if TYPE_CHECKING:
@@ -177,13 +177,7 @@ class Critter:
         if self.rooted or self.staggered:
             self.orientation = angle
             return
-        step_x, step_y = math.cos(angle) * speed, math.sin(angle) * speed
-        if blocked is not None and blocked(self.x + step_x, self.y, radius):
-            step_x = 0
-        self.x += step_x
-        if blocked is not None and blocked(self.x, self.y + step_y, radius):
-            step_y = 0
-        self.y += step_y
+        step_towards(self, angle, speed, blocked, radius)
         self.orientation = angle
 
     def update(

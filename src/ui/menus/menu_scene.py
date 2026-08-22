@@ -10,7 +10,7 @@ from core.camera import Camera
 from core.daynight import DayNightCycle
 from game.entities.critter import Critter
 from game.entities.npcs import NPC
-from game.entities.scenery import generate_chunk_scenery
+from game.entities.terrain import generate_chunk_scenery
 from game.entities.village import generate_village
 
 

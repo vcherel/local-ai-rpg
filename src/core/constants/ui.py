@@ -78,7 +78,6 @@ class Colors:
     BUTTON: tuple = (70, 70, 70)
     BORDER: tuple = (100, 100, 100)
     BUTTON_HOVERED: tuple = (90, 90, 90)
-    TRANSPARENT: tuple = (0, 0, 0, 150)
 
     # Dark menu theme, flat and square throughout; a gold accent marks hover/focus
     # and every menu, the HUD and dialogue share the same palette as one system.

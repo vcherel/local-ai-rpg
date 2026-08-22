@@ -5,6 +5,7 @@ import random
 
 import core.constants as c
 from core.utils import frames
+from game.entities.entities import step_towards
 
 
 class Wander:
@@ -71,16 +72,7 @@ class Wander:
             self._rest()
             return None
 
-        angle = math.atan2(dy, dx)
-        step_x = math.cos(angle) * step
-        step_y = math.sin(angle) * step
-        # Move one axis at a time so a wall on one axis lets the entity slide along it.
-        if blocked is not None and blocked(entity.x + step_x, entity.y, radius):
-            step_x = 0
-        entity.x += step_x
-        if blocked is not None and blocked(entity.x, entity.y + step_y, radius):
-            step_y = 0
-        entity.y += step_y
+        step_x, step_y = step_towards(entity, math.atan2(dy, dx), step, blocked, radius)
 
         # If a wall swallowed most of the intended step, stop grinding against it and repick.
         if math.hypot(step_x, step_y) < step * 0.25:

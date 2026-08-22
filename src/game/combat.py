@@ -479,13 +479,22 @@ class WorldCombat:
 
     def _spike_victim(self, victim, player: Player, quest_system: QuestSystem):
         """A stake going in: a bite of health, wherever it lands."""
-        damage = c.Villages.SPIKE_DAMAGE
         play_sound("hit")
         get_particles().spawn_burst(victim.x, victim.y, c.Decals.BLOOD_COLOR, count=8, speed=4, life=380, size=3)
         if victim is player:
-            player.receive_damage(damage, source=None)
+            player.receive_damage(c.Villages.SPIKE_DAMAGE, source=None)
             get_shake().add(c.Combat.PLAYER_HURT_SHAKE)
             return
+        self._hurt_bystander(victim, c.Villages.SPIKE_DAMAGE, player, quest_system)
+
+    def _hurt_bystander(self, victim, damage: int, player: Player, quest_system: QuestSystem):
+        """Damage nobody aimed: a stake in an outwork, a bear trap's jaws.
+
+        The player is not handled here, because what an unaimed blow costs *them* is a
+        screen effect chosen by whatever laid it. Everything else only has to land on the
+        right resolver, and all of them are told `by_player=False`: the player did not set
+        this off, so it neither pays them nor is held against them.
+        """
         if isinstance(victim, Critter):
             if victim.dead:
                 return
@@ -494,6 +503,9 @@ class WorldCombat:
                 self._kill_critter(victim, player, by_player=False)
             else:
                 victim.startle()
+            return
+        if isinstance(victim, NPC):
+            self._resolve_npc_hit(victim, damage, player, quest_system, blocked=self.blocked, by_player=False)
             return
         self._resolve_monster_hit(victim, self.monsters, damage, player, quest_system, by_player=False)
 
@@ -1035,19 +1047,7 @@ class WorldCombat:
             if self.notify:
                 self.notify("A bear trap snaps shut on your leg. Struggle!", c.Colors.RED)
             return
-        if isinstance(victim, Critter):
-            if victim.dead:
-                return
-            self._pop_damage(victim.x, victim.y - victim.size / 2, damage, False)
-            if victim.receive_damage(damage):
-                self._kill_critter(victim, player, by_player=False)
-            else:
-                victim.startle()
-            return
-        if isinstance(victim, NPC):
-            self._resolve_npc_hit(victim, damage, player, quest_system, blocked=self.blocked, by_player=False)
-            return
-        self._resolve_monster_hit(victim, self.monsters, damage, player, quest_system, by_player=False)
+        self._hurt_bystander(victim, damage, player, quest_system)
 
     def _resolve_monster_hit(
         self,

@@ -12,7 +12,7 @@ from core.screen_fx import get_banner
 from core.utils import parse_response_quest_analysis
 from game.entities.items import Item
 from game.entities.npcs import NPC
-from game.entities.scenery import road_points_for_chunk
+from game.entities.terrain import road_points_for_chunk
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
@@ -158,7 +158,7 @@ class EventSystem:
         points = []
         for dx in range(-reach, reach + 1):
             for dy in range(-reach, reach + 1):
-                for x, y, _width in road_points_for_chunk(cx + dx, cy + dy):
+                for x, y, _width, _ in road_points_for_chunk(cx + dx, cy + dy):
                     if min_dist <= math.hypot(x - player.x, y - player.y) <= max_dist:
                         points.append((x, y))
         random.shuffle(points)

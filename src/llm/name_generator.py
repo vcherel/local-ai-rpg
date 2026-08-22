@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from typing import TYPE_CHECKING
 
 from llm.llm_request_queue import generate_response_queued
@@ -40,13 +39,9 @@ class NPCNameGenerator:
         threading.Thread(target=self._generate_name_background, daemon=True).start()
 
     def _generate_name_background(self):
-        context = None
-        while context is None:
-            if self.closed:
-                return
-            context = self.save_system.load("context", None)
-            if context is None:
-                time.sleep(0.1)  # avoid busy waiting
+        context = self.save_system.await_context(lambda: self.closed)
+        if context is None:
+            return
 
         with self.cond:
             used_names = list(self.used_names)

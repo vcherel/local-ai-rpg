@@ -9,7 +9,7 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.utils import frames
-from game.entities.entities import Entity, push_apart
+from game.entities.entities import Entity, push_apart, step_towards
 from game.entities.monster_art import draw_monster, weapon_hand
 
 if TYPE_CHECKING:
@@ -191,18 +191,6 @@ class Monster(Entity):
             if blocked(self.x + math.cos(angle) * reach, self.y + math.sin(angle) * reach, radius):
                 return False
         return True
-
-    def _take_step(self, angle: float, speed: float, blocked, radius: float):
-        """Cover `speed` along `angle`, one axis at a time so a wall on one of them lets the
-        monster slide along it rather than stopping dead against it."""
-        step_x = math.cos(angle) * speed
-        step_y = math.sin(angle) * speed
-        if blocked is not None and blocked(self.x + step_x, self.y, radius):
-            step_x = 0
-        self.x += step_x
-        if blocked is not None and blocked(self.x, self.y + step_y, radius):
-            step_y = 0
-        self.y += step_y
 
     def _commit_side(self, side: int):
         self.steer_side = side
@@ -409,7 +397,7 @@ class Monster(Entity):
             if retreating:
                 speed *= c.Entities.RETREAT_SPEED_MULT
             move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
-            self._take_step(self._steer(move_angle, blocked, radius, speed, goal_dist), speed, blocked, radius)
+            step_towards(self, self._steer(move_angle, blocked, radius, speed, goal_dist), speed, blocked, radius)
 
         self._separate(crowd, blocked, radius)
 
@@ -450,15 +438,14 @@ class Monster(Entity):
             nock=self.shot_readiness,
             walk=self.gait.step(self.x, self.y),
         )
-        bar_width, bar_height = 60, 8
         self.draw_health_bar(
             screen,
-            screen_x - bar_width // 2,
-            screen_y + self.kind.size // 2 + 10,
-            bar_width,
-            bar_height,
+            screen_x - c.Entities.HEALTH_BAR_WIDTH // 2,
+            screen_y + self.kind.size // 2 + c.Entities.HEALTH_BAR_OFFSET,
+            c.Entities.HEALTH_BAR_WIDTH,
+            c.Entities.HEALTH_BAR_HEIGHT,
             self.kind.color,
-            2,
+            c.Entities.HEALTH_BAR_BORDER,
         )
         self.draw_status_bubbles(screen, screen_x, screen_y, self.kind.size)
 
