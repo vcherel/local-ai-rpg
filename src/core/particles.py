@@ -1,4 +1,10 @@
-"""Simple world-space particle bursts for combat and pickup feedback."""
+"""Simple world-space particle bursts for combat and pickup feedback.
+
+Most of what happens in a fight happens on one frame, so most of this is bursts. The
+exception is anything that takes a moment on purpose (sitting down at a fire): an
+`Emitter` keeps throwing the same burst for as long as the thing is going on, so the
+animation lasts as long as the action instead of being one puff at the start of it.
+"""
 
 from __future__ import annotations
 
@@ -48,9 +54,27 @@ class Particle:
         self.rot_speed = rot_speed
 
 
+class Emitter:
+    """A source that keeps throwing the same little burst for a while.
+
+    Everything about the burst is kept as the keyword arguments `spawn_burst` takes, so an
+    emitter is only a clock in front of the call that was already there."""
+
+    __slots__ = ("interval", "left", "next_in", "spec", "x", "y")
+
+    def __init__(self, x, y, duration, interval, spec):
+        self.x = x
+        self.y = y
+        self.left = duration
+        self.interval = interval
+        self.next_in = 0.0
+        self.spec = spec
+
+
 class ParticleSystem:
     def __init__(self):
         self.particles: list[Particle] = []
+        self.emitters: list[Emitter] = []
 
     def _emit(self, x, y, base_angle, angle_range, color, count, speed, life, size, gravity, shape):
         half = angle_range / 2
@@ -95,7 +119,25 @@ class ParticleSystem:
         having a direction, instead of exploding outward like a pickup poof."""
         self._emit(x, y, angle, math.radians(spread_deg), color, count, speed, life, size, gravity, shape)
 
+    def emit_over(self, x, y, duration_ms, interval_ms=90.0, **burst):
+        """Throw `burst` from (x, y) every `interval_ms` for `duration_ms`. What a thing that
+        takes a couple of seconds looks like, as against a thing that happens at once."""
+        self.emitters.append(Emitter(x, y, duration_ms, interval_ms, burst))
+
+    def _advance_emitters(self, dt):
+        alive = []
+        for emitter in self.emitters:
+            emitter.left -= dt
+            emitter.next_in -= dt
+            if emitter.next_in <= 0.0:
+                emitter.next_in = emitter.interval
+                self.spawn_burst(emitter.x, emitter.y, **emitter.spec)
+            if emitter.left > 0:
+                alive.append(emitter)
+        self.emitters = alive
+
     def update(self, dt):
+        self._advance_emitters(dt)
         factor = dt * c.TARGET_FPS / 1000.0
         alive = []
         for p in self.particles:

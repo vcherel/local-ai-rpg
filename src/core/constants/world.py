@@ -472,7 +472,10 @@ class Traps:
     # gives it away is the ring of jaws, and only from about as far off as it can be avoided.
     SIZE: int = 26
     TRIGGER_RADIUS: int = 26
-    DAMAGE: int = 16
+    # Steel jaws through a leg. It is meant to be the worst thing in the woods that is not
+    # alive: what makes a trap frightening is that a careless walk out of town costs a real
+    # part of the health bar and not only the seconds afterwards.
+    DAMAGE: int = 30
     # Long enough that being caught is a real event rather than a stutter, because the
     # player is not meant to sit it out: every movement key pressed while the jaws are on
     # them works the foot loose by STRUGGLE_MS, so escaping is something they do. Anything
@@ -871,6 +874,10 @@ class PointsOfInterest:
     # a health button you can stand next to and spam.
     REST_HEAL_FRAC: float = 0.6
     REST_COOLDOWN_S: float = 300.0
+    # Sitting down is not a button press: the fire builds, the embers go up and the warmth
+    # comes off the player for this long afterwards. Cosmetic only, the health is already
+    # theirs, but a rest that was over on the frame it started never felt like one.
+    REST_ANIM_MS: float = 2600.0
     # A camper trades out of their pack: stock rolled locally, no LLM call in the wilds.
     CAMPER_STOCK_SIZE: int = 5
     # How far a camper's directions look for something the player hasn't walked to yet.

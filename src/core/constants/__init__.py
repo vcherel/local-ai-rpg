@@ -45,7 +45,7 @@ from core.constants.combat import (
 )
 from core.constants.items import QUEST_COIN_BANDS, Affixes, LootBox, Potions, Quests, Rarity, RarityTier
 from core.constants.player import STAT_LABELS, Affinity, Death, Magic, Player, Stats
-from core.constants.ui import TARGET_FPS, Colors, Fonts, Hyperparameters, Minimap, Screen
+from core.constants.ui import TARGET_FPS, Colors, Fonts, Hyperparameters, Minimap, Music, Screen
 from core.constants.villages import Villages
 from core.constants.world import (
     Breakables,
@@ -103,6 +103,7 @@ __all__ = [
     "Minimap",
     "MonsterArt",
     "MonsterKind",
+    "Music",
     "Player",
     "PointsOfInterest",
     "Potions",

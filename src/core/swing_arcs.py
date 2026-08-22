@@ -8,8 +8,8 @@ reach), and a cleaving weapon draws it wider and hotter than a single-target one
 
 A thrust is drawn from the same rule and comes out as a different picture, because it is
 tested differently: a `pierce_melee` weapon covers a lane down its facing rather than a
-wedge, so it draws that lane, blind spot and all. Both live in the one system and both
-promise exactly what their hit test accepts.
+wedge, so it draws that lane, blind spot and all, as a head driven out along it. Both live
+in the one system and both promise exactly what their hit test accepts.
 
 Session-only global in the same shape as particles, floating text and decals: updated once
 per frame from `Game.run`, drawn from `GameRenderer.draw_world`, never saved.
@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.particles import get_particles
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -73,8 +74,13 @@ class SwingArc:
 
 
 class ThrustTrail:
-    """A thrust's lane: the stretch of ground a spear covers, from the end of its blind
-    spot out to its reach, drawn as the shaft driving forward and fading."""
+    """A thrust's lane, drawn as the lunge it is: the head driving out to the end of the
+    shaft, the shaft stretching behind it, and the air torn open either side.
+
+    A spear's whole argument is the ground it covers before anything reaches the player, so
+    the picture is a weapon being driven forward rather than a line lying on the grass. What
+    it covers is still exactly the lane the hit test accepts, blind spot and all.
+    """
 
     def __init__(self, x, y, angle, reach, blind_spot):
         self.x = x
@@ -83,26 +89,79 @@ class ThrustTrail:
         self.reach = reach
         self.blind_spot = blind_spot
         self.age = 0.0
+        # The dust kicked up along the lane, thrown once at the moment of the lunge.
+        sin_a, cos_a = math.sin(angle), math.cos(angle)
+        for i in range(c.Combat.THRUST_DUST):
+            t = (i + 1) / c.Combat.THRUST_DUST
+            along = blind_spot + (reach - blind_spot) * t
+            get_particles().spawn_directional_burst(
+                x + sin_a * along,
+                y - cos_a * along,
+                math.atan2(-cos_a, sin_a),
+                spread_deg=45.0,
+                color=c.Combat.THRUST_TRAIL_COLOR,
+                count=1,
+                speed=3.0 + 3.0 * t,
+                life=260,
+                size=4,
+            )
 
     @property
     def dead(self) -> bool:
-        return self.age >= c.Combat.SWING_ARC_MS
+        return self.age >= c.Combat.THRUST_MS
 
     def update(self, dt):
         self.age += dt
 
     def draw(self, layer: pygame.Surface, camera: Camera):
-        progress = min(1.0, self.age / c.Combat.SWING_ARC_MS)
-        alpha = round(210 * (1.0 - progress) ** 1.5)
+        progress = min(1.0, self.age / c.Combat.THRUST_MS)
+        alpha = round(230 * (1.0 - progress) ** 1.4)
         if alpha <= 2:
             return
-        # The near end runs out to the far one over the trail's life, so the lane reads as
-        # a thrust going in rather than as a stick lying on the ground.
-        near = self.blind_spot + (self.reach - self.blind_spot) * progress * 0.6
+        # Out fast and then held: the head reaches the end of the lane in the first part of
+        # the life and the rest of it is the shaft fading behind, which is what a lunge
+        # looks like as against a stick being laid down.
+        drive = min(1.0, progress / c.Combat.THRUST_DRIVE_FRAC)
+        eased = 1.0 - (1.0 - drive) ** 3
         sin_a, cos_a = math.sin(self.angle), math.cos(self.angle)
-        start = camera.world_to_screen(self.x + sin_a * near, self.y - cos_a * near)
-        end = camera.world_to_screen(self.x + sin_a * self.reach, self.y - cos_a * self.reach)
-        pygame.draw.line(layer, (*c.Combat.THRUST_TRAIL_COLOR, alpha), start, end, c.Combat.THRUST_TRAIL_WIDTH)
+        tip_along = self.blind_spot + (self.reach - self.blind_spot) * eased
+        # The tail is dragged along behind the head rather than pinned to the blind spot, so
+        # the shaft thins out into a streak instead of growing forever.
+        tail_along = self.blind_spot + (tip_along - self.blind_spot) * progress * 0.55
+
+        def point(along, across=0.0):
+            return camera.world_to_screen(
+                self.x + sin_a * along + cos_a * across,
+                self.y - cos_a * along + sin_a * across,
+            )
+
+        # The shaft: a wedge, wide at the head and closing to nothing at the tail.
+        half = c.Combat.THRUST_TRAIL_WIDTH / 2
+        shaft = [point(tail_along, 0), point(tip_along, -half), point(tip_along, half)]
+        pygame.draw.polygon(layer, (*c.Combat.THRUST_TRAIL_COLOR, alpha), shaft)
+
+        # The head itself: a bright blade at the end of the lane, still visible when the
+        # shaft behind it has all but gone.
+        head = c.Combat.THRUST_HEAD
+        blade = [
+            point(tip_along + head * 0.55),
+            point(tip_along - head * 0.25, -head * 0.28),
+            point(tip_along - head * 0.55),
+            point(tip_along - head * 0.25, head * 0.28),
+        ]
+        pygame.draw.polygon(layer, (*c.Combat.THRUST_CORE_COLOR, min(255, alpha + 25)), blade)
+
+        # The air torn either side of the shaft: two lines swept out from the head, which is
+        # what makes the lane read as driven through rather than pointed at.
+        wind = c.Combat.THRUST_WIND_SPREAD * (0.4 + 0.6 * progress)
+        for side in (-1, 1):
+            pygame.draw.line(
+                layer,
+                (*c.Combat.THRUST_TRAIL_COLOR, alpha // 2),
+                point(tail_along, side * wind * 0.4),
+                point(tip_along - head * 0.4, side * wind),
+                2,
+            )
 
 
 class SwingArcSystem:

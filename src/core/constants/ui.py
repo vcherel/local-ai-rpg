@@ -129,3 +129,15 @@ class Fonts:
             badge=pygame.font.Font(None, 45),
             badge_small=pygame.font.Font(None, 40),
         )
+
+
+@dataclass(frozen=True)
+class Music:
+    """What the score is watching for (core/music.py, resolved in `Game._music_context`)."""
+
+    # How close something hostile has to be before the music calls it a fight, and how long
+    # it goes on calling it one after the last of them is out of range.
+    COMBAT_RANGE: float = 620.0
+    COMBAT_HOLD_MS: int = 6000
+    # A boss is heard from further off than a wolf is: the pad is the warning.
+    BOSS_RANGE: float = 900.0

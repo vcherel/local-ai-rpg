@@ -262,9 +262,10 @@ class EventSystem:
 
     def _start_blood_night(self):
         self.blood_night_timer = c.Events.BLOOD_NIGHT_DURATION_MS
-        self.notify("A blood night falls: monsters grow bolder and loot flows more freely", c.Colors.RED)
-        # The one event that changes how the whole night behaves, so it gets the banner as
-        # well as the toast. Same guard as `notify`: the session it was rolled in may be over.
+        # The banner and nothing else. The toast would say the same thing over the top of the
+        # red the whole night is seen through (`core.screen_fx.draw_blood_veil`), and the
+        # veil is the announcement: a panel sitting in front of it is the one thing that
+        # stops it reading. Same guard as `notify`: the session it was rolled in may be over.
         if not self.world.closed:
             get_banner().trigger("BLOOD NIGHT", "Monsters grow bolder, and the dead pay better", c.Colors.RED)
 

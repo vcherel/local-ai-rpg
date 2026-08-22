@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.audio import play_sound
 from core.damage_fx import draw_cracks
 from game.entities.buildings import Building
 
@@ -76,6 +77,10 @@ class Village:
         # position is drawn from `barred`, which is itself worked out afresh every frame.
         self.gate_frac: dict[int, float] = {}
         self.gate_hold: dict[int, float] = {}
+        # How much of the going-over animation a gate just beaten down has left to play.
+        # Session-only for the same reason: a gate broken in an earlier session comes back
+        # already lying flat, which is exactly what `gate_broken` says.
+        self.gate_falling: dict[int, float] = {}
         self._defences = None
 
     @staticmethod
@@ -245,19 +250,44 @@ class Village:
         if self.gate_closed(index):
             self.gate_hold[index] = c.Villages.GATE_HOLD_MS
 
-    def advance_gates(self, dt):
+    def advance_gates(self, dt, listener=None):
         """Carry every leaf one frame towards where it should be standing.
 
         Nothing here is collided against: `gate_closed` flips the instant a settlement turns,
         and this is the leaf catching up with it. A gate that shuts on the frame it is barred
-        is a wall appearing out of nothing; one that swings is a gate."""
+        is a wall appearing out of nothing; one that swings is a gate.
+
+        Opening is quick and shutting is slow, and the leaf lands with a thud: which of the
+        two is happening is something the player should be able to hear from the street.
+        `listener` is where they are standing, so a town over the hill shuts up quietly.
+        """
         for index in range(len(self.defences()["gates"])):
+            if self.gate_falling.get(index, 0.0) > 0.0:
+                self.gate_falling[index] -= dt
             if self.gate_hold.get(index, 0.0) > 0.0:
                 self.gate_hold[index] -= dt
             shut = self.gate_closed(index) and not self.gate_ajar(index)
             frac = self.gate_frac.get(index, 0.0 if shut else 1.0)
-            step = dt / c.Villages.GATE_SWING_MS
-            self.gate_frac[index] = max(0.0, frac - step) if shut else min(1.0, frac + step)
+            step = dt / (c.Villages.GATE_CLOSE_MS if shut else c.Villages.GATE_SWING_MS)
+            moved = max(0.0, frac - step) if shut else min(1.0, frac + step)
+            self.gate_frac[index] = moved
+            if shut and frac > 0.0 and moved <= 0.0 and self._within_earshot(index, listener):
+                play_sound("gate_close")
+
+    def _within_earshot(self, index: int, listener) -> bool:
+        """Whether whoever is listening is close enough to this gateway to hear it work."""
+        if listener is None:
+            return False
+        gate = self.defences()["gates"][index]["rect"]
+        return math.hypot(listener[0] - gate.centerx, listener[1] - gate.centery) < c.Villages.GATE_SOUND_RANGE
+
+    def gate_fall_progress(self, index: int) -> float:
+        """How far through going over a just-broken gate is, 0 the moment it gave and 1 once
+        there is nothing left standing in the gateway."""
+        left = self.gate_falling.get(index, 0.0)
+        if left <= 0.0:
+            return 1.0
+        return 1.0 - left / c.Villages.GATE_BREAK_MS
 
     def gate_open_frac(self, index: int) -> float:
         """How far this gate is drawn open, 0 to 1."""
@@ -322,6 +352,7 @@ class Village:
             return False
         self.gate_hp.pop(index, None)
         self.gate_broken.add(index)
+        self.gate_falling[index] = c.Villages.GATE_BREAK_MS
         return True
 
     def gate_health(self, index: int) -> float:
@@ -546,8 +577,10 @@ class Village:
             pygame.draw.rect(screen, c.Villages.GATE_POST, post)
             pygame.draw.rect(screen, (52, 40, 28), post, 2)
 
-        if index in self.gate_broken:
-            # Beaten down: the gateway is a hole for good and there is nothing left to hang.
+        falling = self.gate_fall_progress(index)
+        if index in self.gate_broken and falling >= 1.0:
+            # Beaten down and gone over: the gateway is a hole for good and there is nothing
+            # left to hang.
             return
 
         leaf = gate["rect"]
@@ -558,10 +591,18 @@ class Village:
         # through from either side of the wall rather than as a leaf lying across one.
         toward_middle = math.copysign(1.0, (self.y - gy) if along_x else (self.x - gx))
         normal = (0.0, toward_middle) if along_x else (toward_middle, 0.0)
+        if index in self.gate_broken:
+            # Going over rather than swinging: the leaves are kicked the other way, outward
+            # off their hinges, shrinking as they go flat and darkening into the ground. Not
+            # the same picture as opening, which is the whole point of drawing it at all.
+            theta = -math.radians(c.Villages.GATE_BREAK_DEG) * falling
+            thickness *= 1.0 - falling * 0.55
+            half *= 1.0 - falling * 0.25
         for side in (-1, 1):
             hinge = (gx + side * half, gy) if along_x else (gx, gy + side * half)
             axis = (-side, 0.0) if along_x else (0.0, -side)
-            self._draw_leaf(screen, camera, hinge, axis, normal, theta, half, thickness)
+            fallen = falling if index in self.gate_broken else 0.0
+            self._draw_leaf(screen, camera, hinge, axis, normal, theta, half, thickness, fallen=fallen)
 
         health = self.gate_health(index)
         if health < 1.0 and self.gate_open_frac(index) < 0.05:
@@ -570,12 +611,17 @@ class Village:
             draw_cracks(screen, rect, health, self.gate_key(index))
 
     @staticmethod
-    def _draw_leaf(screen, camera: Camera, hinge, axis, normal, theta: float, length: float, thickness: float):
+    def _draw_leaf(
+        screen, camera: Camera, hinge, axis, normal, theta: float, length: float, thickness: float, fallen: float = 0.0
+    ):
         """One leaf, hung on `hinge` and swung `theta` off the line of the gateway.
 
         Written in the leaf's own two axes (`axis` along the gateway from the hinge inwards,
         `normal` into the settlement) so the same few lines hang all eight leaves of a town,
-        whichever of the four walls they are in and whichever way round they open."""
+        whichever of the four walls they are in and whichever way round they open.
+
+        `fallen` is how far through going over a broken leaf is: it only darkens the wood
+        toward the ground it is landing on, since the swing itself is the caller's."""
         cos, sin = math.cos(theta), math.sin(theta)
 
         def point(along: float, across: float):
@@ -588,9 +634,10 @@ class Village:
 
         edge = thickness / 2
         corners = [point(0, -edge), point(length, -edge), point(length, edge), point(0, edge)]
-        pygame.draw.polygon(screen, c.Villages.GATE_LEAF, corners)
-        pygame.draw.polygon(screen, (46, 34, 22), corners, 3)
-        for offset in range(20, int(length), 22):
+        shade = 1.0 - fallen * 0.5
+        pygame.draw.polygon(screen, tuple(round(v * shade) for v in c.Villages.GATE_LEAF), corners)
+        pygame.draw.polygon(screen, tuple(round(v * shade) for v in (46, 34, 22)), corners, 3)
+        for offset in range(20, max(21, int(length)), 22):
             pygame.draw.line(screen, (66, 48, 30), point(offset, -edge), point(offset, edge), 2)
 
     @staticmethod

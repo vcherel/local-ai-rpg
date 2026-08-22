@@ -1,11 +1,16 @@
-"""The picture an area effect leaves behind it: a ring going out and a bolt to each thing
-it caught.
+"""The picture an area effect leaves behind it: a wave of particles going out and a bolt to
+each thing it caught.
 
 Chain Strike used to be invisible. A legendary weapon would land one blow and damage
 numbers would pop on three creatures at once with nothing on screen connecting them,
 which reads as a bug rather than as an affix. So the pulse draws itself: a ring expanding
 to exactly the radius the damage was applied over, and a jagged bolt from its centre to
 everything it actually hit, so what was caught is attributable rather than guessed.
+
+What goes out is a scatter of particles thrown round the source rather than one drawn
+circle: a perfect ring reads as a UI element laid over the fight, while a wave of debris
+reads as something having gone off there. The radius they are thrown to is still exactly
+the radius the damage was applied over, so the promise the picture makes is unchanged.
 
 Session-only global in the same shape as particles, swing arcs and decals: updated once
 per frame from `Game.run`, drawn from `GameRenderer.draw_world`, never saved.
@@ -20,15 +25,17 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.particles import get_particles
 
 if TYPE_CHECKING:
     from core.camera import Camera
 
 
-class ImpactRing:
-    """One pulse: a ring growing to `radius` as it fades, plus a bolt out to each point it
-    struck. Anchored to the world where the blow landed, not to whatever was standing
-    there, since that may well be dead before the ring finishes."""
+class ImpactPulse:
+    """One pulse: the bolts out to each point it struck. The wave itself is particles, thrown
+    at the moment of the hit (`ImpactFxSystem.pulse`); what is left here is the part that has
+    to be drawn as lines. Anchored to the world where the blow landed, not to whatever was
+    standing there, since that may well be dead before the pulse finishes."""
 
     def __init__(self, x, y, radius, color, struck):
         self.x = x
@@ -62,21 +69,15 @@ class ImpactRing:
 
     def draw(self, layer: pygame.Surface, camera: Camera):
         progress = min(1.0, self.age / c.ImpactFx.RING_MS)
-        alpha = round(210 * (1.0 - progress) ** 1.6)
-        if alpha <= 2:
-            return
-        center = camera.world_to_screen(self.x, self.y)
-        # Out fast and slowing as it goes, which is how a shockwave reads.
-        radius = max(2, int(self.radius * math.sin(progress * math.pi / 2)))
-        width = max(1, round(c.ImpactFx.RING_WIDTH * (1.0 - progress)))
-        pygame.draw.circle(layer, (*self.color, alpha), center, radius, width)
-        pygame.draw.circle(layer, (*self.color, alpha // 3), center, max(1, radius - width * 2), 1)
-
-        # The bolts only last the first part of the ring's life: they say what was hit on
+        # The bolts only last the first part of the pulse's life: they say what was hit on
         # the frame it was hit, and then get out of the way of the fight.
         if progress > c.ImpactFx.BOLT_LIFE_FRAC:
             return
+        alpha = round(210 * (1.0 - progress) ** 1.6)
         bolt_alpha = round(alpha * (1 - progress / c.ImpactFx.BOLT_LIFE_FRAC))
+        if bolt_alpha <= 2:
+            return
+        center = camera.world_to_screen(self.x, self.y)
         for wx, wy in self.struck:
             end = camera.world_to_screen(wx, wy)
             pygame.draw.lines(layer, (*self.color, bolt_alpha), False, self._bolt(center, end), c.ImpactFx.BOLT_WIDTH)
@@ -84,10 +85,36 @@ class ImpactRing:
 
 class ImpactFxSystem:
     def __init__(self):
-        self.rings: list[ImpactRing] = []
+        self.rings: list[ImpactPulse] = []
 
     def pulse(self, x, y, radius, color, struck=()):
-        self.rings.append(ImpactRing(x, y, radius, color, struck))
+        """Throw the wave and keep the bolts. The particles are spread all round the source
+        and out to the radius the damage covered, thinning as they go, with a bright puff at
+        the middle so where it went off is never in question."""
+        self.rings.append(ImpactPulse(x, y, radius, color, struck))
+        particles = get_particles()
+        if radius > 0:
+            count = max(c.ImpactFx.WAVE_MIN, round(radius / c.ImpactFx.WAVE_PER_PIXELS))
+            for i in range(count):
+                # Spread round the circle with a wobble on both the angle and the distance,
+                # so the wave never comes out as beads on a wire.
+                angle = 2 * math.pi * (i + random.uniform(-0.35, 0.35)) / count
+                reach = radius * random.uniform(c.ImpactFx.WAVE_INNER, 1.0)
+                particles.spawn_directional_burst(
+                    x + math.cos(angle) * reach,
+                    y + math.sin(angle) * reach,
+                    angle,
+                    spread_deg=40.0,
+                    color=color,
+                    count=2,
+                    speed=c.ImpactFx.WAVE_SPEED,
+                    life=c.ImpactFx.WAVE_LIFE_MS,
+                    size=c.ImpactFx.WAVE_SIZE,
+                    gravity=0.12,
+                )
+        particles.spawn_burst(
+            x, y, color, count=c.ImpactFx.CORE_PARTICLES, speed=3.0, life=c.ImpactFx.WAVE_LIFE_MS, size=6
+        )
 
     def update(self, dt):
         for ring in self.rings:
@@ -95,7 +122,7 @@ class ImpactFxSystem:
         self.rings = [ring for ring in self.rings if not ring.dead]
 
     def draw(self, surface: pygame.Surface, camera: Camera):
-        """One transparent layer for every ring in flight, blitted once, exactly as the
+        """One transparent layer for every pulse in flight, blitted once, exactly as the
         swing arcs are drawn: they need per-pixel alpha to fade, and a surface each would
         mean a full-screen allocation per hit."""
         if not self.rings:

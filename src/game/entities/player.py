@@ -963,10 +963,10 @@ class Player(Entity):
 
         self.last_damage_ms = pygame.time.get_ticks()
         play_sound("player_hurt")
-        get_decals().spawn(self.x, self.y, radius=c.Decals.PLAYER_HURT_RADIUS)
         # The player bleeds onto the ground like anything else: no direction, since what hit
-        # them is not always something they were facing.
-        get_decals().spawn_spray(self.x, self.y, count=5, distance=(12.0, 60.0), radius=(2.0, 6.0))
+        # them is not always something they were facing, and no weapon style, since it is
+        # rarely their own.
+        get_decals().splash(self.x, self.y, "generic")
         get_particles().spawn_burst(self.x, self.y, c.Colors.RED, count=14, speed=5, life=420, size=5, gravity=0.3)
         if warded:
             get_particles().spawn_burst(
