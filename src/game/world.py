@@ -24,7 +24,7 @@ from game.entities.poi import PointOfInterest
 from game.entities.projectile import ARROW_COLOR, STONE_COLOR, Projectile
 from game.entities.scenery import Scenery
 from game.entities.traps import BearTrap
-from game.entities.village import Village, generate_starting_world
+from game.entities.village import Village, generate_starting_world, register_world_sites
 from game.events import EventSystem
 from game.loot import roll_shop_stock
 from game.navigation import Point, WorldNavigation
@@ -211,6 +211,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
 
     def _restore_saved_world(self, saved_npcs):
         self._restore(saved_npcs)
+        # Before a single chunk is generated: the starting town was rolled per playthrough
+        # rather than out of a region, so nothing laid out from the village sites knows it
+        # is there until this puts it back on the map (game/entities/village.py).
+        register_world_sites(self.villages, self.buildings)
+        self._plan_streets()
         # A game saved underground is loaded underground: the player's position is
         # already down there, so the tunnel has to be back around it before anything
         # else runs, background generation threads included. One of those persisting a
@@ -235,6 +240,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self._index_buildings()
         set_active_buildings(self.buildings)
         self.breakables = generate_breakables(self.buildings)
+        self._plan_streets()
         self._populate_npcs(self.buildings, village)
         self._post_guards(village)
         # A new world is stocked to the *near* cap, not the far one. Everything placed
@@ -527,6 +533,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             if any(village.blocks(x, y, radius) for village in solids):
                 return True
         return self.blocked_over_walls(x, y, radius)
+
+    def on_building(self, x, y, radius: float = 0.0) -> bool:
+        """Whether this spot is on any part of a building, its floor included.
+
+        `blocked` answers False inside a room, which is the right answer for something
+        walking about in one and the wrong one for anything being *placed*: it is what put
+        a village dog on a roof and a deer in a bedroom."""
+        return any(building.covers(x, y, radius) for building in self.buildings_near(x, y))
 
     def blocked_over_walls(self, x, y, radius) -> bool:
         """`blocked` for something flying above a town's wall: houses, trees and boulders
@@ -1014,15 +1028,16 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             x = player.x + math.cos(angle) * dist
             y = player.y + math.sin(angle) * dist
             kind = pick_critter_kind(math.hypot(x - center, y - center))
-            # Nothing wild is stood up in somebody's front room either: the floor of a
-            # house is not blocked ground, which is what put a deer in a bedroom.
-            if self.blocked(x, y, kind.size / 2) or self.building_at(x, y) is not None:
+            # Nothing wild is stood up in somebody's front room either, nor on the roof
+            # of the back half of an L: the floor of a house is not blocked ground, so the
+            # question is what the footprint covers rather than what stops a body.
+            if self.blocked(x, y, kind.size / 2) or self.on_building(x, y, kind.size / 2):
                 continue
             for _ in range(random.randint(*kind.group)):
                 spread = c.Wildlife.GROUP_SPREAD
                 mate_x = x + random.uniform(-spread, spread)
                 mate_y = y + random.uniform(-spread, spread)
-                indoors = self.building_at(mate_x, mate_y) is not None
+                indoors = self.on_building(mate_x, mate_y, kind.size / 2)
                 if not indoors and not self.blocked(mate_x, mate_y, kind.size / 2):
                     self.critters.append(Critter(mate_x, mate_y, kind))
             return
@@ -1039,19 +1054,26 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             wanted = random.Random(f"dogs{key}").randint(*c.Wildlife.VILLAGE_DOGS)
             living = [cr for cr in self.critters if cr.village_key == key]
             hostile = any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y))
+            size = c.CRITTER_KINDS_BY_NAME["dog"].size / 2
             for _ in range(wanted - len(living)):
                 # A dog lives in the street, not in the tavern: the spot is rolled again
-                # rather than settled for when it lands on somebody's floor.
+                # rather than settled for when it lands on somebody's floor, and a village
+                # that has no room for another dog simply keeps the ones it has.
+                spot = None
                 for _attempt in range(8):
                     angle = random.uniform(0, 2 * math.pi)
                     distance = random.uniform(village.radius * 0.15, village.radius * 0.5)
                     x, y = self.free_spot_near(
                         village.x + math.cos(angle) * distance,
                         village.y + math.sin(angle) * distance,
-                        c.CRITTER_KINDS_BY_NAME["dog"].size / 2,
+                        size,
                     )
-                    if self.building_at(x, y) is None:
+                    if not self.on_building(x, y, size):
+                        spot = (x, y)
                         break
+                if spot is None:
+                    continue
+                x, y = spot
                 dog = Critter(x, y, c.CRITTER_KINDS_BY_NAME["dog"], home=(x, y), village_key=key)
                 # A village that has already turned on the player doesn't hand back a
                 # friendly dog just because this one was stood up afterwards.

@@ -7,6 +7,20 @@ chunk index, chase detours and the tree and bear-trap clearances all ask for tha
 `rect` stays the main block the facade hangs on, so the door, the windows, the awning and
 the doorstep never learn about wings.
 
+The wing is snapped flush against its block rather than left where the rotation put it
+(`_snap_wing`): the canonical room is turned by rounding a centre, and a wing whose depth
+does not share the block's parity lands a pixel off, which is a hairline of grass between the
+two halves and a seam in the wall shell nothing ever closes. `_wing_opening` is measured off
+the wing where it actually stands for the same reason: two roundings of one rect are two
+rects, and the one the walls are cut with has to be the one the floor is drawn from.
+
+Where a building *is* and what it *stops* are two questions. `blocks` is the second one and
+answers False for the open floor of a room, which is right for anything walking about in one
+and wrong for anything being placed: asking it is what put a barrel in the back room of an L
+and a dog on a roof. `Building.covers` is the first one, and everything that scatters
+something on the ground goes through it (`World.on_building` is the same question asked of a
+whole world).
+
 The two halves are joined by exactly one rect, `_wing_opening`: subtracted from the wall
 shell it is the way through, taken as a floor it is what makes `interior_rects` one
 connected space, which is the same trick a tunnel's corridors use. Furniture then has to
@@ -30,6 +44,29 @@ roofless cutaway so the rest of the map keeps drawing around it in the same pass
 The interior is laid out once in a canonical room whose door is in the bottom wall and
 then turned onto the real one by `_place`, so every arrangement can go on saying "against
 the back wall" and mean it.
+
+## A settlement is a square with lanes off it, and every door opens onto one
+
+Slots are handed out from the plaza outward and the buildings are built biggest first, which
+put every special a town had on the same corner of the square: both taverns side by side and
+the shops next to them. `_assign_slots` deals the specials first instead, each one taking the
+nearest free slot that is at least `SPECIAL_MIN_GAP` from another of its own kind, and the
+houses fill what is left. A settlement has one of each thing per quarter of it rather than a
+row of them on one side.
+
+Keeping the boxes apart is not the same as leaving the doors usable, so `_clear_doorsteps`
+runs with the separation passes: a building whose front opens onto a neighbour's wall pushes
+whichever of the two stands further from the plaza off its doorstep, the same outward shove
+overlapping footprints get. `Building.doorstep` is that piece of ground, and it is also what
+nothing may be planted or scattered on (`generate_breakables`, `generate_chunk_scenery`).
+
+The lanes are then worn between the houses by `Village.plan_streets`: one from the edge of
+the plaza out to every front door, plus the rim of the square they all leave from. They are
+held on the village and drawn with it rather than generated into a chunk's scenery, because
+a street belongs to the settlement and reaches into whichever chunks it likes, and nothing
+solid grows on village grounds for it to have to be kept clear of. Nothing about them is
+saved: they are worked out from where the buildings ended up, and the buildings are in the
+save.
 
 ## Nothing walks the whole building list per frame
 

@@ -152,8 +152,12 @@ class Events:
     PRESAGE_DELAY_RANGE_S: tuple = (8, 15)
     PROPHECY_DELAY_RANGE_S: tuple = (20, 40)
 
-    MERCHANT_MIN_DIST: int = 400
-    MERCHANT_MAX_DIST: int = 700
+    # A caravan is met on the road, never watched into existence: the band starts past the
+    # corner of the screen (half the diagonal of UI.WIDTH x UI.HEIGHT is a little over
+    # 1000), so the pair are stood up out of sight and walked into view. The same distance
+    # is what they have to be past before they are taken away again.
+    MERCHANT_MIN_DIST: int = 1150
+    MERCHANT_MAX_DIST: int = 1700
     MERCHANT_DURATION_MS: int = 180_000
     # How fast the caravan works its way down the road, in world pixels a second. Slow: the
     # point is that they are somewhere else next time, not that they are hard to catch.
@@ -516,6 +520,7 @@ class Scenery:
         "river_body",
         "river_deep",
         "path",
+        "road",
         "bridge",
         "pebbles",
         "grass",
@@ -612,6 +617,10 @@ class Scenery:
     # A river bends around a settlement's centre by this much rather than running through
     # its plaza: a village's radius plus a margin of dry ground.
     RIVER_VILLAGE_CLEARANCE: int = 820
+    # ...and never closer than the settlement's own grounds plus this, since how far a
+    # town reaches is its wall rather than a fixed number: a river ran straight through a
+    # big one while a hamlet had it bowing politely around empty grass.
+    RIVER_VILLAGE_MARGIN: int = 260
 
     # Crossings. One is laid at fixed intervals along a river whatever else is nearby, so a
     # bridge is always findable; another wherever a road meets the water, since that is
@@ -632,6 +641,13 @@ class Scenery:
     # Nothing solid stands this close to a deck. A crossing walled in by a trunk at the end
     # of it is worse than no crossing at all, since the player walked to it.
     BRIDGE_CLEARANCE: int = 45
+    # No two crossings stand closer than this. A lane lays one at fixed intervals and every
+    # road that meets the water asks for one of its own, so the two used to end up as a
+    # pair of bridges a few strides apart over the same stretch of river. The road wins the
+    # argument about which way the deck lies: a crossing a track runs onto is laid along
+    # the track, since a deck squared onto the current with a road arriving at it sideways
+    # is a bridge nobody could walk over.
+    BRIDGE_MIN_GAP: int = 900
 
     # Water is drawn from the bank inward: shallow edge, body, deep middle.
     WATER_COLORS: tuple = ((70, 96, 96), (58, 106, 122), (96, 148, 158))
@@ -668,7 +684,10 @@ class Scenery:
     # Blobs of packed earth laid closer together than they are wide, so the track reads as
     # one worn line rather than as stepping stones.
     ROAD_STEP: int = 16
-    ROAD_WIDTH: tuple = (14, 22)
+    # A road between two settlements is the one track the player is meant to see from a
+    # distance and follow: it is drawn wider than a footpath, in its own colour, with the
+    # verge either side of it. A path out to a landmark is a line worn in the grass.
+    ROAD_WIDTH: tuple = (26, 36)
     # A track is one worn line whose width swells and narrows as it goes, not a radius
     # rolled per blob: how much it swells, over how long, and the shorter wave over that
     # which keeps the edge from reading as a drawn curve.
@@ -683,6 +702,11 @@ class Scenery:
     ROAD_DETAIL: float = 0.22  # amplitude of the shorter wave, as a fraction of the wobble
     ROAD_CLEARANCE: int = 55
     ROAD_COLOR: tuple = (128, 106, 76)
+    # The bigger road between two villages: warmer and lighter than a footpath, with a
+    # trodden verge drawn under it so the width reads from across a field.
+    ROAD_MAIN_COLOR: tuple = (146, 122, 88)
+    ROAD_VERGE_COLOR: tuple = (114, 106, 72)
+    ROAD_VERGE: int = 5
 
     # Footpaths: the tracks worn out to the landmarks, drawn exactly like a road but
     # narrower. A landmark joins the settlement it is nearest to, or, out where there is

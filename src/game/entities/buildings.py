@@ -255,8 +255,29 @@ class Building(BuildingArt):
         else:
             cwing.topright = (canon.left, canon.top)
         self._canon_wing = cwing
-        self._wing = self._place(cwing, canon, self.rect)
+        self._wing = self._snap_wing(self._place(cwing, canon, self.rect))
         return self._wing
+
+    def _snap_wing(self, wing: pygame.Rect) -> pygame.Rect:
+        """The wing pushed back flush against the block it grows out of.
+
+        `_place` turns the canonical room by rounding a centre, and a wing whose depth does
+        not share the main block's parity lands a pixel off it: the two halves are then
+        drawn with a hairline of grass between them and the wall shell has a seam in it
+        that nothing ever closes. A wing shares a whole edge with its block or it is not
+        one, so the edge is set rather than computed."""
+        rect = self.rect
+        if abs(wing.centerx - rect.centerx) > abs(wing.centery - rect.centery):
+            wing.left = rect.right if wing.centerx > rect.centerx else rect.left - wing.width
+            wing.top = (
+                rect.top if abs(wing.top - rect.top) <= abs(wing.bottom - rect.bottom) else rect.bottom - wing.height
+            )
+        else:
+            wing.top = rect.bottom if wing.centery > rect.centery else rect.top - wing.height
+            wing.left = (
+                rect.left if abs(wing.left - rect.left) <= abs(wing.right - rect.right) else rect.right - wing.width
+            )
+        return wing
 
     def _canon_opening(self) -> pygame.Rect | None:
         """`_wing_opening` in the canonical room, where the wing is always out to one side:
@@ -310,13 +331,28 @@ class Building(BuildingArt):
 
         One rect does both jobs. Subtracted from the wall shell it is the opening; taken as
         a floor it is what joins the two rooms into one, the same trick a tunnel's corridors
-        use to stay walkable across a doorway. Turned out of the canonical room like
-        everything else, so the floor a body walks on and the floor the furniture was laid
-        out over can never disagree."""
-        opening = self._canon_opening()
-        if opening is None:
+        use to stay walkable across a doorway.
+
+        Measured off the wing where it actually stands rather than turned out of the
+        canonical room a second time: two roundings of the same rect are two rects, and the
+        one the walls are cut with has to be the one the floor is drawn from."""
+        wing = self.wing()
+        if wing is None:
             return None
-        return self._place(opening, self._canon_rect(), self.rect)
+        wall = c.Buildings.WALL_THICKNESS
+        rect = self.rect
+        # How far the opening reaches back into the main block: past its wall, so the two
+        # rooms are one space rather than two with a shared doorway.
+        over = wall * 2
+        if wing.left >= rect.right:
+            box = (rect.right - over, wing.top + wall, wing.right - wall, wing.bottom - wall)
+        elif wing.right <= rect.left:
+            box = (wing.left + wall, wing.top + wall, rect.left + over, wing.bottom - wall)
+        elif wing.top >= rect.bottom:
+            box = (wing.left + wall, rect.bottom - over, wing.right - wall, wing.bottom - wall)
+        else:
+            box = (wing.left + wall, wing.top + wall, wing.right - wall, rect.top + over)
+        return pygame.Rect(box[0], box[1], box[2] - box[0], box[3] - box[1])
 
     def outward(self) -> tuple:
         """The unit vector pointing out of the front wall. Everything about the facade (the
@@ -502,6 +538,27 @@ class Building(BuildingArt):
                 if math.hypot(x - nearest_x, y - nearest_y) < radius:
                     return True
         return False
+
+    def covers(self, x, y, radius: float = 0.0) -> bool:
+        """Whether a body of `radius` standing here is on any part of this building, wing,
+        walls and floor alike.
+
+        Not the same question as `blocks`, which is about walking into something and
+        answers False for the open floor of a room: this is the one anything being *placed*
+        has to ask, and asking the other one is how a barrel came to stand in the back room
+        of an L-shaped house."""
+        return any(rect.inflate(radius * 2, radius * 2).collidepoint(x, y) for rect in self.footprint())
+
+    def doorstep(self, depth: float, width: float | None = None) -> pygame.Rect | None:
+        """The clear ground in front of the front door: the doorway plus a shoulder either
+        side, `depth` out from the wall it is in.
+
+        One rect, asked for by everything that has to leave a door usable: the village
+        layout pushes a neighbour off one, and nothing is planted or scattered in one. A
+        door you cannot walk up to is a room the player never sees the inside of."""
+        if not self.has_door:
+            return None
+        return self._facade_slot(width or c.Villages.DOORSTEP_WIDTH, round(depth), 0, -round(depth))
 
     def to_dict(self) -> dict:
         return {

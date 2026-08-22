@@ -25,10 +25,24 @@ class Villages:
     # put a real stretch of wilderness between one and the next, which only works because
     # that wilderness has cover, landmarks and roads of its own (Scenery, PointsOfInterest).
     REGION_CHUNKS: int = 4
+    # How likely a region is to settle at all, and how likely it is to settle a second
+    # chunk, both read off how far out the region stands: the deep wilds are emptier of
+    # people than the settled ring only because nobody drew any villages out there, which
+    # left walking outward feeling like walking off the map. Density is the one lever a
+    # region grid has, so both of these ramp to REGION_FAR_DISTANCE and stop.
     REGION_CHANCE: float = 0.55
+    REGION_CHANCE_FAR: float = 1.0
+    REGION_SECOND_CHANCE: float = 0.0
+    REGION_SECOND_CHANCE_FAR: float = 0.85
+    REGION_FAR_DISTANCE: int = 24000
     # Two regions can both settle near their shared border; the later one stands down, so
-    # there is always this much empty wilderness between one settlement and the next.
-    MIN_GAP: int = 3500
+    # there is always this much empty wilderness between one settlement and the next. The
+    # same rule settles the two a single far-out region may offer.
+    MIN_GAP: int = 3200
+    # ...and how close they may stand out where settlements are meant to be thick on the
+    # ground. A gap is what keeps two villages from reading as one sprawl, so it can close
+    # up as the density rises but never past the point where their walls would meet.
+    MIN_GAP_FAR: int = 2500
     # Kept away from the chunk's own edges so the cluster stays inside its own region.
     CHUNK_MARGIN: int = 380
     # The starting town already sits here; no streamed village crowds it.
@@ -52,7 +66,20 @@ class Villages:
         "town": {"tavern": (1, 1), "shop": (1, 2), "house": (5, 7)},
     }
     # The village the player starts in, at the world centre.
-    START_COMPOSITION = {"tavern": (2, 2), "shop": (3, 3), "house": (8, 8)}
+    START_COMPOSITION = {"tavern": (1, 1), "shop": (3, 3), "house": (9, 9)}
+    # No two of the same special building stand within this of each other. Slots are handed
+    # out from the plaza outward, so taking them in order put both of a town's taverns on
+    # the same corner of the square; a settlement has one of each thing per quarter of it.
+    SPECIAL_MIN_GAP: int = 900
+    # The clear ground in front of every front door: nothing is laid out over one, nothing
+    # is planted in one, and a neighbour that ends up standing on one is pushed off it.
+    DOORSTEP_CLEAR: int = 150
+    DOORSTEP_WIDTH: int = 190
+    # The lanes worn between the houses: one from the plaza out to every front door, laid
+    # in the same blobs a road is (`Village.plan_streets`). A settlement whose buildings
+    # stood on undisturbed grass read as sheds dropped in a field.
+    STREET_WIDTH: int = 15
+    STREET_STEP: int = 16
     START_DISTANCE_FROM_CENTER: int = 900
 
     # How many people live in one home. A bigger settlement is a busier one: numbers are

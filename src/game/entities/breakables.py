@@ -186,11 +186,13 @@ def generate_breakables(buildings: list[Building]) -> list[Breakable]:
     """Scatter a few barrels and plantings just outside each house/shop/tavern (never the
     landmark), deterministic per building so they stay put across a save/reload."""
     result: list[Breakable] = []
+    # Every doorstep in the settlement, not only this building's own: a barrel dropped in
+    # front of the neighbour's door is as much in the way as one in front of your own.
+    doorsteps = [step for b in buildings if (step := b.doorstep(c.Villages.DOORSTEP_CLEAR)) is not None]
     for building in buildings:
         if building.kind == "landmark":
             continue
         rng = random.Random(f"{building.id}-breakable")
-        door_zone = building.door_zone()
         count = rng.randint(c.Breakables.PER_BUILDING_MIN, c.Breakables.PER_BUILDING_MAX)
         for _ in range(count):
             for _attempt in range(10):
@@ -198,9 +200,12 @@ def generate_breakables(buildings: list[Building]) -> list[Breakable]:
                 dist = rng.uniform(max(building.w, building.h) / 2 + 25, max(building.w, building.h) / 2 + 80)
                 x = building.x + math.cos(angle) * dist
                 y = building.y + math.sin(angle) * dist
-                if door_zone is not None and door_zone.inflate(50, 50).collidepoint(x, y):
+                if any(step.collidepoint(x, y) for step in doorsteps):
                     continue
-                if any(b.blocks(x, y, c.Breakables.SIZE / 2) for b in buildings):
+                # `covers` rather than `blocks`: the floor of a room is not solid, and a
+                # wing sticks out further than the ring this is rolled in, which is how a
+                # crate came to be standing in somebody's back room.
+                if any(b.covers(x, y, c.Breakables.SIZE / 2) for b in buildings):
                     continue
                 result.append(Breakable(x, y, _pick_kind(rng)))
                 break

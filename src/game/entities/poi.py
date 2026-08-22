@@ -10,7 +10,7 @@ import pygame
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
 from game.entities.terrain import river_points_for_chunk
-from game.entities.village import site_grounds_radius, village_site
+from game.entities.village import register_site_cache, site_grounds_radius, village_site
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -194,21 +194,27 @@ class PointOfInterest:
     def _draw_graveyard(self, screen, center):
         cx, cy = center
         rng = random.Random(f"grave:{self.x},{self.y}")
-        # A graveyard is read from its rows, so the rows are real: one stone size, a fixed
-        # spacing and only enough jitter to say the ground settled unevenly. Stones dropped
-        # at random in a plot this size landed on top of each other and read as rubble.
-        columns, rows = 4, 3
-        step_x, step_y = 44, 46
+        # A graveyard is read from its stones, not from a border drawn round them: the plot
+        # rectangle made it a fenced allotment dropped in a field. The rows are still real
+        # (one stone size, a fixed spacing) but they run over a much wider stretch of
+        # ground, several of them are missing and every one leans its own way, so the shape
+        # reads as a place people were buried in rather than as a grid.
+        columns, rows = 6, 4
+        step_x, step_y = 74, 78
         width, height = 16, 24
-        plot = pygame.Rect(0, 0, columns * step_x + 34, rows * step_y + 40)
-        plot.center = (cx, cy)
-        pygame.draw.rect(screen, (74, 78, 62), plot, border_radius=6)
-        pygame.draw.rect(screen, (56, 52, 42), plot, 3, border_radius=6)
         for slot in range(columns * rows):
-            ox = (slot % columns - (columns - 1) / 2) * step_x + rng.uniform(-2, 2)
-            oy = (slot // columns - (rows - 1) / 2) * step_y + rng.uniform(-2, 2)
+            ox = (slot % columns - (columns - 1) / 2) * step_x + rng.uniform(-14, 14)
+            oy = (slot // columns - (rows - 1) / 2) * step_y + rng.uniform(-12, 12)
+            if rng.random() < 0.28:
+                # Nothing left of this one but the ground it settled into.
+                mound = pygame.Rect(0, 0, width + 14, 12)
+                mound.center = (round(cx + ox), round(cy + oy))
+                pygame.draw.ellipse(screen, (84, 82, 62), mound)
+                continue
             stone = pygame.Rect(0, 0, width, height)
             stone.center = (round(cx + ox), round(cy + oy))
+            lean = rng.choice((-2, -1, 0, 0, 1, 2))
+            stone.move_ip(lean, 0)
             grey = rng.randint(132, 148)
             pygame.draw.rect(screen, (grey, grey, grey - 6), stone, border_top_left_radius=8, border_top_right_radius=8)
             pygame.draw.rect(screen, (78, 78, 74), stone, 2, border_top_left_radius=8, border_top_right_radius=8)
@@ -216,6 +222,14 @@ class PointOfInterest:
             mound = pygame.Rect(0, 0, width + 8, 8)
             mound.midtop = stone.midbottom
             pygame.draw.ellipse(screen, (78, 70, 54), mound)
+            # Somebody still comes: a few of the graves are kept, and the flowers are what
+            # says so from a distance.
+            if rng.random() < 0.35:
+                color = rng.choice(((228, 96, 112), (236, 202, 92), (170, 128, 220), (240, 240, 232)))
+                for _ in range(rng.randint(2, 4)):
+                    head = (round(mound.centerx + rng.uniform(-14, 14)), round(mound.centery + rng.uniform(-2, 8)))
+                    pygame.draw.line(screen, (66, 108, 52), (head[0], head[1] + 6), head, 2)
+                    pygame.draw.circle(screen, color, head, rng.randint(3, 4))
 
     def _draw_watchtower(self, screen, center):
         cx, cy = center
@@ -397,8 +411,10 @@ def poi_site(cx: int, cy: int) -> tuple[float, float, str] | None:
     center = c.World.WORLD_SIZE // 2
     if math.hypot(x - center, y - center) < c.PointsOfInterest.MIN_DIST_FROM_CENTER:
         return None
-    for nx in range(cx - 2, cx + 3):
-        for ny in range(cy - 2, cy + 3):
+    # Three chunks out rather than two: a walled town's grounds reach further than a
+    # chunk, so a landmark two chunks away was cleared of a settlement it stood inside.
+    for nx in range(cx - 3, cx + 4):
+        for ny in range(cy - 3, cy + 4):
             site = village_site(nx, ny)
             if site is None:
                 continue
@@ -433,7 +449,14 @@ def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfI
         return []
     x, y, kind = site
     if any(
-        math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING for b in buildings
+        b.covers(x, y, c.PointsOfInterest.MIN_DIST_FROM_BUILDING)
+        or math.hypot(x - b.x, y - b.y) < max(b.w, b.h) / 2 + c.PointsOfInterest.MIN_DIST_FROM_BUILDING
+        for b in buildings
     ):
         return []
     return [PointOfInterest(x, y, kind, poi_id=f"{cx}:{cy}")]
+
+
+# Where a landmark may stand is decided from the village sites, so it is forgotten with
+# them whenever a world registers a settlement the region grid never offered.
+register_site_cache(poi_site.cache_clear)
