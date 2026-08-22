@@ -108,26 +108,55 @@ class Villages:
     ANGER_S: float = 240.0
     ANGER_CAP_S: float = 900.0
 
-    # Nobody turns on the player over one blow any more. The first offence against a
-    # settlement (a swing that lands, a theft somebody sees) is a warning: the victim
-    # shouts, an exclamation goes up over their head and the place stays calm. The next one
-    # inside STRIKE_WINDOW_S is what provokes it. A killing skips the ladder entirely, as
-    # does a second strike after the window has run out, which resets to a fresh warning.
+    # Nobody turns on the player over one blow any more, and no settlement counts one kind
+    # of offence against another. Each kind (a swing that lands, a hand in somebody's chest,
+    # a room taken for the night, a chair put through a wall) keeps its own ledger: the
+    # first of each is a warning, the second of the *same* kind inside STRIKE_WINDOW_S is
+    # what provokes the place. A killing skips the ladder entirely, as does a second strike
+    # after that kind's window has run out, which resets to a fresh warning.
     STRIKES_BEFORE_ANGER: int = 2
-    STRIKE_WINDOW_S: float = 30.0
-    # How long the shout hangs over the villager who gave it, and what it says.
+    STRIKE_WINDOW_S: float = 45.0
+    # How long the shout hangs over the villager who gave it.
     WARNING_MS: int = 2600
-    WARNING_SHOUTS: tuple = (
-        "Hey! Touch me again and you're done.",
-        "Watch yourself, stranger.",
-        "Try that once more and we'll all be on you.",
-        "That's your one warning.",
-    )
-    THEFT_SHOUTS: tuple = (
-        "Hands off that!",
-        "I saw that. Put it back.",
-        "Thief! Next time I call the whole street.",
-    )
+    # Every offence a settlement counts, with the words it is warned about in. A ladder per
+    # kind means the wording can be the one thing that says which ledger was just spent, so
+    # nobody is ever told to put a bed back.
+    OFFENCES = {
+        "assault": {
+            "label": "Violence",
+            "shouts": (
+                "Hey! Touch me again and you're done.",
+                "Watch yourself, stranger.",
+                "Try that once more and we'll all be on you.",
+                "That's your one warning.",
+            ),
+        },
+        "theft": {
+            "label": "Theft",
+            "shouts": (
+                "Hands off that!",
+                "I saw that. Put it back.",
+                "Thief! Next time I call the whole street.",
+            ),
+        },
+        "squatting": {
+            "label": "Trespass",
+            "shouts": (
+                "That bed isn't yours to sleep in.",
+                "Out. Find your own roof.",
+                "You slept here? Next time you sleep in the ditch.",
+            ),
+        },
+        "vandalism": {
+            "label": "Damage",
+            "shouts": (
+                "That's my property you're breaking!",
+                "Wreck one more thing and we'll wreck you.",
+                "Who's paying for that?",
+            ),
+        },
+    }
+    DEFAULT_OFFENCE: str = "assault"
 
     # A village defends itself. Only some of its people take up arms (rolled per NPC off
     # their home, so the same house always sends the same person out); the rest run for the
@@ -140,6 +169,9 @@ class Villages:
     MILITIA_FRACTION_BY_TIER: tuple = (0.35, 0.5, 0.65)
     DEFEND_MARGIN: float = 300.0
     DEFEND_RADIUS: float = 620.0
+    # How many of the nearest villagers a monster asks whether it can actually see before
+    # settling for the player. Sight is walked step by step and monsters are the long list.
+    MONSTER_PREY_TRIES: int = 3
     PANIC_RADIUS: float = 520.0
 
     # The same split decides what an angry village does about the player, so a mob is not a
@@ -160,6 +192,25 @@ class Villages:
     MOB_STONE_DAMAGE: int = 5
     MOB_STONE_COOLDOWN_MS: tuple = (1400, 2600)
     ROUT_HP_FRAC: float = 0.35
+
+    # What a villager does once they are cut that far down, which is now a decision rather
+    # than the fight quietly stopping. Whoever took up arms for the place (militia, guards)
+    # falls back shouting for help, and the shout is worth as much as their sword was:
+    # every calm villager inside HELP_SHOUT_RANGE joins the fight. Everyone else yields:
+    # they drop what they were holding, kneel under a white flag and stop being anything to
+    # fight for SURRENDER_S, then get up and run for a door. Cutting down somebody who has
+    # yielded is the one offence that skips the ladder outright.
+    SURRENDER_S: float = 9.0
+    HELP_SHOUT_RANGE: float = 520.0
+    HELP_SHOUTS: tuple = (
+        "To me! To me!",
+        "Help, someone!",
+        "They're killing me, get out here!",
+    )
+    # How many of a settlement's people have to be after the player at once before it shuts
+    # itself. One angry farmer is a brawl, not a siege: gates only come down on a real mob,
+    # or the moment somebody is killed here and the place holds a grudge.
+    BAR_GATES_MOB: int = 3
 
     # A town is worth defending, and a hamlet has nothing to defend with: only the largest
     # settlements (and the starting town) stand a wall. The ring follows the settlement's
@@ -207,6 +258,10 @@ class Villages:
     # Archers are posted in the towers, where they can see over the wall. A tier 0 wall is
     # watched by spearmen alone.
     ARCHERS_PER_TOWER_BY_TIER: tuple = (0, 1, 2)
+    # Where on a tower roof an archer stands, as a fraction of its radius from the middle:
+    # far enough apart that two of them are two people at a parapet rather than one body
+    # drawn twice, near enough that neither is standing off the edge.
+    TOWER_STAND_FRAC: float = 0.45
     # A wall long enough to matter is not covered from its corners alone, so the best
     # defended settlements also stand somebody on each stretch between a gate and a tower.
     ARCHERS_PER_WALL_BY_TIER: tuple = (0, 1, 1)
@@ -239,6 +294,16 @@ class Villages:
     # How long a gate a villager has let themselves through stands open before it shuts
     # again behind them (`Village.let_through`).
     GATE_HOLD_MS: float = 900.0
+
+    # The player working a barred gate open from the inside: the bar is a beam, so lifting
+    # it is a hold rather than a press, and it is slow enough that a mob at your back is a
+    # real reason to break the gate instead. Once lifted it stands open long enough to walk
+    # through and then falls back into place.
+    GATE_LIFT_S: float = 4.0
+    GATE_LIFT_HOLD_MS: float = 1800.0
+    # Being hit while heaving at it loses this much of the lift: a gate is not opened in the
+    # middle of a fight.
+    GATE_LIFT_HIT_LOSS: float = 0.4
 
     # Stakes outside the wall from tier 1, a ditch from tier 2. Both follow the wall
     # stretches only, so a gateway is never obstructed by either. Stakes prick whatever

@@ -150,7 +150,7 @@ class Minimap:
 
     def _draw_strips(self, world: World, player: Player, top: int):
         """The panels stacked under the map: the village standing on it, how that village
-        feels about the player, then the clock.
+        feels about the player, every warning it has not let go of yet, then the clock.
 
         Each one is laid under the last and `content_bottom` records where the stack actually
         ended, since whatever hangs below this corner (the quest tracker) has no other way of
@@ -162,6 +162,14 @@ class Minimap:
             mood = self._village_mood(world, village)
             if mood is not None:
                 y = self._draw_text_strip(mood, c.Colors.RED, y)
+            # What the place is still counting against the player, and for how much longer.
+            # A warning the player cannot see the end of is a trap: they have no way of
+            # knowing whether the next swing is the one that turns the town, or whether the
+            # theft it is still holding has been let go of yet.
+            for label, seconds in world.warnings_at(player.x, player.y):
+                # Short enough to fit the panel with the countdown still on it: the number
+                # is the half of this that the player is actually reading.
+                y = self._draw_text_strip(self._fit(f"{label} {int(seconds) + 1}s"), c.Colors.ORANGE, y)
         self._draw_clock(world, y)
         self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
 

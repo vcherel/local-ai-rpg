@@ -683,7 +683,10 @@ class Building(BuildingArt):
 
         self._layout = {
             "solids": [(place(rect), kind) for rect, kind in solids],
-            "beds": [place(bed) for bed in space.beds],
+            # A bed comes apart like any other stick of furniture, and a broken one is not a
+            # bed any more: it drops out of the list the sleep prompt is offered from, so a
+            # room of wreckage is a room with nowhere to sleep.
+            "beds": [place(bed) for bed in space.beds if id(bed) not in broken],
             "crates": [place(crate) for crate in space.crates],
             "props": [(place(rect), kind) for rect, kind in props],
             "chest": place(space.chest) if space.chest is not None else None,
@@ -774,6 +777,8 @@ class Building(BuildingArt):
             return idx, rect, kind, False
         self.prop_hp.pop(idx, None)
         self.broken_props.add(idx)
-        # Drop it from the cached collision set so the player can walk through the wreckage now.
+        # Drop it from the cached collision set so the player can walk through the wreckage
+        # now, and from the beds, since nobody sleeps in a pile of splinters.
         self._layout["solids"] = [(other, other_kind) for other, other_kind in self._layout["solids"] if other != rect]
+        self._layout["beds"] = [bed for bed in self._layout["beds"] if bed != rect]
         return idx, rect, kind, True

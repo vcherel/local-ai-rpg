@@ -1320,7 +1320,12 @@ class WorldCombat:
         # the player lands there is answered with a shout and nothing else, so snapping at
         # somebody in the street is a thing the player is told they are about to do rather
         # than something they discover a moment too late. A killing skips the ladder below.
-        if by_player and self.strike_village(npc, player):
+        # Cutting down somebody who has thrown their weapon down is the one offence with no
+        # ladder under it: they are kneeling with their hands empty in front of the whole
+        # street, and there is nothing left to warn anybody about.
+        if by_player and (npc.surrendered or self.strike_village(npc, player)):
+            if npc.surrendered and self.notify:
+                self.notify("You struck someone who had yielded", c.Colors.RED)
             for provoked in self.provoke_village(npc):
                 # Nobody hands in a task to someone they are trying to kill; drop it rather
                 # than leave an uncompletable quest in the log.

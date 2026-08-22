@@ -100,7 +100,12 @@ approach into a dead end.
 Who stands on it is not a new kind of person: `World._post_guards` puts an ordinary
 villager at each gate, tower and wall stretch with `is_guard` set, which only means they
 always take up arms (`NPC.is_militia`), carry a real weapon and hold their post instead of
-strolling. Only `Villages.WALLED_SIZES` (and the starting town) get any of it: a hamlet
+strolling. An archer stands *on* the tower, at its own coordinates, and is the one body in
+the world exempt from the free-spot search, from `unstick` and from the crowd that pushes
+in around the player: a tower is solid, so every one of those walked them off it, and an
+archer who has been walked off their tower is a guard stranded outside their own wall
+shooting at a player standing safely inside it. They never move at all, and never needed
+to: `_loose_arrows` shoots `over_walls`, which is what a roof is for. Only `Villages.WALLED_SIZES` (and the starting town) get any of it: a hamlet
 has nothing to defend with.
 
 A gate is the only part of a wall that gives, for the same reason a door is the only part
@@ -112,6 +117,21 @@ which is when the player is inside a town that wants them dead, and
 `WorldCombat._hit_gate` / `bash_gates` let them hack their way out (or a pack beat its way
 in) on the same hit-point pool a front door uses. `gate_broken` is persisted, `gate_hp` is
 not, exactly as a door does it.
+
+Shutting a town takes a real escalation, not one cross word. One villager turning (a caught
+thief, most often) is a fight, and its gates stay open through it: a settlement bars itself
+only once it holds a grudge (somebody was killed here) or `Villages.BAR_GATES_MOB` of its
+people are after the player at once. Being shut in should mean the town has decided
+something, not that one farmer has.
+
+And a shut town is not a box. The bar can be heaved up from the inside: `Game._lift_gate` is
+the one interaction in the game that is held rather than pressed, `Villages.GATE_LIFT_S` of
+standing still with both hands on the beam, with a blow landing costing
+`Villages.GATE_LIFT_HIT_LOSS` of it and letting go of the key costing the lot. It ends with
+`Village.lift_bar` swinging the leaves and the player stepped across the gateway exactly the
+way the settlement's own people cross it (`gate_side_point`). Breaking the gate is still
+there and still faster; the difference is that hacking through is now a choice about time
+rather than the only door out.
 
 A barred gate is a wall to the player and to every monster, and it is not one to the
 settlement's own people: `World.pass_gate_for` lets a villager who reaches their own gate work
@@ -161,9 +181,11 @@ player's own weapons use, and the thing is drawn in their hand through the same
 
 ## A village defends itself, and who defends is decided per person
 
-A monster that walks onto a settlement's grounds is retargeted by `World._monster_target`
-onto the nearest villager instead of filing past them toward the player (a camp guard is
-exempt: it holds ground rather than raids). `World.militia_orders` then works out once a
+A monster is retargeted by `World._monster_target` onto the nearest villager it can reach
+and see instead of filing past them toward the player (a camp guard is exempt: it holds
+ground rather than raids). Reach and sight, not a settlement's grounds: keying it to the
+grounds left the woman standing twenty paces outside her own gate ignored by the wolf beside
+her, which reads as the world not seeing her at all. `World.militia_orders` then works out once a
 frame what everyone does about it: whoever `NPC.is_militia` says takes up arms goes to meet
 it, everyone else runs for the nearest door and shuts it behind them. Villagers killed in
 that fight are dead for good, resolved as `by_player=False` so the village blames nobody and
@@ -185,10 +207,23 @@ which sets `NPC.grudge` on the whole settlement and no clock ever clears it. Que
 by a provocation stay dropped, and `EventSystem._generate_crisis` refuses to hand a new one
 out in an angry village, which was the last path that still did.
 
+Nothing turns a village on the first offence, and no settlement counts one kind of offence
+against another. `World.strike_village` keeps a ledger per settlement *per kind*
+(`Villages.OFFENCES`: violence, theft, trespass, damage): the first of each is a warning and
+the second of the same kind inside `Villages.STRIKE_WINDOW_S` is what provokes the place.
+One global counter meant the player spent their last warning on something they had no way of
+connecting to what they were about to do, and heard "I saw that, put it back" about a bed.
+Each kind carries its own shouts for exactly that reason: the wording is the only thing that
+says which ledger was just spent. The countdown is drawn on its own strip under the minimap
+(`Minimap._draw_strips`, read through `World.warnings_at`), because a warning whose end the
+player cannot see is a trap rather than a warning.
+
 Theft is the one exception to the all-or-nothing rule and it has exactly one entry point:
-`Game._check_witness` asks `World.theft_witness` who could see the player empty a chest or
-climb into a bed, and `World.catch_thief` turns that one villager, alone, while the rest of
-the settlement goes on with its day.
+`Game._check_witness` asks `World.theft_witness` who could see the player empty a chest, and
+`World.catch_thief` turns that one villager, alone, while the rest of the settlement goes on
+with its day. A bed is asked about differently (`World.squatter_witness`): sleeping is not an
+instant somebody either had eyes on or missed, it is a night, so what answers for it is who
+of that settlement is near the bed by morning rather than who was facing it.
 
 Being seen is a field of view with rooms in it, not a radius and not a raycast: `NPC.sees`
 tests `Crime.VIEW_CONE_DEG` off the villager's own facing, and `World.can_see` then asks
@@ -221,10 +256,19 @@ because the village has nothing to blame the player for.
 The split `NPC.is_militia` makes about a monster in the street decides what the mob does
 about the player too (`World._mob_orders`): the militia close and swing, everybody else
 keeps `Villages.MOB_STANDOFF` back and throws stones, which is a real threat in numbers and
-cannot be answered with a sword. A mob also breaks: anyone cut to `Villages.ROUT_HP_FRAC`
-(`NPC.routed`) leaves the fight for the nearest door, so a village thins out as it loses
-instead of feeding farmers into a blade one at a time. Nothing here is a new kind of
-villager, only a new thing to point the existing split at.
+cannot be answered with a sword. A mob also breaks, and the same split says how: anyone cut to `Villages.ROUT_HP_FRAC`
+(`NPC.routed`) leaves the fight, whoever took up arms for the place by falling back shouting
+for help (`World.call_for_help`, once each, and every calm villager in earshot joins), and
+everybody else by throwing down their weapon (`World.yield_to_player`). A villager who has
+yielded kneels under a white flag with empty hands, is nobody's enemy for
+`Villages.SURRENDER_S` (`NPC.surrendered` outranks even a grudge), and then gets up and runs
+for a door like anyone else; nobody yields twice. Cutting one down is the single offence with
+no ladder under it: it turns the settlement on the spot.
+
+This exists because a villager quietly ceasing to attack at low health reads as a broken
+villager rather than a beaten one. The rule is that a state the player can see the
+consequences of has to have a cue they can see too: a white flag, a shout, or nothing.
+Nothing here is a new kind of villager, only a new thing to point the existing split at.
 
 ## A merchant's shelf is a clock
 

@@ -481,15 +481,20 @@ class WorldPlaces:
             return f"{village.chunk[0]}:{village.chunk[1]}"
         return f"lone:{round(npc.home[0])}:{round(npc.home[1])}"
 
-    def strike_village(self, npc: NPC, player: Player, shouts: tuple = c.Villages.WARNING_SHOUTS) -> bool:
-        """Record an offence against this settlement and answer whether it has run out of
-        patience, which is what actually turns the place on the player.
+    def strike_village(self, npc: NPC, player: Player, offence: str = c.Villages.DEFAULT_OFFENCE) -> bool:
+        """Record an offence of this kind against this settlement and answer whether it has
+        run out of patience, which is what actually turns the place on the player.
 
-        Nobody goes from a farmer to a mob over one blow any more. The first offence is a
-        warning the player can see and hear: whoever it landed on rounds on them, shouts,
-        and wears an orange badge for a moment while the village goes on with its day. Do it
-        again inside `Villages.STRIKE_WINDOW_S` and the ladder is finished. Wait the window
-        out and the place has let it go, so the next offence is a fresh warning.
+        Nobody goes from a farmer to a mob over one blow. The first offence of a kind is a
+        warning the player can see and hear: whoever it landed on rounds on them, shouts in
+        the words that kind of offence deserves, and wears an orange badge for a moment while
+        the village goes on with its day. Do the same thing again inside
+        `Villages.STRIKE_WINDOW_S` and the ladder is finished. Wait the window out and the
+        place has let that one go.
+
+        Every kind keeps its own ledger (`Villages.OFFENCES`), so a shove, a hand in a chest
+        and a bed taken for the night are three separate conversations rather than one
+        counter the player spends without knowing which of their sins is being counted.
 
         Two things skip the ladder outright: a settlement already angry (there is nothing
         left to warn about), and a killing, which never comes through here at all."""
@@ -497,22 +502,62 @@ class WorldPlaces:
             return True
         key = self._strike_key(npc)
         now = time.time()
-        record = self.village_strikes.get(key)
+        ledger = self.village_strikes.setdefault(key, {})
+        record = ledger.get(offence)
         fresh = record is not None and now - record["at"] < c.Villages.STRIKE_WINDOW_S
         count = (record["count"] if fresh else 0) + 1
         if count >= c.Villages.STRIKES_BEFORE_ANGER:
-            self.village_strikes.pop(key, None)
+            ledger.pop(offence, None)
+            if not ledger:
+                self.village_strikes.pop(key, None)
             return True
-        self.village_strikes[key] = {"count": count, "at": now}
-        self.shout_warning(npc, player, shouts)
+        ledger[offence] = {"count": count, "at": now}
+        self.shout_warning(npc, player, offence)
         return False
 
-    def shout_warning(self, npc: NPC, player: Player, shouts: tuple):
+    def warnings_at(self, x: float, y: float) -> list[tuple[str, float]]:
+        """Every warning still standing against the player where they are, as (label,
+        seconds left), soonest to expire first.
+
+        A warning the player cannot see the end of is a trap: they have no way of knowing
+        whether the next stray swing is the one that turns the town. The HUD reads this
+        (`Minimap._draw_strips`), so what is drawn is exactly what the ladder will test."""
+        village = self.village_at(x, y)
+        if village is None:
+            return []
+        ledger = self.village_strikes.get(f"{village.chunk[0]}:{village.chunk[1]}", {})
+        now = time.time()
+        pending = []
+        for offence, record in ledger.items():
+            left = c.Villages.STRIKE_WINDOW_S - (now - record["at"])
+            if left > 0:
+                pending.append((c.Villages.OFFENCES[offence]["label"], left))
+        return sorted(pending, key=lambda entry: entry[1])
+
+    def forget_stale_strikes(self):
+        """Drop every warning whose window has run out. The ladder tests the clock itself, so
+        this changes nothing about what a village will do; it is what stops the HUD showing a
+        countdown that has already reached zero, and what keeps the save from carrying a
+        ledger of offences nobody remembers."""
+        now = time.time()
+        for key in list(self.village_strikes):
+            ledger = {
+                offence: record
+                for offence, record in self.village_strikes[key].items()
+                if now - record["at"] < c.Villages.STRIKE_WINDOW_S
+            }
+            if ledger:
+                self.village_strikes[key] = ledger
+            else:
+                self.village_strikes.pop(key)
+
+    def shout_warning(self, npc: NPC, player: Player, offence: str = c.Villages.DEFAULT_OFFENCE):
         """One villager warning the player off, and their street noticing.
 
         The warning has to be legible from the fight itself rather than from a line of text
         alone, so it is three things at once: they round on the player, an orange badge goes
-        up over their head, and anyone near enough to have heard it looks up too."""
+        up over their head, and anyone near enough to have heard it looks up too. What they
+        shout is what the player actually did: nobody is told to put a bed back."""
         npc.warn(player.x, player.y)
         play_sound("shout")
         for other in self.npcs:
@@ -522,7 +567,49 @@ class WorldPlaces:
                 other.warn(player.x, player.y)
         if self.notify:
             name = npc.name or "A villager"
+            shouts = c.Villages.OFFENCES[offence]["shouts"]
             self.notify(f"{name}: {random.choice(shouts)}", c.Colors.ORANGE)
+
+    def yield_to_player(self, npc: NPC):
+        """A villager with no fight left in them throwing down their weapon.
+
+        Cut a farmer to `Villages.ROUT_HP_FRAC` and they used to keep walking at the player
+        without swinging, which read as a broken villager rather than a beaten one. This is
+        that moment made real: they kneel, their hands are empty, a white flag goes up over
+        them and for `Villages.SURRENDER_S` they are nobody's enemy. What the player does
+        with somebody who has yielded is theirs to decide, and cutting one down is answered
+        without any ladder at all (`WorldCombat._resolve_npc_hit`)."""
+        npc.surrender()
+        play_sound("shout")
+        if self.notify:
+            name = npc.name or "A villager"
+            self.notify(f"{name} throws down their weapon", c.Colors.WHITE)
+
+    def call_for_help(self, npc: NPC) -> list[NPC]:
+        """A militiaman falling back, and what their shout costs the player: everyone who
+        hears it. Returns whoever just took up arms because of it.
+
+        The other half of a rout. Whoever took up arms for this place does not kneel; they
+        give ground shouting, and a shout is worth more than the sword they were losing
+        with. Spent once each (`NPC.called_help`), so a fight that drags on is not a siren."""
+        if npc.called_help:
+            return []
+        npc.called_help = True
+        play_sound("shout")
+        recruits = [
+            other
+            for other in self.npcs
+            if not other.hostile
+            and not other.surrendered
+            and other is not npc
+            and other.distance_to_point((npc.x, npc.y)) < c.Villages.HELP_SHOUT_RANGE
+        ]
+        for other in recruits:
+            other.anger(c.Villages.ANGER_S)
+        if self.notify:
+            name = npc.name or "A villager"
+            self.notify(f"{name}: {random.choice(c.Villages.HELP_SHOUTS)}", c.Colors.RED)
+        return recruits
 
     def provoke_village(self, npc: NPC) -> list[NPC]:
         """Turn a settlement on the player after one of its people is struck, returning
@@ -608,6 +695,22 @@ class WorldPlaces:
         # inside is angry, so the player can walk back into the place they died in.
         return village
 
+    def barred_gate_in_reach(self, player: Player) -> tuple | None:
+        """The barred gate the player is standing at, as (village, index), or None.
+
+        The one thing that makes a shut town something to leave rather than something to
+        besiege. Read by the prompt and by the hold that actually lifts the beam
+        (`Game._lift_gate`), so what the player is offered is exactly what the key works on."""
+        for village in self.villages:
+            if not village.defended or not village.barred:
+                continue
+            if village.distance_to_point((player.x, player.y)) > village.grounds_radius:
+                continue
+            index = village.gate_at(player.x, player.y, c.Buildings.INTERACT_DISTANCE)
+            if index is not None:
+                return village, index
+        return None
+
     def witness_radius(self) -> float:
         """How far a villager notices a theft right now. Night cuts it, which is what makes
         robbing a house something you do after dark. Shared by the check and the cones the
@@ -680,14 +783,37 @@ class WorldPlaces:
         seen = [npc for npc in self.watchers_near(x, y) if self.can_see(npc, x, y, radius, room)]
         return min(seen, key=lambda npc: npc.distance_to_point((x, y)), default=None)
 
+    def squatter_witness(self, x: float, y: float) -> NPC | None:
+        """Whoever finds the player asleep in a bed that isn't theirs, or None where nobody
+        lives close enough to walk in on them.
+
+        Deliberately not `theft_witness`: taking something is an instant somebody either
+        had eyes on or did not, and a night is hours of a settlement's people coming and
+        going. So there is no cone and no line of sight here, only the household: anyone of
+        this settlement standing within `Crime.SQUAT_WITNESS_RADIUS` of the bed by morning
+        has found the player in it, which is what makes a tavern room something taken rather
+        than something free."""
+        village = self.village_at(x, y)
+        if village is None:
+            return None
+        found = [
+            npc
+            for npc in self.npcs
+            if not npc.hostile
+            and village.contains_point(npc.x, npc.y)
+            and npc.distance_to_point((x, y)) < c.Crime.SQUAT_WITNESS_RADIUS
+        ]
+        return min(found, key=lambda npc: npc.distance_to_point((x, y)), default=None)
+
     def report_crime(self, x: float, y: float, player: Player) -> NPC | None:
         """Somebody wrecking a room somebody else owns, answered exactly as a theft is: the
-        one villager who saw it turns on the player and nobody else hears about it. The
-        cones are on the ground the whole time the player is standing indoors, so a swing
-        taken in front of a witness is a decision rather than an ambush."""
+        one villager who saw it turns on the player and nobody else hears about it. Its own
+        ledger, though, and its own wording: breaking a chair is not taking one. The cones
+        are on the ground the whole time the player is standing indoors, so a swing taken in
+        front of a witness is a decision rather than an ambush."""
         witness = self.theft_witness(x, y)
         if witness is not None:
-            self.catch_thief(witness, player)
+            self.catch_thief(witness, player, "vandalism")
         return witness
 
     def rest_in_house(self, building: Building) -> None:
@@ -712,25 +838,30 @@ class WorldPlaces:
             if npc.hostile_until:
                 npc.hostile_until = max(0.0, npc.hostile_until - seconds)
 
-    def catch_thief(self, npc: NPC, player: Player) -> NPC | None:
-        """One villager catches the player stealing, and either warns them or comes for
+    def catch_thief(self, npc: NPC, player: Player, offence: str = "theft") -> NPC | None:
+        """One villager catches the player at something, and either warns them or comes for
         them. Returns whoever turned hostile, or None when it was only a warning.
 
-        The single exception to violence's all-or-nothing rule: theft is between the player
-        and whoever saw it, so the rest of the village goes on with its day. Swinging back
-        at the one who caught you is what turns the whole place, through the usual
-        `provoke_village`. They cool off on their own clock like anyone else, a while after
-        the player has stopped taking their things.
+        The single exception to violence's all-or-nothing rule: what one person catches is
+        between them and the player, so the rest of the village goes on with its day.
+        Swinging back at the one who caught you is what turns the whole place, through the
+        usual `provoke_village`. They cool off on their own clock like anyone else, a while
+        after the player has stopped taking their things.
 
-        Being caught runs the same ladder a blow does (`strike_village`), so the first thing
-        the player ever does wrong in a settlement is answered with a shout rather than a
-        knife, whether that was a swing or a hand in somebody's chest."""
-        if not self.strike_village(npc, player, c.Villages.THEFT_SHOUTS):
+        Being caught runs the same ladder a blow does (`strike_village`), on the ledger of
+        whatever kind of thing it was, so the first time the player is caught at each is
+        answered with a shout rather than a knife."""
+        if not self.strike_village(npc, player, offence):
             return None
         npc.anger(c.Crime.THEFT_ANGER_S)
         if self.notify:
             name = npc.name or "A villager"
-            self.notify(f"{name} catches you in the act!", c.Colors.RED)
+            caught = {
+                "theft": f"{name} catches you in the act!",
+                "squatting": f"{name} finds you asleep in their bed!",
+                "vandalism": f"{name} sees what you did to the place!",
+            }
+            self.notify(caught.get(offence, f"{name} catches you in the act!"), c.Colors.RED)
         return npc
 
     def militia_orders(self) -> tuple[dict, dict]:

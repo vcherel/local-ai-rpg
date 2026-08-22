@@ -101,6 +101,41 @@ class WorldNavigation:
                 return False
         return True
 
+    def unwedge(self, body, radius: float, dt, wants_move: bool) -> bool:
+        """Prise a body out of ground it is standing on legally and cannot get off.
+
+        `World.unstick` answers the body that is *inside* something solid. This answers the
+        other half, which nothing could see: a corner of an L, the neck between two houses,
+        the pocket behind a doorstep. The body is on open ground there, so every test it
+        makes passes; it simply has a wall on both axes and a slide that carries it into
+        neither. A villager wedged in the corner of a building stayed there for the rest of
+        the session looking like a bug, because from the inside it is not one.
+
+        Only time tells them apart, so that is what is measured: meaning to move
+        (`wants_move`) and covering less than `Entities.WEDGE_STEP` a frame for
+        `Entities.WEDGE_MS` is being wedged. The way out is a spot with real clearance
+        around it (`Entities.WEDGE_CLEARANCE` of the body's own radius), which is what a
+        corner never has, and whatever it was strolling towards is dropped: the target was
+        the reason it walked in there.
+        """
+        spot = (body.x, body.y)
+        last = getattr(body, "wedge_spot", None)
+        body.wedge_spot = spot
+        moved = math.hypot(spot[0] - last[0], spot[1] - last[1]) if last is not None else math.inf
+        if not wants_move or moved > c.Entities.WEDGE_STEP or body.rooted or body.staggered:
+            body.wedge_ms = 0.0
+            return False
+        body.wedge_ms = getattr(body, "wedge_ms", 0.0) + dt
+        if body.wedge_ms < c.Entities.WEDGE_MS:
+            return False
+        body.wedge_ms = 0.0
+        body.x, body.y = self.free_spot_near(
+            body.x, body.y, radius * c.Entities.WEDGE_CLEARANCE, rings=c.World.UNSTICK_RINGS
+        )
+        body.wedge_spot = (body.x, body.y)
+        body.wander.interrupt()
+        return True
+
     def chase_waypoint(self, chaser, player: Player, radius: float):
         """Where a chaser should head next, or None to walk straight at the player.
 

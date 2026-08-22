@@ -192,16 +192,13 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # needs saving.
         self.poi_state = self.save_system.load("pois", {})
         self.trap_state = self.save_system.load("traps", {})
-        # How much patience each settlement has left with the player, by village key:
-        # {"cx:cy": {"count": int, "at": wall-clock seconds}}. A village warns before it
-        # turns (`WorldPlaces.strike_village`), and the warning has to survive a save the
-        # way the anger it leads to does, or quitting would be a way of starting over on a
-        # clean slate. Strikes older than the window are dropped rather than loaded.
-        self.village_strikes = {
-            key: record
-            for key, record in self.save_system.load("village_strikes", {}).items()
-            if time.time() - record.get("at", 0) < c.Villages.STRIKE_WINDOW_S
-        }
+        # How much patience each settlement has left with the player, by village key and by
+        # what the player did: {"cx:cy": {"assault": {"count": int, "at": seconds}}}. A
+        # village warns before it turns (`WorldPlaces.strike_village`), once per kind of
+        # offence, and the warning has to survive a save the way the anger it leads to does,
+        # or quitting would be a way of starting over on a clean slate. Strikes older than
+        # the window are dropped rather than loaded.
+        self.village_strikes = self._load_strikes(self.save_system.load("village_strikes", {}))
         self.tunnel_state = self.save_system.load("tunnels", {})
         # Grid cells the player has walked through (Fog.CELL wide), the memory the minimap
         # draws; everything outside it stays black.
@@ -308,13 +305,19 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         archers = c.Villages.ARCHERS_PER_TOWER_BY_TIER[tier]
 
         def post(x, y, archer: bool):
-            spot = self.free_spot_near(x, y, c.Entities.NPC_SIZE / 2)
+            # An archer is posted *on* the tower, which is solid ground to everything else:
+            # the top of it is where they stand, so their spot is the tower itself rather
+            # than the first clear pixel around it. That search is what used to put them
+            # outside their own wall, shooting at a player standing inside it. Nothing else
+            # about them moves either (`World._update_npcs` skips them), so nothing ever
+            # walks them off the post.
+            spot = (x, y) if archer else self.free_spot_near(x, y, c.Entities.NPC_SIZE / 2)
             guard = NPC(*spot)
             guard.is_guard = True
             guard.is_archer = archer
             guard.home = spot
             guard.color = c.Villages.GUARD_COLOR
-            guard.wander.radius = c.Villages.GUARD_POST_RADIUS
+            guard.wander.radius = 0 if archer else c.Villages.GUARD_POST_RADIUS
             self._set_toughness(guard, village)
             self.npcs.append(guard)
 
@@ -322,8 +325,16 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             for _ in range(per_post):
                 post(*gate["pos"], archer=False)
         for tower in defences["towers"]:
+            # Several bodies on one roof would stack on the same pixel, so the ones after the
+            # first stand a step round the parapet from each other.
             for index in range(max(per_post, archers)):
-                post(*tower, archer=index < archers)
+                archer = index < archers
+                if not archer:
+                    post(*tower, archer=False)
+                    continue
+                bearing = 2 * math.pi * index / max(1, archers)
+                offset = village.tower_radius * c.Villages.TOWER_STAND_FRAC
+                post(tower[0] + math.cos(bearing) * offset, tower[1] + math.sin(bearing) * offset, archer=True)
         # And, on the best defended walls, somebody standing on each stretch: four corners
         # cover a small settlement and nothing like the length of a town's wall.
         for wall in defences["walls"]:
@@ -462,11 +473,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 else {"id": self.underground.id, "return": list(self.surface_return or self.underground.entrance)}
             ),
             "camp_rest": {key: until for key, until in self.rest_cooldowns.items() if until > time.time()},
-            "village_strikes": {
-                key: record
-                for key, record in self.village_strikes.items()
-                if time.time() - record["at"] < c.Villages.STRIKE_WINDOW_S
-            },
+            "village_strikes": self.village_strikes,
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
@@ -641,6 +648,28 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             if not self.blocked(tx, ty, c.Entities.ITEM_SIZE):
                 return tx, ty
         return best
+
+    @staticmethod
+    def _load_strikes(saved: dict) -> dict:
+        """The warning ledger as it comes off disk, with anything the window has outlived
+        dropped rather than loaded.
+
+        A save written before warnings were counted per offence holds one counter per
+        settlement ({"count", "at"}); it loads as a warning for violence, which is what that
+        counter always was in practice."""
+        ledgers: dict = {}
+        now = time.time()
+        for key, record in saved.items():
+            if "count" in record:
+                record = {c.Villages.DEFAULT_OFFENCE: record}
+            ledger = {
+                offence: entry
+                for offence, entry in record.items()
+                if now - entry.get("at", 0) < c.Villages.STRIKE_WINDOW_S
+            }
+            if ledger:
+                ledgers[key] = ledger
+        return ledgers
 
     def free_spot_near(self, x, y, radius, rings: int | None = None) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
@@ -1094,21 +1123,31 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 other.aggro()
 
     def _monster_target(self, monster: Monster, player: Player):
-        """Who this monster is coming for. The player, unless it has walked onto a
-        settlement's grounds and a villager is nearer: a village is something monsters
-        attack, not scenery they file past on their way to the player.
+        """Who this monster is coming for. The player, unless somebody else is nearer and it
+        can actually get at them: a villager is prey, not scenery to be filed past.
+
+        It used to take a settlement's grounds to make one worth eating, which left the
+        woman standing twenty paces outside her own gate ignored by the wolf beside her while
+        it walked round her at the player. So the test is reach and sight instead: anyone
+        inside `Villages.DEFEND_RADIUS`, nearer than the player, and not behind a wall.
+        Villagers who are already down (`NPC.surrendered`) are as good a target as any: a
+        monster is not owed a surrender.
 
         A camp guard is left out of it. It holds a piece of ground rather than raiding, and
         a garrison drifting off to fight the nearest farmer would empty its own camp."""
         if monster.camp_id or not self.npcs:
             return player
-        if self.village_at(monster.x, monster.y, c.Villages.DEFEND_MARGIN) is None:
-            return player
         reach = min(monster.distance_to_point(player.get_pos()), c.Villages.DEFEND_RADIUS)
-        victims = [npc for npc in self.npcs if monster.distance_to_point((npc.x, npc.y)) < reach]
-        if not victims:
-            return player
-        return min(victims, key=lambda npc: monster.distance_to_point((npc.x, npc.y)))
+        near = sorted(
+            (npc for npc in self.npcs if monster.distance_to_point((npc.x, npc.y)) < reach),
+            key=lambda npc: monster.distance_to_point((npc.x, npc.y)),
+        )
+        # Sight is walked step by step, so it is asked about the nearest few and no further:
+        # anyone behind three other people is not the one this thing is going to eat.
+        for npc in near[: c.Villages.MONSTER_PREY_TRIES]:
+            if self.line_of_sight(monster.x, monster.y, npc.x, npc.y):
+                return npc
+        return player
 
     def _land_monster_blow(self, monster: Monster, target, damage: int, player: Player, quest_system: QuestSystem):
         """A monster's swing connecting, on the player or on whoever it caught instead. A
@@ -1138,8 +1177,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         indoors = self.building_at(player.x, player.y) is not None
         self._restock_merchants()
         fight, flee = self.militia_orders()
-        mob = self._mob_orders(player, flee)
-        crowd = [npc for npc in self.npcs if id(npc) in mob]
+        mob = self._mob_orders(player, flee, quest_system)
+        # An archer is in the orders so `_loose_arrows` knows what they are shooting at, but
+        # never in the crowd: a body on a tower roof is not one of the ring of people pushing
+        # in around the player, and being shouldered by that ring is what walked them off it.
+        crowd = [npc for npc in self.npcs if id(npc) in mob and not npc.is_archer]
         defenders = [npc for npc in self.npcs if id(npc) in fight]
         self.assign_surround_slots(crowd, player)
         self._throw_stones(player, mob)
@@ -1147,19 +1189,30 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self._loose_arrows(fight, mob, player)
 
         for npc in self.npcs:
+            if npc.is_archer:
+                # Posted on a tower roof, which is solid ground: never unstuck off it, never
+                # walked off it, never pushed off it. All they do is aim and loose
+                # (`_loose_arrows`), so the frame is run with nothing to walk to.
+                npc.update(player, dt, self.blocked, face_player=False)
+                continue
             # Anything standing inside a solid is put back on open ground before it tries to
             # move: from in there every step it could take would be refused, and a villager
             # a village was built on top of stayed in the wall for the rest of the save.
             self.unstick(npc, c.Entities.NPC_SIZE / 2)
+            # And anything standing on legal ground it cannot get off (the inside corner of
+            # an L, the neck between two houses) is prised out of it: that one is invisible
+            # to `blocked` and only shows up as a body that has meant to move for a while
+            # and has not.
+            self.unwedge(
+                npc,
+                c.Entities.NPC_SIZE / 2,
+                dt,
+                wants_move=bool(id(npc) in mob or id(npc) in fight or id(npc) in flee or npc.wander.target is not None),
+            )
             enemy = fight.get(id(npc))
             # The orders were worked out once for the whole street, so the neighbour who
             # went first may already have finished this one off.
             if enemy is not None and enemy.hp <= 0:
-                enemy = None
-            # An archer never walks to what they are shooting at: they were given a target
-            # by the same orders (`_loose_arrows` read it a moment ago) and they stay in
-            # their tower, which is the whole point of being posted in one.
-            if npc.is_archer:
                 enemy = None
             if enemy is not None:
                 waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
@@ -1229,7 +1282,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             if damage:
                 player.receive_damage(damage, source=npc)
 
-    def _mob_orders(self, player: Player, flee: dict) -> dict:
+    def _mob_orders(self, player: Player, flee: dict, quest_system: QuestSystem) -> dict:
         """Who in an angry village is actually coming for the player, and how close they mean
         to get: a dict of `id(npc)` to the standoff they hold.
 
@@ -1258,6 +1311,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             if distance > limit:
                 continue
             if npc.routed:
+                if npc.is_militia:
+                    for recruit in self.call_for_help(npc):
+                        # Nobody hands in a task to someone they have just joined a fight
+                        # against, the same rule a provoked village goes by.
+                        quest_system.remove_quest(recruit)
+                elif not npc.yielded:
+                    self.yield_to_player(npc)
+                    continue
                 shelter = self._refuge_for(npc)
                 if shelter is not None:
                     flee[id(npc)] = shelter
@@ -1277,13 +1338,19 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         once it has calmed down, and carry every leaf a frame along its swing.
 
         A gate is the one part of a wall that is ever a wall to the player: while it is
-        barred, getting out of a town you have set against you means hacking your way
-        through it, and a pack that followed you in is shut in with you. A gate already
-        beaten down never shuts again."""
+        barred, getting out of a town you have set against you means heaving the beam up
+        yourself (`Game._lift_gate`, slow) or hacking your way through it, and a pack that
+        followed you in is shut in with you. A gate already beaten down never shuts again.
+
+        One angry villager is not a siege. A settlement only shuts itself once somebody was
+        killed here (the grudge nothing runs out) or `Villages.BAR_GATES_MOB` of its people
+        are after the player at once, so a caught thief costs the player a fight and not the
+        way out of town."""
         for village in self.villages:
             if not village.defended:
                 continue
-            village.barred = any(npc.hostile and village.contains_point(npc.x, npc.y) for npc in self.npcs)
+            angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
+            village.barred = any(npc.grudge for npc in angry) or len(angry) >= c.Villages.BAR_GATES_MOB
             village.advance_gates(dt)
             if village.barred:
                 self.clear_gateways(village, player)
@@ -1427,6 +1494,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.update_projectiles(player, quest_system, dt)
         self._update_npcs(player, dt, quest_system)
         self._update_critters(player, dt, damage_mult)
+        # A warning nobody is counting any more is rubbed out here rather than left to be
+        # filtered wherever it is read, so the HUD, the ladder and the save all see the same
+        # ledger.
+        self.forget_stale_strikes()
         # Checked once everything has taken its step, so a trap shuts on where things
         # actually ended up this frame rather than on where they set off from.
         self.snap_traps(player, quest_system)
