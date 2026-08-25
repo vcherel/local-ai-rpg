@@ -212,8 +212,8 @@ class NPC(Entity):
             # are empty.
             return {}
         return {
-            "melee": {
-                "kind": self.weapon.name,
+            "hand1": {
+                "kind": c.weapon_look(self.weapon_name),
                 "color": c.Entities.WEAPON_COLOR,
                 "outline": c.Entities.WEAPON_OUTLINE,
             }

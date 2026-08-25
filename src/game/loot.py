@@ -37,7 +37,12 @@ POTION_LOOT_NAMES = [
 # Healing shows up twice as often as any single buff, so heals stay the common find.
 POTION_LOOT_WEIGHTS = [6, 3, 3, 3, 3]
 
-LOOT_TYPES = ["weapon", "armor", "accessory", "ammo", "potion"]
+# One name per bomb kind; items.bomb_kind reads which is which back out of the name.
+BOMB_LOOT_NAMES = ["Fire Bomb", "Powder Charge"]
+# How many come in one find. Two of them is a plan; a dozen is a different game.
+BOMB_BUNDLE = (1, 3)
+
+LOOT_TYPES = ["weapon", "armor", "accessory", "ammo", "potion", "bomb"]
 
 
 def _roll_loot_item(x, y, rarity: str, ammo_range: tuple[int, int]) -> Item:
@@ -57,6 +62,9 @@ def _roll_loot_item(x, y, rarity: str, ammo_range: tuple[int, int]) -> Item:
         quantity = round(random.randint(lo, hi) * tier.price_mult)
     elif item_type == "potion":
         name = random.choices(POTION_LOOT_NAMES, POTION_LOOT_WEIGHTS)[0]
+    elif item_type == "bomb":
+        name = random.choice(BOMB_LOOT_NAMES)
+        quantity = random.randint(*BOMB_BUNDLE)
     else:
         if item_type == "armor" and random.random() < SHIELD_SHARE:
             item_type = "shield"
@@ -73,7 +81,16 @@ def _roll_loot_item(x, y, rarity: str, ammo_range: tuple[int, int]) -> Item:
 
 # Asking price before the rarity multiplier, per item type, matching the 5 to 80 range
 # the LLM is asked for so a fallback shop doesn't price differently from a generated one.
-SHOP_BASE_PRICES = {"weapon": 30, "armor": 28, "shield": 30, "accessory": 25, "ammo": 25, "potion": 15, "misc": 20}
+SHOP_BASE_PRICES = {
+    "weapon": 30,
+    "armor": 28,
+    "shield": 30,
+    "accessory": 25,
+    "ammo": 25,
+    "potion": 15,
+    "bomb": 40,
+    "misc": 20,
+}
 
 
 def roll_shop_stock(count: int) -> list[dict]:

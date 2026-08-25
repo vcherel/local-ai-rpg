@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.damage_fx import draw_cracks
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -54,6 +55,14 @@ class Scenery:
         # How far this piece reaches, for the water and bridge lookups: nothing about water
         # blocks, so it needs a footprint of its own rather than borrowing blocking_radius.
         self.water_reach = self._water_reach()
+        # A tree is the one piece of wilderness the player can argue with: it takes hits,
+        # comes down, and leaves a stump standing where it was. `key` is what the world
+        # remembers a felled one by (`World.felled`), filled in by whoever generated the
+        # chunk; everything else here is None on anything that is not a tree.
+        self.key = ""
+        self.hp = c.Trees.HP if kind in c.Scenery.CANOPY_KINDS else 0
+        self.felled = False
+        self.fell_start_ms = None
         if kind == "bridge":
             self.block_reach = math.hypot(self.size, c.Scenery.BRIDGE_WIDTH + c.Scenery.BRIDGE_RAIL * 2) / 2
 
@@ -89,10 +98,25 @@ class Scenery:
     def canopy_radius(self) -> float:
         """How far the leaves of a tree reach, or 0 for anything that is not a canopy. The
         lobes are rolled out past the radius they were rolled from, so the margin is part
-        of the answer rather than a fudge at the call site."""
-        if self.kind not in c.Scenery.CANOPY_KINDS:
+        of the answer rather than a fudge at the call site. A felled tree has no leaves
+        left to reach anywhere."""
+        if self.kind not in c.Scenery.CANOPY_KINDS or self.felled:
             return 0.0
         return self._shape["radius"] * c.Scenery.CANOPY_COVER_MARGIN
+
+    @property
+    def choppable(self) -> bool:
+        return self.kind in c.Scenery.CANOPY_KINDS and not self.felled
+
+    def fell(self):
+        """Bring the tree down. What is left is a stump: nothing to walk around, nothing to
+        hide under, and something still standing there so the wood reads as cut rather than
+        as scenery that quietly vanished."""
+        self.felled = True
+        self.hp = 0
+        self.fell_start_ms = pygame.time.get_ticks()
+        self.blocking_radius = 0.0
+        self.block_reach = 0.0
 
     def shades(self, x: float, y: float) -> bool:
         """Whether a body standing at (x, y) is under this canopy, and therefore whether the
@@ -392,12 +416,44 @@ class Scenery:
     def _draw_canopy(self, screen, center):
         cx, cy = center
         radius = self._shape["radius"]
+        if self.felled:
+            self._draw_fallen(screen, center)
+            return
         shadow = pygame.Rect(0, 0, round(radius * 1.7), round(radius * 1.1))
         shadow.center = (cx + 8, cy + 12)
         pygame.draw.ellipse(screen, (48, 68, 40), shadow)
         pygame.draw.circle(screen, (88, 62, 38), (cx, cy), self._shape["trunk"])
         for ox, oy, r, color in self._shape["lobes"]:
             pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
+        # What is left of it, so a tree worth two more swings looks like one.
+        self._draw_wear(screen, center)
+
+    def _draw_wear(self, screen, center):
+        """The cuts taken out of a standing tree, through the same crack system every other
+        hit-point pool in the world wears down through (`core/damage_fx.py`)."""
+        if self.hp >= c.Trees.HP:
+            return
+        radius = round(self._shape["trunk"])
+        body = pygame.Rect(center[0] - radius, center[1] - radius, radius * 2, radius * 2)
+        draw_cracks(screen, body, max(0.0, self.hp / c.Trees.HP), self.key or f"{self.x},{self.y}")
+
+    def _draw_fallen(self, screen, center):
+        """A stump, and the tree still going over for the moment after it was cut: the
+        canopy leans away and drops out of sight, so a wood coming down is something the
+        player watches happen rather than a trunk that blinks into a stump."""
+        cx, cy = center
+        radius = self._shape["radius"]
+        trunk = round(self._shape["trunk"])
+        elapsed = pygame.time.get_ticks() - (self.fell_start_ms or 0)
+        if self.fell_start_ms is not None and elapsed < c.Trees.FALL_MS:
+            lean = (elapsed / c.Trees.FALL_MS) ** 2
+            offset = round(radius * 1.8 * lean)
+            for ox, oy, r, color in self._shape["lobes"]:
+                faded = tuple(round(v * (1.0 - lean * 0.4)) for v in color)
+                pygame.draw.circle(screen, faded, (round(cx + ox + offset), round(cy + oy + offset // 2)), r)
+        pygame.draw.circle(screen, c.Trees.STUMP_COLOR, (cx, cy), trunk)
+        pygame.draw.circle(screen, (58, 40, 24), (cx, cy), trunk, 2)
+        pygame.draw.circle(screen, (128, 96, 62), (cx, cy), max(1, round(trunk * 0.5)), 1)
 
 
 # What draws each kind of scenery. An explicit table rather than a name looked up off the

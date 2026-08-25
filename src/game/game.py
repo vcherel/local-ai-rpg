@@ -18,6 +18,7 @@ from core.swing_arcs import get_swings
 from game.entities.items import rarity_color, roll_rarity
 from game.entities.player import Player
 from game.loot import open_lootbox
+from game.record import Record
 from game.world import World
 from llm.death_taunts import DeathTauntGenerator
 from llm.dialogue_manager import DialogueManager
@@ -122,9 +123,12 @@ class Game:
         self.dialogue_manager.quest_system.world = self.world
         # A quest handed in is worth a save of its own: it is the one thing in a session
         # that can't be earned back by walking the same ground again.
-        self.dialogue_manager.quest_system.on_complete = self.save_data
+        self.dialogue_manager.quest_system.on_complete = self._on_quest_completed
         self.npc_name_generator = NPCNameGenerator(self.save_system)
-        self.death_taunts = DeathTauntGenerator(self.save_system)
+        # What the playthrough has added up to: deaths and quests handed in, and what those
+        # two numbers have already paid out.
+        self.record = Record(self.save_system)
+        self.death_taunts = DeathTauntGenerator(self.save_system, self.record)
         self.active_menu = False
         # Set by the pause menu's "Quit to menu"; breaks the run loop so control
         # returns to the main menu (game state is saved on the way out).
@@ -156,7 +160,6 @@ class Game:
             pygame.K_e: self._interact,
             pygame.K_b: self._trade_nearby,
             pygame.K_f: self._equip_pending_upgrade,
-            pygame.K_x: self._swap_melee,
             pygame.K_i: self.inventory_menu.toggle,
             pygame.K_j: self.quest_menu.toggle,
             pygame.K_c: self.stats_menu.toggle,
@@ -224,8 +227,8 @@ class Game:
                     if event.button == 1:  # Left click
                         self._handle_left_click(event)
 
-                    elif event.button == 3:  # Right click: ranged weapon
-                        self.world.handle_attack(self.player, self.dialogue_manager.quest_system, ranged=True)
+                    elif event.button == 3:  # Right click: whatever hand two is holding
+                        self.world.handle_attack(self.player, self.dialogue_manager.quest_system, hand=1)
 
                 if event.type == pygame.KEYDOWN:
                     self._handle_key(event)
@@ -260,14 +263,15 @@ class Game:
         self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
     def _handle_key(self, event):
-        """One in-world key press. The two ranges (the weapon bar's number keys, the
-        potion quickbar's letters) are checked first because they read the key rather than
-        name it; everything else is a plain key looked up in `self.key_actions`."""
+        """One in-world key press. The two ranges (the four weapon keys, the potion
+        quickbar's letters) are checked first because they read the key rather than name
+        it; everything else is a plain key looked up in `self.key_actions`."""
         # A movement key pressed while the jaws are on the player is a struggle rather than
         # a step: the trap takes the seconds back one press at a time.
         if event.key in _STRUGGLE_KEYS and self._struggle():
             return
-        if pygame.K_1 <= event.key <= pygame.K_1 + c.Player.WEAPON_SLOTS - 1:
+        weapon_keys = c.Player.HANDS * c.Player.POSITIONS_PER_HAND
+        if pygame.K_1 <= event.key <= pygame.K_1 + weapon_keys - 1:
             self._select_weapon(event.key - pygame.K_1)
             return
         if event.unicode.lower() in c.Potions.QUICK_KEYS:
@@ -347,23 +351,20 @@ class Game:
         self.player.equip(item)
         self.loot_notification.show(f"Equipped {item.name}", rarity_color(item.rarity))
 
-    def _select_weapon(self, slot: int):
-        """Draw the weapon on a number-key bar slot. It goes into the melee or the ranged
-        slot depending on its archetype, so switching a bow never puts your sword away."""
-        item = self.player.select_weapon(slot)
-        if item is None:
-            self.loot_notification.show(f"No weapon on slot {slot + 1}", c.Colors.MUTED)
-            return
-        hand = "ranged" if c.weapon_archetype(item.name).ranged else "melee"
-        self.loot_notification.show(f"{item.name} ready ({hand})", rarity_color(item.rarity))
+    def _select_weapon(self, key: int):
+        """Take up one of the four carried weapons. Keys 1 and 2 are the two the left click
+        swings or fires, 3 and 4 the two the right click does: which of them is the button
+        never changes, only what is in it.
 
-    def _swap_melee(self):
-        """Switch to the other melee weapon. Both are worn; this is which one swings."""
-        item = self.player.swap_melee()
+        An empty position is a choice like any other and puts that hand on bare hands, which
+        is why it is reported rather than refused."""
+        hand, index = divmod(key, c.Player.POSITIONS_PER_HAND)
+        item = self.player.select_weapon(hand, index)
+        button = "left" if hand == 0 else "right"
         if item is None:
-            self.loot_notification.show("No second melee weapon", c.Colors.MUTED)
+            self.loot_notification.show(f"Bare hands ({button} click)", c.Colors.MUTED)
             return
-        self.loot_notification.show(f"{item.name} in hand", rarity_color(item.rarity))
+        self.loot_notification.show(f"{item.name} ready ({button} click)", rarity_color(item.rarity))
 
     def _drink_quick_potion(self, slot: int):
         """Drink the potion bound to a HUD quick key, if that slot holds one."""
@@ -846,6 +847,18 @@ class Game:
         self.save_data()
         self.loot_notification.show("Game saved", c.Colors.GREEN)
 
+    def _on_quest_completed(self):
+        """A quest handed in: count it, pay out if that one crossed a milestone, and save.
+
+        The milestone reward goes through the same lootbox every other windfall in the game
+        does, so the tenth quest pays the way a boss does rather than in a number that only
+        exists on the character screen."""
+        milestone = self.record.add_quest()
+        if milestone is not None:
+            count, rarity = milestone
+            self._award_loot(rarity, f"{count} quests completed")
+        self.save_data()
+
     def _respawn(self):
         """Death has a real cost, not just a free full-heal at the same spot: dock coins,
         weaken the player for a while, and put them back at world spawn so they can't keep
@@ -854,6 +867,9 @@ class Game:
         # one that lets its anger go, since dying to a town is the town getting its own back.
         self.world.pacify_village(self.player.x, self.player.y)
         coins_lost = self.player.apply_death_penalty()
+        # Counted before the taunt is drawn, so the line the player is about to read can be
+        # one this very death just unlocked.
+        milestone_deaths = self.record.add_death()
         # Read before anything else touches the player: the screen wants to know what killed
         # them, and the taunt was written long before this death happened.
         killer = self.player.last_hit_by
@@ -882,6 +898,10 @@ class Game:
         # and would otherwise be spent staring at it.
         self.player.grant_spawn_grace()
         self.loot_notification.show(f"You died. -{coins_lost} coins", c.Colors.RED)
+        if milestone_deaths is not None:
+            # Dying enough times is not an achievement, so it does not pay in loot. It pays
+            # in the game having more to say about it.
+            self.loot_notification.show(f"{milestone_deaths} deaths: death has found new words", c.Colors.MUTED)
 
     def _quit_to_menu(self):
         """Leave the game and return to the main menu; run() saves as it exits."""
@@ -1030,8 +1050,10 @@ class Game:
                 get_llm_tasks(),
                 self.player,
                 self.world,
+                self.camera,
                 self.last_save_ms,
                 self.gate_lift,
+                quest_target,
             )
 
         self.context_window.update()
@@ -1044,7 +1066,7 @@ class Game:
         self.inventory_menu.draw(self.player)
         self.quest_menu.draw(self.dialogue_manager.quest_system)
         self.shop_menu.draw()
-        self.stats_menu.draw(self.player)
+        self.stats_menu.draw(self.player, self.record)
         self.help_menu.draw()
         self.pause_menu.draw()
         self.context_window.draw()

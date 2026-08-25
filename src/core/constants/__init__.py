@@ -31,6 +31,7 @@ from core.constants.combat import (
     STAFF_BOLT_COLORS,
     UNARMED,
     WEAPON_ARCHETYPES,
+    Bombs,
     Boomerang,
     Combat,
     DamageFx,
@@ -40,11 +41,13 @@ from core.constants.combat import (
     Projectile,
     Shield,
     Staffs,
+    Trees,
     WeaponArchetype,
     weapon_archetype,
+    weapon_look,
 )
 from core.constants.items import QUEST_COIN_BANDS, Affixes, LootBox, Potions, Quests, Rarity, RarityTier
-from core.constants.player import STAT_LABELS, Affinity, Death, Magic, Player, Stats
+from core.constants.player import STAT_LABELS, Affinity, Death, Magic, Milestones, Player, Stats
 from core.constants.ui import TARGET_FPS, Colors, Fonts, Hyperparameters, Minimap, Music, Screen
 from core.constants.villages import Villages
 from core.constants.world import (
@@ -75,6 +78,7 @@ __all__ = [
     "WEAPON_ARCHETYPES",
     "Affinity",
     "Affixes",
+    "Bombs",
     "Boomerang",
     "Boss",
     "BossKind",
@@ -100,6 +104,7 @@ __all__ = [
     "ImpactFx",
     "LootBox",
     "Magic",
+    "Milestones",
     "Minimap",
     "MonsterArt",
     "MonsterKind",
@@ -117,10 +122,12 @@ __all__ = [
     "Staffs",
     "Stats",
     "Traps",
+    "Trees",
     "Tunnels",
     "Villages",
     "WeaponArchetype",
     "Wildlife",
     "World",
     "weapon_archetype",
+    "weapon_look",
 ]

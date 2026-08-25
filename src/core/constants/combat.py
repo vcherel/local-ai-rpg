@@ -18,6 +18,18 @@ class Shield:
     BLOCK_MAX: float = 0.85
     # Only hits arriving within this cone of the player's facing are blocked at all.
     ARC_DEG: float = 150.0
+    # The shield is strapped to one side of the body rather than held out in front of it,
+    # so where a blow arrives from matters as much as whether it came from the front: what
+    # comes at the shield side is met squarely, what comes at the other is caught by its
+    # edge. Turning the shield onto the blow is the whole skill of carrying one.
+    SIDE_ARC_DEG: float = 120.0
+    OFF_SIDE_MULT: float = 0.35
+    # A raised shield turns a shot away instead of taking it, but only one arriving on the
+    # shield side: the deflected arrow keeps flying, harmless, off the face of the shield.
+    DEFLECT_COLOR: tuple = (200, 220, 255)
+    # Turning a shot aside is not free: it comes out of the same guard meter a blow does,
+    # so an archer can still wear a shield down.
+    DEFLECT_GUARD_COST: float = 8.0
     SPEED_MULT: float = 0.55  # movement while the shield is up
 
     GUARD_MAX: float = 60.0
@@ -123,6 +135,85 @@ class Combat:
     THRUST_DUST: int = 9
     # How far the player is carried forward by their own thrust.
     THRUST_LUNGE: float = 18.0
+
+
+@dataclass(frozen=True)
+class Bombs:
+    """The two things the player can carry that go off (game/entities/bomb.py).
+
+    A bomb is the powder keg made portable: both kinds end in `WorldCombat.explode`, so
+    what they do to a crowd, to the gore on the ground and to a village's temper is
+    already decided and nothing here has to restate it. What separates them is when they
+    go off. A mine is laid on the ground and waits for somebody to walk onto it, which is
+    a piece of ground chosen in advance; a grenade is thrown at where the player is aiming
+    and burns a fuse in the air, which is a fight answered right now.
+
+    Both are consumables held in a weapon position: clicking spends one, and an empty
+    position is bare hands like any other.
+    """
+
+    # A grenade travels at this many pixels per frame at TARGET_FPS and stops where it was
+    # aimed, or at the first wall: it is thrown, so it never carries as far as a bow.
+    THROW_SPEED: float = 9.0
+    THROW_RANGE: float = 300.0
+    FUSE_MS: int = 900
+
+    # A mine is not live the instant it leaves the hand: the player has to be able to lay
+    # one and step off it.
+    ARM_MS: int = 900
+    TRIGGER_RADIUS: float = 34.0
+    # A laid mine is the player's own, so their own step never sets it off. What does is
+    # anything that would fight them.
+    MINE_LIFETIME_MS: int = 240_000
+
+    RADIUS: float = 165.0
+    DAMAGE: int = 62
+    KNOCKBACK: float = 80.0
+    SHAKE: float = 26.0
+    # The player is standing further from their own grenade than from a keg they smashed,
+    # but not far enough for it to be free.
+    PLAYER_DAMAGE_MULT: float = 0.6
+
+    # A bomb is not a weapon that can be spammed: the throw has the cadence of a heavy
+    # swing, and the player has to live in the couple of seconds after it.
+    COOLDOWN_MS: int = 700
+
+    # What a merchant asks for one, before rarity: a bomb is expensive on purpose, since
+    # it answers a crowd the way nothing else the player carries does.
+    BASE_VALUE: int = 45
+
+    BODY_COLOR: tuple = (58, 56, 62)
+    FUSE_COLOR: tuple = (255, 190, 90)
+    ARMED_COLOR: tuple = (255, 80, 60)
+    SIZE: int = 13
+
+
+@dataclass(frozen=True)
+class Trees:
+    """Felling a tree (game/combat.py `_swing_at_scenery`, game/entities/scenery.py).
+
+    A wood is the one piece of scenery the player can argue with. A tree takes real work to
+    bring down, an axe does that work several times faster than anything else, and what is
+    left is a stump: no longer a wall to walk around, no longer a canopy to hide under, and
+    a couple of logs on the ground worth what somebody in a village will pay for them.
+
+    Which trees have been felled is the one thing about the wilderness the world remembers
+    (`World.felled`), since everything else about a chunk is rolled from its seed.
+    """
+
+    HP: int = 90
+    # What the swing counts for: an axe is what a tree is felled with, everything else is
+    # somebody hitting a tree with the wrong thing.
+    AXE_MULT: float = 3.0
+    OTHER_MULT: float = 0.6
+    HIT_RADIUS: int = 26
+    # Logs left lying where it came down.
+    LOG_DROPS: tuple = (1, 2)
+    XP_PER_FELL: float = 3.0
+    # How long the trunk takes to come down, and how far the canopy leans as it goes.
+    FALL_MS: int = 700
+    FALL_SHAKE: float = 14.0
+    STUMP_COLOR: tuple = (96, 72, 48)
 
 
 @dataclass(frozen=True)
@@ -300,8 +391,11 @@ class Boomerang:
     """
 
     OUT_RANGE: int = 460
-    # How many bodies one pass carries through before it turns for home.
-    PIERCE: int = 3
+    # A plain boomerang comes home off the first thing it touches: striking a whole line of
+    # bodies and then striking them all again on the way back was simply the best weapon in
+    # the game. How many it carries through is a rarity roll now, indexed by tier, so the
+    # piercing one is a thing to find rather than the way every one of them works.
+    PIERCE_BY_TIER: tuple = (0, 0, 1, 2, 3)
     # The return leg is a little quicker than the throw, so the weapon is not dead time.
     RETURN_SPEED_MULT: float = 1.25
     # Close enough to the hand to be caught.
@@ -415,6 +509,44 @@ def _staff_variant(lower: str) -> WeaponArchetype:
     if element not in _ELEMENTAL_STAFFS:
         _ELEMENTAL_STAFFS[element] = replace(WEAPON_ARCHETYPES["staff"], element=element)
     return _ELEMENTAL_STAFFS[element]
+
+
+# Weapon-name keyword -> the silhouette it is drawn as (game/entities/gear.py). Separate
+# from the archetype table above because how a thing swings and what it looks like are two
+# different questions: every farmhouse tool swings identically and none of them should look
+# alike, while a hatchet and a battleaxe share a profile and swing the same. Matched by
+# substring in this order; anything not listed is drawn as its archetype.
+_KEYWORD_TO_LOOK = {
+    "rolling pin": "rolling_pin",
+    "pitchfork": "pitchfork",
+    "halberd": "halberd",
+    "hatchet": "hatchet",
+    "scythe": "scythe",
+    "sickle": "sickle",
+    "shovel": "shovel",
+    "spade": "shovel",
+    "broom": "broom",
+    "poker": "poker",
+    "tongs": "tongs",
+    "mace": "mace",
+    "club": "club",
+    "cudgel": "club",
+    "knife": "knife",
+    "rake": "rake",
+    "hoe": "hoe",
+}
+
+
+def weapon_look(name: str | None) -> str:
+    """The silhouette a weapon is drawn with: its own if it has one, its archetype's
+    otherwise. Bare hands answer with "", which is what `draw_human` draws as empty hands."""
+    if not name:
+        return ""
+    lower = name.lower()
+    for keyword, look in _KEYWORD_TO_LOOK.items():
+        if keyword in lower:
+            return look
+    return weapon_archetype(name).name
 
 
 def weapon_archetype(name: str | None) -> WeaponArchetype:

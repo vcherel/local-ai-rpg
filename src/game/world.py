@@ -13,6 +13,7 @@ from core.audio import play_sound
 from core.daynight import DayNightCycle
 from core.decals import get_decals
 from game.combat import WorldCombat
+from game.entities.bomb import MINE, Bomb
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable, generate_breakables
 from game.entities.buildings import Building, set_active_buildings
@@ -119,6 +120,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # and towers of a walled town.
         self._village_solids_by_chunk: dict = {}
         self.breakables: list[Breakable] = []
+        # Bombs the player has thrown or laid. A grenade in the air and a mine waiting in
+        # the grass are the same object at different points of its life (`game/entities/bomb.py`).
+        self.bombs: list[Bomb] = []
         # When each body may next be pricked by a town's stakes (`WorldCombat.prick_spikes`),
         # by id. Session-only, like a projectile: nothing about standing in a ditch of
         # sharpened sticks is worth saving.
@@ -193,6 +197,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # needs saving.
         self.poi_state = self.save_system.load("pois", {})
         self.trap_state = self.save_system.load("traps", {})
+        # Which trees the player has cut down, as "cx:cy:index" keys. The one thing about
+        # the wilderness the world remembers: everything else in a chunk is rolled from its
+        # seed, so a felled tree has to be a player change kept beside the POI state rather
+        # than something the generator could ever know.
+        self.felled = set(self.save_system.load("felled", []))
+        # Mines are left lying where the player laid them, so walking back to one you set
+        # last night is a real thing to do. A grenade is in the air and is never saved.
+        self.bombs = [Bomb.from_dict(d) for d in self.save_system.load("bombs", [])]
         # How much patience each settlement has left with the player, by village key and by
         # what the player did: {"cx:cy": {"assault": {"count": int, "at": seconds}}}. A
         # village warns before it turns (`WorldPlaces.strike_village`), once per kind of
@@ -467,6 +479,8 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             "breakables": [breakable.to_dict() for breakable in self.breakables],
             "pois": self._poi_state_snapshot(),
             "traps": self._trap_state_snapshot(),
+            "felled": sorted(self.felled),
+            "bombs": [bomb.to_dict() for bomb in self.bombs if bomb.kind == MINE],
             "tunnels": self._tunnel_state_snapshot(),
             "underground": (
                 None
@@ -1493,6 +1507,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.advance_impulses(player, dt)
         self._update_monsters(player, dt, quest_system, damage_mult)
         self.update_projectiles(player, quest_system, dt)
+        self.update_bombs(player, quest_system, dt)
         self._update_npcs(player, dt, quest_system)
         self._update_critters(player, dt, damage_mult)
         # A warning nobody is counting any more is rubbed out here rather than left to be

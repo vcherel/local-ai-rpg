@@ -17,12 +17,10 @@ class SaveSystem:
         - stats: Character stat levels and xp (dict)
         - inventory: Item ids the player carries (list[str])
         - equipped: Currently equipped item ids, keyed by slot (dict[str, str | None])
-        - weapon_bar: Item ids on the number-key weapon bar, None per empty slot. Separate
-          from `equipped`: the bar is what the keys reach for, the equip slots are what is
-          drawn right now (list[str | None])
-        - potion_bar: Item ids on the HUD potion quickbar, None per empty slot. Chosen the
-          way the weapon bar is, so which potion a quick key drinks survives a pickup (list)
-        - active_melee: Which of the two melee slots holds the weapon that swings (int)
+        - potion_bar: Item ids on the HUD potion quickbar, None per empty slot. A choice the
+          save keeps, so which potion a quick key drinks survives a pickup (list)
+        - active_hands: Which of its two weapons each hand is currently holding, one index
+          per hand (list[int])
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
         - monsters: Monster positions, hp and kind (list[dict])
@@ -36,6 +34,15 @@ class SaveSystem:
         - pois: What the player changed about a wilderness point of interest, by POI id:
           {"cx:cy": {"looted": bool, "discovered": bool, "npc_spawned": bool}}. POIs themselves
           are regenerated from their chunk, so only touched ones appear here (dict)
+        - felled: Trees the player has cut down, as "cx:cy:index" keys. A chunk's scenery is
+          rolled from its seed, so what was felled is the one thing about it worth keeping
+          (list[str])
+        - bombs: Mines the player laid and has not set off, position and kind. A grenade is
+          in the air for a second and is never saved (list[dict])
+        - deaths: How many times the player has died this playthrough (int)
+        - quests_done: How many quests the player has handed in this playthrough (int)
+        - milestones: Which death and quest milestones have already paid out, so a reward is
+          granted once ({"quests": [int], "deaths": [int]})
         - traps: Which hunters' bear traps have already shut, by trap id: {"cx:cy:x,y": True}.
           Traps themselves are regenerated from their chunk, so springing one is all there is
           to save (dict)

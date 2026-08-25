@@ -43,12 +43,15 @@ class LootBox:
     # Item type roll weights (weapon, armor, accessory, ammo, potion), indexed by rarity
     # tier. Common stays an even split; higher tiers skew hard toward gear so a legendary
     # box is unlikely to hand back "just" a stack of arrows or a potion.
+    # Weights per LOOT_TYPES row: weapon, armor, accessory, ammo, potion, bomb. A bomb is
+    # deliberately the rarest find at every tier: it answers a crowd on its own, so it has
+    # to be something the player rations rather than something they always have on them.
     TYPE_WEIGHTS_BY_TIER: tuple = (
-        (1, 1, 1, 1, 1),
-        (2, 2, 2, 1, 1),
-        (3, 3, 3, 1, 1),
-        (4, 4, 4, 1, 1),
-        (5, 5, 5, 1, 1),
+        (1, 1, 1, 1, 1, 1),
+        (2, 2, 2, 1, 1, 1),
+        (3, 3, 3, 1, 1, 1),
+        (4, 4, 4, 1, 1, 1),
+        (5, 5, 5, 1, 1, 1),
     )
 
 
@@ -124,8 +127,8 @@ class Potions:
         "stoneskin": (172, 172, 188),
     }
 
-    # Potions the player can drink straight from the HUD. The number row went to the
-    # weapon bar, so the quickbar sits on the letters under the movement hand instead.
+    # Potions the player can drink straight from the HUD. The number row went to the four
+    # weapon positions, so the quickbar sits on the letters under the movement hand instead.
     QUICK_SLOTS: int = 4
     QUICK_KEYS: tuple = ("q", "r", "t", "y")
 

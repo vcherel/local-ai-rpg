@@ -25,14 +25,14 @@ if TYPE_CHECKING:
 
 class GameRenderer:
     # Everything below sits inside one permanent panel in the top left corner:
-    # a row of icon buttons, then coin/item/quest counters, then equipped gear, then the
-    # weapon bar the number keys switch between. Kept as small as it can be read at: the
+    # a row of icon buttons, then coin/item/quest counters, then the four carried weapons
+    # in key order, then what is worn. Kept as small as it can be read at: the
     # panel is drawn over the world and over anything the screen edge is trying to point
     # at, so every slot here costs the player a piece of the view.
     HUD_PANEL_RECT = pygame.Rect(8, 8, 284, 176)
     HUD_ICON_SIZE = 34
     HUD_ICON_GAP = 6
-    # Equip and weapon slots. No captions under them: the ghost glyph says what an empty
+    # Equip slots, four to a row. No captions under them: the ghost glyph says what an empty
     # slot takes, and the captions were what forced the row twice as wide as its icons.
     HUD_SLOT_SIZE = 34
     HUD_SLOT_STEP = 38
@@ -167,7 +167,7 @@ class GameRenderer:
         for item in world.scenery_props_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 100):
             if not self._on_screen(camera, item.x, item.y, margin=70):
                 continue
-            if item.kind in c.Scenery.CANOPY_KINDS:
+            if item.kind in c.Scenery.CANOPY_KINDS and not item.felled:
                 canopies.append(item)
             else:
                 item.draw(self.screen, camera)
@@ -233,6 +233,13 @@ class GameRenderer:
         for boss in world.bosses:
             boss.draw_summon_marks(self.screen, camera)
 
+        # A laid mine lies on the ground like a trap does, for the same reason: it is meant
+        # to be caught sight of, not read off the top of whoever is about to step on it. A
+        # grenade still in the air is drawn here too, and a tunnel has both like anywhere else.
+        for bomb in world.bombs:
+            if self._on_screen(camera, bomb.x, bomb.y):
+                bomb.draw(self.screen, camera)
+
         for critter in world.critters:
             if visible(critter.x, critter.y):
                 critter.draw(self.screen, camera)
@@ -283,7 +290,6 @@ class GameRenderer:
 
         if interaction is not None:
             self._draw_interaction_prompt(camera, interaction)
-        self.draw_offscreen_indicators(camera, quest_target)
         self.draw_boss_bar(world, player)
 
     def _draw_struggle_bar(self, player: Player):
@@ -473,8 +479,10 @@ class GameRenderer:
         llm_tasks,
         player: Player,
         world: World,
+        camera: Camera,
         saved_ms: int = 0,
         gate_lift: float = 0.0,
+        quest_target=None,
     ):
         active_task_count = len(llm_tasks)
         mouse_pos = pygame.mouse.get_pos()
@@ -493,8 +501,7 @@ class GameRenderer:
         x = self._draw_stat_chip(x, stats_y, "bag", nb_items)
         self._draw_stat_chip(x, stats_y, "scroll", nb_quests)
 
-        equipped_bottom = self._draw_equipped(player, top=stats_y + 28)
-        self._draw_weapon_bar(player, top=equipped_bottom + 8)
+        self._draw_equipped(player, top=stats_y + 28)
         self._draw_potion_bar(player)
         self._draw_mana_bar(player)
         self._draw_guard_bar(player)
@@ -515,6 +522,10 @@ class GameRenderer:
 
         if self.show_llm_tasks:
             self._draw_llm_task_panel(llm_tasks)
+
+        # Last of everything: the arrow to the tracked quest is the one thing on screen that
+        # is useless where it cannot be seen, so nothing on the HUD is allowed over it.
+        self.draw_offscreen_indicators(camera, quest_target)
 
     def _quick_slot_rects(self) -> list[pygame.Rect]:
         step = self.QUICK_SLOT_SIZE + self.QUICK_SLOT_GAP
@@ -656,60 +667,54 @@ class GameRenderer:
             x += width + gap
 
     def _draw_equipped(self, player: Player, top: int) -> int:
-        """A mini paper-doll on the HUD: one slot per equip type. The melee weapon that
-        would actually swing is gold-bordered, since both melee slots are worn at once, and
-        the ammo slot carries the count of the quiver the next shot would spend, in red once
-        it is empty. Returns the y it ends at, so what comes under it doesn't have to guess."""
+        """The HUD paper-doll, in two rows: the four carried weapons in key order, then what
+        is worn.
+
+        The weapon each hand is actually holding is gold-bordered and its key number is
+        marked, so the strip says both what the player is fighting with and what one press
+        would put in their hands instead. The ammo slot carries the count of the quiver the
+        next shot would spend, in red once it is empty. Returns the y it ends at, so what
+        comes under it doesn't have to guess."""
         slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
-        active_melee = player.active_melee_slot()
+        in_hand = {player.hand_slot(hand) for hand in range(c.Player.HANDS)}
+        rows = (
+            [entry for entry in widgets.EQUIP_SLOTS if entry[0] in widgets.WEAPON_SLOTS],
+            [entry for entry in widgets.EQUIP_SLOTS if entry[0] not in widgets.WEAPON_SLOTS],
+        )
 
-        for i, (item_type, _caption, glyph) in enumerate(widgets.EQUIP_SLOTS):
-            item = player.equipped_item(item_type)
-            if item_type == "ammo" and item is None:
-                # Nothing loaded still fires the cheapest quiver carried, so that is what
-                # the slot shows rather than an empty socket over a full bag of arrows.
-                item = player.ready_ammo()
-            rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
+        y = top
+        for row in rows:
+            for i, (slot_name, _caption, glyph) in enumerate(row):
+                item = player.equipped_item(slot_name)
+                if slot_name == "ammo" and item is None:
+                    # Nothing loaded still fires the cheapest quiver carried, so that is what
+                    # the slot shows rather than an empty socket over a full bag of arrows.
+                    item = player.ready_ammo()
+                rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, y, slot, slot)
 
-            in_hand = item is not None and item_type == active_melee
-            border = c.Colors.ACCENT if in_hand else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
-            widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if in_hand else 2)
-            if item is not None:
-                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 26)
-            else:
-                draw_shape_with_border(self.screen, glyph, rect.center, 12, (60, 60, 70), 2, (84, 84, 98))
+                held = slot_name in in_hand
+                border = c.Colors.ACCENT if held else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
+                widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if held else 2)
+                if item is not None:
+                    widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 26)
+                else:
+                    draw_shape_with_border(self.screen, glyph, rect.center, 12, (60, 60, 70), 2, (84, 84, 98))
 
-            if item_type == "ammo":
-                left_over = player.ammo_count()
-                label = c.Fonts.small.render(str(left_over), True, c.Colors.WHITE if left_over else c.Colors.RED)
-                self.screen.blit(label, (rect.right - label.get_width() - 2, rect.bottom - label.get_height()))
-            elif item is not None and item.quantity > 1:
-                count = c.Fonts.small.render(str(item.quantity), True, c.Colors.WHITE)
-                self.screen.blit(count, (rect.right - count.get_width() - 2, rect.bottom - count.get_height()))
-        return top + slot
+                if slot_name in widgets.WEAPON_SLOTS:
+                    key = str(widgets.WEAPON_SLOTS.index(slot_name) + 1)
+                    label = c.Fonts.small.render(key, True, c.Colors.ACCENT if held else c.Colors.MUTED)
+                    self.screen.blit(label, (rect.x + 4, rect.y + 2))
 
-    def _draw_weapon_bar(self, player: Player, top: int):
-        """The number-key weapon bar. A gold border marks the weapons currently in the two
-        melee slots and the ranged one, so the bar shows what a key would do and what it
-        already did."""
-        slot = self.HUD_SLOT_SIZE
-        left = self.HUD_PANEL_RECT.x + 10
-        live = {player.equipped[name] for name in ("melee_weapon", "melee_weapon_2", "ranged_weapon")}
-
-        for i, item in enumerate(player.weapon_bar_items()):
-            rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, top, slot, slot)
-            active = item is not None and item.id in live
-            border = c.Colors.ACCENT if active else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
-            widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if active else 2)
-
-            if item is not None:
-                widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 28)
-            else:
-                draw_shape_with_border(self.screen, "sword", rect.center, 13, (60, 60, 70), 2, (84, 84, 98))
-
-            key = c.Fonts.small.render(str(i + 1), True, c.Colors.ACCENT if active else c.Colors.MUTED)
-            self.screen.blit(key, (rect.x + 4, rect.y + 2))
+                if slot_name == "ammo":
+                    left_over = player.ammo_count()
+                    label = c.Fonts.small.render(str(left_over), True, c.Colors.WHITE if left_over else c.Colors.RED)
+                    self.screen.blit(label, (rect.right - label.get_width() - 2, rect.bottom - label.get_height()))
+                elif item is not None and item.quantity > 1:
+                    count = c.Fonts.small.render(str(item.quantity), True, c.Colors.WHITE)
+                    self.screen.blit(count, (rect.right - count.get_width() - 2, rect.bottom - count.get_height()))
+            y += slot + 4
+        return y - 4
 
     def _draw_llm_task_panel(self, llm_tasks):
         width = 240

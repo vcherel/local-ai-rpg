@@ -226,9 +226,9 @@ class InventoryMenu(BaseMenu):
                 return True
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-            # Right click walks a weapon along the number-key bar, or a potion along the
-            # quickbar, and then off the end: the only manual way to set either up, since
-            # equipping and picking up only ever fill a slot that is free.
+            # Right click walks a weapon along the four positions (keys 1 to 4), or a potion
+            # along the quickbar, and then off the end: the only way to arrange the hands by
+            # hand, since equipping and picking up only ever fill a position that is free.
             rel_x, rel_y = event.pos[0] - menu_x, event.pos[1] - menu_y
             entry = self._entry_at(rel_x, rel_y, rows)
             if entry is not None:
@@ -302,13 +302,13 @@ class InventoryMenu(BaseMenu):
         first_rect = self._paperdoll_rects()[0][3]
         surface.blit(header, (self.padding, first_rect.y - 24 - header.get_height() - 6))
 
-        active_melee = player.active_melee_slot()
+        held = {player.hand_slot(hand) for hand in range(c.Player.HANDS)}
         for item_type, label, glyph, rect in self._paperdoll_rects():
             item = player.equipped_item(item_type)
             hovered = self.hovered_equip == item_type
-            # Both melee weapons are worn; the one that swings takes the gold label, border
-            # and corner dot, since the two slots are otherwise identical.
-            in_hand = item is not None and item_type == active_melee
+            # All four weapons are carried; the one each hand is actually holding takes the
+            # gold label, border and corner dot, since the positions are otherwise identical.
+            in_hand = item_type in held
 
             label_surf = c.Fonts.small.render(label, True, c.Colors.ACCENT if in_hand else c.Colors.MUTED)
             surface.blit(label_surf, (rect.centerx - label_surf.get_width() // 2, rect.y - 22))
@@ -387,10 +387,12 @@ class InventoryMenu(BaseMenu):
 
         if equipped:
             pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 12, rect.y + 12), 5)
-        # Whichever bar the item sits on, drawn as the key that would reach for it.
+        # Whichever key would reach for the item, drawn on it: a number for one of the four
+        # weapon positions, a letter for a potion on the quickbar.
         bound = None
-        if item.id in player.weapon_bar:
-            bound = str(player.weapon_bar.index(item.id) + 1)
+        slot = player.equipped_slot_of(item)
+        if slot in widgets.WEAPON_SLOTS:
+            bound = str(widgets.WEAPON_SLOTS.index(slot) + 1)
         elif item.id in player.potion_bar:
             bound = c.Potions.QUICK_KEYS[player.potion_bar.index(item.id)].upper()
         if bound is not None:
