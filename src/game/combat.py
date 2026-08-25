@@ -16,12 +16,13 @@ from core.impact_fx import get_impacts
 from core.particles import get_particles
 from core.screen_fx import get_flash, get_hitstop, get_trap_fx
 from core.swing_arcs import get_swings
+from game.entities.bomb import GRENADE, MINE, Bomb
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
 from game.entities.entities import Entity, apply_impulse
-from game.entities.items import Item, rarity_color, roll_rarity
+from game.entities.items import Item, bomb_kind, rarity_color, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
@@ -49,28 +50,30 @@ class WorldCombat:
     # burn tick, a monster's bite, a fall) bleeds generically.
     blow_style = "generic"
 
-    def handle_attack(self, player: Player, quest_system: QuestSystem, ranged: bool = False):
+    def handle_attack(self, player: Player, quest_system: QuestSystem, hand: int = 0):
         """The weapon's archetype (constants.weapon_archetype) drives reach, damage, cadence,
         crit, knockback and cleave, so different weapon families feel different to swing.
         Building interiors are just world space now, so this has no indoor/outdoor split:
         monsters, NPCs, crates and windows are all found the same way whether the player is
         standing in a house or out in the open.
 
-        `ranged` selects the ranged weapon slot (right click) instead of the melee one (left
-        click), so a bow/staff and a melee weapon can be carried and used independently."""
-        if ranged:
-            weapon = player.equipped_item("ranged_weapon")
-            if weapon is None:
-                return
-            player.end_spawn_grace()
-            arch = c.weapon_archetype(weapon.name)
-            self.blow_style = style_for_weapon(arch)
-            self._fire_ranged(player, arch)
+        `hand` is which of the player's two hands acted: 0 is the left mouse button, 1 the
+        right. What that click does is decided by whatever is in that hand rather than by
+        the button, so a bow in hand one fires and a sword in hand two swings. An empty hand
+        is bare hands, which still swings.
+        """
+        weapon = player.hand_weapon(hand)
+        if weapon is not None and weapon.item_type == "bomb":
+            self.use_bomb(player, weapon, hand)
             return
 
-        weapon = player.active_melee_weapon()
         arch = c.weapon_archetype(weapon.name if weapon else None)
         self.blow_style = style_for_weapon(arch)
+
+        if arch.ranged:
+            player.end_spawn_grace()
+            self._fire_ranged(player, arch, hand)
+            return
 
         now = pygame.time.get_ticks()
         if now < player.attack_ready_ms:  # still on cooldown from the previous swing
@@ -81,14 +84,16 @@ class WorldCombat:
         # out of what killed them, not to let them open a fight untouchable.
         player.end_spawn_grace()
 
-        player.start_attack_anim("right")
+        # Hand one is the right arm on the sprite and hand two the left, so the arm that
+        # comes round is the one actually holding the weapon.
+        player.start_attack_anim("right" if hand == 0 else "left")
         play_sound("attack")
 
         reach = c.Player.ATTACK_REACH * arch.reach_mult
         pos = player.get_pos(reach)
         origin = player.get_pos()
         base_damage = (
-            c.Player.ATTACK_DAMAGE + player.weapon_bonus() + player.stats.attack_bonus()
+            c.Player.ATTACK_DAMAGE + player.weapon_bonus(hand) + player.stats.attack_bonus()
         ) * player.damage_multiplier()
         hit_radius = reach * (arch.cleave_radius_mult if arch.cleave else 1.0)
 
@@ -109,11 +114,11 @@ class WorldCombat:
         else:
             get_swings().spawn(origin[0], origin[1], player.orientation, reach, arch.arc_deg, arch.cleave)
 
-        if self._swing_at_bodies(player, quest_system, arch, origin, pos, hit_radius, base_damage):
+        if self._swing_at_bodies(player, quest_system, arch, origin, pos, hit_radius, base_damage, hand):
             return
         self._swing_at_scenery(player, quest_system, arch, pos, hit_radius, base_damage)
 
-    def _swing_at_bodies(self, player, quest_system, arch, origin, pos, hit_radius, base_damage) -> bool:
+    def _swing_at_bodies(self, player, quest_system, arch, origin, pos, hit_radius, base_damage, hand=0) -> bool:
         """Land the swing on whatever living thing it covers. Returns whether it hit anything,
         which is what decides between a fight and a swing into the furniture."""
         blocked = self.blocked
@@ -134,16 +139,16 @@ class WorldCombat:
             return base_damage * self._cleave_falloff(origin, player.orientation, arch, hit_radius, target)
 
         def strike_boss(boss):
-            self._strike_monster(boss, self.bosses, falloff(boss), arch, player, quest_system, blocked)
+            self._strike_monster(boss, self.bosses, falloff(boss), arch, player, quest_system, blocked, hand)
 
         def strike_monster(monster):
-            self._strike_monster(monster, self.monsters, falloff(monster), arch, player, quest_system, blocked)
+            self._strike_monster(monster, self.monsters, falloff(monster), arch, player, quest_system, blocked, hand)
 
         def strike_critter(critter):
             self._strike_critter(critter, falloff(critter), arch, player)
 
         def strike_npc(npc):
-            self._strike_npc(npc, falloff(npc), arch, player, quest_system, blocked)
+            self._strike_npc(npc, falloff(npc), arch, player, quest_system, blocked, hand)
 
         # Target priority: bosses and monsters, then whatever is already fighting back (an
         # animal biting, a villager swinging), then the peaceful. A rabbit standing behind
@@ -235,10 +240,49 @@ class WorldCombat:
             self._hit_breakable(player, breakable, prop_damage, quest_system, blow)
             return
 
+        tree = next(
+            (
+                item
+                for item in self.scenery_near(*pos)
+                if item.choppable and math.hypot(item.x - pos[0], item.y - pos[1]) < hit_radius + c.Trees.HIT_RADIUS
+            ),
+            None,
+        )
+        if tree is not None:
+            self._chop_tree(player, tree, arch, prop_damage, blow)
+            return
+
         window_hit = self._find_window_in_reach(pos, hit_radius)
         if window_hit is not None:
             building, idx, window = window_hit
             self._hit_window(building, idx, window, prop_damage, blow)
+
+    def _chop_tree(self, player: Player, tree, arch, prop_damage: int, blow: float):
+        """One swing into a trunk. An axe is what a tree is felled with and does the work
+        several times over; anything else is somebody hitting a tree with the wrong thing,
+        which is slow but not impossible.
+
+        A felled tree leaves a stump and a couple of logs on the ground, and the world
+        remembers it was cut (`World.felled`) so it is still down when the chunk streams
+        back in."""
+        mult = c.Trees.AXE_MULT if arch.name == "axe" else c.Trees.OTHER_MULT
+        tree.hp -= max(1, round(prop_damage * mult))
+        self._prop_chip(tree.x, tree.y, c.Trees.STUMP_COLOR, "crate_break", tree.key, blow)
+        if tree.hp > 0:
+            return
+
+        tree.fell()
+        if tree.key:
+            self.felled.add(tree.key)
+        play_sound("gate_break")
+        get_shake().add(c.Trees.FALL_SHAKE)
+        get_particles().spawn_burst(tree.x, tree.y, (110, 150, 70), count=26, speed=6, life=700, size=5, gravity=0.3)
+        player.stats.train("strength", c.Trees.XP_PER_FELL)
+        for _ in range(random.randint(*c.Trees.LOG_DROPS)):
+            log = Item(tree.x + random.uniform(-16, 16), tree.y + random.uniform(-16, 16), "Log", "misc")
+            log.rarity = "common"
+            log.start_pop_anim(tree.x, tree.y)
+            self.items.append(log)
 
     @staticmethod
     def _targets_in_reach(
@@ -652,9 +696,9 @@ class WorldCombat:
                 gravity=0.25,
             )
 
-    def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, blocked):
-        rampage = player.rampage_trigger(ranged=False)
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(), rampage=rampage)
+    def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, blocked, hand=0):
+        rampage = player.rampage_trigger(hand)
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(hand), rampage=rampage)
         crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
         rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
         shake = arch.shake + crit_shake + rampage_shake
@@ -671,13 +715,13 @@ class WorldCombat:
             kb_dir=kb_dir,
             blocked=blocked,
         )
-        self._apply_on_hit_effects(monster, monster_list, damage, player, quest_system, died)
-        self._apply_chainstrike(monster, monster_list, damage, player, quest_system, blocked, ranged=False)
+        self._apply_on_hit_effects(monster, monster_list, damage, player, quest_system, died, hand)
+        self._apply_chainstrike(monster, monster_list, damage, player, quest_system, blocked, hand)
 
-    def _strike_npc(self, npc, base_damage, arch, player, quest_system, blocked):
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
+    def _strike_npc(self, npc, base_damage, arch, player, quest_system, blocked, hand=0):
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(hand))
         # Lifesteal works on any struck target, NPCs included.
-        frac = player.lifesteal_frac()
+        frac = player.lifesteal_frac(hand)
         if frac > 0:
             player.heal(damage * frac)
         shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
@@ -843,6 +887,69 @@ class WorldCombat:
         self._break_effects(breakable.x, breakable.y, (150, 110, 70), 18)
         coins, loot_item = break_crate()
         self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
+
+    def use_bomb(self, player: Player, item, hand: int):
+        """Spend one bomb out of the hand that clicked: a mine laid where the player stands,
+        a grenade thrown at what they are aiming at.
+
+        Neither is a weapon that hits something. Both are a piece of ground the player has
+        decided to fight over, exactly like a powder keg, and both end in the same `explode`
+        the keg does. The one thing decided here is where it ends up."""
+        now = pygame.time.get_ticks()
+        if now < player.attack_ready_ms:
+            return
+        if not player.spend_one(item):
+            return
+        player.attack_ready_ms = now + c.Bombs.COOLDOWN_MS
+        player.attack_swing_mult = 1.0
+        player.end_spawn_grace()
+        player.start_attack_anim("right" if hand == 0 else "left")
+
+        if bomb_kind(item.name) == MINE:
+            self.bombs.append(Bomb(player.x, player.y, MINE))
+        else:
+            # Thrown where the player is looking rather than as far as the arm goes: the
+            # cursor is the aim for every other weapon, and a grenade lands short of it
+            # only when a wall is in the way.
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            reach = math.hypot(mouse_x - c.Screen.ORIGIN_X, mouse_y - c.Screen.ORIGIN_Y)
+            self.bombs.append(Bomb(player.x, player.y, GRENADE, player.orientation, reach))
+        play_sound("fuse")
+
+    def update_bombs(self, player: Player, quest_system: QuestSystem, dt):
+        """Burn every fuse down and set off whatever has run out or been stepped on.
+
+        A mine answers to anything that would fight the player and never to the player
+        themselves: laying one under your own feet and backing away is the whole point of
+        it, and a blast that went off as you stepped off it would make it unusable."""
+        for bomb in list(self.bombs):
+            fired = bomb.update(dt, self.blocked)
+            if bomb.dead:
+                self.bombs.remove(bomb)
+                continue
+            if not fired and bomb.kind == MINE:
+                hostile = [
+                    body
+                    for group in (self.monsters, self.bosses, self.npcs, self.critters)
+                    for body in group
+                    if getattr(body, "hostile", True)
+                ]
+                fired = bomb.triggered_by(hostile)
+            if not fired:
+                continue
+            self.bombs.remove(bomb)
+            self.explode(
+                bomb.x,
+                bomb.y,
+                player,
+                quest_system,
+                radius=c.Bombs.RADIUS,
+                damage=c.Bombs.DAMAGE,
+                knockback=c.Bombs.KNOCKBACK,
+                shake=c.Bombs.SHAKE,
+                player_mult=c.Bombs.PLAYER_DAMAGE_MULT,
+                message="",
+            )
 
     def explode(
         self,
@@ -1185,25 +1292,26 @@ class WorldCombat:
             self.on_guard_killed(monster, quest_system)
         monster_list.remove(monster)
 
-    def _apply_on_hit_effects(self, monster, monster_list, damage, player, quest_system, died, ranged: bool = False):
-        """Weapon lifesteal/burn/execute after a hit lands. `died` is the hit's own result."""
-        frac = player.lifesteal_frac(ranged)
+    def _apply_on_hit_effects(self, monster, monster_list, damage, player, quest_system, died, hand: int = 0):
+        """Weapon lifesteal/burn/execute after a hit lands, from the weapon in `hand`.
+        `died` is the hit's own result."""
+        frac = player.lifesteal_frac(hand)
         if frac > 0 and damage > 0:
             player.heal(damage * frac)
             get_particles().spawn_burst(player.x, player.y, c.Colors.GREEN, count=5, speed=3, life=300, size=3)
         if died:
             return
-        burn = player.burn_damage(ranged)
+        burn = player.burn_damage(hand)
         if burn > 0:
             monster.apply_burn(burn)
         # Execute finishes off a badly wounded non-boss outright.
-        thr = player.execute_threshold(ranged)
+        thr = player.execute_threshold(hand)
         if thr > 0 and not isinstance(monster, Boss) and 0 < monster.hp <= monster.max_hp * thr:
             get_particles().spawn_burst(monster.x, monster.y, (255, 60, 60), count=10, speed=5, life=400, size=4)
             if monster.receive_damage(monster.hp):
                 self._kill_monster(monster, monster_list, player, quest_system)
 
-    def _apply_chainstrike(self, primary, target_list, damage, player, quest_system, blocked, ranged: bool = False):
+    def _apply_chainstrike(self, primary, target_list, damage, player, quest_system, blocked, hand: int = 0):
         """Chain Strike: a landed hit sends a pulse out from whatever was struck, and
         everything else within `Affixes.CHAINSTRIKE_RADIUS` takes a share of the blow.
 
@@ -1211,7 +1319,7 @@ class WorldCombat:
         reason to wade into a crowd rather than a slightly better single target. It draws
         the ring it damaged over (`core.impact_fx`) and a bolt to each thing it caught, so
         several damage numbers popping at once have something visible behind them."""
-        frac = player.chainstrike_frac(ranged)
+        frac = player.chainstrike_frac(hand)
         if frac <= 0:
             return
         caught = [
@@ -1241,7 +1349,7 @@ class WorldCombat:
                 kb_dir=kb_dir,
                 blocked=blocked,
             )
-            self._apply_on_hit_effects(target, target_list, chain_damage, player, quest_system, died, ranged=ranged)
+            self._apply_on_hit_effects(target, target_list, chain_damage, player, quest_system, died, hand)
 
     def _apply_element(self, proj, target, target_list, player, quest_system, died: bool):
         """What an elemental staff's bolt does where it landed (`c.Staffs`).

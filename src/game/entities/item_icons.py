@@ -292,7 +292,26 @@ def _draw_chest(icon: _Icon):
     pygame.draw.circle(icon.surface, c.Colors.BLACK, (icon.cx, int(lid_y)), max(2, icon.size // 8))
 
 
+def _draw_bomb(icon: _Icon):
+    """A round shell with a lit fuse: the same silhouette the thing has on the ground, so
+    what is in the bag reads as what will be lying in the grass."""
+    body = int(icon.size * 0.78)
+    pygame.draw.circle(icon.surface, icon.border_color, icon.center, body + icon.border_width)
+    pygame.draw.circle(icon.surface, icon.color, icon.center, body)
+    pygame.draw.circle(
+        icon.surface,
+        tuple(min(255, v + 45) for v in icon.color),
+        (int(icon.cx - body * 0.3), int(icon.cy - body * 0.3)),
+        max(2, body // 4),
+    )
+    neck = (icon.cx, icon.cy - body)
+    tip = (icon.cx + icon.size * 0.5, icon.cy - icon.size * 1.15)
+    pygame.draw.line(icon.surface, c.Colors.BLACK, neck, tip, max(2, icon.border_width))
+    pygame.draw.circle(icon.surface, c.Bombs.FUSE_COLOR, (int(tip[0]), int(tip[1])), max(2, icon.size // 5))
+
+
 _SHAPES = {
+    "bomb": _draw_bomb,
     "circle": _draw_circle,
     "sword": _draw_sword,
     "dagger": _draw_dagger,

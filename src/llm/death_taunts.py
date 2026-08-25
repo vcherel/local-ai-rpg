@@ -17,14 +17,17 @@ class DeathTauntGenerator:
     Same shape as `NPCNameGenerator`, and for the same reason: the death screen is blocking
     and holds for a couple of seconds, so waiting on the model there would turn every death
     into a stall. A small buffer is filled on a background thread and topped back up after
-    each death; an empty buffer falls back to `Death.FALLBACK_TAUNTS` rather than making the
+    each death; an empty buffer falls back to the canned lines the player has unlocked
+    (`Record.taunt_pool`, off `Death.TAUNT_TIERS`) rather than making the
     player wait. The taunts never name a killer, because they are written before anyone knows
     who it will be: the death screen puts that on its own line.
     """
 
-    def __init__(self, save_system):
+    def __init__(self, save_system, record):
         self.cond = threading.Condition()
         self.save_system: SaveSystem = save_system
+        # The playthrough's tally, asked for the canned lines dying has unlocked so far.
+        self.record = record
         self.is_generating = False
         self.ready_taunts: list[str] = list(save_system.load("death_taunts", []))
         # Set by close(): a taunt still in flight belongs to a session that is over and must
@@ -84,7 +87,7 @@ class DeathTauntGenerator:
         """Pop a taunt for a death that just happened, and start writing its replacement.
         Never waits: a canned line is better than a death screen that hangs."""
         with self.cond:
-            taunt = self.ready_taunts.pop(0) if self.ready_taunts else random.choice(c.Death.FALLBACK_TAUNTS)
+            taunt = self.ready_taunts.pop(0) if self.ready_taunts else random.choice(self.record.taunt_pool())
         self.persist()
         self.start_generation()
         return taunt

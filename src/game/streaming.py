@@ -62,6 +62,17 @@ class WorldStreaming:
         center = ((cx + 0.5) * size, (cy + 0.5) * size)
         villages = [v for v in self.villages if v.distance_to_point(center) < v.grounds_radius + size * 2]
         chunk_scenery = generate_chunk_scenery(cx, cy, nearby, villages, chunk_pois)
+        # A tree the player already cut down comes back as its own stump. The chunk itself
+        # is still a pure function of its seed: what the player did to it is the one thing
+        # laid over the top, by position in the generated list, the same way a POI's state
+        # is laid over a regenerated POI.
+        for index, item in enumerate(chunk_scenery):
+            if not item.choppable:
+                continue
+            item.key = f"{cx}:{cy}:{index}"
+            if item.key in self.felled:
+                item.fell()
+                item.fell_start_ms = None
         self.scenery.extend(chunk_scenery)
 
         # The hunters' traps, laid last: they need the wilderness this chunk just grew, so

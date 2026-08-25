@@ -12,11 +12,12 @@ if TYPE_CHECKING:
 
 
 ROW_HEIGHT = 72
+TALLY_ROW_HEIGHT = 52
 
 
 class StatsMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=620, height=712)
+        super().__init__(screen, width=620, height=712 + TALLY_ROW_HEIGHT * 2 + 10)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -30,7 +31,7 @@ class StatsMenu(BaseMenu):
 
         return True
 
-    def draw(self, player: Player):
+    def draw(self, player: Player, record=None):
         if not self.active:
             return
 
@@ -87,5 +88,43 @@ class StatsMenu(BaseMenu):
 
             y += ROW_HEIGHT
 
+        if record is not None:
+            self._draw_tally(surface, record, y)
+
         self.draw_hint(surface, "C or ESC to close")
         self.blit_panel(surface)
+
+    def _draw_tally(self, surface, record, y: int):
+        """The two numbers that are not stats: quests handed in and deaths. Drawn under the
+        ladders, with the next milestone each of them is walking toward, so both read as
+        something going somewhere rather than as a scoreboard."""
+        pygame.draw.line(surface, c.Colors.SLOT_BORDER, (self.padding, y - 6), (self.width - self.padding, y - 6), 1)
+        rows = (
+            ("Quests completed", record.quests_done, self._next_quest_note(record)),
+            ("Deaths", record.deaths, self._next_death_note(record)),
+        )
+        for label, value, note in rows:
+            name = c.Fonts.heading.render(label, True, c.Colors.WHITE)
+            surface.blit(name, (self.padding, y))
+            count = c.Fonts.heading.render(str(value), True, c.Colors.ACCENT)
+            surface.blit(count, (self.width - self.padding - count.get_width(), y))
+            if note:
+                hint = c.Fonts.small.render(note, True, c.Colors.MUTED)
+                surface.blit(hint, (self.padding, y + 26))
+            y += TALLY_ROW_HEIGHT
+
+    @staticmethod
+    def _next_quest_note(record) -> str:
+        nxt = next(((count, rarity) for count, rarity in c.Milestones.QUESTS if count > record.quests_done), None)
+        if nxt is None:
+            return "every milestone claimed"
+        count, rarity = nxt
+        article = "an" if rarity[0] in "aeiou" else "a"
+        return f"{count - record.quests_done} more for {article} {rarity} reward"
+
+    @staticmethod
+    def _next_death_note(record) -> str:
+        nxt = next((count for count in c.Milestones.DEATHS if count > record.deaths), None)
+        if nxt is None:
+            return "death has run out of new things to say"
+        return f"{nxt - record.deaths} more and death finds new words for you"

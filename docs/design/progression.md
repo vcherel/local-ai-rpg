@@ -60,28 +60,68 @@ from there and `Item.from_dict` recomputes it rather than restoring the saved va
 save picks up new artwork instead of keeping a stale silhouette. Nothing about an item's identity
 or behaviour lives in `shape`.
 
-## Two melee weapons are worn and one of them swings
+## Two hands, two weapons in each, and the button never changes
 
-`Player.active_melee` indexes `MELEE_SLOTS`, X swaps it, and *nothing* reads a melee slot by
-name: combat, the affix helpers, `weapon_bonus` and the drawn `gear()` all go through
-`active_melee_weapon()`, so carrying a spear beside a sword is a stance chosen before the fight
-rather than a trip through the inventory during it. Equipping a melee weapon fills the free slot
-before displacing the one in hand, and emptying the slot in hand falls back to the other one,
-because a player standing next to their own spare should never be barehanded.
+The player has two weapon hands. Hand one is always the left mouse button and hand two always
+the right; keys 1 and 2 pick which of hand one's two weapons is up, keys 3 and 4 do the same for
+hand two. `HAND_SLOTS` is the whole arrangement, four equip slots in key order, and `active_hand`
+is which of each pair is in hand.
 
-## The weapon bar sits on top of the equip slots
+Nothing is typed by family. Any weapon goes in any position, and what a click *does* is read off
+the archetype of whatever is in that hand at the time (`WorldCombat.handle_attack(hand)` sends a
+ranged archetype to `_fire_ranged` and everything else to a swing), so a bow in hand one fires on
+left click and a sword in hand two swings on right. Best melee in hand one and best ranged in
+hand two is only what `auto_equip_best` arranges, and only because the lower key should hold the
+better weapon; the player rearranges all four by right-clicking in the bag.
 
-`Player.weapon_bar` is a short list of weapon ids the number keys reach for; pressing one calls
-`select_weapon`, which either makes an already-equipped weapon the one in hand or equips it into
-the slot its archetype belongs to. So switching a bow leaves the swords equipped, and nothing in
-`combat.py` knows the bar exists.
+An empty position is a real choice rather than a gap: pressing its key puts that hand on bare
+hands, which still swing. That is why `select_weapon` returning None is reported rather than
+refused, and why `gear()` simply omits a hand instead of drawing a fallback weapon.
+
+Nothing reads a weapon slot by name. Combat, the affix helpers, `weapon_bonus` and the drawn
+`gear()` all go through `hand_weapon(hand)`, and every on-hit effect is keyed by hand, so a
+weapon's lifesteal can never fire off a blow struck with the other one. A projectile carries the
+hand that loosed it (`Projectile.hand`) for the same reason it already carried its element: the
+weapon may well be swapped before the arrow lands.
+
+## A bomb is a weapon that is spent
+
+Both bombs live in a weapon position like anything else and are used by that hand's button. The
+mine is laid where the player stands and waits for something that would fight them; the grenade
+is thrown at the cursor and burns a fuse. Neither knows what an explosion is: both end in
+`WorldCombat.explode`, the powder keg's own blast, so the damage, the gore, the shake and what a
+village makes of it are decided in one place. Spending the last one empties the position, and
+that hand falls back to bare hands rather than quietly equipping something else.
+
+## The shield is worn on a side, and that side is where it works
+
+`draw_shield` puts it on the offhand side of the body, and `Player._blocks_hit` /
+`shield_side_hit` read the same two wedges the sprite shows: what arrives inside
+`Shield.SIDE_ARC_DEG` of the shield side is met by the face of it, what arrives on the open side
+keeps only `Shield.OFF_SIDE_MULT` of the block. A hostile shot that arrives on the shield side is
+turned away entirely and costs guard instead of health, so an archer can still wear a shield down
+without ever landing an arrow. Anything in flight is judged by the way it is travelling rather
+than by where it has got to, or a shot that stepped just past the player would read as a blow
+from behind.
 
 ## What a key reaches for is a choice the player made, and it is saved
 
-The weapon bar (`weapon_bar`, number keys) and the potion quickbar (`potion_bar`,
-`Potions.QUICK_KEYS`) are both lists of item ids, both filled automatically only into a *free*
-slot (on pickup, through `Player._auto_slot`) and both reassigned by hand by right-clicking the
-item in the inventory. Picking up a nicer-sounding elixir can therefore never push the healing
-potion off the bar. Arrows are the one thing equipped outright on pickup, and only when nothing
+The four weapon positions (number keys) and the potion quickbar (`potion_bar`,
+`Potions.QUICK_KEYS`) are both filled automatically only into a *free* slot (on pickup, through
+`Player._auto_slot`) and both reassigned by hand by right-clicking the item in the inventory.
+Picking up a nicer-sounding elixir can therefore never push the healing potion off the bar, and a
+bomb picked up takes a position only if one is free. Arrows are the one thing equipped outright on pickup, and only when nothing
 is loaded: firing is the point of carrying them, and `ready_ammo` falls back to the cheapest
 stack anyway.
+
+## The playthrough keeps two numbers, and they pay out in opposite directions
+
+`game/record.py` holds the deaths and the quests handed in. Neither is a stat: nothing trains
+them, nothing reads them to decide anything in the world, and that is exactly why they are not in
+`Stats`. Both pay out at milestones (`Milestones`), and a milestone is recorded once it has paid
+so nothing is ever handed out twice.
+
+Quests pay in loot, through the same lootbox every other windfall in the game opens, because the
+tenth errand should be worth something the player can carry. Deaths pay in words: each milestone
+unlocks the next tier of `Death.TAUNT_TIERS`, so the game finds more to say about a player the
+worse they are at staying alive. Dying is not an achievement and never pays in gear.

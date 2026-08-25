@@ -9,7 +9,9 @@ import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
 from core.floating_text import get_floating_text
+from core.particles import get_particles
 from game.entities.entities import Entity
+from game.entities.items import rarity_tier
 from game.entities.projectile import ARROW_COLOR, BOLT_COLOR, Projectile
 
 if TYPE_CHECKING:
@@ -32,7 +34,7 @@ class WorldProjectiles:
     counter, no provoked village and no pack aggro come of it.
     """
 
-    def _fire_ranged(self, player: Player, arch: c.WeaponArchetype):
+    def _fire_ranged(self, player: Player, arch: c.WeaponArchetype, hand: int = 0):
         now = pygame.time.get_ticks()
         if now < player.attack_ready_ms:
             return
@@ -63,19 +65,19 @@ class WorldProjectiles:
 
         player.attack_ready_ms = now + arch.cooldown_ms
         player.attack_swing_mult = arch.swing_mult
-        player.start_attack_anim("left")
+        # Hand one is the right arm on the sprite, hand two the left: the arm that comes up
+        # is the one the weapon is actually in.
+        player.start_attack_anim("right" if hand == 0 else "left")
         play_sound("shoot")
 
         # A bolt is worth what the caster is worth: magic where a bow reads strength, so
         # training one never quietly pays for the other.
         stat_bonus = player.stats.magic_bonus() if arch.mana_cost else player.stats.attack_bonus()
-        base_damage = (c.Player.ATTACK_DAMAGE + player.weapon_bonus(ranged=True) + stat_bonus) * (
-            player.damage_multiplier()
-        )
+        base_damage = (c.Player.ATTACK_DAMAGE + player.weapon_bonus(hand) + stat_bonus) * (player.damage_multiplier())
         # A shot can crit too (weapon + affix chance), boosting damage and the hit's shake.
         # Rampage forces every Nth shot to crit and amplifies it further.
-        rampage = player.rampage_trigger(ranged=True)
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(ranged=True), rampage=rampage)
+        rampage = player.rampage_trigger(hand)
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(hand), rampage=rampage)
         crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
         rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
         style = arch.projectile_style
@@ -99,9 +101,21 @@ class WorldProjectiles:
         proj.element = arch.element
         proj.skill = "magic" if arch.mana_cost else "strength"
         proj.pierce = player.pierce_count()
+        # Which hand loosed it, so what it does when it lands is the weapon that threw it
+        # rather than whatever the player has switched to by then.
+        proj.hand = hand
+        weapon = player.hand_weapon(hand)
         if style == "boomerang":
             proj.owner = player
-            proj.pierce += c.Boomerang.PIERCE
+            # A boomerang leaves the hand: while it is in the air the player is holding
+            # nothing, and `Player.gear` reads this same id to draw them that way.
+            proj.weapon_id = weapon.id if weapon else None
+            # How many bodies it carries through before it turns for home is its rarity,
+            # and a plain one carries through nothing: it comes back off the first hit.
+            if weapon is not None:
+                tier = c.Rarity.TIERS.index(rarity_tier(weapon.rarity))
+                proj.pierce += c.Boomerang.PIERCE_BY_TIER[tier]
+            proj.out_pierce = proj.pierce
         self.projectiles.append(proj)
         # Magic is trained by casting, the way running trains speed: the mana it costs is
         # what stops that being free.
@@ -167,8 +181,13 @@ class WorldProjectiles:
             # village on the player who was only walking past.
             if proj.hostile:
                 if proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
-                    # Passed as the source so a raised shield can catch it: an arrow is
-                    # blocked by where it came from, like any other blow.
+                    # A raised shield turns away what arrives on the side it is worn: the
+                    # shot glances off the face of it and nothing lands. Everything else
+                    # goes through `receive_damage` with the shot as its source, so the
+                    # shield still eats its share of a blow it only half covers.
+                    if player.shield_side_hit(proj):
+                        self._deflect(proj, player)
+                        continue
                     player.receive_damage(proj.damage, source=proj)
                     get_shake().add(proj.shake)
                     self.projectiles.remove(proj)
@@ -190,6 +209,37 @@ class WorldProjectiles:
             if not proj.from_npc and self._projectile_hits_npc(proj, player, quest_system, by_player):
                 continue
             self._projectile_hits_keg(proj, player, quest_system)
+
+        # What the player is currently holding nothing of: a thrown boomerang is in the air,
+        # not in the hand that threw it, and `Player.gear` draws that hand empty until it
+        # comes home. Read off what is actually flying, so a catch, a wall or a death all
+        # put the weapon back without any of them having to remember to.
+        player.thrown_id = next(
+            (proj.weapon_id for proj in self.projectiles if proj.owner is player and proj.weapon_id), None
+        )
+
+    def _deflect(self, proj: Projectile, player: Player):
+        """A shot met by the face of a raised shield: it glances off and is gone, in a spray
+        of sparks thrown back the way it came.
+
+        It costs guard rather than health, so an archer can still wear a shield down: turning
+        arrows away is something the player does for the volley they saw coming, not a wall
+        they can stand behind all afternoon."""
+        self.projectiles.remove(proj)
+        player.spend_guard(c.Shield.DEFLECT_GUARD_COST)
+        play_sound("hit")
+        get_particles().spawn_directional_burst(
+            proj.x,
+            proj.y,
+            math.atan2(-proj.vy, -proj.vx),
+            spread_deg=80.0,
+            color=c.Shield.DEFLECT_COLOR,
+            count=12,
+            speed=6,
+            life=300,
+            size=3,
+        )
+        get_floating_text().spawn(player.x, player.y - c.Player.SIZE / 2, "Deflected", c.Shield.DEFLECT_COLOR)
 
     @staticmethod
     def _projectile_target(proj: Projectile, entities, radius_of):
@@ -235,9 +285,9 @@ class WorldProjectiles:
             by_player=by_player,
         )
         if by_player:
-            self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, ranged=True)
+            self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, proj.hand)
             self._apply_element(proj, target, targets, player, quest_system, died)
-            self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, ranged=True)
+            self._apply_chainstrike(target, targets, proj.damage, player, quest_system, self.blocked, proj.hand)
         self._projectile_after_hit(proj, target)
         return True
 
@@ -293,7 +343,7 @@ class WorldProjectiles:
             blocked=self.blocked,
             by_player=by_player,
         )
-        frac = player.lifesteal_frac(ranged=True) if by_player else 0.0
+        frac = player.lifesteal_frac(proj.hand) if by_player else 0.0
         if frac > 0:
             player.heal(proj.damage * frac)
         if by_player and npc.hp > 0:

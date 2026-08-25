@@ -82,8 +82,18 @@ class Projectile:
         # loosed it rather than by the fact it was fired: a bolt out of a staff is magic and
         # an arrow is strength, so training one never quietly pays for the other.
         self.skill = "strength"
-        # Pierce lets an arrow pass through this many targets before stopping (arrow-pierce accessory).
+        # Pierce lets an arrow pass through this many targets before stopping (arrow-pierce
+        # accessory, plus a boomerang's own rarity).
         self.pierce = 0
+        # Which of the player's two hands loosed it, so what it does when it lands is read
+        # off the weapon that threw it rather than off whatever is in hand by then.
+        self.hand = 0
+        # The thrown weapon this shot *is*, for as long as it is in the air: a boomerang is
+        # not in the hand that threw it, and `Player.gear` reads this to draw that hand empty.
+        self.weapon_id = None
+        # How many bodies each leg of a thrown weapon carries through, so the way home is
+        # the same pass as the way out rather than whatever pierce was left when it turned.
+        self.out_pierce = 0
         # Whoever fired it, already counted as struck so a shot can never hit its own
         # shooter on the frame it leaves them.
         self.owner_id = owner_id
@@ -145,7 +155,9 @@ class Projectile:
         # Forgets what it already struck, so the return leg is a second pass rather than a
         # flight through the bodies it went out through.
         self.hit_ids = set() if self.owner_id is None else {self.owner_id}
-        self.pierce = c.Boomerang.PIERCE
+        # The return leg is a second pass at whatever it missed, and it carries through as
+        # much on the way home as it did on the way out.
+        self.pierce = self.out_pierce
         return True
 
     def _steer_home(self):

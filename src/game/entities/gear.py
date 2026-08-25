@@ -17,15 +17,31 @@ from game.entities.item_icons import draw_shape_with_border
 # archetype's reach so a spear reads as long and a dagger as short.
 WEAPON_LENGTH = {
     "dagger": 0.75,
+    "knife": 0.6,
     "sword": 1.15,
     "axe": 1.05,
+    "hatchet": 0.8,
     "hammer": 1.0,
+    "mace": 1.0,
+    "club": 0.95,
     "spear": 2.4,
+    "pitchfork": 2.2,
+    "halberd": 2.3,
     "staff": 1.55,
     "bow": 1.0,
     "pole": 1.9,
     "boomerang": 0.8,
     "tool": 1.25,
+    "hoe": 1.35,
+    "rake": 1.35,
+    "scythe": 1.7,
+    "sickle": 0.7,
+    "shovel": 1.4,
+    "broom": 1.4,
+    "poker": 1.2,
+    "tongs": 1.0,
+    "rolling_pin": 0.7,
+    "bomb": 0.5,
 }
 
 GRIP_COLOR = (85, 62, 40)
@@ -41,9 +57,9 @@ def weapon_length(kind: str, size: int) -> float:
 
 def gear_padding(gear: dict, size: int) -> int:
     """Extra room the sprite surface needs so a held weapon isn't clipped."""
-    lengths = [weapon_length(gear[slot]["kind"], size) for slot in ("melee", "ranged") if gear.get(slot)]
+    lengths = [weapon_length(gear[slot]["kind"], size) for slot in ("hand1", "hand2") if gear.get(slot)]
     if gear.get("offhand"):
-        lengths.append(size * 0.9)
+        lengths.append(size * 1.1)
     return int(max(lengths, default=0)) + 6
 
 
@@ -136,6 +152,109 @@ _WEAPON_PARTS = {
             "metal",
         ),
     ],
+    # A haft with the head set across the top, hanging over one side: what a field is
+    # worked with, and the reason a hoe never reads as a short axe.
+    "hoe": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.9)), "grip"),
+        ("poly", [(0, -L * 0.86), (L * 0.42, -L * 0.86), (L * 0.42, -L * 0.98), (0, -L * 0.98)], "metal"),
+    ],
+    "rake": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.88)), "grip"),
+        ("lines", ((-L * 0.26, -L * 0.88), (L * 0.26, -L * 0.88)), "metal"),
+        *[("lines", ((x, -L * 0.88), (x, -L * 0.72)), "metal") for x in (-L * 0.26, -L * 0.09, L * 0.09, L * 0.26)],
+    ],
+    # The blade comes off the bottom of the snath and sweeps away: a scythe is read by how
+    # far to one side it reaches, not by its shaft.
+    "scythe": lambda L: [
+        ("lines", ((0, L * 0.15), (0, -L * 0.82)), "grip"),
+        ("lines", _bezier((0, -L * 0.8), (L * 0.55, -L * 0.75), (L * 0.78, -L * 0.3)), "metal"),
+    ],
+    "sickle": lambda L: [
+        ("lines", ((0, L * 0.2), (0, -L * 0.2)), "grip"),
+        ("lines", _bezier((0, -L * 0.2), (L * 0.75, -L * 0.5), (L * 0.15, -L * 0.95)), "metal"),
+    ],
+    "shovel": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.7)), "grip"),
+        (
+            "poly",
+            [(-L * 0.2, -L * 0.68), (L * 0.2, -L * 0.68), (L * 0.16, -L * 0.94), (0, -L), (-L * 0.16, -L * 0.94)],
+            "metal",
+        ),
+    ],
+    "broom": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.66)), "grip"),
+        ("poly", [(-L * 0.1, -L * 0.64), (L * 0.1, -L * 0.64), (L * 0.26, -L), (-L * 0.26, -L)], "metal"),
+    ],
+    # A bent iron rod: no head at all, which is the point of somebody defending a house
+    # with what was in the fireplace.
+    "poker": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.86)), "metal"),
+        ("lines", ((0, -L * 0.86), (L * 0.22, -L * 0.98)), "metal"),
+    ],
+    "tongs": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.5)), "grip"),
+        ("lines", ((0, -L * 0.5), (-L * 0.2, -L)), "metal"),
+        ("lines", ((0, -L * 0.5), (L * 0.2, -L)), "metal"),
+    ],
+    "rolling_pin": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.15)), "grip"),
+        (
+            "poly",
+            [(-L * 0.22, -L * 0.15), (L * 0.22, -L * 0.15), (L * 0.22, -L * 0.85), (-L * 0.22, -L * 0.85)],
+            "metal",
+        ),
+        ("lines", ((0, -L * 0.85), (0, -L)), "grip"),
+    ],
+    # Three long tines: a pitchfork thrusts like a spear and looks like nothing else.
+    "pitchfork": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.74)), "grip"),
+        ("lines", ((-L * 0.14, -L * 0.74), (L * 0.14, -L * 0.74)), "metal"),
+        *[("lines", ((x, -L * 0.74), (x, -L)), "metal") for x in (-L * 0.14, 0, L * 0.14)],
+    ],
+    # A spear that also carries an axe head, which is the whole of what a halberd is.
+    "halberd": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.82)), "grip"),
+        ("poly", [(-L * 0.07, -L * 0.8), (0, -L), (L * 0.07, -L * 0.8)], "metal"),
+        ("poly", [(L * 0.04, -L * 0.82), (L * 0.34, -L * 0.72), (L * 0.34, -L * 0.5), (L * 0.04, -L * 0.58)], "metal"),
+    ],
+    "hatchet": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.9)), "grip"),
+        ("poly", [(L * 0.04, -L * 0.92), (L * 0.42, -L * 0.8), (L * 0.42, -L * 0.56), (L * 0.04, -L * 0.62)], "metal"),
+    ],
+    # A ball of iron on a short haft, with the flanges that tell it from a club.
+    "mace": lambda L: [
+        ("lines", ((0, L * 0.1), (0, -L * 0.66)), "grip"),
+        ("circle", ((0, -L * 0.8), L * 0.2), "metal"),
+        *[
+            (
+                "poly",
+                [(0, -L * 0.8), (dx * L * 0.34, -L * 0.8 + dy * L * 0.34), (dx * L * 0.1, -L * 0.8 - dy * L * 0.1)],
+                "metal",
+            )
+            for dx, dy in ((-1, 0), (1, 0), (0, -1))
+        ],
+    ],
+    # No head and no edge: a length of wood, thicker at the end that does the work.
+    "club": lambda L: [
+        (
+            "poly",
+            [(-L * 0.08, L * 0.12), (L * 0.08, L * 0.12), (L * 0.2, -L * 0.95), (-L * 0.2, -L * 0.95)],
+            "wood",
+        ),
+    ],
+    "knife": lambda L: [
+        ("lines", ((0, L * 0.12), (0, -L * 0.2)), "grip"),
+        (
+            "poly",
+            [(-L * 0.1, -L * 0.2), (L * 0.1, -L * 0.2), (L * 0.06, -L * 0.86), (0, -L), (-L * 0.06, -L * 0.86)],
+            "metal",
+        ),
+    ],
+    # Held rather than swung: a shell in the fist with the fuse standing off it.
+    "bomb": lambda L: [
+        ("circle", ((0, -L * 0.45), L * 0.45), "metal"),
+        ("lines", ((0, -L * 0.9), (L * 0.3, -L * 1.2)), "string"),
+    ],
     "sword": lambda L: [
         ("lines", ((0, L * 0.08), (0, -L * 0.2)), "grip"),
         (
@@ -179,8 +298,9 @@ def draw_weapon(surface, hand_pos, spec: dict, size: int, hand: str, attack_prog
             pygame.draw.circle(surface, color, center, int(radius))
         elif part == "poly":
             points = _rotate(geometry, angle, hand_pos)
-            pygame.draw.polygon(surface, color, points)
-            pygame.draw.polygon(surface, outline, points, 2)
+            fill = GRIP_COLOR if style == "wood" else color
+            pygame.draw.polygon(surface, fill, points)
+            pygame.draw.polygon(surface, c.Colors.BLACK if style == "wood" else outline, points, 2)
         else:  # a shaft, a bow stave or its string
             points = _rotate(geometry, angle, hand_pos)
             if style == "grip":
@@ -193,26 +313,26 @@ def draw_weapon(surface, hand_pos, spec: dict, size: int, hand: str, attack_prog
                 pygame.draw.lines(surface, color, False, points, 3)
 
 
-def draw_shield(surface, hand_pos, body_center, spec: dict, size: int):
-    """Draw the offhand shield: carried out at the arm's side while it's down, swung
-    across the front of the body while it's raised, which is how the player reads that
-    the block is actually up.
+def draw_shield(surface, body_center, spec: dict, size: int):
+    """Draw the shield strapped to the offhand side of the body.
 
-    It hangs off its own point beside the arm rather than on the hand itself: that same
-    hand carries the bow, and a shield centred on the grip simply painted over it. Strapped
-    to the outside of the forearm and set back from the grip, both are visible at once.
+    It is worn, not held: on the arm's side of the torso while it is down, swung round in
+    front of that shoulder while it is raised. That side is where it actually protects
+    (`Player._blocks_hit` reads the same wedge), so what the player sees on the sprite is
+    what the damage maths does, and turning the shield onto a blow is a real thing to do.
+
+    Left is the offhand in this sprite: forward is -y and the offhand arm sits at -x, so
+    the shield hangs off the body's left and swings forward from there.
     """
     raised = spec.get("raised")
-    width, height = size * 0.62, size * 0.78
-    # Which way is away from the body, so the strap side is right whichever arm holds it.
-    outward = -1 if hand_pos[0] <= body_center[0] else 1
+    width, height = size * 0.66, size * 0.86
     if raised:
-        cx = (hand_pos[0] + body_center[0]) / 2 + outward * size * 0.16
-        cy = body_center[1] - size * 0.42
+        cx = body_center[0] - size * 0.34
+        cy = body_center[1] - size * 0.52
     else:
-        cx = hand_pos[0] + outward * size * 0.30
-        cy = hand_pos[1] + size * 0.26
-        width, height = width * 0.85, height * 0.85
+        cx = body_center[0] - size * 0.62
+        cy = body_center[1] + size * 0.08
+        width, height = width * 0.9, height * 0.9
 
     face = [
         (cx - width / 2, cy - height / 2),

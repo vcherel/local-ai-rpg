@@ -27,6 +27,9 @@ class Minimap:
     # World span across the whole map. Roughly one and a half screens, so it orients
     # without scouting ahead.
     RANGE: int = 2600
+    # World units to a pace, for the "paces from home" strip: the raw distance runs to five
+    # figures and reads as noise, where a pace is a number a person can hold in their head.
+    PACE: int = 32
 
     UNSEEN_COLOR: tuple = (18, 17, 22)
     GROUND_COLOR: tuple = (58, 74, 48)

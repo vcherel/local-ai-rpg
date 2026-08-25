@@ -4,7 +4,11 @@ from llm.llm_request_queue import generate_response_queued
 
 # What each shop trades in, so a batch of shops comes back varied instead of three
 # lists of the same moonlit blade. Cycled if a world ever has more shops than roles.
-SHOP_ROLES = ("blacksmith (weapons and armor)", "alchemist (potions and charms)", "general trader (odds and ends)")
+SHOP_ROLES = (
+    "blacksmith (weapons and armor)",
+    "alchemist (potions, charms and bombs)",
+    "general trader (odds and ends)",
+)
 
 ITEMS_PER_SHOP = 4
 # One line per item is roughly 15 tokens; leave room for the model to be a bit verbose.
@@ -37,7 +41,7 @@ def generate_shop_inventories(context: str, shop_count: int) -> list:
         "Example:\n"
         "1|Iron Sword|weapon|uncommon|25\n"
         "Rules: shop is the shop number. "
-        'type is "weapon", "armor", "shield", "accessory", "potion" or "misc". '
+        'type is "weapon", "armor", "shield", "accessory", "potion", "bomb" or "misc". '
         'rarity is "common", "uncommon", "rare", "epic" or "legendary" (mostly common or uncommon). '
         "price is 5 to 80. "
         "Each shop's items fit its trade, suit the world, and differ from the other shops'. "

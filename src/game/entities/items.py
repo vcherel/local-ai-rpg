@@ -33,6 +33,11 @@ WEAPON_KEYWORDS = {
     "chakram",
 }
 AMMO_KEYWORDS = {"arrow", "bolt"}
+# What the two throwables are called. "mine" and "charge" are laid on the ground and wait;
+# everything else here is lit and thrown. Which of the two an item is, is read off its name
+# by `bomb_kind` and nowhere else.
+BOMB_KEYWORDS = {"bomb", "grenade", "mine", "charge", "firepot"}
+MINE_KEYWORDS = {"mine", "charge", "trap"}
 ARMOR_KEYWORDS = {
     "armor",
     "vest",
@@ -134,13 +139,27 @@ def icon_shape(item_type: str, name: str) -> str:
         return "arrow"
     if item_type == "potion":
         return "flask"
+    if item_type == "bomb":
+        return "bomb"
     return "coin"
+
+
+def bomb_kind(name: str) -> str:
+    """Which of the two throwables an item is: a "mine" laid on the ground and waited on,
+    or a "grenade" lit and thrown. Read off the name, so adding one is a keyword rather
+    than a branch."""
+    lower = name.lower()
+    return "mine" if any(kw in lower for kw in MINE_KEYWORDS) else "grenade"
 
 
 def item_type_from_name(name: str) -> str:
     lower = name.lower()
     if any(kw in lower for kw in AMMO_KEYWORDS):
         return "ammo"
+    # Before weapons, so a "Powder Charge" is something to throw rather than something to
+    # swing, and before potions, so a "Fire Pot" is not a drink.
+    if any(kw in lower for kw in BOMB_KEYWORDS):
+        return "bomb"
     # Potions come before weapons/armour so an "Elixir of the Blade" stays a drink.
     if any(kw in lower for kw in POTION_KEYWORDS):
         return "potion"
@@ -174,6 +193,7 @@ def inventory_section(item: Item) -> str:
         "accessory": "Trinkets",
         "potion": "Supplies",
         "ammo": "Supplies",
+        "bomb": "Supplies",
     }.get(item.item_type, "Valuables")
 
 
@@ -385,6 +405,8 @@ def base_value(item: Item) -> int:
         base = 2
     elif item.item_type == "potion":
         base = c.Potions.BASE_VALUE
+    elif item.item_type == "bomb":
+        base = c.Bombs.BASE_VALUE
     else:  # misc valuables are worth selling in their own right
         base = 20
     return round(base * rarity_tier(item.rarity).price_mult)
@@ -413,7 +435,7 @@ class Item:
         self.rarity = rarity or roll_rarity()
         self.accessory_flavor = accessory_flavor
         self.potion_effect = potion_effect
-        # Ammo and potions stack; every other item keeps quantity 1.
+        # Ammo, potions and bombs stack; every other item keeps quantity 1.
         self.quantity = quantity
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
@@ -431,6 +453,8 @@ class Item:
             self.color = COIN_COLOR
         elif item_type == "ammo":
             self.color = AMMO_COLOR
+        elif item_type == "bomb":
+            self.color = c.Bombs.BODY_COLOR
         elif item_type == "potion":
             if self.potion_effect is None:
                 self.potion_effect = potion_effect_from_name(name)

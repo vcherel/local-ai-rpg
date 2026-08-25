@@ -156,3 +156,17 @@ which is what keeps `MONSTER_KINDS` the one source of what a creature is worth.
 `World.night_damage_mult` and the detection multiplier are read per frame and passed into
 `Monster.move`, so a monster that spawned at noon still hits like a night monster after
 dark; only the danger bonus a new spawn rolls with is baked in at spawn time.
+
+## A tree is the one piece of wilderness that answers back
+
+Everything in a chunk is rolled from `(cx, cy)` and thrown away when the chunk unloads, which is
+why nothing the player does to it could ever survive. Felling a tree is the exception, and it is
+handled the way a POI's state is: the chunk is still generated purely from its seed, and what the
+player did is laid over the top afterwards. `World.felled` holds `"cx:cy:index"` keys, and
+`_load_chunk` fells the matching pieces as they are generated, so a wood the player cleared is
+still clear when they walk back through it.
+
+An axe does the work several times over (`Trees.AXE_MULT`) and anything else is somebody hitting
+a tree with the wrong thing. What is left is a stump: no longer solid, no longer a canopy to fade
+under, still standing there so the wood reads as cut rather than as scenery that quietly vanished.
+The logs are ordinary loot, since there is no crafting for them to feed.

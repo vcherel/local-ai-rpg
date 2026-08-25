@@ -138,7 +138,8 @@ def _trim_to_sentence(text: str) -> str:
 class DialogueManager:
     def __init__(self, screen, items, player, npcs):
         self.active = False
-        self._opened_at_ms = 0
+        # Keys that were already held when the box opened, ignored until they are released.
+        self._ignored_keys: set[int] = set()
         self.current_npc = None
         self.waiting_for_llm = False
         self.system_prompt = ""
@@ -288,7 +289,14 @@ class DialogueManager:
 
         self.current_npc = npc
         self.active = True
-        self._opened_at_ms = pygame.time.get_ticks()
+        # Whatever was already pressed when the box opened does not belong in the box. Two
+        # things used to leak in: a key held down as E was pressed (the player walks up to
+        # somebody with W held, and its repeat lands in the input), and any KEYDOWN queued
+        # before this frame. The queue is dropped, and every key currently down is ignored
+        # until it is released, so typing starts from the first key actually typed at the
+        # box rather than from whatever the player was doing to get to it.
+        pygame.event.clear(pygame.KEYDOWN)
+        self._ignored_keys = {key for key, down in enumerate(pygame.key.get_pressed()) if down}
         self.waiting_for_llm = True
         self.conversation_ended = False
         self._is_first_message = True
@@ -332,11 +340,15 @@ class DialogueManager:
                 npc_name_generator.start_generation()
             return True
 
+        elif event.type == pygame.KEYUP:
+            # Released: the key is the player's to type with from now on.
+            self._ignored_keys.discard(event.key)
+            return True
+
         elif event.type == pygame.KEYDOWN:
-            # Swallow keys for a brief window after opening (e.g. a movement key pressed
-            # right as E was pressed), since its KEYDOWN can arrive a frame late and
-            # otherwise leaks into the input box.
-            if pygame.time.get_ticks() - self._opened_at_ms < 200:
+            # A key that was already down when the box opened is the player still walking,
+            # not the player typing, so it is swallowed until they let go of it.
+            if event.key in self._ignored_keys:
                 return True
 
             if event.key == pygame.K_UP:

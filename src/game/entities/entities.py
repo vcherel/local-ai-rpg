@@ -422,17 +422,20 @@ def draw_human(
         right_arm_y += arm_swing
     draw_arm(right_arm_x, right_arm_y)
 
-    # The shield hangs off the left arm, under whatever that hand is also holding.
+    # The shield is worn on the offhand side of the body rather than held, so it goes on
+    # before the hands: what that arm is holding is drawn over it.
     if gear and gear.get("offhand"):
-        draw_shield(char_surf, (left_arm_x, left_arm_y), body_center, gear["offhand"], size)
+        draw_shield(char_surf, body_center, gear["offhand"], size)
 
-    # Weapons sit on top of the hand holding them: ranged left, melee right.
-    if gear and gear.get("ranged"):
-        swing = attack_progress if attack_hand == "left" else 0.0
-        draw_weapon(char_surf, (left_arm_x, left_arm_y), gear["ranged"], size, "left", swing)
-    if gear and gear.get("melee"):
-        swing = attack_progress if attack_hand == "right" else 0.0
-        draw_weapon(char_surf, (right_arm_x, right_arm_y), gear["melee"], size, "right", swing)
+    # One weapon per hand, and a hand with nothing in it is simply not drawn holding
+    # anything: bare hands are a loadout the player can choose, not a missing sprite.
+    # Hand one is the right arm (the left mouse button), hand two the left.
+    for key, hand, arm in (("hand2", "left", (left_arm_x, left_arm_y)), ("hand1", "right", (right_arm_x, right_arm_y))):
+        spec = gear.get(key) if gear else None
+        if spec is None or not spec.get("kind"):
+            continue
+        swing = attack_progress if attack_hand == hand else 0.0
+        draw_weapon(char_surf, arm, spec, size, hand, swing)
 
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))

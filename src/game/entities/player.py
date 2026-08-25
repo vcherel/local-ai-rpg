@@ -29,23 +29,23 @@ if TYPE_CHECKING:
     from core.save import SaveSystem
 
 
+# The player has two weapon hands and carries two weapons in each. Hand one is always the
+# left mouse button and hand two always the right; keys 1 and 2 pick which weapon hand one
+# holds, 3 and 4 which hand two holds. Nothing is typed by family: any weapon goes in any
+# position, and what a click does is decided by the archetype of whatever is in that hand
+# at the time, so a bow in hand one fires on left click and a sword in hand two swings on
+# right. An empty position is a real choice too, and means bare hands.
+HAND_SLOTS = (("hand1_a", "hand1_b"), ("hand2_a", "hand2_b"))
+WEAPON_SLOT_NAMES = tuple(slot for hand in HAND_SLOTS for slot in hand)
+
 # Every equip slot the player has, in the order the save writes them. `Player.equipped`
 # is a dict on exactly these keys holding the id of what is in each, so a slot is read and
 # written by its own name everywhere instead of through an attribute looked up off a table.
-EQUIP_SLOT_NAMES = (
-    "melee_weapon",
-    "melee_weapon_2",
-    "ranged_weapon",
-    "offhand",
-    "armor",
-    "accessory",
-    "ammo",
-)
+EQUIP_SLOT_NAMES = (*WEAPON_SLOT_NAMES, "offhand", "armor", "accessory", "ammo")
 
-# The two melee slots, in bar order. Both are equipped at once and `Player.active_melee`
-# indexes which of them swings; carrying a spear beside a sword is a choice of stance made
-# before the fight rather than a trip through the inventory during it.
-MELEE_SLOTS = ("melee_weapon", "melee_weapon_2")
+# What a save written before the hands existed called these. Read once on load so an old
+# playthrough opens holding what it was holding rather than empty handed.
+_LEGACY_SLOTS = {"melee_weapon": "hand1_a", "melee_weapon_2": "hand1_b", "ranged_weapon": "hand2_a"}
 
 # Held down to raise the shield. A hold rather than a toggle, so blocking is something
 # you do for the blow you saw coming instead of a stance you leave switched on.
@@ -93,18 +93,26 @@ def _damage_source_name(source) -> str:
 
 
 def _equip_slot(item) -> str | None:
-    """Which kind of slot an item belongs to. Weapons split into a melee and a ranged
-    slot by archetype (constants.weapon_archetype), so a bow and a sword can be
-    carried and equipped at the same time instead of fighting over one slot. A melee
-    weapon answers with the first melee slot; which of the two it actually goes into is
-    `Player._target_slot`'s call, since that depends on what is already held."""
-    if item.item_type == "weapon":
-        return "ranged_weapon" if c.weapon_archetype(item.name).ranged else "melee_weapon"
+    """Which kind of slot an item belongs to. Every weapon (and every bomb, which is a
+    weapon that is spent) answers with the one kind "weapon": which of the four positions
+    it actually goes into is `Player._target_slot`'s call, since that depends on what is
+    already held."""
+    if item.item_type in ("weapon", "bomb"):
+        return "weapon"
     if item.item_type == "shield":
         return "offhand"
     if item.item_type in ("armor", "accessory", "ammo"):
         return item.item_type
     return None
+
+
+def _default_hand(item) -> int:
+    """The hand a weapon arrives in when the player has not said otherwise: what is swung
+    goes in hand one, what is fired or thrown in hand two. Only a default, and the player
+    is free to move any of it anywhere from the bag."""
+    if item.item_type == "bomb":
+        return 1
+    return 1 if c.weapon_archetype(item.name).ranged else 0
 
 
 class Player(Entity):
@@ -135,23 +143,30 @@ class Player(Entity):
         self.last_cast_ms = 0
 
         saved_equipped = save_system.load("equipped", {})
+        for legacy, slot in _LEGACY_SLOTS.items():
+            if legacy in saved_equipped and saved_equipped.get(slot) is None:
+                saved_equipped[slot] = saved_equipped[legacy]
         self.equipped = {slot: saved_equipped.get(slot) for slot in EQUIP_SLOT_NAMES}
 
-        # The weapon bar the number keys switch between. It sits on top of the melee and
-        # ranged slots rather than replacing them: selecting a bar slot routes that weapon
-        # into whichever of the two its archetype belongs to, so a bow and a sword stay
-        # carried at once and combat never has to ask which one is "active".
-        bar = save_system.load("weapon_bar", [])
-        self.weapon_bar = (list(bar) + [None] * c.Player.WEAPON_SLOTS)[: c.Player.WEAPON_SLOTS]
+        # Which of its two weapons each hand currently holds. Combat asks `hand_weapon`
+        # rather than reading a slot by name, so switching is one key press rather than an
+        # unequip and a re-equip, and all four stay carried either way.
+        saved_active = save_system.load("active_hands", None)
+        if saved_active is None:
+            saved_active = [1 if save_system.load("active_melee", 0) else 0, 0]
+        self.active_hand = [
+            min(max(int(index), 0), c.Player.POSITIONS_PER_HAND - 1)
+            for index in (list(saved_active) + [0] * c.Player.HANDS)[: c.Player.HANDS]
+        ]
 
-        # Which of the two melee slots swings. Combat asks `active_melee_weapon()` rather
-        # than reading a slot directly, so both weapons stay visibly equipped and switching
-        # between them is one key rather than an unequip and a re-equip.
-        self.active_melee = 1 if save_system.load("active_melee", 0) else 0
+        # The weapon whose projectile is in the air right now, so a boomerang is not drawn
+        # still sitting in the hand that threw it. Session-only; `WorldProjectiles` keeps it
+        # in step with what is actually flying.
+        self.thrown_id = None
 
-        # The potions the HUD quick keys drink, chosen the way the weapon bar is: a list of
-        # ids rather than whatever happens to sit first in the bag, so a healing potion does
-        # not slide off the bar the moment a nicer-sounding elixir is picked up.
+        # The potions the HUD quick keys drink: a list of ids rather than whatever happens
+        # to sit first in the bag, so a healing potion does not slide off the bar the moment
+        # a nicer-sounding elixir is picked up.
         potion_bar = save_system.load("potion_bar", [])
         self.potion_bar = (list(potion_bar) + [None] * c.Potions.QUICK_SLOTS)[: c.Potions.QUICK_SLOTS]
 
@@ -188,8 +203,10 @@ class Player(Entity):
         # Session-only: read once, between the killing hit and the screen it feeds.
         self.last_hit_by = ""
 
-        # Rampage (legendary weapon affix): landed-hit counter per weapon slot, session-only.
-        self._rampage_streak = {"melee_weapon": 0, "ranged_weapon": 0}
+        # Rampage (legendary weapon affix): landed-hit counter per weapon position,
+        # session-only. The streak belongs to the position rather than to the weapon in it,
+        # so rearranging the hands starts the count again.
+        self._rampage_streak = dict.fromkeys(WEAPON_SLOT_NAMES, 0)
 
         # Potion buffs: {effect: {"until": wall-clock seconds, "magnitude": float}}.
         # Wall-clock for the same reason as above, so quitting doesn't bank buff time.
@@ -319,6 +336,27 @@ class Player(Entity):
             return 0.0
         return min(c.Shield.BLOCK_MAX, c.Shield.BLOCK_BASE + shield.bonus * c.Shield.BLOCK_PER_BONUS)
 
+    def break_guard(self):
+        """The guard runs out: the shield comes down and stays down for a moment, which is
+        the window the player pays for holding block through everything. One place, because
+        a blow that overwhelms the guard and a shot that wears it out end the same way."""
+        self.guard = 0.0
+        self.guard_broken_until_ms = pygame.time.get_ticks() + c.Shield.GUARD_BREAK_MS
+        self.blocking = False
+        play_sound("crate_break")
+        get_shake().add(c.Shield.GUARD_BREAK_SHAKE)
+        get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, "Guard broken!", (255, 150, 60), big=True)
+
+    def spend_guard(self, amount: float):
+        """Take `amount` out of the guard meter without a blow behind it: what turning a
+        shot aside costs. Empties it and the guard breaks, so an archer can wear a shield
+        down even though none of their arrows ever landed."""
+        self.last_guard_use_ms = pygame.time.get_ticks()
+        if amount >= self.guard:
+            self.break_guard()
+            return
+        self.guard -= amount
+
     def _update_guard(self, keys, dt):
         """Raise or lower the shield from the held key, and trickle the guard meter back
         once it has been left alone long enough. A broken guard stays down until its
@@ -331,21 +369,53 @@ class Player(Entity):
         if now - self.last_guard_use_ms >= c.Shield.GUARD_REGEN_DELAY_MS:
             self.guard = min(c.Shield.GUARD_MAX, self.guard + c.Shield.GUARD_REGEN_PER_S * dt / 1000.0)
 
-    def _blocks_hit(self, source) -> bool:
-        """True when a raised shield actually covers this blow: it has to come from within
-        the shield's arc of where the player is facing. A hit with no known origin (a burn,
-        a trap) is never blocked, and neither is one taken from behind."""
-        if not self.blocking or source is None:
-            return False
+    def _incoming_offset(self, source) -> float | None:
+        """How far off the player's facing a blow arrives, in radians, signed: negative is
+        the shield side (the offhand, drawn on the body's left), positive the open side.
+        None when the blow has no origin to measure, which is a burn or a trap."""
         sx, sy = getattr(source, "x", None), getattr(source, "y", None)
         if sx is None or sy is None:
-            return False
+            return None
+        # Anything in flight is judged by the way it is travelling rather than by where it
+        # has got to: an arrow is on top of the player by the time it lands, and a step that
+        # carried it just past them would read as a blow arriving from behind.
+        vx, vy = getattr(source, "vx", 0.0), getattr(source, "vy", 0.0)
+        speed = math.hypot(vx, vy)
+        if speed:
+            sx = self.x - vx / speed * c.Player.SIZE
+            sy = self.y - vy / speed * c.Player.SIZE
         # `orientation` is measured from straight up, clockwise: the forward vector is
         # (sin, -cos), the same one Player.get_pos projects a swing along.
         facing = math.atan2(-math.cos(self.orientation), math.sin(self.orientation))
         incoming = math.atan2(sy - self.y, sx - self.x)
-        delta = abs((incoming - facing + math.pi) % (2 * math.pi) - math.pi)
-        return delta <= math.radians(c.Shield.ARC_DEG) / 2
+        return (incoming - facing + math.pi) % (2 * math.pi) - math.pi
+
+    def _blocks_hit(self, source) -> bool:
+        """True when a raised shield covers this blow at all: it has to come from within
+        the shield's arc of where the player is facing. A hit with no known origin (a burn,
+        a trap) is never blocked, and neither is one taken from behind. How much of it the
+        shield actually turns away is `_shield_share`, which asks which side it came at."""
+        if not self.blocking or source is None:
+            return False
+        offset = self._incoming_offset(source)
+        return offset is not None and abs(offset) <= math.radians(c.Shield.ARC_DEG) / 2
+
+    def shield_side_hit(self, source) -> bool:
+        """Whether a blow arrives on the side the shield is actually worn: the wedge the
+        sprite shows it covering. What lands here is met by the face of the shield, and a
+        shot that lands here is turned away entirely (`WorldProjectiles`)."""
+        if not self.blocking or source is None:
+            return False
+        offset = self._incoming_offset(source)
+        return offset is not None and -math.radians(c.Shield.SIDE_ARC_DEG) <= offset <= 0
+
+    def _shield_share(self, source) -> float:
+        """The share of a blow the shield turns away, given where it came from: all of what
+        the shield is worth on the side it is worn, a fraction of it on the open side. A
+        shield is strapped to one arm, so which way the player is standing is the difference
+        between meeting a blow and catching its edge."""
+        full = self.block_fraction()
+        return full if self.shield_side_hit(source) else full * c.Shield.OFF_SIDE_MULT
 
     def _absorb_with_shield(self, damage: float, source) -> float:
         """Run an incoming hit past the raised shield, returning what still gets through.
@@ -356,14 +426,9 @@ class Player(Entity):
         if not self._blocks_hit(source):
             return damage
         self.last_guard_use_ms = pygame.time.get_ticks()
-        absorbed = damage * self.block_fraction()
+        absorbed = damage * self._shield_share(source)
         if absorbed >= self.guard:
-            self.guard = 0.0
-            self.guard_broken_until_ms = pygame.time.get_ticks() + c.Shield.GUARD_BREAK_MS
-            self.blocking = False
-            play_sound("crate_break")
-            get_shake().add(c.Shield.GUARD_BREAK_SHAKE)
-            get_floating_text().spawn(self.x, self.y - c.Player.SIZE / 2, "Guard broken!", (255, 150, 60), big=True)
+            self.break_guard()
             return damage
         self.guard -= absorbed
         play_sound("hit")
@@ -372,13 +437,13 @@ class Player(Entity):
         return damage - absorbed
 
     def add_item(self, item):
-        """Add an item to the inventory, merging a stackable (ammo, potion) into a matching
+        """Add an item to the inventory, merging a stackable (ammo, potion, bomb) into a matching
         stack. Both only merge with the same rarity: rarity is what makes one healing potion
         stronger than another, and what makes a legendary quiver worth more than a common
         one. Merging across rarities silently threw the better item away. A potion also has
         to promise the same effect, since the name alone doesn't always settle that."""
         existing = None
-        if item.item_type in ("ammo", "potion"):
+        if item.item_type in ("ammo", "potion", "bomb"):
             existing = next(
                 (
                     i
@@ -407,21 +472,29 @@ class Player(Entity):
             if loaded is None or loaded.quantity <= 0:
                 self.equipped["ammo"] = item.id
                 self.save_system.update("equipped", self.equipped_ids())
+        elif item.item_type == "bomb" and self.equipped_slot_of(item) is None:
+            # A bomb is no use in the bag: it takes a free weapon position so it can be
+            # thrown, but never pushes a weapon out of one the player chose to fill.
+            free = next((slot for slot in WEAPON_SLOT_NAMES if self.equipped[slot] is None), None)
+            if free is not None:
+                self.equipped[free] = item.id
+                self.save_system.update("equipped", self.equipped_ids())
         elif item.item_type == "potion" and item.id not in self.potion_bar and None in self.potion_bar:
             self.potion_bar[self.potion_bar.index(None)] = item.id
             self._save_potion_bar()
 
     def restock_bars(self):
-        """Fill any free quickbar slot and any empty ammo slot from what is already carried.
+        """Fill any free quickbar slot, any empty ammo slot and any free weapon position
+        from what is already carried.
         Run once the saved inventory has been relinked: a bag loaded from a save made before
         the quickbar was a choice would otherwise open with nothing on it."""
         for item in self.inventory:
             self._auto_slot(item)
 
     # --- potion quickbar --------------------------------------------------------
-    # The same arrangement as the weapon bar, and for the same reason: what the quick keys
-    # reach for is a choice the player makes and the save keeps, not a side effect of the
-    # order things were picked up in.
+    # The same arrangement as the weapon positions, and for the same reason: what the quick
+    # keys reach for is a choice the player makes and the save keeps, not a side effect of
+    # the order things were picked up in.
 
     def _save_potion_bar(self):
         self.save_system.update("potion_bar", self.potion_bar)
@@ -473,6 +546,19 @@ class Player(Entity):
         ammo = self.ready_ammo()
         return ammo.quantity if ammo else 0
 
+    def spend_one(self, item) -> bool:
+        """Use one off a stack, clearing the slot it was held in once the last one is gone.
+        False when there was nothing left to spend, which is how a click on an empty hand
+        stays a click on an empty hand."""
+        if item is None or item.quantity <= 0:
+            return False
+        item.quantity -= 1
+        if item.quantity <= 0:
+            self.unequip_if_equipped(item)
+            if item in self.inventory:
+                self.inventory.remove(item)
+        return True
+
     def equipped_ids(self) -> dict:
         return dict(self.equipped)
 
@@ -483,130 +569,97 @@ class Player(Entity):
         return next((item for item in self.inventory if item.id == item_id), None)
 
     def _target_slot(self, item) -> str | None:
-        """The slot an item is actually equipped into. Only melee has a choice to make: a
-        free slot is filled before anything is displaced, and with both full it is the
-        weapon in hand that gets replaced rather than the spare being carried for later."""
-        slot = _equip_slot(item)
-        if slot != "melee_weapon":
-            return slot
-        for melee_slot in MELEE_SLOTS:
-            if self.equipped[melee_slot] is None:
-                return melee_slot
-        return self.active_melee_slot()
+        """The slot an item is actually equipped into. Only a weapon has a choice to make:
+        it goes to its default hand, filling a free position there before displacing
+        anything, and with both full it replaces the one in hand rather than the spare."""
+        kind = _equip_slot(item)
+        if kind != "weapon":
+            return kind
+        hand = _default_hand(item)
+        for slot in HAND_SLOTS[hand]:
+            if self.equipped[slot] is None:
+                return slot
+        return self.hand_slot(hand)
 
     def equip(self, item):
         """Equip the item into its slot (no toggle), replacing whatever is there."""
         slot = self._target_slot(item)
         if slot is None:
             return
-        displaced = self.equipped[slot]
+        # Nothing is ever held twice: a weapon already in another position is moved rather
+        # than copied, or a bomb picked up into a free position and then equipped would be
+        # in two hands at once and spent from only one of them.
+        current = self.equipped_slot_of(item)
+        if current is not None and current != slot:
+            self.equipped[current] = None
         self.equipped[slot] = item.id
-        if slot in MELEE_SLOTS:
-            # Equipping a weapon means wanting to use it, so the slot it landed in is the
-            # one that swings; the other stays equipped as the spare.
-            self._set_active_melee(MELEE_SLOTS.index(slot))
+        if slot in WEAPON_SLOT_NAMES:
+            # Equipping a weapon means wanting to use it, so the position it landed in is
+            # the one that hand now holds; the other stays carried as the spare.
+            self._set_active(*self._position_of(slot))
         self.save_system.update("equipped", self.equipped_ids())
-        if slot in MELEE_SLOTS or slot == "ranged_weapon":
-            self._add_to_weapon_bar(item.id, displaced)
 
-    # --- melee slots ------------------------------------------------------------
-    # Two melee weapons are carried at once and one of them swings. Nothing reads a melee
+    # --- weapon hands -----------------------------------------------------------
+    # Two hands, two weapons in each, one of them in hand at a time. Nothing reads a weapon
     # slot by name: combat, the affix helpers and the drawn gear all go through
-    # `active_melee_weapon`, so the swap is a single index rather than gear changing hands.
+    # `hand_weapon`, so a switch is a single index rather than gear changing hands.
 
-    def active_melee_slot(self) -> str:
-        return MELEE_SLOTS[self.active_melee]
+    @staticmethod
+    def _position_of(slot: str) -> tuple[int, int]:
+        """(hand, position) for a weapon slot name."""
+        for hand, slots in enumerate(HAND_SLOTS):
+            if slot in slots:
+                return hand, slots.index(slot)
+        raise ValueError(f"Not a weapon slot: {slot}")
 
-    def active_melee_weapon(self):
-        return self.equipped_item(self.active_melee_slot())
+    def hand_slot(self, hand: int) -> str:
+        return HAND_SLOTS[hand][self.active_hand[hand]]
 
-    def _set_active_melee(self, index: int):
-        self.active_melee = index
-        self.save_system.update("active_melee", self.active_melee)
+    def hand_weapon(self, hand: int):
+        """What that hand is holding, or None for bare hands."""
+        return self.equipped_item(self.hand_slot(hand))
 
-    def swap_melee(self):
-        """Switch to the other melee slot, if there is anything in it. Returns the weapon
-        now in hand, or None when there is no second weapon to switch to."""
-        other = 1 - self.active_melee
-        item = self.equipped_item(MELEE_SLOTS[other])
-        if item is None:
-            return None
-        self._set_active_melee(other)
-        return item
+    def _set_active(self, hand: int, index: int):
+        self.active_hand[hand] = index
+        self.save_system.update("active_hands", list(self.active_hand))
 
-    # --- weapon bar ------------------------------------------------------------
-    # A short list of weapon ids the number keys switch between. Only the bar is stored;
-    # what a slot does when pressed is decided by the weapon's archetype at the time, so
-    # the bar never has to be kept in step with the melee/ranged slots.
+    def select_weapon(self, hand: int, index: int):
+        """Take up the weapon in that position of that hand. An empty position is a choice
+        like any other and puts the player on bare hands, so the returned None is an
+        answer rather than a refusal."""
+        self._set_active(hand, index)
+        return self.hand_weapon(hand)
 
-    def _save_weapon_bar(self):
-        self.save_system.update("weapon_bar", self.weapon_bar)
-
-    def _add_to_weapon_bar(self, item_id: str, displaced_id: str | None = None):
-        """Put a newly equipped weapon on the bar: into the slot holding the weapon it
-        just pushed out of its equip slot, else the first free slot, else the last one."""
-        if item_id in self.weapon_bar:
-            return
-        if displaced_id is not None and displaced_id in self.weapon_bar:
-            index = self.weapon_bar.index(displaced_id)
-        elif None in self.weapon_bar:
-            index = self.weapon_bar.index(None)
-        else:
-            index = len(self.weapon_bar) - 1
-        self.weapon_bar[index] = item_id
-        self._save_weapon_bar()
-
-    def _drop_from_weapon_bar(self, item_id: str):
-        if item_id in self.weapon_bar:
-            self.weapon_bar[self.weapon_bar.index(item_id)] = None
-            self._save_weapon_bar()
-
-    def weapon_bar_items(self) -> list:
-        """The bar as items, None per empty slot. An id that no longer resolves (the
-        weapon was sold from another screen) is cleared on the way past."""
+    def hand_items(self) -> list:
+        """The four carried weapons in key order (1, 2, 3, 4), None per empty position. An
+        id that no longer resolves (the weapon was sold from another screen) is cleared on
+        the way past."""
         by_id = {item.id: item for item in self.inventory}
         items = []
-        for index, item_id in enumerate(self.weapon_bar):
+        for slot in WEAPON_SLOT_NAMES:
+            item_id = self.equipped[slot]
             item = by_id.get(item_id) if item_id else None
             if item_id and item is None:
-                self.weapon_bar[index] = None
+                self.equipped[slot] = None
             items.append(item)
         return items
 
     def cycle_weapon_slot(self, item):
-        """Move a weapon along the bar one slot per call, off the end and back to nothing.
-        This is the manual assignment behind right-clicking a weapon in the inventory."""
-        if item.item_type != "weapon":
+        """Move a weapon along the four positions one per call, off the end and back to
+        carried-but-not-equipped. The manual assignment behind right-clicking a weapon in
+        the bag, and the whole of how the player arranges their hands."""
+        if _equip_slot(item) != "weapon":
             return
-        if item.id in self.weapon_bar:
-            index = self.weapon_bar.index(item.id)
-            self.weapon_bar[index] = None
-            target = index + 1
-        elif None in self.weapon_bar:
-            # A free slot first, so the common case of filling the bar up never costs
-            # the player a weapon they had already put on it.
-            target = self.weapon_bar.index(None)
+        current = self.equipped_slot_of(item)
+        if current is not None:
+            target_index = WEAPON_SLOT_NAMES.index(current) + 1
+            self.equipped[current] = None
         else:
-            target = 0
-        if target < len(self.weapon_bar):
-            self.weapon_bar[target] = item.id
-        self._save_weapon_bar()
-
-    def select_weapon(self, slot: int):
-        """Draw the weapon on bar slot `slot`: already equipped, it is simply the one that
-        swings from now on; otherwise it is equipped into the slot its archetype belongs to.
-        Returns the item, or None if that bar slot is empty."""
-        items = self.weapon_bar_items()
-        if slot >= len(items) or items[slot] is None:
-            return None
-        item = items[slot]
-        for equip_slot, equipped_id in self.equipped.items():
-            if equipped_id == item.id:
-                if equip_slot in MELEE_SLOTS:
-                    self._set_active_melee(MELEE_SLOTS.index(equip_slot))
-                return item
-        self.equip(item)
-        return item
+            free = next((slot for slot in WEAPON_SLOT_NAMES if self.equipped[slot] is None), None)
+            target_index = WEAPON_SLOT_NAMES.index(free) if free else 0
+        if target_index < len(WEAPON_SLOT_NAMES):
+            self.equipped[WEAPON_SLOT_NAMES[target_index]] = item.id
+        self.save_system.update("equipped", self.equipped_ids())
 
     def equipped_slot_of(self, item) -> str | None:
         """The slot an item is currently in, or None if it isn't equipped."""
@@ -615,27 +668,31 @@ class Player(Entity):
     def is_upgrade(self, item) -> bool:
         """True if the item is equippable and beats (or fills an empty) its slot. Ammo is
         equippable but never an upgrade: which quiver is loaded is a choice, not a power
-        level, and prompting "press F to equip" over every bundle of arrows is noise. A
-        melee weapon is measured against the weaker of the two melee slots, since that is
-        the one it would push out."""
-        slot = _equip_slot(item)
-        if slot is None or slot == "ammo":
+        level, and prompting "press F to equip" over every bundle of arrows is noise, and
+        neither is a bomb, which is a thing to spend rather than a thing to wear. A weapon
+        is measured against the weaker of the two positions of the hand it would arrive in,
+        since that is the one it would push out."""
+        kind = _equip_slot(item)
+        if kind is None or kind == "ammo" or item.item_type == "bomb":
             return False
-        if slot == "melee_weapon":
-            held = [self.equipped_item(melee_slot) for melee_slot in MELEE_SLOTS]
+        if kind == "weapon":
+            held = [self.equipped_item(slot) for slot in HAND_SLOTS[_default_hand(item)]]
             if any(weapon is None for weapon in held):
                 return True
             return item.bonus > min(weapon.bonus for weapon in held)
-        equipped = self.equipped_item(slot)
+        equipped = self.equipped_item(kind)
         return item.bonus > (equipped.bonus if equipped else -1)
 
     def _clear_slot(self, slot: str):
-        """Empty an equip slot. Emptying the melee slot that was in hand falls back to the
-        other one, so putting a weapon away never leaves the player barehanded next to the
-        spare they are still carrying."""
+        """Empty an equip slot. Emptying the position a hand was holding falls back to the
+        other one when there is anything in it, so putting a weapon away never leaves that
+        hand bare next to the spare it is still carrying."""
         self.equipped[slot] = None
-        if slot == self.active_melee_slot() and self.equipped_item(MELEE_SLOTS[1 - self.active_melee]) is not None:
-            self._set_active_melee(1 - self.active_melee)
+        if slot in WEAPON_SLOT_NAMES:
+            hand, index = self._position_of(slot)
+            other = 1 - index
+            if self.active_hand[hand] == index and self.equipped[HAND_SLOTS[hand][other]] is not None:
+                self._set_active(hand, other)
         self.save_system.update("equipped", self.equipped_ids())
 
     def toggle_equip(self, item):
@@ -651,7 +708,6 @@ class Player(Entity):
         slot = self.equipped_slot_of(item)
         if slot is not None:
             self._clear_slot(slot)
-        self._drop_from_weapon_bar(item.id)
         if item.id in self.potion_bar:
             self.potion_bar[self.potion_bar.index(item.id)] = None
             self._save_potion_bar()
@@ -659,20 +715,24 @@ class Player(Entity):
     def _best_loadout(self) -> dict:
         """The strongest thing carried for every slot it could go in, judged on bonus alone,
         the way `is_upgrade` judges a pickup. Ammo is left out (which quiver is loaded is a
-        choice, not a power level) and so is anything unequippable."""
+        choice, not a power level), so are bombs (a consumable is not a loadout), and so is
+        anything unequippable.
+
+        Weapons fill their default hand best first: the two best melee go in hand one, key 1
+        before key 2, and the two best ranged in hand two, so a lower key is always the
+        better weapon."""
         candidates: dict[str, list] = {}
         for item in self.inventory:
             kind = _equip_slot(item)
-            if kind is None or kind == "ammo":
+            if kind is None or kind == "ammo" or item.item_type == "bomb":
                 continue
-            candidates.setdefault(kind, []).append(item)
+            key = f"weapon{_default_hand(item)}" if kind == "weapon" else kind
+            candidates.setdefault(key, []).append(item)
 
         loadout = {}
-        for kind, items in candidates.items():
+        for key, items in candidates.items():
             best = sorted(items, key=lambda item: (-item.bonus, item.name))
-            # Melee takes the two best, one per slot, so the same weapon can never end up
-            # held in both hands.
-            slots = MELEE_SLOTS if kind == "melee_weapon" else (kind,)
+            slots = HAND_SLOTS[int(key[-1])] if key.startswith("weapon") else (key,)
             for index, slot in enumerate(slots):
                 loadout[slot] = best[index] if index < len(best) else None
         return loadout
@@ -694,16 +754,16 @@ class Player(Entity):
             self.equipped[slot] = wanted
             if item is not None:
                 changed.append(item)
-                if slot in MELEE_SLOTS or slot == "ranged_weapon":
-                    self._add_to_weapon_bar(item.id)
 
-        if self.active_melee_weapon() is None:
-            self._set_active_melee(1 - self.active_melee)
+        # Both hands take up the better of what they are now holding: key 1 and key 3.
+        for hand in range(c.Player.HANDS):
+            if self.hand_weapon(hand) is None and self.equipped[HAND_SLOTS[hand][0]] is not None:
+                self._set_active(hand, 0)
         self.save_system.update("equipped", self.equipped_ids())
         return changed
 
-    def weapon_bonus(self, ranged: bool = False) -> int:
-        item = self.equipped_item("ranged_weapon") if ranged else self.active_melee_weapon()
+    def weapon_bonus(self, hand: int = 0) -> int:
+        item = self.hand_weapon(hand)
         return item.bonus if item else 0
 
     def armor_bonus(self) -> int:
@@ -728,26 +788,26 @@ class Player(Entity):
     # Weapon/armour effects come from the equipped item's rolled affixes; accessories
     # contribute through their single flavor. Helpers combine both into one value.
 
-    def _weapon_affix(self, name: str, ranged: bool = False) -> float:
-        item = self.equipped_item("ranged_weapon") if ranged else self.active_melee_weapon()
+    def _weapon_affix(self, name: str, hand: int = 0) -> float:
+        item = self.hand_weapon(hand)
         return item.affixes.get(name, 0) if item else 0
 
     def _armor_affix(self, name: str) -> float:
         item = self.equipped_item("armor")
         return item.affixes.get(name, 0) if item else 0
 
-    def crit_bonus(self, ranged: bool = False) -> float:
-        return self._weapon_affix("crit", ranged) + self.accessory_bonus("crit") * c.Stats.ACCESSORY_CRIT_PER_BONUS
+    def crit_bonus(self, hand: int = 0) -> float:
+        return self._weapon_affix("crit", hand) + self.accessory_bonus("crit") * c.Stats.ACCESSORY_CRIT_PER_BONUS
 
-    def lifesteal_frac(self, ranged: bool = False) -> float:
+    def lifesteal_frac(self, hand: int = 0) -> float:
         acc = self.accessory_bonus("lifesteal") * c.Stats.ACCESSORY_LIFESTEAL_PER_BONUS
-        return self._weapon_affix("lifesteal", ranged) + acc
+        return self._weapon_affix("lifesteal", hand) + acc
 
-    def burn_damage(self, ranged: bool = False) -> int:
-        return int(self._weapon_affix("burn", ranged))
+    def burn_damage(self, hand: int = 0) -> int:
+        return int(self._weapon_affix("burn", hand))
 
-    def execute_threshold(self, ranged: bool = False) -> float:
-        return self._weapon_affix("execute", ranged)
+    def execute_threshold(self, hand: int = 0) -> float:
+        return self._weapon_affix("execute", hand)
 
     def thorns_damage(self) -> int:
         return int(self._armor_affix("thorns"))
@@ -758,12 +818,12 @@ class Player(Entity):
     def regen_still_bonus(self) -> float:
         return self._armor_affix("regen_still")
 
-    def rampage_trigger(self, ranged: bool = False) -> bool:
-        """Counts a landed melee hit / fired shot toward Rampage; True on the Nth that
-        should land as a guaranteed, amplified crit."""
-        if not self._weapon_affix("rampage", ranged):
+    def rampage_trigger(self, hand: int = 0) -> bool:
+        """Counts a landed hit / fired shot toward Rampage; True on the Nth that should
+        land as a guaranteed, amplified crit."""
+        if not self._weapon_affix("rampage", hand):
             return False
-        slot = "ranged_weapon" if ranged else "melee_weapon"
+        slot = self.hand_slot(hand)
         self._rampage_streak[slot] += 1
         if self._rampage_streak[slot] >= c.Affixes.RAMPAGE_EVERY_N_HITS:
             self._rampage_streak[slot] = 0
@@ -771,12 +831,12 @@ class Player(Entity):
         return False
 
     def bloodlust_mult(self) -> float:
-        """Bloodlust's on-kill damage buff magnitude, from whichever equipped weapon (if
-        any) carries it."""
-        return max(self._weapon_affix("bloodlust", False), self._weapon_affix("bloodlust", True))
+        """Bloodlust's on-kill damage buff magnitude, from whichever weapon in hand (if
+        either) carries it."""
+        return max(self._weapon_affix("bloodlust", hand) for hand in range(c.Player.HANDS))
 
-    def chainstrike_frac(self, ranged: bool = False) -> float:
-        return self._weapon_affix("chainstrike", ranged)
+    def chainstrike_frac(self, hand: int = 0) -> float:
+        return self._weapon_affix("chainstrike", hand)
 
     def guardian_ward_threshold(self) -> float:
         return self._armor_affix("guardian_ward")
@@ -1027,19 +1087,21 @@ class Player(Entity):
         return loss
 
     def gear(self) -> dict:
-        """What the equipped items look like on the character, for draw_human: a weapon
-        per hand (shape from its archetype), an armour ring, an accessory gem. Colours
-        come from the item itself, borders from its rarity."""
+        """What the equipped items look like on the character, for draw_human: whatever is
+        in each hand (shape from the weapon's own name), an armour ring, an accessory gem.
+        Colours come from the item itself, borders from its rarity."""
         gear = {}
-        # The melee weapon drawn in hand is the one that would swing, not both of them:
-        # the spare is carried, not held.
-        for hand, item in (("melee", self.active_melee_weapon()), ("ranged", self.equipped_item("ranged_weapon"))):
-            if item is not None:
-                gear[hand] = {
-                    "kind": c.weapon_archetype(item.name).name,
-                    "color": item.color,
-                    "outline": _item_outline(item),
-                }
+        # Only what each hand is actually holding: the spare is carried, not held, and a
+        # thrown boomerang is in the air rather than still in the fist that threw it.
+        for key, hand in (("hand1", 0), ("hand2", 1)):
+            item = self.hand_weapon(hand)
+            if item is None or item.id == self.thrown_id:
+                continue
+            gear[key] = {
+                "kind": "bomb" if item.item_type == "bomb" else c.weapon_look(item.name),
+                "color": item.color,
+                "outline": _item_outline(item),
+            }
         for slot in ("armor", "accessory"):
             item = self.equipped_item(slot)
             if item is not None:

@@ -39,9 +39,11 @@ class Player:
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
-    # Weapons on the number-key bar. Deliberately short: the point is switching between a
-    # couple of answers mid-fight, not carrying an armoury on the HUD.
-    WEAPON_SLOTS: int = 3
+    # The player has two weapon hands: hand one is the left mouse button, hand two the
+    # right. Each holds two weapons the number keys switch between (1/2 for hand one, 3/4
+    # for hand two), so a fight is fought out of four answers chosen before it started.
+    HANDS: int = 2
+    POSITIONS_PER_HAND: int = 2
 
 
 @dataclass(frozen=True)
@@ -92,12 +94,47 @@ class Death:
     # the model there would turn a death into a stall; these are what it says if the
     # buffer is empty (a fresh save, or the model still busy with the first one).
     TAUNT_BUFFER: int = 3
-    FALLBACK_TAUNTS: tuple = (
-        "The worms send their thanks.",
-        "Even the crows looked away.",
-        "That was over quickly.",
-        "The world will manage without you.",
+    # The canned death-screen lines, used whenever the model has not written one ahead of
+    # need. One tier per death milestone (`Milestones.DEATHS`): the first is there from the
+    # first death and the rest are unlocked by dying, so a player who keeps dying is mocked
+    # in more ways rather than the same four ways. `Record.taunt_pool` is what assembles it.
+    TAUNT_TIERS: tuple = (
+        (
+            "The worms send their thanks.",
+            "Even the crows looked away.",
+            "That was over quickly.",
+            "The world will manage without you.",
+        ),
+        (
+            "Again? The ground here knows your shape by now.",
+            "You are getting good at this part.",
+            "Nobody is counting. That is a lie, something is.",
+        ),
+        (
+            "The gravediggers have stopped asking your name.",
+            "Even the wolves have started to feel bad about it.",
+            "You have died more times than most people have travelled.",
+        ),
+        (
+            "There is a song about you. It is short and it is unkind.",
+            "Death has begun leaving the door open for you.",
+            "You are less an adventurer than a recurring event.",
+        ),
     )
+
+
+@dataclass(frozen=True)
+class Milestones:
+    """What the playthrough tally pays out at (game/record.py).
+
+    Quests pay in loot, deaths pay in words: crossing a quest milestone opens a lootbox of
+    the named rarity, crossing a death milestone unlocks the next tier of `Death.TAUNT_TIERS`.
+    Both are deliberately sparse. A reward every third quest is a salary; a reward at the
+    tenth is something to remember.
+    """
+
+    QUESTS: tuple = ((3, "rare"), (10, "epic"), (25, "epic"), (50, "legendary"), (100, "legendary"))
+    DEATHS: tuple = (3, 10, 25)
 
 
 @dataclass(frozen=True)

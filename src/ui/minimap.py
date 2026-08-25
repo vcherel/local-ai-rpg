@@ -150,7 +150,8 @@ class Minimap:
 
     def _draw_strips(self, world: World, player: Player, top: int):
         """The panels stacked under the map: the village standing on it, how that village
-        feels about the player, every warning it has not let go of yet, then the clock.
+        feels about the player, every warning it has not let go of yet, how far out the
+        player has walked, then the clock.
 
         Each one is laid under the last and `content_bottom` records where the stack actually
         ended, since whatever hangs below this corner (the quest tracker) has no other way of
@@ -170,8 +171,19 @@ class Minimap:
                 # Short enough to fit the panel with the countdown still on it: the number
                 # is the half of this that the player is actually reading.
                 y = self._draw_text_strip(self._fit(f"{label} {int(seconds) + 1}s"), c.Colors.ORANGE, y)
+        # How far out the player has walked. Difficulty in this world is distance from the
+        # centre and nothing else, so this strip is the one number that says how dangerous
+        # the ground under the player's feet is, and it belongs with the map that says where
+        # that ground is.
+        y = self._draw_text_strip(self._distance_label(player), c.Colors.MUTED, y)
         self._draw_clock(world, y)
         self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
+
+    @staticmethod
+    def _distance_label(player: Player) -> str:
+        center = c.World.WORLD_SIZE // 2
+        paces = round(math.hypot(player.x - center, player.y - center) / c.Minimap.PACE)
+        return f"{paces:,} paces from home".replace(",", " ")
 
     def _draw_text_strip(self, text: str, color: tuple, top: int) -> int:
         """One line of its own under the map, returning where the next strip starts."""

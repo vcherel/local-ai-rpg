@@ -103,8 +103,9 @@ class ShopMenu(BaseMenu):
         return [item for item in self.player.inventory if item.item_type == "misc"]
 
     def _unused_gear(self) -> list[Item]:
-        """Equippable items the player is neither wearing nor keeping on the weapon bar."""
-        spoken_for = set(self.player.equipped_ids().values()) | set(self.player.weapon_bar)
+        """Equippable items the player is neither wearing nor carrying in one of their four
+        weapon positions."""
+        spoken_for = set(self.player.equipped_ids().values())
         return [item for item in self.player.inventory if item.item_type in GEAR_TYPES and item.id not in spoken_for]
 
     def _bulk_button_rects(self) -> tuple[pygame.Rect, pygame.Rect]:
@@ -299,7 +300,16 @@ class ShopMenu(BaseMenu):
                 price = self._buy_price(item)
                 can_afford = self.player.coins >= price
                 self._draw_row(
-                    surface, bx, pw, row, item, price, self.hovered_buy == index, (100, 255, 100), can_afford
+                    surface,
+                    bx,
+                    pw,
+                    row,
+                    item,
+                    price,
+                    self.hovered_buy == index,
+                    (100, 255, 100),
+                    can_afford,
+                    upgrade=self.player.is_upgrade(item),
                 )
             self._draw_scrollbar(surface, bx + pw + 4, len(buy_items), self.buy_scroll)
 
@@ -385,10 +395,20 @@ class ShopMenu(BaseMenu):
         price_color: tuple,
         enabled: bool = True,
         equipped: bool = False,
+        upgrade: bool = False,
     ):
         r = self._row_rect(panel_x, index)
-        border_color = c.Colors.ACCENT if equipped else (rarity_color(item.rarity) if item.rarity != "common" else None)
-        widgets.draw_slot(surface, r, hovered=hovered, border_color=border_color, border_w=3 if equipped else 2)
+        # An upgrade is marked the way the world marks one: the same green the F prompt uses
+        # for the pickup it would swap in, so "better than what I have on" reads at a glance
+        # instead of being worked out from two numbers on two screens.
+        if upgrade:
+            border_color = c.Colors.GREEN
+        elif equipped:
+            border_color = c.Colors.ACCENT
+        else:
+            border_color = rarity_color(item.rarity) if item.rarity != "common" else None
+        border_w = 3 if equipped or upgrade else 2
+        widgets.draw_slot(surface, r, hovered=hovered, border_color=border_color, border_w=border_w)
 
         icon_x = r.x + 30
         icon_y = r.centery
@@ -396,6 +416,9 @@ class ShopMenu(BaseMenu):
 
         if equipped:
             pygame.draw.circle(surface, c.Colors.ACCENT, (r.x + 10, r.y + 10), 5)
+        elif upgrade:
+            arrow = [(r.x + 10, r.y + 6), (r.x + 15, r.y + 15), (r.x + 5, r.y + 15)]
+            pygame.draw.polygon(surface, c.Colors.GREEN, arrow)
 
         name_color = rarity_color(item.rarity) if enabled else c.Colors.MUTED
         name = f"{item.name} x{item.quantity}" if item.quantity > 1 else item.name
@@ -422,10 +445,13 @@ class ShopMenu(BaseMenu):
         if sub is not None:
             surface.blit(sub, (sub_x, r.y + 30))
             sub_x += sub.get_width() + 12
+        tag = None
         if equipped:
             tag = c.Fonts.small.render("equipped", True, c.Colors.ACCENT)
-            if sub_x + tag.get_width() < r.right - PRICE_COLUMN:
-                surface.blit(tag, (sub_x, r.y + 30))
+        elif upgrade:
+            tag = c.Fonts.small.render("upgrade", True, c.Colors.GREEN)
+        if tag is not None and sub_x + tag.get_width() < r.right - PRICE_COLUMN:
+            surface.blit(tag, (sub_x, r.y + 30))
 
         price_surf = c.Fonts.text.render(f"{price}g", True, price_color)
         surface.blit(price_surf, (r.right - price_surf.get_width() - 8, r.centery - price_surf.get_height() // 2))
