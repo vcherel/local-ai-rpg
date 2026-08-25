@@ -24,6 +24,15 @@ class Entities:
     NPC_WANDER_RADIUS: int = 250
     NPC_IDLE_MIN_MS: int = 2000
     NPC_IDLE_MAX_MS: int = 7000
+    # A monster that has not noticed anybody roams instead of standing where it was put.
+    # Slower and over a wider circle than a villager's stroll, because it is patrolling
+    # ground rather than living on a street; a monster planted on the spot until the player
+    # walks into its detection ring read as something waiting to be triggered, which is
+    # exactly what it was.
+    MONSTER_WANDER_SPEED: float = 0.9
+    MONSTER_WANDER_RADIUS: int = 420
+    MONSTER_IDLE_MIN_MS: int = 1800
+    MONSTER_IDLE_MAX_MS: int = 6000
     # How many spots a wanderer may try before idling again rather than strolling into a
     # wall. Inside a village half the ground around a villager's own home is their house,
     # and a stroll that ends against it is a body shuffling on its own doorstep.
@@ -202,11 +211,15 @@ class MonsterKind:
     # A flanker refuses to walk straight at the player: its approach angle is bent to one
     # side, flipping every few seconds, so it circles in rather than queueing up in front.
     flank_deg: float = 0.0
+    # A disguised kind wears a villager until the player is close enough to see what it is
+    # (`Husk` below): it holds still, gives none of the tells a monster gives, and only
+    # then reveals and comes. See `Monster.revealed`.
+    disguise: bool = False
     # A detonator has no swing at all: it closes, plants itself, burns a fuse and blows up,
     # killing itself and hurting whatever is standing near it. See `Creeper` below.
     detonate: bool = False
     # How it is drawn (game/entities/monster_art.py): one of "humanoid", "goblin", "hulk",
-    # "skeleton", "wraith", "blob", "beast", "robed". A kind's name has to be legible from
+    # "skeleton", "wraith", "blob", "beast", "robed", "creeper", "husk". A kind's name has to be legible from
     # its silhouette alone, so this is picked per kind rather than defaulted per stat block.
     shape: str = "humanoid"
     # The weapon it visibly carries, as a `WEAPON_ARCHETYPES` name ("bow", "staff", "axe",
@@ -220,6 +233,31 @@ class MonsterKind:
 
 
 @dataclass(frozen=True)
+class Husk:
+    """A monster wearing a villager (MonsterKind.disguise).
+
+    Its whole fight is the moment before it: it stands where a person would stand, gives
+    none of the tells a monster gives (no lit eyes, no walk, no weapon) and does nothing at
+    all until the player is inside REVEAL_RANGE. It is deliberately not a perfect copy: the
+    body is a shade too grey, the arms hang too low and the eyes carry the faintest light,
+    so somebody paying attention can tell a husk from a villager at a distance and somebody
+    walking through the wilds cannot.
+
+    Revealing is a lunge rather than a start of a chase: it gets LUNGE_MS at LUNGE_SPEED_MULT
+    of its own pace, which is what makes an ambush cost something even to a player who
+    spotted it a step too late.
+    """
+
+    REVEAL_RANGE: int = 170
+    LUNGE_MS: int = 900
+    LUNGE_SPEED_MULT: float = 2.1
+    # The light in its eyes while it is still pretending, against the (255, 150, 90) it
+    # opens with. Low enough to be missed, never zero: a face with nothing behind it at all
+    # would leave the disguise with no tell whatsoever.
+    DISGUISE_EYE: tuple = (168, 146, 122)
+
+
+@dataclass(frozen=True)
 class Creeper:
     """A detonating monster (MonsterKind.detonate), which is a timer rather than a fight.
 
@@ -230,9 +268,13 @@ class Creeper:
     """
 
     TRIGGER_RANGE: int = 95
-    FUSE_MS: int = 1150
+    # A short fuse and a heavy blast. The counterplay is unchanged and still threefold (walk
+    # out of the ring, shove it away with a cudgel, kill it inside its own timer), it just
+    # can no longer be taken at a stroll: a creeper that was out-walked by accident was
+    # scenery rather than a threat.
+    FUSE_MS: int = 800
     RADIUS: float = 145.0
-    DAMAGE: int = 48
+    DAMAGE: int = 68
     # Damage falls off from full at the centre to this share of it at the rim, like a keg's.
     EDGE_DAMAGE_FRAC: float = 0.3
     KNOCKBACK: float = 30.0
@@ -372,6 +414,20 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         eye_color=(215, 130, 255),
     ),
     MonsterKind(
+        "Husk",
+        (146, 138, 150),
+        Entities.NPC_SIZE,
+        50,
+        4,
+        13,
+        24,
+        min_distance=4000,
+        weight=3,
+        disguise=True,
+        shape="husk",
+        eye_color=(255, 150, 90),
+    ),
+    MonsterKind(
         "Creeper",
         (96, 168, 92),
         26,
@@ -438,9 +494,13 @@ class BossKind:
     shape: str = "hulk"
     weapon: str = ""
     eye_color: tuple = (255, 120, 60)
+    # A shrinking boss loses body with its health, stepping down through `Boss.SHRINK_BANDS`
+    # instead of holding one silhouette all fight: huge and slow, then quick, then small and
+    # frantic. The only place a boss's own stat block moves for a reason other than enrage.
+    shrinks: bool = False
 
 
-# The three boss archetypes. Stats sit well above the toughest normal monster (Troll, 60 hp)
+# The boss archetypes. Stats sit well above the toughest normal monster (Troll, 60 hp)
 # so a boss is a real fight, not just a big monster.
 BOSS_KINDS: tuple[BossKind, ...] = (
     BossKind(
@@ -489,6 +549,22 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         flavor="an ancient stone colossus, slow but earth-shattering",
         shape="hulk",
         eye_color=(160, 255, 170),
+    ),
+    BossKind(
+        "devourer",
+        (150, 90, 160),
+        (225, 130, 235),
+        96,
+        520,
+        2.0,
+        30,
+        30,
+        abilities=("slam", "summon"),
+        summon_kind="Slime",
+        flavor="a vast devouring mass that sheds itself as it is wounded",
+        shape="blob",
+        eye_color=(255, 210, 120),
+        shrinks=True,
     ),
 )
 
@@ -560,11 +636,27 @@ class Boss:
     SUMMON_TELEGRAPH_MS: float = 750.0
     SUMMON_EMERGE_MS: int = 350
 
+    # Coming up out of the ground. A boss is held where it stands for this long before it
+    # is a fight at all: the ring opens under it, it climbs out, and the roar, the flash and
+    # the shake land on the frame it finishes. Nothing arrives from nowhere in this world,
+    # and the thing that matters most is the thing that may least afford to.
+    RISE_MS: float = 1300.0
+    RISE_SHAKE: float = 30.0
+    RISE_FLASH: float = 0.45
+
+    # A shrinking boss (BossKind.shrinks) steps down a band each time its health passes the
+    # threshold, and never back up. Each band is (health fraction it starts at, size, speed
+    # multiplier, damage multiplier): it trades reach and mass for pace, so the fight opens
+    # as something to be kept away from and ends as something that cannot be walked away
+    # from. Only the last band can be knocked back, which is the reward for cutting it down
+    # to size.
+    SHRINK_BANDS: tuple = ((1.0, 1.0, 1.0, 1.0), (0.66, 0.72, 1.45, 0.8), (0.33, 0.46, 2.0, 0.62))
+    # Which band onward it can be shoved about, counted from the last one back.
+    SHRINK_KNOCKBACK_BAND: int = 2
+
     # A slain boss always drops a lootbox of this rarity, on top of the usual roll.
     REWARD_RARITY: str = "legendary"
 
-    # No more than this many bosses exist at once (the landmark guardian counts).
-    MAX_ACTIVE: int = 3
     # Wandering far from the world center can spawn a roaming boss, rolled on this cadence.
     # Deliberately well past the settled ring: a boss is what the deep wilds hold, not
     # something met on the walk to the second village.
@@ -576,10 +668,25 @@ class Boss:
     # quest target, a world event. Finding one is meant to be a journey rather than
     # something walked into on the way out of the starting town.
     MIN_DIST_FROM_START: int = 2200
+    # ...and none of them stands on anybody's doorstep either, however far out that doorstep
+    # is. Measured past a settlement's own grounds, so a boss is always a walk out of town
+    # rather than something the militia inherits. The world's own margin
+    # (`World.VILLAGE_SPAWN_MARGIN`) is what keeps a wolf off the fields; a boss needs the
+    # far side of them.
+    MIN_DIST_FROM_VILLAGE: int = 1200
     ROAM_CHECK_INTERVAL_MS: int = 45_000
-    ROAM_CHANCE: float = 0.25
     ROAM_SPAWN_MIN_DIST: int = 900
     ROAM_SPAWN_MAX_DIST: int = 1400
+    # How thick with bosses the world is, as a ramp on the player's own distance from the
+    # centre: the settled ring holds one at a time and the deep wilds hold five, rolled far
+    # more often. This is the boss half of difficulty-by-distance, and it moves how many
+    # there are rather than what any one of them is made of.
+    ROAM_CHANCE_NEAR: float = 0.25
+    ROAM_CHANCE_FAR: float = 0.7
+    MAX_ACTIVE_NEAR: int = 1
+    MAX_ACTIVE_FAR: int = 5
+    # Where the far end of both ramps is measured, as distance from the world centre.
+    DENSITY_FAR_DISTANCE: int = 16_000
 
     # Health-bar geometry, pinned near the top of the screen (screen space).
     BAR_WIDTH: int = 620
@@ -766,6 +873,26 @@ CRITTER_KINDS: tuple[CritterKind, ...] = (
         attack_cooldown_ms=800,
         detection=460,
         drop_chance=0.0,
+    ),
+    # The one animal that lives underground. `weight=0` keeps it out of the wilderness roll:
+    # a bat is placed, by the cave it belongs to, and never met in a field.
+    CritterKind(
+        "bat",
+        (92, 78, 96),
+        12,
+        10,
+        weight=0,
+        temperament="predator",
+        group=(3, 5),
+        hit_radius_mult=0.9,
+        wander_speed=1.6,
+        sprint_mult=2.2,
+        stamina_ms=1200,
+        damage=6,
+        chase_speed=2.6,
+        attack_range=22,
+        attack_cooldown_ms=650,
+        detection=420,
     ),
 )
 

@@ -1272,6 +1272,10 @@ class WorldCombat:
         play_sound("monster_death")
         if isinstance(monster, Boss):
             self._on_boss_killed(monster, quest_system, direction)
+            # A cave's warden belongs to its vault the way a garrison belongs to its camp,
+            # so its death is that tunnel's business and is recorded there.
+            if monster.camp_id:
+                self.on_guard_killed(monster, quest_system)
             monster_list.remove(monster)
             return
         if by_player:

@@ -93,15 +93,17 @@ SHOP_BASE_PRICES = {
 }
 
 
-def roll_shop_stock(count: int) -> list[dict]:
-    """Roll a merchant's stock locally, used when the LLM's list for that shop is unusable.
+def roll_shop_stock(count: int, luck: float = 0.0) -> list[dict]:
+    """Roll a merchant's stock locally, used when the LLM's list for that shop is unusable
+    and every time a shelf is refilled.
 
     Returns entries in the shape NPC.set_shop expects, so a fallback shop is stocked with
     the same item tables the world drops as loot instead of leaving the merchant empty.
+    `luck` is the shop's own (`NPC.stock_luck`), so a far town's delivery is the better one.
     """
     stock = []
     for _ in range(count):
-        item = _roll_loot_item(0, 0, roll_rarity(), (10, 20))
+        item = _roll_loot_item(0, 0, roll_rarity(luck=luck), (10, 20))
         base = SHOP_BASE_PRICES.get(item.item_type, 20)
         stock.append(
             {

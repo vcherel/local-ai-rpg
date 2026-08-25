@@ -26,7 +26,7 @@ from game.entities.poi import PointOfInterest
 from game.entities.projectile import ARROW_COLOR, STONE_COLOR, Projectile
 from game.entities.scenery import Scenery
 from game.entities.traps import BearTrap
-from game.entities.village import Village, generate_starting_world, register_world_sites
+from game.entities.village import Village, generate_starting_world, register_world_sites, settlements_near_chunk
 from game.events import EventSystem
 from game.loot import roll_shop_stock
 from game.navigation import Point, WorldNavigation
@@ -469,11 +469,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # `_populate_camp` stands them back up from it. Saving them too would put the ones on
         # the ground at save time next to the ones the count rebuilds on load.
         monsters = [monster for monster in self.monsters if not monster.camp_id]
+        # And a cave's warden is not saved for the same reason: it is a flag on its tunnel,
+        # and `_populate_cave` stands it back up from that whenever anyone walks back in.
+        bosses = [boss for boss in self.bosses if not boss.camp_id]
         return {
             "items": [item.to_dict() for item in self.items],
             "npcs": [npc.to_dict() for npc in npcs],
             "monsters": [monster.to_dict() for monster in monsters],
-            "bosses": [boss.to_dict() for boss in self.bosses],
+            "bosses": [boss.to_dict() for boss in bosses],
             "buildings": [building.to_dict() for building in self.buildings],
             "villages": [village.to_dict() for village in self.villages],
             "breakables": [breakable.to_dict() for breakable in self.breakables],
@@ -794,13 +797,25 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
     # ------------------------------------------------------------------ bosses
 
     def spawn_boss(
-        self, x, y, template: c.BossKind = None, quest_tag: str | None = None, announce: str | None = None
+        self,
+        x,
+        y,
+        template: c.BossKind = None,
+        quest_tag: str | None = None,
+        announce: str | None = None,
+        name: str = "",
     ) -> Boss:
         """Create a boss, register it, and kick off LLM naming. `announce`, if given, is a
-        message template shown once the name is ready (use '{name}' for the boss's name)."""
+        message template shown once the name is ready (use '{name}' for the boss's name).
+
+        `name` is one that has already been generated: a cave's warden is stood back up
+        every time anybody walks down to its vault, and asking the model to rename the same
+        creature on every visit would be a call a session for a name nobody wanted changed."""
         boss = Boss(x, y, template or random.choice(c.BOSS_KINDS), quest_tag=quest_tag)
         self.bosses.append(boss)
-        if self.context:
+        if name:
+            boss.set_identity(name)
+        elif self.context:
             threading.Thread(target=self._generate_boss_identity, args=(boss, announce), daemon=True).start()
         return boss
 
@@ -810,23 +825,84 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
 
         A settlement is not one of those places, and neither is the ground the player starts
         on. A monster wandering into a village is a fight the militia can have; a boss
-        standing in the plaza of the first town is the run over before it started."""
+        standing in the plaza of the first town is the run over before it started.
+
+        Distance from a settlement is measured off its grounds and against the site registry
+        rather than the villages built so far, because a village a chunk away has not been
+        generated yet and a boss put down next to where one is going to stand is the same
+        mistake made a minute later. The world's own spawn margin is what keeps a wolf out
+        of the fields; a boss is held the far side of them (`Boss.MIN_DIST_FROM_VILLAGE`)."""
         center = c.World.WORLD_SIZE // 2
         if math.hypot(x - center, y - center) < c.Boss.MIN_DIST_FROM_START:
             return False
-        if self.village_at(x, y, c.World.VILLAGE_SPAWN_MARGIN) is not None:
+        if self.settlement_distance(x, y) < c.Boss.MIN_DIST_FROM_VILLAGE:
             return False
         if self.building_at(x, y) is not None:
             return False
         return not self.blocked(x, y, c.MONSTER_MAX_SIZE)
 
+    @staticmethod
+    def settlement_distance(x, y) -> float:
+        """How far (x, y) lies past the grounds of the nearest settlement, asked of the sites
+        rather than of the villages built so far: a town three chunks out has not been
+        generated yet and is no less somewhere people live. Infinite where there is nothing
+        within reach at all."""
+        size = c.World.CHUNK_SIZE
+        chunk = (int(x // size), int(y // size))
+        # The clearance in chunks, plus two for the largest grounds a town can have.
+        reach = math.ceil(c.Boss.MIN_DIST_FROM_VILLAGE / size) + 2
+        nearest = float("inf")
+        for site_x, site_y, _, _, radius in settlements_near_chunk(*chunk, reach):
+            nearest = min(nearest, math.hypot(x - site_x, y - site_y) - radius)
+        return nearest
+
+    def boss_cap(self, player: Player) -> int:
+        """How many bosses the world holds at once around the player: one on the settled
+        ring, up to `Boss.MAX_ACTIVE_FAR` out in the deep wilds. The same shape as the
+        roaming monster cap and for the same reason. Difficulty is how many there are and
+        which kinds they are, never what one of them is made of."""
+        near, far = c.Boss.MAX_ACTIVE_NEAR, c.Boss.MAX_ACTIVE_FAR
+        return round(near + (far - near) * self._danger_ratio(player))
+
+    @staticmethod
+    def _danger_ratio(player: Player) -> float:
+        """Where the player stands between the settled ring and the deep wilds, 0 to 1."""
+        center = c.World.WORLD_SIZE // 2
+        distance = math.hypot(player.x - center, player.y - center)
+        span = max(c.Boss.DENSITY_FAR_DISTANCE - c.Boss.ROAM_MIN_DISTANCE, 1)
+        return min(max((distance - c.Boss.ROAM_MIN_DISTANCE) / span, 0.0), 1.0)
+
     def _spawn_landmark_boss(self):
         """A guardian waits at the ruined landmark from the very first world. It's named
-        later, once the world context has finished generating."""
+        later, once the world context has finished generating.
+
+        It goes through `boss_spawn_ok` like every other boss: the ruin is placed clear of
+        the starting town, but "clear" for a building is a few hundred paces and "clear" for
+        a boss is the far side of the fields, and this one is standing there from the first
+        frame of the save."""
         landmark = next((b for b in self.buildings if b.kind == "landmark"), None)
         if landmark is None:
             return
-        self.spawn_boss(landmark.x, landmark.y + landmark.h / 2 + 90)
+        # In front of the ruin if that is allowed, and otherwise as near to it as a boss may
+        # legally stand: the guardian belongs to the landmark, and the clearance it is held
+        # to is measured from a settlement rather than from the stone it guards.
+        spot = self._guardian_spot(landmark)
+        if spot is not None:
+            self.spawn_boss(*spot)
+
+    def _guardian_spot(self, landmark: Building) -> tuple[float, float] | None:
+        front = (landmark.x, landmark.y + landmark.h / 2 + 90)
+        if self.boss_spawn_ok(*front):
+            return front
+        step = max(landmark.w, landmark.h) / 2 + 90
+        for ring in range(1, 5):
+            for index in range(ring * 8):
+                angle = 2 * math.pi * index / (ring * 8)
+                x = landmark.x + math.cos(angle) * step * ring
+                y = landmark.y + math.sin(angle) * step * ring
+                if self.boss_spawn_ok(x, y):
+                    return x, y
+        return None
 
     def spawn_boss_for_quest(self) -> Boss:
         """Spawn a boss out in the dangerous outer wilds as a quest hunt target.
@@ -880,12 +956,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 quest.boss_name = boss.display_name
 
     def _maybe_spawn_roaming_boss(self, player: Player):
-        if len(self.bosses) >= c.Boss.MAX_ACTIVE:
+        if len(self.bosses) >= self.boss_cap(player):
             return
         center = c.World.WORLD_SIZE // 2
         if math.hypot(player.x - center, player.y - center) < c.Boss.ROAM_MIN_DISTANCE:
             return
-        chance = c.Boss.ROAM_CHANCE * (c.DayNight.NIGHT_BOSS_ROAM_MULT if self.daynight.is_night else 1.0)
+        ratio = self._danger_ratio(player)
+        chance = c.Boss.ROAM_CHANCE_NEAR + (c.Boss.ROAM_CHANCE_FAR - c.Boss.ROAM_CHANCE_NEAR) * ratio
+        chance *= c.DayNight.NIGHT_BOSS_ROAM_MULT if self.daynight.is_night else 1.0
         if random.random() > chance:
             return
         for _ in range(10):
@@ -909,7 +987,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             if not npc.is_merchant or not npc.shop_ready or npc.restock_in() > 0:
                 continue
             missing = c.Villages.SHOP_STOCK_TARGET - len(npc.shop_items)
-            npc.add_stock(roll_shop_stock(missing) if missing > 0 else [])
+            npc.add_stock(roll_shop_stock(missing, luck=npc.stock_luck) if missing > 0 else [])
 
     def start_shop_generation(self):
         """Stock every merchant still waiting for one, in a single background call."""
@@ -1149,8 +1227,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         monster is not owed a surrender.
 
         A camp guard is left out of it. It holds a piece of ground rather than raiding, and
-        a garrison drifting off to fight the nearest farmer would empty its own camp."""
-        if monster.camp_id or not self.npcs:
+        a garrison drifting off to fight the nearest farmer would empty its own camp. So is
+        anything still in a disguise: what it is wearing is worn for the player's benefit,
+        and a husk that threw its villager off at a passing farmer would spend the one
+        moment it has on somebody who was never going to be surprised by it."""
+        if monster.camp_id or not monster.revealed or not self.npcs:
             return player
         reach = min(monster.distance_to_point(player.get_pos()), c.Villages.DEFEND_RADIUS)
         near = sorted(
@@ -1241,9 +1322,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                     crowd=defenders,
                 )
                 if damage:
+                    # A militia's swing lands on whatever they were sent at, and a boss is
+                    # kept on its own list: handing the wrong list here would take a dying
+                    # boss off nothing at all.
                     self._resolve_monster_hit(
                         enemy,
-                        self.monsters,
+                        self.bosses if isinstance(enemy, Boss) else self.monsters,
                         damage,
                         player,
                         quest_system,
@@ -1550,8 +1634,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         detection = c.World.DETECTION_RANGE * (c.DayNight.NIGHT_DETECTION_MULT if self.daynight.is_night else 1.0)
 
         # Monsters far beyond their detection range can't react to the player, so skip
-        # their per-frame work entirely (cheap bounding-box test, no sqrt).
-        update_radius = detection + c.Player.SIZE
+        # their per-frame work entirely (cheap bounding-box test, no sqrt). Never tighter
+        # than the screen itself, though: one that has noticed nobody still roams its patch,
+        # and a monster standing perfectly still at the edge of the view until the player
+        # steps into its detection ring is what made every cave mouth look like an ambush
+        # laid in advance.
+        update_radius = max(detection + c.Player.SIZE, c.Screen.ORIGIN_X + c.MONSTER_MAX_SIZE)
         nearby = [
             m for m in self.monsters if abs(m.x - player.x) <= update_radius and abs(m.y - player.y) <= update_radius
         ]

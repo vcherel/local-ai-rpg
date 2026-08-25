@@ -46,9 +46,11 @@ class SaveSystem:
         - traps: Which hunters' bear traps have already shut, by trap id: {"cx:cy:x,y": True}.
           Traps themselves are regenerated from their chunk, so springing one is all there is
           to save (dict)
-        - tunnels: What is left of each village well's tunnel, by tunnel id:
-          {"tunnel:cx:cy": {"guards_alive": int, "hoard_placed": bool}}. The layout itself is
-          rebuilt from the village's chunk (dict)
+        - tunnels: What is left of each tunnel under the world, by tunnel id:
+          {"tunnel:cx:cy": {"guards_alive": int, "hoard_placed": bool, "vault_placed": bool,
+          "warden_alive": bool | None, "warden_name": str}}. The layout itself is rebuilt
+          from the chunk the way in stands in, and a cave's warden is stood back up from
+          these two fields exactly as its garrison is from the count (dict)
         - underground: The tunnel the player was standing in when the game was saved and the
           spot to put them back at, or None on the surface:
           {"id": "tunnel:cx:cy", "return": [x, y]} (dict | None)

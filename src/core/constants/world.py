@@ -432,11 +432,33 @@ class Tunnels:
     # They roll their kind as if the tunnel stood this much deeper into the wilds, so what
     # is waiting under a village is not what is wandering the fields above it.
     GUARD_DANGER_BONUS: int = 2800
+    # Nothing is stood up this close to the shaft. A garrison scattered over the whole floor
+    # put somebody at the foot of the ladder often enough that climbing down read as an
+    # ambush the player was given no chance to see coming.
+    ENTRANCE_CLEARANCE: int = 260
     HOARD: tuple = (2, 3)
+    # The hoard is rolled with this much luck per thousand paces the way in stands from the
+    # world centre, so the dark under a far-flung cave is worth the walk to it and the one
+    # under the starting town is not. The same lean-the-ladder-up trick the shops use.
+    HOARD_LUCK_PER_1000: float = 0.16
+    # The last room of a cave is a vault: a dead-end holding one guaranteed legendary box,
+    # the one reward in the world that is not rolled for. Wells have none; a cellar under a
+    # village is not an expedition.
+    VAULT_RARITY: str = "legendary"
+    # The bats that live in a cave, woken as a swarm the first time anyone walks in. Not a
+    # fight so much as the cave objecting to being entered.
+    BATS: tuple = (4, 7)
+    # And what guards a vault, in a cave whose mouth stands at least this far from the world
+    # centre: a warden, which is an ordinary boss placed in the dark. This is the one boss
+    # in the game that is somewhere rather than roaming, so it is the one the player can go
+    # looking for on purpose.
+    WARDEN_MIN_DISTANCE: int = 6000
 
-    # How far the player can see down there, and how black it is past that.
+    # How far the player can see down there, and how black it is past that. Nothing outside
+    # the light is seen at all: at 240 the far side of the cave stayed faintly legible,
+    # which gave away the whole layout from the doorway.
     LIGHT_RADIUS: int = 340
-    DARKNESS: int = 240
+    DARKNESS: int = 255
     # How close to the shaft the player has to be to climb back out.
     EXIT_RADIUS: int = 90
 

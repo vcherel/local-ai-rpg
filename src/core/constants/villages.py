@@ -173,6 +173,12 @@ class Villages:
     # settling for the player. Sight is walked step by step and monsters are the long list.
     MONSTER_PREY_TRIES: int = 3
     PANIC_RADIUS: float = 520.0
+    # A boss standing on the grounds is not a monster in the street, and a village answers
+    # it as such: everybody inside this runs, and the militia turns out from further off
+    # than it would for a wolf. Nothing about this is the player's doing, so the settlement
+    # is never provoked by it and nothing it costs them is charged to the player.
+    BOSS_PANIC_RADIUS: float = 900.0
+    BOSS_DEFEND_RADIUS: float = 780.0
 
     # The same split decides what an angry village does about the player, so a mob is not a
     # column of identical farmers. The militia close and swing; everyone else keeps this far
@@ -348,3 +354,8 @@ class Villages:
     # restock is exactly the cost the batched generation exists to avoid.
     SHOP_RESTOCK_S: float = 600.0
     SHOP_STOCK_TARGET: int = 10
+    # How much better a far town's shelves are, per tier of the settlement it stands in. Fed
+    # to `items.roll_rarity` as luck, which leans the same rarity ladder upward rather than
+    # inventing a second one: the walk out is what buys the better stock, exactly as it buys
+    # the worse monsters.
+    SHOP_LUCK_PER_TIER: float = 0.55

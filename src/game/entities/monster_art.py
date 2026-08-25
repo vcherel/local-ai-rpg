@@ -448,8 +448,60 @@ def _draw_creeper(sprite, center, size, color, breath, hand):
     return {"eyes": (at(0.72, -0.12), at(0.72, 0.12))}
 
 
+def _husk(sprite, center, size, color, breath, hand, torn: bool):
+    """A villager, or what is wearing one. Deliberately built out of the same three pieces
+    `entities.draw_human` builds a person out of, a body circle and two arms, because
+    anything more inventive would be spotted across a field and the whole kind is the moment
+    it is not.
+
+    What gives it away, at the distance somebody looking would give it away: the body is a
+    shade too grey and too still, the arms hang lower and heavier than a person's, and there
+    is the faintest light behind the face. Once it opens (`torn`) none of that matters: the
+    body splits along the seam it was always carrying and the arms come out as claws."""
+    s = _breathed(size, breath)
+    at = _local(center, s)
+    shade = _shade(color, 45)
+
+    body = _oval(at(0.0, 0.0), s, s)
+    pygame.draw.ellipse(sprite, OUTLINE, body)
+    pygame.draw.ellipse(sprite, color, body.inflate(-4, -4))
+
+    # A person's arms sit level and swing; these hang, and the near one hangs lower.
+    hands = {"left": hand(*at(0.14, -0.52), "left"), "right": hand(*at(0.04, 0.54), "right")}
+    reach = s * (0.3 if torn else 0.26)
+    for pos in hands.values():
+        _circle(sprite, OUTLINE, pos, reach)
+        _circle(sprite, shade, pos, reach - 2)
+
+    if torn:
+        # The split: a mouth down the front where the seam was, and a claw off each hand.
+        maw = [at(0.5, 0.0), at(0.12, -0.34), at(-0.2, -0.12), at(-0.2, 0.12), at(0.12, 0.34)]
+        _poly(sprite, _shade(color, 90), maw)
+        teeth = [at(0.44, -0.1), at(0.3, -0.18), at(0.2, -0.04), at(0.24, 0.12), at(0.38, 0.16)]
+        pygame.draw.lines(sprite, BONE, False, teeth, 2)
+        for side, pos in zip((-1, 1), hands.values()):
+            tip = (pos[0] + side * s * 0.22, pos[1] - s * 0.22)
+            pygame.draw.line(sprite, BONE, pos, tip, 2)
+    else:
+        # The seam, drawn as one line barely darker than the body: it is a fold in a coat
+        # until the moment it is not.
+        pygame.draw.line(sprite, shade, at(0.42, 0.0), at(-0.34, 0.0), 1)
+
+    return {"hands": hands, "eyes": (at(0.26, -0.13), at(0.26, 0.13))}
+
+
+def _draw_husk(sprite, center, size, color, breath, hand):
+    return _husk(sprite, center, size, color, breath, hand, torn=False)
+
+
+def _draw_husk_open(sprite, center, size, color, breath, hand):
+    return _husk(sprite, center, size, color, breath, hand, torn=True)
+
+
 _SHAPES = {
     "humanoid": _draw_humanoid,
+    "husk": _draw_husk,
+    "husk_open": _draw_husk_open,
     "goblin": _draw_goblin,
     "hulk": _draw_hulk,
     "skeleton": _draw_skeleton,

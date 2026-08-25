@@ -44,6 +44,9 @@ _SOUND_SPECS = {
     "trap_snap": ([(1700, 0.02), (900, 0.03), (240, 0.06), (120, 0.12)], 0.40, "square"),
     # A villager shouting the player off before their street turns on them.
     "shout": ([(330, 0.05), (392, 0.05), (294, 0.09)], 0.30, "square"),
+    # A boss finishing its climb out of the ground: the lowest, longest thing in the game,
+    # falling rather than rising, because everything else here answers upward.
+    "boss_roar": ([(180, 0.10), (120, 0.14), (80, 0.20), (60, 0.26)], 0.50, "noise"),
     # Something arriving where nothing was: a boss's summons clawing out of the ground.
     "summon": ([(120, 0.08), (180, 0.07), (260, 0.07), (150, 0.12)], 0.30, "square"),
     # The wet burst of a body opening up. Noise rather than a tone: a kill is the one sound

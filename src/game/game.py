@@ -1007,7 +1007,9 @@ class Game:
         now = pygame.time.get_ticks()
         pos = player.get_pos()
         near = c.Music.COMBAT_RANGE
-        hostile = any(monster.distance_to_point(pos) < near for monster in self.world.monsters) or any(
+        # A husk still wearing its villager is not a fight and must not sound like one: the
+        # score giving it away would be a worse tell than anything on the sprite.
+        hostile = any(m.revealed and m.distance_to_point(pos) < near for m in self.world.monsters) or any(
             npc.hostile and npc.distance_to_point(pos) < near for npc in self.world.npcs
         )
         if hostile:

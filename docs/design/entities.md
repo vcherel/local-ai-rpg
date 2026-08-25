@@ -91,6 +91,57 @@ What sits above the silhouette is deliberately shared by all of them (the ground
 it stands on the ground, the idle breath saying it is alive, the eyes saying it has seen you),
 because those three are what get read first and they must not vary per kind.
 
+## A monster that has seen nobody is living, not waiting
+
+Every monster carries the same `Wander` a villager and an animal do, anchored on where it was
+stood up, and walks it whenever it is unaware and free to move. Before that, a monster did
+nothing at all until the player crossed its detection ring, so the world was full of bodies
+standing perfectly still facing nowhere: every cave mouth read as an ambush laid in advance
+rather than as somewhere things lived. Anything with a post to hold takes `Monster.post_at`
+(a camp's fire, a room in a tunnel) and roams on a short leash instead, so a garrison is
+still a garrison. The frame it needs for that is why `_update_monsters` never skips anything
+on screen, whatever its detection range.
+
+## A disguised monster is drawn as what it is pretending to be
+
+The husk (`MonsterKind.disguise`) is built out of the same three pieces a villager is, a body
+and two arms, because anything more inventive would be spotted across a field and the whole
+kind is the moment it is not. Until it reveals it does not move, does not swing, does not
+notice, has no health bar, and its eyes carry only `Husk.DISGUISE_EYE`. The tells are in the
+silhouette and nowhere else: too grey, too still, arms hanging too low and unevenly, a seam
+down the front.
+
+Two rules keep it honest. It only ever unmasks for the player (`World._monster_target` hands
+a disguised one the player whatever is nearer), because what it is wearing is worn for the
+player's benefit and spending its one moment on a passing farmer wastes it. And the reveal is
+a lunge, not the start of a chase: `Husk.LUNGE_MS` at `LUNGE_SPEED_MULT`, after which it is
+an ordinary monster that happened to start the fight standing still. A husk that has opened
+stays open across a save; the ambush is spent.
+
+## A boss arrives, and everything within earshot answers it
+
+Three rules, all of them about a boss being an event rather than a large monster.
+
+*It arrives.* Every boss spends `Boss.RISE_MS` climbing out of the ground before it is a
+fight at all: rooted, drawn as a hole widening under it with cracks running out, and the
+roar, the white flash, the shake and the banner all landing on the frame it finishes. The
+thing that matters most in the world is the thing that may least afford to appear from
+nowhere. One loaded out of a save is already standing there and does not climb out again.
+
+*A settlement answers it.* `WorldPlaces.militia_orders` counts bosses among the intruders,
+at their own wider `Villages.BOSS_DEFEND_RADIUS` / `BOSS_PANIC_RADIUS`, and a slam catches
+the villagers standing in it. None of it is the player's doing, so every one of those blows
+goes through `by_player=False`: the village is never provoked by it and nothing it costs
+them is charged to the player.
+
+*A phase is a different fight, not a bigger number.* Enrage is one such step and
+`BossKind.shrinks` is the other: a shrinking boss walks down `Boss.SHRINK_BANDS` as its
+health falls, rebuilding its own `MonsterKind` each time, so it opens as a slow wall to be
+kept away from and ends small, quick, charging and finally shovable. Both are written as a
+replacement kind rather than as branches, because everything about reach, mass, collision
+and drawing already reads the kind. Difficulty-by-distance still never touches a stat block;
+this is a boss's own arc through one fight.
+
 ## Nothing on legs slides across the ground
 
 `Gait` (`game/entities/entities.py`) is one walk cycle advanced by the distance actually covered
