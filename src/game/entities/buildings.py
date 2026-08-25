@@ -383,17 +383,6 @@ class Building(BuildingArt):
             slot.center = (round(self.x + offset), band.centery)
         return slot
 
-    def door_zone(self) -> pygame.Rect | None:
-        """Trigger area straddling the front wall; walking into it enters the building."""
-        if not self.has_door:
-            return None
-        depth = c.Buildings.DOOR_DEPTH
-        door = self.door_rect()
-        nx, _ny = self.outward()
-        zone = pygame.Rect(0, 0, depth * 2 if nx else door.width, door.height if nx else depth * 2)
-        zone.center = door.center
-        return zone
-
     def door_front(self) -> tuple:
         """The spot on the doorstep, outside the wall: where somebody waits to be let in."""
         nx, ny = self.outward()

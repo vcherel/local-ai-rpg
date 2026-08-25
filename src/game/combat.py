@@ -138,16 +138,13 @@ class WorldCombat:
                 return base_damage
             return base_damage * self._cleave_falloff(origin, player.orientation, arch, hit_radius, target)
 
-        def strike_boss(boss):
-            self._strike_monster(boss, self.bosses, falloff(boss), arch, player, quest_system, blocked, hand)
+        def strike_monster(monster, roster):
+            self._strike_monster(monster, roster, falloff(monster), arch, player, quest_system, blocked, hand)
 
-        def strike_monster(monster):
-            self._strike_monster(monster, self.monsters, falloff(monster), arch, player, quest_system, blocked, hand)
-
-        def strike_critter(critter):
+        def strike_critter(critter, _roster):
             self._strike_critter(critter, falloff(critter), arch, player)
 
-        def strike_npc(npc):
+        def strike_npc(npc, _roster):
             self._strike_npc(npc, falloff(npc), arch, player, quest_system, blocked, hand)
 
         # Target priority: bosses and monsters, then whatever is already fighting back (an
@@ -161,17 +158,21 @@ class WorldCombat:
         # blade does not stop at a species. It never reaches the peaceful groups, so hunting
         # a rabbit in a crowded street still cannot start a brawl. That flag is the whole of
         # what a cleave carries into, so reordering the table can never quietly widen it.
+        #
+        # `roster` is the list a death takes the body off, which is not always the list it
+        # was found in: the hostile rows are filtered copies, and removing a corpse from one
+        # of those would leave it standing in the world.
         groups = (
-            (self.bosses, lambda e: e.kind.size, strike_boss, True),
-            (self.monsters, lambda e: e.kind.size, strike_monster, True),
-            ([cr for cr in self.critters if cr.hostile], lambda e: e.hit_radius * 2, strike_critter, True),
-            ([npc for npc in self.npcs if npc.hostile], lambda e: c.Entities.NPC_SIZE, strike_npc, True),
-            (self.critters, lambda e: e.hit_radius * 2, strike_critter, False),
-            (self.npcs, lambda e: c.Entities.NPC_SIZE, strike_npc, False),
+            (self.bosses, self.bosses, lambda e: e.kind.size, strike_monster, True),
+            (self.monsters, self.monsters, lambda e: e.kind.size, strike_monster, True),
+            ([cr for cr in self.critters if cr.hostile], None, lambda e: e.hit_radius * 2, strike_critter, True),
+            ([npc for npc in self.npcs if npc.hostile], None, lambda e: c.Entities.NPC_SIZE, strike_npc, True),
+            (self.critters, None, lambda e: e.hit_radius * 2, strike_critter, False),
+            (self.npcs, None, lambda e: c.Entities.NPC_SIZE, strike_npc, False),
         )
         carries_on = arch.cleave or arch.pierce_melee
         engaged = False
-        for group, size_of, strike, hostile in groups:
+        for group, roster, size_of, strike, hostile in groups:
             if engaged and not (carries_on and hostile):
                 break
             targets = self._targets_in_reach(
@@ -194,7 +195,7 @@ class WorldCombat:
                 player.stats.train("strength", c.Stats.XP_PER_HIT)
             engaged = True
             for target in targets:
-                strike(target)
+                strike(target, roster)
         return engaged
 
     def _swing_at_scenery(self, player, quest_system, arch, pos, hit_radius, base_damage):
