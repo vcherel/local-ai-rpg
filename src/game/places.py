@@ -213,19 +213,26 @@ class WorldPlaces:
             entity.distance_to_point((poi.x, poi.y)) < c.PointsOfInterest.CAMP_CLEAR_RADIUS for entity in threats
         )
 
+    def _nearest_poi(self, player: Player, reach: float, wanted) -> PointOfInterest | None:
+        """The nearest loaded landmark within `reach` that `wanted` says yes to, or None.
+
+        The one shape behind every `*_in_reach`: what differs between a fire, a shrine and a
+        cave mouth is how close counts and what makes one worth offering, never how the
+        nearest of them is found. Nearest rather than first, so standing between two of
+        anything prompts for the one actually underfoot."""
+        pos = player.get_pos()
+        found = [poi for poi in self.pois if poi.distance_to_point(pos) < reach and wanted(poi)]
+        return min(found, key=lambda poi: poi.distance_to_point(pos), default=None)
+
     def camp_in_reach(self, player: Player) -> PointOfInterest | None:
         """The campfire the player could rest at right now: near enough, still burning, and
         with nothing hostile around it. A fire still on its cooldown is offered anyway, so
         the prompt can say why nothing happens rather than silently vanishing."""
-        pos = player.get_pos()
-        camps = [
-            poi
-            for poi in self.pois
-            if poi.has_fire
-            and poi.distance_to_point(pos) < c.PointsOfInterest.REST_DISTANCE
-            and self.camp_is_clear(poi)
-        ]
-        return min(camps, key=lambda poi: poi.distance_to_point(pos), default=None)
+        return self._nearest_poi(
+            player,
+            c.PointsOfInterest.REST_DISTANCE,
+            lambda poi: poi.has_fire and self.camp_is_clear(poi),
+        )
 
     def rest_ready_in(self, key: str) -> float:
         """Seconds until this fire or bed will serve the player again; 0 when it's ready now.
@@ -317,13 +324,7 @@ class WorldPlaces:
         """The cave mouth the player is standing at, or None. Unlike a well, every one of
         them goes somewhere: a cave is what puts the dark within reach of somebody who has
         walked out into the wilds rather than into a village."""
-        pos = player.get_pos()
-        caves = [
-            poi
-            for poi in self.pois
-            if poi.kind == "cave" and poi.distance_to_point(pos) < c.PointsOfInterest.CAVE_ENTER_DISTANCE
-        ]
-        return min(caves, key=lambda poi: poi.distance_to_point(pos), default=None)
+        return self._nearest_poi(player, c.PointsOfInterest.CAVE_ENTER_DISTANCE, lambda poi: poi.kind == "cave")
 
     def enter_cave(self, player: Player, poi: PointOfInterest):
         """Walk in through a cave mouth, into the same dark a well leads down to."""
@@ -510,15 +511,11 @@ class WorldPlaces:
     def shrine_in_reach(self, player: Player) -> PointOfInterest | None:
         """The shrine the player could pray at right now: near enough, and not yet answered.
         A spent shrine offers nothing, so it stops prompting entirely."""
-        pos = player.get_pos()
-        shrines = [
-            poi
-            for poi in self.pois
-            if poi.kind == "shrine"
-            and not poi.prayed
-            and poi.distance_to_point(pos) < c.PointsOfInterest.SHRINE_PRAY_DISTANCE
-        ]
-        return min(shrines, key=lambda poi: poi.distance_to_point(pos), default=None)
+        return self._nearest_poi(
+            player,
+            c.PointsOfInterest.SHRINE_PRAY_DISTANCE,
+            lambda poi: poi.kind == "shrine" and not poi.prayed,
+        )
 
     def pray_at_shrine(self, player: Player, poi: PointOfInterest):
         """Take the shrine's one answer: usually a timed blessing, sometimes a curse. Once

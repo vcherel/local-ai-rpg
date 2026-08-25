@@ -304,8 +304,6 @@ class Buildings:
     EDGE_MARGIN: int = 250
 
     DOOR_WIDTH: int = 70
-    # The entry trigger straddles the front wall, extending this far on each side of it.
-    DOOR_DEPTH: int = 35
     # An open leaf standing out against the facade: how thick it is, and how far out of the
     # wall it swings as a fraction of the doorway's own width.
     DOOR_LEAF_THICKNESS: int = 8

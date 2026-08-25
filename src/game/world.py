@@ -92,6 +92,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
 
     def _init_state(self):
         """Every list, index and timer the world keeps, before anything is loaded or built."""
+        self._init_terrain_state()
+        self._init_entity_state()
+        self._init_generation_state()
+
+    def _init_terrain_state(self):
+        """The ground and what is indexed about it: all of it streamed, none of it saved."""
         # Regenerated on the fly as the player explores; see _sync_chunks.
         self.floor_details = []
         # The wilderness: trees, rocks, grass, ponds and roads, streamed with the chunks
@@ -105,7 +111,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self._water_by_cell: dict = {}
         self._loaded_chunks = set()
         self._current_chunk = None
+        self._last_reveal_cell = None
 
+    def _init_entity_state(self):
+        """Everything standing in the world, the indexes that find it, and the timers that
+        keep the ground around the player populated."""
         self.items: list[Item] = []
         self.npcs: list[NPC] = []
         self.monsters: list[Monster] = []
@@ -152,7 +162,6 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.tunnels: dict = {}
         # Where the player climbed down from, so the ladder puts them back at that well.
         self.surface_return = None
-        self._last_reveal_cell = None
         # Wandering wildlife, purely atmospheric; transient like particles, never saved.
         self.critters: list[Critter] = []
         # Arrows in flight; transient like particles, never saved.
@@ -164,6 +173,8 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.critter_respawn_timer = 0.0
         self.boss_roam_timer = 0.0
 
+    def _init_generation_state(self):
+        """What keeps the background threads from treading on each other and on the save."""
         # Generation guards: a merchant with no shop yet, an unnamed landmark or an unnamed
         # village would otherwise be picked up again by every path that checks, queueing a
         # duplicate call while the first one is still in flight.
@@ -689,6 +700,25 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 ledgers[key] = ledger
         return ledgers
 
+    @staticmethod
+    def ring_search(x, y, step: float, rings: int, accept) -> tuple[float, float] | None:
+        """Walk outward from (x, y) in rings of eight points per ring, `step` apart, and give
+        back the first point `accept` says yes to. None when the whole search comes up empty.
+
+        The one definition of "somewhere near here that will do", shared by every placement
+        in the world: a body stepping out of a wall, the player being put down clear of what
+        killed them, a guardian standing as near its ruin as it is allowed to. What differs
+        between them is only what counts as a good spot, which is what `accept` carries.
+        """
+        for ring in range(1, rings + 1):
+            distance = ring * step
+            for index in range(ring * 8):
+                angle = 2 * math.pi * index / (ring * 8)
+                cx, cy = x + math.cos(angle) * distance, y + math.sin(angle) * distance
+                if accept(cx, cy):
+                    return cx, cy
+        return None
+
     def free_spot_near(self, x, y, radius, rings: int | None = None) -> tuple[float, float]:
         """The nearest standable point to (x, y), which may be (x, y) itself.
 
@@ -701,17 +731,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         the open ground it is standing in rather than moved to wherever there is room."""
         if not self.blocked(x, y, radius):
             return x, y
-        step = radius * 2
-        for ring in range(1, (rings or c.World.FREE_SPOT_MAX_RINGS) + 1):
-            distance = ring * step
-            for index in range(ring * 8):
-                angle = 2 * math.pi * index / (ring * 8)
-                cx, cy = x + math.cos(angle) * distance, y + math.sin(angle) * distance
-                if not self.blocked(cx, cy, radius):
-                    return cx, cy
+        found = self.ring_search(
+            x, y, radius * 2, rings or c.World.FREE_SPOT_MAX_RINGS, lambda cx, cy: not self.blocked(cx, cy, radius)
+        )
         # Walled in on every side within the search: leave the caller where they were
         # rather than teleporting them somewhere arbitrary.
-        return x, y
+        return found or (x, y)
 
     def advance_impulses(self, player: Player, dt):
         """Spend one frame of every shove in flight: the monsters, the bosses, the villagers,
@@ -767,17 +792,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         rejected as well, falling back to the geometric answer when the search finds nowhere
         clear (better a rough spawn than a hang)."""
         clearance = c.World.SAFE_SPOT_CLEARANCE if clearance is None else clearance
-        if not self.blocked(x, y, radius) and not self.hostiles_near(x, y, clearance):
+
+        def clear(cx, cy) -> bool:
+            return not self.blocked(cx, cy, radius) and not self.hostiles_near(cx, cy, clearance)
+
+        if clear(x, y):
             return x, y
-        step = radius * 2
-        for ring in range(1, c.World.FREE_SPOT_MAX_RINGS + 1):
-            distance = ring * step
-            for index in range(ring * 8):
-                angle = 2 * math.pi * index / (ring * 8)
-                cx, cy = x + math.cos(angle) * distance, y + math.sin(angle) * distance
-                if not self.blocked(cx, cy, radius) and not self.hostiles_near(cx, cy, clearance):
-                    return cx, cy
-        return self.free_spot_near(x, y, radius)
+        found = self.ring_search(x, y, radius * 2, c.World.FREE_SPOT_MAX_RINGS, clear)
+        return found or self.free_spot_near(x, y, radius)
 
     def clear_hostiles_around(self, x, y, radius: float):
         """Send the roaming monsters standing around (x, y) back out into the wilds. Used
@@ -895,14 +917,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         if self.boss_spawn_ok(*front):
             return front
         step = max(landmark.w, landmark.h) / 2 + 90
-        for ring in range(1, 5):
-            for index in range(ring * 8):
-                angle = 2 * math.pi * index / (ring * 8)
-                x = landmark.x + math.cos(angle) * step * ring
-                y = landmark.y + math.sin(angle) * step * ring
-                if self.boss_spawn_ok(x, y):
-                    return x, y
-        return None
+        return self.ring_search(landmark.x, landmark.y, step, c.Boss.GUARDIAN_SEARCH_RINGS, self.boss_spawn_ok)
 
     def spawn_boss_for_quest(self) -> Boss:
         """Spawn a boss out in the dangerous outer wilds as a quest hunt target.
@@ -1311,75 +1326,87 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             if enemy is not None and enemy.hp <= 0:
                 enemy = None
             if enemy is not None:
-                waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
-                damage = npc.update(
-                    player,
-                    dt,
-                    self.blocked,
-                    waypoint,
-                    target=enemy,
-                    terrain_mult=self.terrain_speed(npc.x, npc.y),
-                    crowd=defenders,
-                )
-                if damage:
-                    # A militia's swing lands on whatever they were sent at, and a boss is
-                    # kept on its own list: handing the wrong list here would take a dying
-                    # boss off nothing at all.
-                    self._resolve_monster_hit(
-                        enemy,
-                        self.bosses if isinstance(enemy, Boss) else self.monsters,
-                        damage,
-                        player,
-                        quest_system,
-                        kb_dir=self._dir_from(npc.x, npc.y, enemy.x, enemy.y),
-                        blocked=self.blocked,
-                        by_player=False,
-                    )
+                self._npc_fights(npc, enemy, player, dt, quest_system, defenders)
                 continue
 
             shelter = flee.get(id(npc))
             if shelter is not None:
-                self.open_door_for(npc)
-                inside = (shelter.x, shelter.interior_rect().centery)
-                self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*inside))
-                waypoint = self.chase_waypoint(npc, Point(*inside), c.Entities.NPC_SIZE / 2)
-                npc.update(
-                    player,
-                    dt,
-                    self.blocked,
-                    refuge=waypoint or inside,
-                    terrain_mult=self.terrain_speed(npc.x, npc.y),
-                )
-                if shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
-                    # Behind the door and shutting it. The player can be shut out or shut in
-                    # with them; either way the street is emptier than it was. Whoever is
-                    # standing in the frame is stepped out of it rather than sealed in it.
-                    self.shut_door(shelter, player)
+                self._npc_flees(npc, shelter, player, dt)
                 continue
 
-            # Only an angry villager actually closing on the player needs a route round
-            # the houses; everyone else is wandering and steers for itself.
-            chasing = id(npc) in mob
-            if chasing:
-                self.open_door_for(npc)
-                self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, player)
-            waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
-            # A villager turns to greet the player in the street, but not through the wall of
-            # a house they are standing in: a vision cone that always points at the player is
-            # not a cone, and the whole of stealing is choosing a moment nobody is looking.
-            damage = npc.update(
-                player,
-                dt,
-                self.blocked,
-                waypoint,
-                target=player if chasing else None,
-                face_player=not indoors,
-                terrain_mult=self.terrain_speed(npc.x, npc.y),
-                standoff=mob.get(id(npc), 0.0),
-                crowd=crowd if chasing else None,
-            )
-            if damage:
-                player.receive_damage(damage, source=npc)
+            self._npc_walks(npc, player, dt, mob, crowd, indoors)
+
+    def _npc_fights(self, npc: NPC, enemy, player: Player, dt, quest_system: QuestSystem, defenders: list):
+        """One villager's frame spent meeting whatever the settlement sent them at."""
+        waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
+        damage = npc.update(
+            player,
+            dt,
+            self.blocked,
+            waypoint,
+            target=enemy,
+            terrain_mult=self.terrain_speed(npc.x, npc.y),
+            crowd=defenders,
+        )
+        if not damage:
+            return
+        # A militia's swing lands on whatever they were sent at, and a boss is kept on its
+        # own list: handing the wrong list here would take a dying boss off nothing at all.
+        self._resolve_monster_hit(
+            enemy,
+            self.bosses if isinstance(enemy, Boss) else self.monsters,
+            damage,
+            player,
+            quest_system,
+            kb_dir=self._dir_from(npc.x, npc.y, enemy.x, enemy.y),
+            blocked=self.blocked,
+            by_player=False,
+        )
+
+    def _npc_flees(self, npc: NPC, shelter: Building, player: Player, dt):
+        """One villager's frame spent running for a door and shutting it behind them."""
+        self.open_door_for(npc)
+        inside = (shelter.x, shelter.interior_rect().centery)
+        self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*inside))
+        waypoint = self.chase_waypoint(npc, Point(*inside), c.Entities.NPC_SIZE / 2)
+        npc.update(
+            player,
+            dt,
+            self.blocked,
+            refuge=waypoint or inside,
+            terrain_mult=self.terrain_speed(npc.x, npc.y),
+        )
+        if shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
+            # Behind the door and shutting it. The player can be shut out or shut in with
+            # them; either way the street is emptier than it was. Whoever is standing in the
+            # frame is stepped out of it rather than sealed in it.
+            self.shut_door(shelter, player)
+
+    def _npc_walks(self, npc: NPC, player: Player, dt, mob: dict, crowd: list, indoors: bool):
+        """One villager's frame spent hunting the player, or spent on their own street."""
+        # Only an angry villager actually closing on the player needs a route round the
+        # houses; everyone else is wandering and steers for itself.
+        chasing = id(npc) in mob
+        if chasing:
+            self.open_door_for(npc)
+            self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, player)
+        waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
+        # A villager turns to greet the player in the street, but not through the wall of a
+        # house they are standing in: a vision cone that always points at the player is not a
+        # cone, and the whole of stealing is choosing a moment nobody is looking.
+        damage = npc.update(
+            player,
+            dt,
+            self.blocked,
+            waypoint,
+            target=player if chasing else None,
+            face_player=not indoors,
+            terrain_mult=self.terrain_speed(npc.x, npc.y),
+            standoff=mob.get(id(npc), 0.0),
+            crowd=crowd if chasing else None,
+        )
+        if damage:
+            player.receive_damage(damage, source=npc)
 
     def _mob_orders(self, player: Player, flee: dict, quest_system: QuestSystem) -> dict:
         """Who in an angry village is actually coming for the player, and how close they mean

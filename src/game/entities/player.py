@@ -630,20 +630,6 @@ class Player(Entity):
         self._set_active(hand, index)
         return self.hand_weapon(hand)
 
-    def hand_items(self) -> list:
-        """The four carried weapons in key order (1, 2, 3, 4), None per empty position. An
-        id that no longer resolves (the weapon was sold from another screen) is cleared on
-        the way past."""
-        by_id = {item.id: item for item in self.inventory}
-        items = []
-        for slot in WEAPON_SLOT_NAMES:
-            item_id = self.equipped[slot]
-            item = by_id.get(item_id) if item_id else None
-            if item_id and item is None:
-                self.equipped[slot] = None
-            items.append(item)
-        return items
-
     def cycle_weapon_slot(self, item):
         """Move a weapon along the four positions one per call, off the end and back to
         carried-but-not-equipped. The manual assignment behind right-clicking a weapon in

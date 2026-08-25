@@ -49,9 +49,10 @@ class Interaction(NamedTuple):
     """What the interact key acts on right now, and the prompt drawn over it. `hint` is a
     second line for an extra key on the same target (a merchant's trade key)."""
 
-    kind: str  # "npc" | "chest" | "bed" | "door" | "gate" | "camp" | "shrine" |
-    # "well" (climb down into the tunnel) | "ladder" (climb back out). Loot is not on this
-    # list: it is collected by the magnet in Game._sweep_loot, never by a key.
+    # Which kind of thing this is, and the key into `Game.interact_actions`, which is the
+    # one list of them. Loot is not among them: it is collected by the magnet in
+    # `Game._sweep_loot`, never by a key.
+    kind: str
     target: object
     label: str
     x: float
@@ -61,10 +62,23 @@ class Interaction(NamedTuple):
 
 class Game:
     def __init__(self, screen, clock, save_system: SaveSystem):
+        """Stand a session up, in the one order it can be built in: the menus first, since
+        the world reports its lore and its loot into them, then the world and the player in
+        it, then the systems that talk to both, and last the tables that name methods on all
+        three."""
         self.screen = screen
         self.clock: pygame.time.Clock = clock
         self.camera = Camera()
+        self.save_system = save_system
 
+        self._build_menus()
+        self._build_world()
+        self._build_systems()
+        self._build_action_tables()
+        self._restore_player_state()
+
+    def _build_menus(self):
+        """Every screen that can be open over the world, and the toast under them all."""
         self.context_window = ContextMenu(self.screen)
         self.inventory_menu = InventoryMenu(self.screen)
         self.quest_menu = QuestMenu(self.screen)
@@ -92,19 +106,11 @@ class Game:
         # past the marker's lifetime so entering the world doesn't flash "Saved" on arrival.
         self.last_save_ms = pygame.time.get_ticks() - GameRenderer.SAVE_MARKER_MS
 
-        self.save_system = save_system
+    def _build_world(self):
+        """The world, the player standing somewhere survivable in it, and the ground around
+        that spot generated before the first frame the player controls."""
         self.world = World(self.save_system, self.context_window, self.loot_notification.show)
         self.game_renderer = GameRenderer(self.screen)
-        # What each icon in the HUD dock does, keyed by the action its row in
-        # `GameRenderer.dock_buttons` carries, so the two lists are read against each other.
-        self.dock_actions = {
-            "inventory": self.inventory_menu.toggle,
-            "quests": self.quest_menu.toggle,
-            "stats": self.stats_menu.toggle,
-            "lore": self._show_lore,
-            "help": self.help_menu.toggle,
-            "pause": self.pause_menu.toggle,
-        }
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
         # A new game spawns at the fixed world centre, which the starting town's grid often
@@ -118,6 +124,9 @@ class Game:
         # controls. It also settles them out of anything a fresh chunk grew on top of them.
         self.world.prepare(self.player)
 
+    def _build_systems(self):
+        """What talks to the world and the player both: conversation, quests, the background
+        writers, the tally, and the per-frame flags the run loop keeps."""
         self.dialogue_manager = DialogueManager(self.screen, self.world.items, self.player, self.world.npcs)
         # slay_boss quests spawn their target through the world.
         self.dialogue_manager.quest_system.world = self.world
@@ -154,8 +163,25 @@ class Game:
         self.gate_lift = 0.0
         self._lift_hp = 0
 
-        # The whole key map as one table, built once now that every menu it points into
-        # exists. `HelpMenu.CONTROLS` is what tells the player about it.
+    def _build_action_tables(self):
+        """The three tables that name what a press or a click does, built last because every
+        one of them points into a menu, the world or the renderer.
+
+        A key, a dock icon and an interaction prompt are the same idea three times: one row
+        per thing the player can do, rather than a branch written out in the handler.
+        """
+        # What each icon in the HUD dock does, keyed by the action its row in
+        # `GameRenderer.dock_buttons` carries, so the two lists are read against each other.
+        self.dock_actions = {
+            "inventory": self.inventory_menu.toggle,
+            "quests": self.quest_menu.toggle,
+            "stats": self.stats_menu.toggle,
+            "lore": self._show_lore,
+            "help": self.help_menu.toggle,
+            "pause": self.pause_menu.toggle,
+        }
+
+        # The whole key map as one table. `HelpMenu.CONTROLS` is what tells the player about it.
         self.key_actions = {
             pygame.K_e: self._interact,
             pygame.K_b: self._trade_nearby,
@@ -170,7 +196,23 @@ class Game:
             pygame.K_ESCAPE: self.pause_menu.toggle,
         }
 
-        self._restore_player_state()
+        # What E does to each kind of thing it can be offered, keyed by `Interaction.kind`.
+        # Every handler takes the interaction's target, whether or not it needs it, so a new
+        # interaction is one row here and one `_offer_*` rather than another branch. A gate
+        # is the one that does nothing on a press: the beam is heaved up by holding the key
+        # (`_lift_gate`), and the prompt says so.
+        self.interact_actions = {
+            "npc": self._talk_to,
+            "chest": lambda _target: self._open_interior_chest(),
+            "bed": lambda _target: self._sleep_in_bed(),
+            "door": self._use_door,
+            "gate": lambda _target: None,
+            "well": self._climb_down_well,
+            "cave": self._enter_cave,
+            "ladder": self._climb_back_up,
+            "camp": lambda camp: self.world.rest_at_camp(self.player, camp),
+            "shrine": lambda shrine: self.world.pray_at_shrine(self.player, shrine),
+        }
 
     def _restore_player_state(self):
         """Relink the saved inventory and active quests to the world's reloaded items."""
@@ -520,35 +562,23 @@ class Game:
             offer(Interaction("npc", npc, label, npc.x, npc.y - c.Entities.NPC_SIZE, hint), reach_of(npc.x, npc.y))
 
     def _interact(self):
-        """Run whatever the on-screen prompt is offering."""
+        """Run whatever the on-screen prompt is offering, out of `self.interact_actions`."""
         interaction = self.current_interaction()
         if interaction is None:
             return
-        if interaction.kind == "npc":
-            self._talk_to(interaction.target)
-        elif interaction.kind == "chest":
-            self._open_interior_chest()
-        elif interaction.kind == "bed":
-            self._sleep_in_bed()
-        elif interaction.kind == "door":
-            self._use_door(interaction.target)
-        elif interaction.kind == "gate":
-            # A beam is not lifted by tapping a key: the hold in `_lift_gate` is the whole
-            # interaction, and the prompt says so.
-            pass
-        elif interaction.kind == "well":
-            self.world.enter_tunnel(self.player, interaction.target)
-            self.save_data()
-        elif interaction.kind == "cave":
-            self.world.enter_cave(self.player, interaction.target)
-            self.save_data()
-        elif interaction.kind == "ladder":
-            self.world.leave_tunnel(self.player)
-            self.save_data()
-        elif interaction.kind == "camp":
-            self.world.rest_at_camp(self.player, interaction.target)
-        elif interaction.kind == "shrine":
-            self.world.pray_at_shrine(self.player, interaction.target)
+        self.interact_actions[interaction.kind](interaction.target)
+
+    def _climb_down_well(self, village):
+        self.world.enter_tunnel(self.player, village)
+        self.save_data()
+
+    def _enter_cave(self, poi):
+        self.world.enter_cave(self.player, poi)
+        self.save_data()
+
+    def _climb_back_up(self, _tunnel):
+        self.world.leave_tunnel(self.player)
+        self.save_data()
 
     def _threat_nearby(self) -> bool:
         """Whether anything hostile is close enough to make a conversation absurd. Shared by
@@ -582,25 +612,34 @@ class Game:
 
         Loot standing on another building's floor is left alone, the same rule the renderer
         draws by: nothing is dragged out through a wall."""
-        pos = (self.player.x, self.player.y)
         for item in list(self.world.items):
             if item.picked_up:
                 continue
-            if item.distance_to_point(pos) > c.Player.MAGNET_RADIUS:
+            if self.world.building_at(item.x, item.y) is not self.interior:
+                # Behind a wall: no pull at all, and whatever it had built up is let go, so
+                # walking back into the room starts it moving from a standstill.
                 item.magnet_speed = 0.0
                 continue
-            if self.world.building_at(item.x, item.y) is not self.interior:
-                continue
-            if item.magnet_toward(self.player.x, self.player.y, dt):
+            if self._magnet(item, dt):
                 self._pickup_world_item(item)
 
         if self.interior is not None:
             for item in list(self.interior.dropped_items):
-                if item.distance_to_point(pos) > c.Player.MAGNET_RADIUS:
-                    item.magnet_speed = 0.0
-                    continue
-                if item.magnet_toward(self.player.x, self.player.y, dt):
+                if self._magnet(item, dt):
                     self._pickup_dropped_item(item)
+
+    def _magnet(self, item: Item, dt) -> bool:
+        """Pull one piece of loot a frame's worth toward the player, and say whether it got
+        there. Out of the magnet's reach it simply lets go of whatever pull it had."""
+        if item.distance_to_point((self.player.x, self.player.y)) > c.Player.MAGNET_RADIUS:
+            item.magnet_speed = 0.0
+            return False
+        return item.magnet_toward(self.player.x, self.player.y, dt)
+
+    @staticmethod
+    def _pickup_burst(item: Item):
+        """The puff of colour every pickup leaves behind, whatever became of the item."""
+        get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
 
     def _pickup_world_item(self, item: Item):
         item.picked_up = True
@@ -612,11 +651,11 @@ class Game:
             self.player.gain_coins(item.quantity)
             self.loot_notification.show(f"+{item.quantity} coins", c.Colors.ACCENT)
             play_sound("pickup")
-            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+            self._pickup_burst(item)
             return
         if item.item_type == "lootbox":
             self._open_lootbox(item)
-            get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+            self._pickup_burst(item)
             return
 
         # If it merges into a stack (ammo, potions), drop the now-orphaned world item.
@@ -629,7 +668,7 @@ class Game:
         into the inventory and the world's master item list."""
         play_sound("pickup")
         self._announce_pickup(item)
-        get_particles().spawn_burst(item.x, item.y, item.color, count=12, speed=3, life=450, size=4)
+        self._pickup_burst(item)
 
     def _pop_levelups(self):
         """Drain any stat level-ups queued this frame and pop the gold text/sparkle/chime

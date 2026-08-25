@@ -674,6 +674,10 @@ class Boss:
     # (`World.VILLAGE_SPAWN_MARGIN`) is what keeps a wolf off the fields; a boss needs the
     # far side of them.
     MIN_DIST_FROM_VILLAGE: int = 1200
+    # How far out the landmark guardian looks for somewhere it is allowed to stand before
+    # the ruin goes unguarded. Deliberately short: a guardian belongs to its landmark, and
+    # one found five rings away is standing beside something else entirely.
+    GUARDIAN_SEARCH_RINGS: int = 4
     ROAM_CHECK_INTERVAL_MS: int = 45_000
     ROAM_SPAWN_MIN_DIST: int = 900
     ROAM_SPAWN_MAX_DIST: int = 1400
