@@ -97,6 +97,34 @@ system: `World.tunnel_at(chunk, kind)` builds and caches every tunnel there is a
 `_go_underground` is the one way to be in one, so a cave mouth is a POI with an E on it
 and nothing else had to learn that caves exist.
 
+Nothing is ever stood up within `Tunnels.ENTRANCE_CLEARANCE` of the shaft. The first thing
+the player sees of the dark should be the dark, not something already swinging at them.
+
+### The light stops at the rock
+
+The lantern is cut out of the dark clipped to the floor rectangles the player is actually
+standing on, never as a plain circle: a plain circle shone through the walls, so standing
+in a corridor lit the rooms on the far side of it and the layout was given away from the
+doorway. Rooms and corridors overlap generously, so standing in a doorway lights both and
+what is round a corner stays round it. `Tunnels.DARKNESS` is full black for the same
+reason: at anything less the far side of the cave stayed legible.
+
+### A cave is worth walking to; a well is a cellar
+
+The two kinds diverge on purpose, all of it in `WorldPlaces._populate_cave`:
+
+- Every hoard is rolled with `Tunnels.HOARD_LUCK_PER_1000` of luck per thousand paces the
+  way in stands from the world centre, so the dark leans up the same rarity ladder
+  everything else in the world rolls on.
+- A cave's last room is a vault, holding the one guaranteed `Tunnels.VAULT_RARITY` box in
+  the game: the single reward that is not rolled for.
+- Bats live in a cave and are woken every time anybody walks in. They are not something a
+  cave is cleared of.
+- Past `Tunnels.WARDEN_MIN_DISTANCE` the vault has a warden: an ordinary boss, placed. It
+  is the only boss in the world that waits somewhere to be found rather than coming
+  looking, and the only one ever taken off the map alive, held as `warden_alive` on the
+  tunnel exactly as the garrison is held as a count.
+
 ## The spawn point is protected ground, three ways at once
 
 Any one of them alone still gets the player killed on arrival.
@@ -134,12 +162,28 @@ Three levers pulled together rather than one:
   `ROAMING_CAP_FAR_DISTANCE`.
 - *What has a name*: `Boss.MIN_DIST_FROM_START` is the floor under every boss, the first
   world's guardian at its landmark included, and `Boss.ROAM_MIN_DISTANCE` (which quest
-  bosses are also placed from, in a band outward) keeps a roaming one well past that.
+  bosses are also placed from, in a band outward) keeps a roaming one well past that. How
+  many there are is the same ramp again: `World.boss_cap` runs from `MAX_ACTIVE_NEAR` to
+  `MAX_ACTIVE_FAR` and the roll itself from `ROAM_CHANCE_NEAR` to `ROAM_CHANCE_FAR`, both
+  out to `DENSITY_FAR_DISTANCE`. The deep wilds are thick with bosses; the settled ring
+  holds one at a time.
+
+And the fourth lever is what a town sells. A merchant's rarity rolls take
+`NPC.stock_luck`, off their settlement's own tier, so the shelves lean up with the walk
+exactly as the bestiary does. The rarity the model writes for a ware is ignored: what the
+LLM invents is what a thing is called, and it has no idea how deep into the wilds the town
+it is being sold in stands.
 
 Every way a boss is spawned goes through `World.boss_spawn_ok`: never inside that ring,
-never on a settlement's grounds, never on somebody's floor. A boss does not despawn, so
-wherever one lands is where it stays, and a monster wandering into a village is a fight the
-militia can have while a boss in the plaza is the run over before it started.
+never within `Boss.MIN_DIST_FROM_VILLAGE` of a settlement's grounds, never on somebody's
+floor. That distance is asked of the *site registry* rather than of the villages built so
+far, because a town a chunk out has not been generated yet and putting a boss where one is
+about to stand is the same mistake made a minute later. The ruin the first world's guardian
+stands at is placed to the same clearance for the same reason (`village._place_landmark`),
+and the guardian itself is stood up at the first spot around the ruin that `boss_spawn_ok`
+accepts. A boss does not despawn, so wherever one lands is where it stays, and a monster
+wandering into a village is a fight the militia can have while a boss in the plaza is the
+run over before it started.
 
 Night pulls the first lever and only the first: `DayNight.NIGHT_DANGER_BONUS` rolls a
 spawn as if the ground were deeper, capped at `NIGHT_DANGER_DISTANCE_FRAC` of how far out

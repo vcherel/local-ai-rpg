@@ -349,9 +349,22 @@ class NPC(Entity):
         self.add_stock(shop_data)
         self.shop_ready = True
 
+    @property
+    def stock_luck(self) -> float:
+        """How far up the rarity ladder this merchant's shelf leans, off their settlement's
+        own tier (`Villages.SHOP_LUCK_PER_TIER`). A town four days out sells better steel
+        than the one the player started next to, for the same reason its monsters are worse:
+        the walk is what buys it. Nothing about the item tables changes, only which end of
+        them a roll tends to land on."""
+        return self.defence_tier * c.Villages.SHOP_LUCK_PER_TIER
+
     def add_stock(self, shop_data: list):
         """Put wares on the shelf beside whatever is already there, and start the clock on
-        the next delivery. Everything a merchant ever sells arrives through here."""
+        the next delivery. Everything a merchant ever sells arrives through here.
+
+        Rarity is always this shop's own roll, never the model's: what the LLM writes about a
+        ware is what it is called, and it has no idea how deep into the wilds the town it is
+        being sold in stands."""
         for entry in shop_data:
             # The name is the better authority on what a ware is: the model routinely
             # lists a shield as "armor", which put it in the body-armour slot and left
@@ -359,7 +372,7 @@ class NPC(Entity):
             # nothing (a curio, a pelt).
             named_type = item_type_from_name(entry["name"])
             item_type = named_type if named_type != "misc" else (entry.get("item_type") or "misc")
-            rarity = entry.get("rarity") or roll_rarity()
+            rarity = roll_rarity(luck=self.stock_luck)
             quantity = entry.get("quantity", AMMO_BUNDLE if item_type == "ammo" else 1)
             item = Item(0, 0, entry["name"], item_type, roll_bonus(item_type, rarity), rarity, quantity=quantity)
             self.shop_items.append(item)

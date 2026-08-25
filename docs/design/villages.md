@@ -279,6 +279,25 @@ locally through `loot.roll_shop_stock`: one LLM call per shop per restock is exa
 cost the batched generation in `merchant_system.py` exists to avoid, and what is already on
 the shelf is never replaced, only added to.
 
+How good the shelf is, is the settlement's own tier through `NPC.stock_luck`
+(`Villages.SHOP_LUCK_PER_TIER`), fed to the same `roll_rarity` ladder every drop in the
+world rolls on. A far town sells better steel because it is far, exactly as it fields
+tougher militia and worse monsters. The rarity the model writes for a ware is ignored
+entirely: the LLM decides what a thing is called, never how deep into the wilds it is being
+sold.
+
+## A settlement answers a boss the way it answers a monster, only louder
+
+`militia_orders` is the one place that decides who fights and who runs, and bosses are on
+its intruder list alongside monsters, at `Villages.BOSS_DEFEND_RADIUS` and
+`BOSS_PANIC_RADIUS` rather than the ordinary pair. A village that went about its day around
+a thing twice the size of its own gate read as the world forgetting to look.
+
+Everything a boss does to a village resolves as friendly fire (`by_player=False`): the
+settlement is never provoked by it, no purse is the player's to take, and the militia's own
+blows land on `World.bosses` rather than on the monster list, because handing the wrong list
+to `_resolve_monster_hit` would take a dying boss off nothing at all.
+
 ## A bandit camp's garrison is a number, not a set of monsters
 
 `PointOfInterest.guards_alive` / `leader_alive` are persisted with the camp;

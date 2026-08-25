@@ -8,9 +8,11 @@ import pygame
 
 import core.constants as c
 from core.audio import play_sound
+from core.particles import get_particles
 from core.utils import frames
 from game.entities.entities import Entity, push_apart, step_towards
 from game.entities.monster_art import draw_monster, weapon_hand
+from game.entities.wander import Wander
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -86,6 +88,22 @@ class Monster(Entity):
         # when it next switches.
         self.flank_side = random.choice((-1, 1))
         self.flank_flip_ms = 0
+        # Disguised kinds (kind.disguise): whether it has dropped the villager it was
+        # wearing, and how long is left of the lunge it opens with. Until it reveals it is
+        # not a monster in any way the world can read: it does not move, does not swing and
+        # its eyes are barely lit.
+        self.revealed = not kind.disguise
+        self.lunge_until_ms = 0
+        # Where it patrols around while nobody has been seen, and the stroll it does it
+        # with. A monster standing exactly where it spawned until something walks into its
+        # detection ring is a trap waiting to be sprung rather than a thing living out here.
+        self.home = (x, y)
+        self.wander = Wander(
+            c.Entities.MONSTER_WANDER_SPEED,
+            c.Entities.MONSTER_WANDER_RADIUS,
+            c.Entities.MONSTER_IDLE_MIN_MS,
+            c.Entities.MONSTER_IDLE_MAX_MS,
+        )
         # Drawing only: whether it has noticed the player (its eyes flare, which is the one
         # warning it gives before it starts coming), and its own offset into the idle breath
         # so a pack of them does not pulse as one animal.
@@ -107,21 +125,49 @@ class Monster(Entity):
     # camp_id/camp_leader are deliberately absent: a guard is rebuilt from its camp's own
     # count when the chunk loads, so World.serialize drops guards rather than saving them.
     def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "hp": self.hp, "kind": self.kind.name}
+        # A husk that has already opened stays open: the ambush is spent, and a save that
+        # put the villager back on it would sell the same surprise twice.
+        return {"x": self.x, "y": self.y, "hp": self.hp, "kind": self.kind.name, "revealed": self.revealed}
 
     @classmethod
     def from_dict(cls, data: dict) -> Monster:
         kind = next((k for k in c.MONSTER_KINDS if k.name == data["kind"]), c.MONSTER_KINDS[0])
         monster = cls(data["x"], data["y"], kind)
         monster.hp = data["hp"]
+        monster.revealed = data.get("revealed", not kind.disguise)
         return monster
 
     @property
     def pace(self) -> float:
         """How fast this one actually walks: its kind's speed under the one world-wide
         `Entities.MONSTER_SPEED_SCALE`, which is where the whole bestiary is slowed or
-        quickened at once. Nothing reads `kind.speed` for movement directly."""
-        return self.kind.speed * c.Entities.MONSTER_SPEED_SCALE
+        quickened at once. Nothing reads `kind.speed` for movement directly.
+
+        A husk that has just opened is briefly much faster than it will ever be again: the
+        lunge is the ambush, and after it the thing is only a monster."""
+        pace = self.kind.speed * c.Entities.MONSTER_SPEED_SCALE
+        if pygame.time.get_ticks() < self.lunge_until_ms:
+            pace *= c.Husk.LUNGE_SPEED_MULT
+        return pace
+
+    def post_at(self, x, y, radius: float):
+        """Tie this one to a piece of ground: a camp's fire, a room in a tunnel. It still
+        roams while nothing has been seen, just on a short leash, so a garrison posted
+        somewhere stays a garrison rather than wandering off its own camp."""
+        self.home = (x, y)
+        self.wander.radius = radius
+
+    def reveal(self):
+        """Drop the villager it was wearing. The whole of this kind is this moment: the body
+        splits along its seam, it takes a lunge at whoever came close, and from here it is
+        an ordinary monster that happens to have started the fight standing still."""
+        if self.revealed:
+            return
+        self.revealed = True
+        self.aggro = True
+        self.lunge_until_ms = pygame.time.get_ticks() + c.Husk.LUNGE_MS
+        get_particles().spawn_burst(self.x, self.y, self.kind.color, count=18, speed=6, life=430, size=5)
+        play_sound("gore")
 
     @property
     def melee_reach(self) -> int:
@@ -362,6 +408,14 @@ class Monster(Entity):
         radius = self.kind.size / 2
 
         aware = dist < senses + target.size // 2
+        # Still wearing its villager: it does not walk, does not swing and does not notice
+        # anything, because a disguise that flinched would not be one. Coming close enough
+        # to see what it is is what opens it, and that is the whole fight.
+        if not self.revealed:
+            if dist < c.Husk.REVEAL_RANGE + target.size / 2:
+                self.reveal()
+            self.update_attack_anim(dt)
+            return 0
         self.aggro = aware
         # A detonator plants itself the moment its fuse is lit: what happens next is a timer,
         # and a bomb that kept walking would be unavoidable rather than dodgeable.
@@ -398,6 +452,15 @@ class Monster(Entity):
                 speed *= c.Entities.RETREAT_SPEED_MULT
             move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
             step_towards(self, self._steer(move_angle, blocked, radius, speed, goal_dist), speed, blocked, radius)
+        elif not aware and move_factor:
+            # Nobody seen: it roams its own patch (`post_at` for anything with a post to
+            # hold) rather than standing exactly where it was put. A monster that only ever
+            # moves once the player is inside its detection ring reads as a trigger, and a
+            # cave mouth with three of them stood outside it reads as an ambush laid for
+            # somebody who has not arrived yet.
+            roamed = self.wander.step(self, dt, self.home, radius, blocked)
+            if roamed is not None:
+                self.orientation = roamed
 
         self._separate(crowd, blocked, radius)
 
@@ -421,6 +484,10 @@ class Monster(Entity):
         body_color = self.flash_color(self.kind.color)
         if self.fusing:
             body_color = self._fuse_color(body_color)
+        # A disguised kind is drawn as what it is pretending to be, down to the eyes: the
+        # tells are in the silhouette itself (`monster_art._husk`), and lighting them up
+        # would hand the player the answer from across the field.
+        disguised = not self.revealed
         draw_monster(
             screen,
             screen_x,
@@ -428,16 +495,18 @@ class Monster(Entity):
             self.kind.size,
             body_color,
             self.orientation,
-            self.kind.shape,
+            "husk_open" if self.kind.disguise and self.revealed else self.kind.shape,
             attack_progress=self.attack_progress,
             attack_hand=self.attack_hand,
             weapon=self.kind.weapon,
-            eye_color=self.kind.eye_color,
+            eye_color=c.Husk.DISGUISE_EYE if disguised else self.kind.eye_color,
             aggro=self.aggro,
             phase=self.art_phase,
             nock=self.shot_readiness,
             walk=self.gait.step(self.x, self.y),
         )
+        if disguised:
+            return
         self.draw_health_bar(
             screen,
             screen_x - c.Entities.HEALTH_BAR_WIDTH // 2,

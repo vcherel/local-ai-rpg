@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
+from game.entities.boss import Boss
 from game.entities.critter import Critter
 from game.entities.items import Item, roll_rarity
 from game.entities.npcs import NPC
@@ -91,6 +92,9 @@ class WorldPlaces:
             leader = poi.leader_alive and i == poi.guards_remaining - 1
             guard = self._new_monster(x, y, danger_bonus=c.PointsOfInterest.CAMP_LEADER_DANGER_BONUS if leader else 0)
             guard.camp_id = poi.id
+            # It mills about its own fire rather than standing to attention at it, and never
+            # wanders off the camp it is the garrison of.
+            guard.post_at(poi.x, poi.y, spread)
             guard.camp_leader = leader
             self.monsters.append(guard)
 
@@ -114,7 +118,12 @@ class WorldPlaces:
         here rather than in a routine of its own."""
         tunnel = self.tunnels.get(monster.camp_id)
         if tunnel is not None:
-            tunnel.guard_killed()
+            if isinstance(monster, Boss):
+                # The warden is not one of the garrison: killing it empties the vault of the
+                # one thing standing over it, and it never stands there again.
+                tunnel.warden_alive = False
+            else:
+                tunnel.guard_killed()
             self.tunnel_state[tunnel.id] = tunnel.state()
             return
         poi = next((p for p in self.pois if p.id == monster.camp_id), None)
@@ -377,31 +386,99 @@ class WorldPlaces:
         """Take the tunnel's occupants off the world's lists. They are held as a count like a
         camp's garrison, so they are stood back up from it the next time anyone climbs down;
         left on the list they would be a pack of monsters milling about a million paces from
-        anywhere, still being updated every frame."""
+        anywhere, still being updated every frame.
+
+        A cave's warden goes with them, which is the one boss in the game that is ever taken
+        off the map alive: it belongs to its vault rather than to the world, so it is held as
+        a flag on the tunnel (`warden_alive`) exactly as the garrison is held as a count."""
         self.monsters = [m for m in self.monsters if m.camp_id != tunnel.id]
         self.critters = [cr for cr in self.critters if cr.camp_id != tunnel.id]
+        warden = next((b for b in self.bosses if b.camp_id == tunnel.id), None)
+        if warden is not None:
+            # Whatever the model called it while the player was down there is kept, so it is
+            # the same named thing standing over the vault on the next descent.
+            tunnel.warden_name = warden.display_name
+        self.bosses = [b for b in self.bosses if b.camp_id != tunnel.id]
 
     def _populate_tunnel(self, tunnel: Tunnel):
-        """What is waiting down there: the survivors of its garrison, and its hoard the first
-        time anyone gets this far.
+        """What is waiting down there: the survivors of its garrison, its hoard the first
+        time anyone gets this far, and in a cave the bats, the vault and whatever stands
+        over it.
 
         The garrison is a number exactly as a bandit camp's is (`camp_id` tags each one, which
         keeps them out of the save, out of the despawn and out of the roaming cap), so four of
-        five killed survives climbing out, quitting and coming back."""
+        five killed survives climbing out, quitting and coming back. Everything else down
+        here is held the same way, for the same reason."""
         if tunnel.guards_alive is None:
             tunnel.guards_alive = random.randint(*tunnel.guard_count)
         rng = random.Random(f"tunnel-fill:{tunnel.id}")
 
-        for x, y in tunnel.floor_spots(tunnel.guards_alive, rng):
+        for x, y in tunnel.floor_spots(tunnel.guards_alive, rng, clearance=c.Tunnels.ENTRANCE_CLEARANCE):
             guard = self._new_monster(x, y, danger_bonus=c.Tunnels.GUARD_DANGER_BONUS)
             guard.camp_id = tunnel.id
+            # Held to the room it was put in: a garrison that roamed the whole tunnel would
+            # be found by walking rather than by looking.
+            guard.post_at(x, y, c.Tunnels.CORRIDOR_WIDTH)
             self.monsters.append(guard)
 
         if not tunnel.hoard_placed:
             tunnel.hoard_placed = True
-            for x, y in tunnel.floor_spots(random.randint(*c.Tunnels.HOARD), rng):
-                self.items.append(Item(x, y, "Lootbox", "lootbox", rarity=roll_rarity()))
+            luck = self._tunnel_luck(tunnel)
+            for x, y in tunnel.floor_spots(random.randint(*c.Tunnels.HOARD), rng, c.Tunnels.ENTRANCE_CLEARANCE):
+                self.items.append(Item(x, y, "Lootbox", "lootbox", rarity=roll_rarity(luck=luck)))
+
+        self._populate_cave(tunnel, rng)
         self.tunnel_state[tunnel.id] = tunnel.state()
+
+    @staticmethod
+    def _tunnel_distance(tunnel: Tunnel) -> float:
+        """How far from the world centre the way into this tunnel stands. The rooms
+        themselves are dug a million paces off in their own corner of world space, so their
+        own coordinates say nothing about how deep into the wilds the player walked to
+        reach them: the chunk the well or the cave mouth sits in is what does."""
+        center = c.World.WORLD_SIZE // 2
+        size = c.World.CHUNK_SIZE
+        return math.hypot((tunnel.chunk[0] + 0.5) * size - center, (tunnel.chunk[1] + 0.5) * size - center)
+
+    def _tunnel_luck(self, tunnel: Tunnel) -> float:
+        """How much better what is down here is than what is down nearer home. The dark
+        under the starting town is a cellar with a few boxes in it; the dark under a cave
+        eight thousand paces out is why anybody walks eight thousand paces. Fed to the same
+        rarity ladder everything else in the world rolls on."""
+        return self._tunnel_distance(tunnel) / 1000.0 * c.Tunnels.HOARD_LUCK_PER_1000
+
+    def _populate_cave(self, tunnel: Tunnel, rng: random.Random):
+        """What a cave has that a well does not: the bats that live in it, the vault at the
+        far end, and out past `Tunnels.WARDEN_MIN_DISTANCE` the warden standing over it.
+
+        This is the whole answer to a cave being somewhere to walk past. A well is a cellar
+        under a village; a cave is the one place in the world holding a boss that waits to be
+        found rather than one that comes looking, and the one reward that is not rolled for."""
+        if tunnel.kind == "well" or tunnel.vault is None:
+            return
+
+        # Woken by the walking in, every time: bats are not something a cave is cleared of.
+        for x, y in tunnel.floor_spots(random.randint(*c.Tunnels.BATS), rng, c.Tunnels.ENTRANCE_CLEARANCE):
+            bat = Critter(x, y, c.CRITTER_KINDS_BY_NAME["bat"], home=(x, y), camp_id=tunnel.id)
+            self.critters.append(bat)
+
+        if tunnel.warden_alive is None:
+            tunnel.warden_alive = self._tunnel_distance(tunnel) >= c.Tunnels.WARDEN_MIN_DISTANCE
+        if tunnel.warden_alive:
+            # Which one stands here is the tunnel's own roll rather than a fresh one, the way
+            # everything else about a place is a pure function of where it is: a warden that
+            # was a colossus yesterday is not a warlock today.
+            template = random.Random(f"warden:{tunnel.id}").choice(c.BOSS_KINDS)
+            warden = self.spawn_boss(*tunnel.vault.center, template=template, name=tunnel.warden_name)
+            warden.camp_id = tunnel.id
+            # It is already standing there and has been for a long time: the ground opening
+            # under it is for something that has just arrived.
+            warden.rising = 0.0
+
+        if not tunnel.vault_placed:
+            tunnel.vault_placed = True
+            box = Item(*tunnel.vault.center, "Lootbox", "lootbox", rarity=c.Tunnels.VAULT_RARITY)
+            self.items.append(box)
 
     def _restore_underground(self, saved: dict | None):
         """Put the player back in the tunnel a save was made in. Without this a game saved
@@ -905,7 +982,15 @@ class WorldPlaces:
         NPC, since the intruders are the short list and the villagers are the long one."""
         fight: dict = {}
         flee: dict = {}
-        intruders = [m for m in self.monsters if self.village_at(m.x, m.y, c.Villages.DEFEND_MARGIN) is not None]
+        # A boss on the grounds is an intruder like any other, and the one that counts most:
+        # a settlement that went about its day around a thing twice the size of its gate
+        # read as the world forgetting to look. It carries its own, wider radii, because a
+        # boss is a reason to run from further off than a wolf is.
+        # Anything still in a disguise is not on this list either: a village that turned out
+        # its militia on a husk nobody has seen through would be doing the player's looking
+        # for them, and would put the thing down before they ever met one.
+        arrived = [m for m in self.monsters if m.revealed] + [boss for boss in self.bosses if boss.rising <= 0]
+        intruders = [m for m in arrived if self.village_at(m.x, m.y, c.Villages.DEFEND_MARGIN) is not None]
         if not intruders:
             return fight, flee
 
@@ -915,10 +1000,11 @@ class WorldPlaces:
                 continue
             nearest = min(intruders, key=lambda m: npc.distance_to_point((m.x, m.y)))
             distance = npc.distance_to_point((nearest.x, nearest.y))
+            boss = isinstance(nearest, Boss)
             if npc.is_militia:
-                if distance <= c.Villages.DEFEND_RADIUS:
+                if distance <= (c.Villages.BOSS_DEFEND_RADIUS if boss else c.Villages.DEFEND_RADIUS):
                     fight[id(npc)] = nearest
-            elif distance <= c.Villages.PANIC_RADIUS:
+            elif distance <= (c.Villages.BOSS_PANIC_RADIUS if boss else c.Villages.PANIC_RADIUS):
                 refuge = self._refuge_for(npc)
                 if refuge is not None:
                     flee[id(npc)] = refuge

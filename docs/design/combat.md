@@ -101,6 +101,10 @@ visible fuse, so the answer is to kill it, shove it or leave the ring it has dra
 kills pays the player, the bear trap's rule, because the reward for a creeper is killing it
 before the fuse runs out.
 
+`Creeper.FUSE_MS` is short and `DAMAGE` is heavy on purpose. All three answers are still
+there and none of them can be taken at a stroll: a creeper that was out-walked by accident
+was scenery, not a threat.
+
 ## A bear trap is the only thing that stops movement with no wall in the way
 
 `Entity.root(ms)` (and `Critter`'s own copy of it) is a timestamp every mover checks in its own

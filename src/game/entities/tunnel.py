@@ -76,6 +76,15 @@ class Tunnel:
         self.kind = kind
         self.guards_alive: int | None = None
         self.hoard_placed = False
+        # A cave's last room is its vault: a dead end with one guaranteed legendary box in
+        # it and, far enough out, a warden standing over it. Both are one-time, so both are
+        # remembered here rather than rolled again on the next climb down.
+        self.vault_placed = False
+        self.warden_alive: bool | None = None
+        # What the model called the warden the first time anybody met it. Kept so the same
+        # creature is not renamed on every descent, and so it is not named at all on the
+        # second one.
+        self.warden_name = ""
 
         # A well's layout is seeded exactly as it always was, so a game saved standing in
         # one loads back into the same rooms rather than into solid rock.
@@ -105,6 +114,9 @@ class Tunnel:
         self._floor = self.rooms + self.corridors
         # The shaft comes down into the first room, and it is the only way back up.
         self.entrance = self.rooms[0].center
+        # The furthest room from the way in, which is the one worth walking to. A well has
+        # none: a cellar under a village is not an expedition.
+        self.vault = self.rooms[-1] if kind != "well" and len(self.rooms) > 1 else None
 
     @property
     def id(self) -> str:
@@ -167,24 +179,39 @@ class Tunnel:
         return self.guards_alive == 0
 
     def state(self) -> dict:
-        return {"guards_alive": self.guards_alive, "hoard_placed": self.hoard_placed}
+        return {
+            "guards_alive": self.guards_alive,
+            "hoard_placed": self.hoard_placed,
+            "vault_placed": self.vault_placed,
+            "warden_alive": self.warden_alive,
+            "warden_name": self.warden_name,
+        }
 
     def apply_state(self, state: dict):
         self.guards_alive = state.get("guards_alive")
         self.hoard_placed = state.get("hoard_placed", False)
+        self.vault_placed = state.get("vault_placed", False)
+        self.warden_alive = state.get("warden_alive")
+        self.warden_name = state.get("warden_name", "")
 
-    def floor_spots(self, count: int, rng: random.Random) -> list[tuple[float, float]]:
+    def floor_spots(self, count: int, rng: random.Random, clearance: float = 0.0) -> list[tuple[float, float]]:
         """`count` points scattered over the rooms, for whatever has to be stood up down
-        here. The rooms only: nothing is put in a corridor, which is what the player walks."""
+        here. The rooms only: nothing is put in a corridor, which is what the player walks.
+
+        `clearance` keeps them off the shaft. Somebody standing at the foot of the ladder is
+        an ambush the player was given no chance to read, and the first thing they see of
+        the dark should be the dark."""
         spots = []
         for _ in range(count):
-            room = rng.choice(self.rooms)
-            spots.append(
-                (
+            for _ in range(12):
+                room = rng.choice(self.rooms)
+                spot = (
                     rng.uniform(room.left + 70, room.right - 70),
                     rng.uniform(room.top + 70, room.bottom - 70),
                 )
-            )
+                if math.hypot(spot[0] - self.entrance[0], spot[1] - self.entrance[1]) >= clearance:
+                    break
+            spots.append(spot)
         return spots
 
     # ------------------------------------------------------------------ drawing
@@ -237,14 +264,19 @@ class Tunnel:
         for side in (-16, 16):
             pygame.draw.line(screen, c.Tunnels.LADDER_COLOR, (x + side, y - 26), (x + side, y + 26), 3)
 
-    @staticmethod
-    def draw_dark(screen: pygame.Surface, camera: Camera, player):
+    def draw_dark(self, screen: pygame.Surface, camera: Camera, player):
         """Everything past the player's own light. Drawn over the entities, so a monster is
         heard before it is seen and the dark is the tunnel's real difficulty.
 
         The light is one gradient rather than a stack of circles: circles drawn onto an alpha
         surface replace the pixels under them rather than blending, so each one left a hard
-        edge and the lantern read as a set of rings."""
+        edge and the lantern read as a set of rings.
+
+        And it stops at the rock. The lantern used to be cut out of the dark as a plain
+        circle, which meant it shone straight through a wall: standing in a corridor lit the
+        rooms on the far side of it and gave the whole layout away from the doorway. The
+        cut-out is clipped to the floor the player is actually standing on (a room, a
+        corridor, both where the two overlap), so what is round a corner stays round it."""
         global _DARK_OVERLAY
         if _DARK_OVERLAY is None:
             _DARK_OVERLAY = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
@@ -252,8 +284,14 @@ class Tunnel:
         overlay.fill((0, 0, 0, c.Tunnels.DARKNESS))
         x, y = camera.world_to_screen(player.x, player.y)
         light = _lantern_mask()
+        area = light.get_rect(center=(x, y))
         # Taking the lower of the two alphas cuts the light out of the dark: inside the
         # radius the gradient wins, outside it the mask is already full dark and nothing
-        # changes.
-        overlay.blit(light, light.get_rect(center=(x, y)), special_flags=pygame.BLEND_RGBA_MIN)
+        # changes. Done once per piece of floor under the player, clipped to that piece.
+        for rect in self._floor:
+            if not rect.collidepoint(player.x, player.y):
+                continue
+            overlay.set_clip(self._to_screen(camera, rect))
+            overlay.blit(light, area, special_flags=pygame.BLEND_RGBA_MIN)
+        overlay.set_clip(None)
         screen.blit(overlay, (0, 0))

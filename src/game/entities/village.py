@@ -1178,15 +1178,31 @@ def _place_landmark(village: Village, buildings: list[Building]) -> Building | N
     """The ancient ruin: out on the far side of the settled ring, well clear of the village
     and a long way from the spawn point, since its guardian is a boss and shouldn't be
     waiting on the doorstep (Boss.MIN_DIST_FROM_START, the floor under every boss rather
-    than the ordinary building clearance)."""
+    than the ordinary building clearance).
+
+    Clear of every *other* settlement too, planned ones included, and by a boss's clearance
+    rather than a building's: the ruin is the one place in the world a boss stands from the
+    first frame of the save, so it is placed where a boss is allowed to be. A ruin that
+    fails that is a ruin with nothing guarding it."""
     center = c.World.WORLD_SIZE // 2
     margin = c.Buildings.EDGE_MARGIN
-    for _ in range(120):
+    size = c.World.CHUNK_SIZE
+    reach = math.ceil(c.Boss.MIN_DIST_FROM_VILLAGE / size) + 2
+    # More tries than a building's usual handful: the ruin has to clear every settlement in
+    # the region by a boss's distance rather than a wall's, and the settled ring is not
+    # large. A world with no ruin in it is a world with no guardian and no lore stone.
+    for _ in range(400):
         x = random.randint(margin, c.World.WORLD_SIZE - margin)
         y = random.randint(margin, c.World.WORLD_SIZE - margin)
         if math.hypot(x - center, y - center) < c.Boss.MIN_DIST_FROM_START:
             continue
-        if village.distance_to_point((x, y)) < village.grounds_radius + c.Buildings.MIN_GAP:
+        if village.distance_to_point((x, y)) < village.grounds_radius + c.Boss.MIN_DIST_FROM_VILLAGE:
+            continue
+        chunk = (int(x // size), int(y // size))
+        if any(
+            math.hypot(x - sx, y - sy) - radius < c.Boss.MIN_DIST_FROM_VILLAGE
+            for sx, sy, _, _, radius in settlements_near_chunk(*chunk, reach)
+        ):
             continue
         candidate = Building(x, y, "landmark")
         gap = c.Buildings.MIN_GAP

@@ -96,7 +96,7 @@ class EventSystem:
             kinds.append(("merchant", c.Events.WEIGHT_MERCHANT))
         if not self.blood_night_active:
             kinds.append(("blood_night", c.Events.WEIGHT_BLOOD_NIGHT))
-        if len(self.world.bosses) < c.Boss.MAX_ACTIVE:
+        if len(self.world.bosses) < self.world.boss_cap(player):
             kinds.append(("boss", c.Events.WEIGHT_BOSS))
 
         kind = random.choices([k for k, _ in kinds], weights=[w for _, w in kinds])[0]
@@ -278,7 +278,7 @@ class EventSystem:
     # ------------------------------------------------------------------ boss
 
     def _spawn_boss_event(self, player: Player, message: str | None = None):
-        if len(self.world.bosses) >= c.Boss.MAX_ACTIVE:
+        if len(self.world.bosses) >= self.world.boss_cap(player):
             return
         pos = self._point_near_player(
             player,
