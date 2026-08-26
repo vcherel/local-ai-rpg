@@ -67,6 +67,9 @@ class MenuScene:
         # `World` clears the registry when a game begins, so nothing here leaks into it.
         clear_registered_sites()
         register_settlement(chunk, self.village.x, self.village.y, self.village.grounds_radius)
+        # Its lanes after that, not before: they run out to where the roads stop, and until
+        # the settlement is registered there are no roads coming to it.
+        self.village.plan_streets(self.buildings)
 
         self.scenery = []
         for dx in (-1, 0, 1):

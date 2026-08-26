@@ -80,6 +80,15 @@ class Villages:
     # stood on undisturbed grass read as sheds dropped in a field.
     STREET_WIDTH: int = 15
     STREET_STEP: int = 16
+    # A lane is routed on a grid of this size rather than run straight at the door: a
+    # straight line from the plaza was laid over whatever house stood between the two.
+    # Coarser than the lane is wide, since what it has to find is the gap between two
+    # buildings and there is no gap narrower than a lane worth walking down.
+    STREET_GRID: int = 32
+    # How far a lane may wander looking for its way round a house, as a multiple of the
+    # straight-line distance: past that the settlement is walled in on itself and the
+    # straight lane it used to have is the better answer.
+    STREET_DETOUR: float = 3.0
     START_DISTANCE_FROM_CENTER: int = 900
 
     # How many people live in one home. A bigger settlement is a busier one: numbers are

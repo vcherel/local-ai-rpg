@@ -99,6 +99,7 @@ class WorldStreaming:
         village, buildings = generate_village(site[0], site[1], chunk)
         self.villages.append(village)
         self._register_buildings(buildings)
+        village.plan_streets(buildings)
         self._clear_scenery_for(village, buildings)
         self.breakables.extend(generate_breakables(buildings))
         self._populate_npcs(buildings, village)
@@ -108,9 +109,10 @@ class WorldStreaming:
         """Wear the lanes between the houses of every settlement the world holds.
 
         A village's streets are worked out from where its buildings ended up, so they come
-        back with the buildings rather than being saved; a village generated during play
-        already has them (`village.generate_village`), and this is for the ones loaded out
-        of a save."""
+        back with the buildings rather than being saved; a village generated during play is
+        planned as it is built (`_ensure_village`), and this is for the starting town and
+        for the ones loaded out of a save, both of which have to be on the map the roads are
+        laid out from before their lanes can reach one."""
         for village in self.villages:
             if not village.streets:
                 village.plan_streets([b for b in self.buildings if village.contains_point(b.x, b.y)])

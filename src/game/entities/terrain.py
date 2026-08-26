@@ -75,11 +75,27 @@ def road_points_for_chunk(cx: int, cy: int) -> list[RoadBlob]:
     within `ROAD_CLEARANCE` of a blob, which is what keeps a wood from growing across a
     road rather than the road having to pick its way through the wood.
     """
+    return _blobs_in_chunk(cx, cy, _routes_near_chunk(cx, cy))
+
+
+@lru_cache(maxsize=512)
+def road_blobs_for_chunk(cx: int, cy: int) -> tuple[RoadBlob, ...]:
+    """The same stretch of packed earth as `road_points_for_chunk`, with the footpaths left
+    out: the roads between settlements and nothing else.
+
+    Its own function because a landmark stands down where a road passes (`poi_site`), and
+    the footpaths are drawn *from* the landmarks: asking for the whole network there would
+    ask a chunk's landmark whether it exists in order to decide whether it exists."""
+    return tuple(_blobs_in_chunk(cx, cy, _settlement_routes(cx, cy)))
+
+
+def _blobs_in_chunk(cx: int, cy: int, routes: list[Route]) -> list[RoadBlob]:
+    """The stretch of each of `routes` that falls inside this chunk."""
     size = c.World.CHUNK_SIZE
     bounds = pygame.Rect(cx * size, cy * size, size, size).inflate(c.Scenery.ROAD_WOBBLE * 2, c.Scenery.ROAD_WOBBLE * 2)
 
     points: list[RoadBlob] = []
-    for route in _routes_near_chunk(cx, cy):
+    for route in routes:
         line = _route_line(route)
         # Nearly every route in the region misses this chunk entirely, and walking one is
         # hundreds of blobs: the cheap test is worth making before the walk.
@@ -89,15 +105,21 @@ def road_points_for_chunk(cx: int, cy: int) -> list[RoadBlob]:
     return points
 
 
+def _settlement_routes(cx: int, cy: int) -> list[Route]:
+    """The roads near this chunk: settlement to settlement, no footpaths."""
+    routes: dict[tuple, Route] = {}
+    for x, y, scx, scy, radius in settlements_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS):
+        for route in _roads_from_site(x, y, scx, scy, radius):
+            routes[_route_key(route)] = route
+    return [routes[key] for key in sorted(routes)]
+
+
 def _routes_near_chunk(cx: int, cy: int) -> list[Route]:
     """Every route that might cross this chunk, each one asked of the place it leaves from
     rather than of the chunk asking, so two chunks either side of a border never disagree
     about whether a road exists. In route-key order, so every chunk sees them the same way
     round and a crossing shared by two of them is settled the same way in both."""
-    routes: dict[tuple, Route] = {}
-    for x, y, scx, scy, radius in settlements_near_chunk(cx, cy, c.Scenery.ROAD_SITE_CHUNK_RADIUS):
-        for route in _roads_from_site(x, y, scx, scy, radius):
-            routes[_route_key(route)] = route
+    routes: dict[tuple, Route] = {_route_key(route): route for route in _settlement_routes(cx, cy)}
     reach = c.Scenery.PATH_CHUNK_RADIUS
     for gx in range(cx - reach, cx + reach + 1):
         for gy in range(cy - reach, cy + reach + 1):
@@ -105,6 +127,22 @@ def _routes_near_chunk(cx: int, cy: int) -> list[Route]:
             if route is not None:
                 routes[_route_key(route)] = route
     return [routes[key] for key in sorted(routes)]
+
+
+def road_ends_at(x: float, y: float, cx: int, cy: int) -> tuple[tuple[float, float], ...]:
+    """Where every road leaving this settlement stops, which is the outside of one of its
+    gateways (`_approach`).
+
+    A settlement lays its own lanes out to these (`Village.gateways`): the road stops at
+    the grounds the site *could* have reached, since it is drawn from the map rather than
+    from a village that may not have been built yet, and only the village itself knows
+    where its wall actually stands."""
+    ends = []
+    for route in _settlement_routes(cx, cy):
+        for near, far in (route[:2], route[1::-1]):
+            if math.dist((near[0], near[1]), (x, y)) < 1:
+                ends.append(_approach(near[0], near[1], near[2], far[0], far[1]))
+    return tuple(ends)
 
 
 def _route_key(route: Route) -> tuple:
@@ -144,12 +182,12 @@ def _path_from_poi(cx: int, cy: int) -> Route | None:
     """
     # Imported here rather than at the top: a landmark keeps out of the water, so poi.py
     # asks this module where the rivers run, and this is the other half of that pair.
-    from game.entities.poi import poi_site
+    from game.entities.poi import poi_footprint, poi_site
 
     site = poi_site(cx, cy)
     if site is None:
         return None
-    x, y, _ = site
+    x, y, kind = site
 
     reach = c.Scenery.PATH_CHUNK_RADIUS
     ends: list[Endpoint] = [(sx, sy, radius) for sx, sy, _, _, radius in settlements_near_chunk(cx, cy, reach)]
@@ -157,12 +195,14 @@ def _path_from_poi(cx: int, cy: int) -> Route | None:
         for gy in range(cy - reach, cy + reach + 1):
             other = poi_site(gx, gy) if (gx, gy) != (cx, cy) else None
             if other is not None:
-                ends.append((other[0], other[1], c.Scenery.PATH_POI_CLEARANCE))
+                ends.append((other[0], other[1], poi_footprint(other[2]) + c.PointsOfInterest.PATH_MARGIN))
 
     end = min(ends, key=lambda e: math.dist((x, y), (e[0], e[1])), default=None)
     if end is None or math.dist((x, y), (end[0], end[1])) > c.Scenery.PATH_MAX_LENGTH:
         return None
-    return (x, y, c.Scenery.PATH_POI_CLEARANCE), end, "path"
+    # A path stops at the edge of what the landmark covers, not at its centre point: aimed
+    # at the middle of a graveyard it was laid through the stones.
+    return (x, y, poi_footprint(kind) + c.PointsOfInterest.PATH_MARGIN), end, "path"
 
 
 @lru_cache(maxsize=512)
@@ -544,6 +584,10 @@ def generate_chunk_scenery(
     roads and rivers through the chunk are laid first so nothing solid ever stands on one
     and nothing at all grows out of the water.
     """
+    # Imported here for the same reason `_path_from_poi` does it: poi.py asks this module
+    # where the roads and the rivers run.
+    from game.entities.poi import poi_footprint
+
     rng = random.Random(f"scenery:{cx},{cy}")
     size = c.World.CHUNK_SIZE
     chunk = (cx, cy)
@@ -566,7 +610,9 @@ def generate_chunk_scenery(
     # further than the wall clearance does.
     keep_off = max(c.Scenery.CLEARANCE_BUILDING, c.Villages.DOORSTEP_CLEAR)
     solid_zones = [(b.x, b.y, max(b.w, b.h) / 2 + keep_off) for b in buildings]
-    solid_zones += [(p.x, p.y, c.Scenery.CLEARANCE_POI) for p in pois]
+    # A landmark keeps the wood off everything it covers, not off its centre point: trees
+    # grew up between a graveyard's stones when the clearance was one number for every kind.
+    solid_zones += [(p.x, p.y, max(c.Scenery.CLEARANCE_POI, poi_footprint(p.kind))) for p in pois]
     open_zones = [(v.x, v.y, v.grounds_radius + c.Scenery.CLEARANCE_VILLAGE) for v in villages]
 
     def clear_of_places(x: float, y: float) -> bool:
@@ -595,10 +641,14 @@ def generate_chunk_scenery(
     # A road between two settlements and a footpath out to a landmark are the same blobs
     # at two scales and in two colours: the road is what the player is meant to see from
     # across a field and follow, the path is a line worn in the grass.
+    # A road stands twice, as its verge and as its band, so each is laid down in a pass of
+    # its own over the whole chunk: a blob that drew both painted its verge over the band
+    # of the blob before it (see Scenery._draw_path).
     items = [
-        Scenery(blob.x, blob.y, blob.kind, chunk, size=blob.width, biome=biome, angle=blob.heading)
+        Scenery(blob.x, blob.y, kind, chunk, size=blob.width, biome=biome, angle=blob.heading)
         for blob in roads
         if not in_water(blob.x, blob.y)
+        for kind in (("road_verge", "road") if blob.kind == "road" else (blob.kind,))
     ]
     # Three pieces per blob of river: the water itself, and the two layers of colour that
     # are drawn in their own passes over it, since one blob painting all three would paint
@@ -688,6 +738,7 @@ for _clear in (
     _route_line.cache_clear,
     _route_crossings.cache_clear,
     _dodge_circles.cache_clear,
+    road_blobs_for_chunk.cache_clear,
     _chunk_river.cache_clear,
     _chunk_terrain.cache_clear,
 ):

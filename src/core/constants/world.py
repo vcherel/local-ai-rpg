@@ -568,6 +568,7 @@ class Scenery:
         "river_body",
         "river_deep",
         "path",
+        "road_verge",
         "road",
         "bridge",
         "pebbles",
@@ -763,7 +764,6 @@ class Scenery:
     PATH_WIDTH: tuple = (7, 11)
     PATH_CHUNK_RADIUS: int = 3
     PATH_MAX_LENGTH: int = 2600
-    PATH_POI_CLEARANCE: int = 70
 
 
 @dataclass(frozen=True)
@@ -809,6 +809,26 @@ class PointsOfInterest:
     MIN_DIST_FROM_WATER: int = 120
     SIZE: int = 46
     HIT_RADIUS: int = 34
+    # How much ground each landmark actually covers, as a radius from its centre: what is
+    # drawn, not what is walked up to. A graveyard is four rows of stones spread over
+    # several hundred pixels, so a road aimed at its centre point ran straight through the
+    # graves and a footpath "reaching" it stopped in the middle of them. Anything not
+    # listed is the size of the marker itself.
+    FOOTPRINT = {
+        "graveyard": 240,
+        "cave": 105,
+        "camp": 95,
+        "farmstead": 90,
+        "stones": 75,
+        "watchtower": 70,
+        "shrine": 60,
+    }
+    # The open ground a footpath leaves round the landmark it leads to, past its footprint.
+    PATH_MARGIN: int = 30
+    # How near a road between two settlements may pass a landmark. A landmark stands down
+    # rather than the road bending: the road was cut between two places people live, and
+    # what gives way is the thing nobody laid out.
+    ROAD_MARGIN: int = 60
     # Relative pick weight among kinds scattered across the wilderness. The three that
     # can be acted on (a cache to force, a camp to clear or trade at, a shrine to pray at)
     # stay the most common; the rest are there so that walking out finds a place rather
