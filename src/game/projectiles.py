@@ -150,22 +150,24 @@ class WorldProjectiles:
             Entity.start_attack_anim(monster)
             play_sound("shoot")
             style, color = ("bolt", BOLT_COLOR) if monster.kind.name == "Hexer" else ("arrow", ARROW_COLOR)
-            self.projectiles.append(
-                Projectile(
-                    monster.x,
-                    monster.y,
-                    # Projectile angles are measured from straight up, clockwise.
-                    math.atan2(dx, -dy),
-                    round(monster.kind.damage * damage_mult),
-                    style=style,
-                    color=color,
-                    shake=c.Combat.PLAYER_HURT_SHAKE,
-                    hostile=True,
-                    owner_id=id(monster),
-                    source_name=monster.kind.name,
-                    max_range=c.Projectile.MONSTER_RANGE,
-                )
+            shot = Projectile(
+                monster.x,
+                monster.y,
+                # Projectile angles are measured from straight up, clockwise.
+                math.atan2(dx, -dy),
+                round(monster.kind.damage * damage_mult),
+                style=style,
+                color=color,
+                shake=c.Combat.PLAYER_HURT_SHAKE,
+                hostile=True,
+                owner_id=id(monster),
+                source_name=monster.kind.name,
+                max_range=c.Projectile.MONSTER_RANGE,
             )
+            # Who loosed it, so a villager it catches knows what to turn round and swing at
+            # (`NPC.threaten`) instead of taking an arrow from nowhere.
+            shot.owner = monster
+            self.projectiles.append(shot)
 
     def update_projectiles(self, player: Player, quest_system: QuestSystem, dt):
         for proj in list(self.projectiles):
@@ -342,6 +344,7 @@ class WorldProjectiles:
             kb_dir=self._dir_from(0, 0, proj.vx, proj.vy),
             blocked=self.blocked,
             by_player=by_player,
+            source=None if by_player else proj.owner,
         )
         frac = player.lifesteal_frac(proj.hand) if by_player else 0.0
         if frac > 0:

@@ -51,8 +51,6 @@ class Boss(Monster):
     `quest_tag` links a boss spawned by a slay_boss quest back to that quest; None otherwise."""
 
     knockback_immune = True
-    # Clear of the name a boss carries over its head.
-    STATUS_BUBBLE_LIFT = 62
 
     def __init__(self, x, y, template: c.BossKind = c.BOSS_KINDS[0], quest_tag: str | None = None):
         super().__init__(x, y, _kind_from_boss(template))
@@ -296,6 +294,7 @@ class Boss(Monster):
                 kb_dir=world._dir_from(self.x, self.y, npc.x, npc.y),
                 blocked=world.blocked,
                 by_player=False,
+                source=self,
             )
 
     def _cast_volley(self, world: World, player: Player):
@@ -465,4 +464,4 @@ class Boss(Monster):
 
         name_y = sy - size // 2 - 34 + c.Fonts.button.get_height() // 2
         draw_outlined_text(screen, self.name, c.Fonts.button, c.Colors.WHITE, center=(sx, name_y))
-        self.draw_status_bubbles(screen, sx, sy, size)
+        self.emit_status_fx(size)

@@ -516,7 +516,7 @@ class Monster(Entity):
             self.kind.color,
             c.Entities.HEALTH_BAR_BORDER,
         )
-        self.draw_status_bubbles(screen, screen_x, screen_y, self.kind.size)
+        self.emit_status_fx(self.kind.size)
 
     def _fuse_color(self, color) -> tuple:
         """The body whitening out as the fuse burns, faster the closer it is to going off.

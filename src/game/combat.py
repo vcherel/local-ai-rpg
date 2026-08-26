@@ -1426,6 +1426,7 @@ class WorldCombat:
         kb_dir=None,
         blocked=None,
         by_player: bool = True,
+        source=None,
     ) -> bool:
         """Applies damage to an NPC and handles death. Returns True if it died.
 
@@ -1440,6 +1441,11 @@ class WorldCombat:
         which is the one thing no clock ever runs out on."""
         if npc.dead:
             return True
+        # Whatever bit them is what they turn round and swing at (`WorldPlaces.militia_orders`).
+        # Only ever something the player did not do: the player's own blows are answered by
+        # the village as a whole, on the ladder below, and not by one farmer taking a swing.
+        if not by_player and source is not None:
+            npc.threaten(source)
         # A settlement warns before it turns (`WorldPlaces.strike_village`): the first blow
         # the player lands there is answered with a shout and nothing else, so snapping at
         # somebody in the street is a thing the player is told they are about to do rather

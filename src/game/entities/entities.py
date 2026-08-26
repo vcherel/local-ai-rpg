@@ -5,7 +5,7 @@ from collections import OrderedDict
 import pygame
 
 import core.constants as c
-from core.status_fx import draw_bubbles
+from core.status_fx import emit_status
 from core.utils import frames
 from game.entities.gear import draw_accessory, draw_armor_band, draw_shield, draw_weapon, gear_padding
 
@@ -60,6 +60,10 @@ class Entity:
         # in the world that takes movement away entirely.
         self.chilled_until_ms = 0
         self.chill_factor = 1.0
+        # When this body next throws the motes for whatever effects are on it
+        # (`core/status_fx.py`). Its own clock, so a street full of burning things does not
+        # pulse in unison.
+        self._status_next_ms = 0
         # The walk cycle. Read once per frame by whatever draws this thing, from its own
         # movement, so nothing has to remember to keep it turning.
         self.gait = Gait(x, y)
@@ -134,12 +138,14 @@ class Entity:
             effects.append("chill")
         return effects
 
-    # How far over the head the bubbles float. Raised by anything that already flies a
-    # marker up there (a villager's badge), so the two never sit on each other.
-    STATUS_BUBBLE_LIFT = 26
+    def emit_status_fx(self, size):
+        """Throw this frame's motes for whatever is on this body (`core/status_fx.py`).
 
-    def draw_status_bubbles(self, screen, x, y, size):
-        draw_bubbles(screen, x, y - size // 2 - self.STATUS_BUBBLE_LIFT, self.status_effects())
+        Called from `draw` rather than from `update` for one reason: `draw` is already the
+        pass that has been culled to what is on screen, and an effect nobody can see has
+        nothing to show. World space, since that is where the particles live: the body's own
+        (x, y), not wherever it happens to be drawn."""
+        self._status_next_ms = emit_status(self.x, self.y, size, self.status_effects(), self._status_next_ms)
 
     @property
     def staggered(self) -> bool:
@@ -227,7 +233,7 @@ class Entity:
                 color,
                 c.Entities.HEALTH_BAR_BORDER,
             )
-            self.draw_status_bubbles(screen, x, y, size)
+            self.emit_status_fx(size)
 
 
 # Bodies drawn from a kept sprite, bounded because a crowd carries one each: the least

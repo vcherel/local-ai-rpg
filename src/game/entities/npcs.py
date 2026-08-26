@@ -36,9 +36,6 @@ AFFINITY_TIERS = (
 
 
 class NPC(Entity):
-    # Clear of the quest/hostility badge, which already bobs over a villager's head.
-    STATUS_BUBBLE_LIFT = 52
-
     def __init__(self, x, y):
         super().__init__(x, y, random_color(), c.Entities.NPC_SIZE, c.Entities.NPC_HP, c.Entities.NPC_HP)
         self.name = None
@@ -123,6 +120,12 @@ class NPC(Entity):
         # decides which weapon ladder they draw from. Nothing about a village's strength
         # lives on the person: this only picks a pool.
         self.defence_tier = 0
+        # Whatever last drew blood on this one that was not the player, and until when they
+        # remember it (`threaten`). Anybody bitten turns round and swings, militia roll or
+        # not: a farmer with a slime on him is not a bystander. Session-only, like every
+        # other fact about a fight.
+        self.threatened_by = None
+        self.threat_until = 0.0
 
     @property
     def hostile(self) -> bool:
@@ -165,6 +168,37 @@ class NPC(Entity):
         if self.hostile_until and not self.hostile:
             self.hostile_until = 0.0
             self.affinity = max(self.affinity, c.Affinity.FORGIVEN)
+
+    def threaten(self, attacker):
+        """Remember whoever just hurt this one, so they fight back instead of standing there.
+
+        Being bitten is its own reason to swing: it does not go through the militia roll and
+        it does not care whose ground the fight is on, which is what makes a monster in a
+        street an event rather than a farmer being eaten in silence. Fresh damage keeps the
+        memory topped up; once it runs out they go back to their day."""
+        self.threatened_by = attacker
+        self.threat_until = time.time() + c.Villages.THREAT_MEMORY_S
+
+    @property
+    def threat(self):
+        """Who this one is fighting back against, or None once the memory has run out or the
+        thing that hurt them is dead."""
+        if self.threatened_by is None or time.time() >= self.threat_until:
+            return None
+        if getattr(self.threatened_by, "hp", 1) <= 0:
+            self.threatened_by = None
+            return None
+        return self.threatened_by
+
+    def melee_standoff(self, target_size: float) -> float:
+        """How far off a target this one means to stand: their own weapon's reach, less the
+        margin every ring point is drawn in by.
+
+        The one place the distance is worked out, so what `_hunt` accepts as in reach and
+        what the world sends them to stand at are the same number. Someone with a spear
+        holds it at the length of the spear; someone with a knife has to walk in."""
+        reach = c.Entities.NPC_ATTACK_RANGE * self.weapon.reach_mult
+        return max(0.0, reach + target_size / 2 - c.Entities.CHASE_RING_MARGIN)
 
     @property
     def is_militia(self) -> bool:
