@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import math
 import random
+import weakref
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import pygame
@@ -27,12 +29,45 @@ if TYPE_CHECKING:
     from core.camera import Camera
 
 
+# What counts as nothing on a building's shell surface. Magenta, because no part of a
+# house is painted in it.
+SHELL_KEY = (255, 0, 255)
+
+# Every shell currently painted, oldest looked at first. A house keeps its surface for as
+# long as it is being drawn, but the world keeps every village the player has ever walked
+# into, so past a point the ones nobody has looked at for longest give theirs back. Held by
+# weak reference: this is a budget, not a reason for a building to stay in memory.
+_SHELLS: OrderedDict[str, weakref.ref] = OrderedDict()
+_SHELL_BUDGET = 64
+
+
 def _draw_label(screen: pygame.Surface, text: str, center: tuple):
     draw_outlined_text(screen, text, c.Fonts.small, c.Colors.WHITE, center=center)
 
 
+class _ShellCamera:
+    """Stands in for the camera while a building's shell is painted onto its own surface.
+
+    Everything here draws through `camera.world_to_screen`, so painting the same code onto a
+    surface instead of onto the screen is a matter of handing it a camera whose screen is
+    that surface. No drawing method needs to know which of the two it is running for."""
+
+    __slots__ = ("ox", "oy")
+
+    def __init__(self, ox: int, oy: int):
+        self.ox = ox
+        self.oy = oy
+
+    def world_to_screen(self, x, y):
+        return x - self.ox, y - self.oy
+
+
 class BuildingArt:
     """Every drawing method `Building` has. See the module docstring for why it is a mixin."""
+
+    # How far past its own footprint the shell reaches: only the doorstep hangs off the
+    # front wall, everything else outside the walls is drawn live over the top.
+    SHELL_PAD = 24
 
     def draw(self, screen: pygame.Surface, camera: Camera, player_inside: bool = False):
         """`player_inside` swaps this one building from its normal solid-roof look to a
@@ -46,6 +81,70 @@ class BuildingArt:
             self._draw_interior(screen, camera)
             return
 
+        # The walls and the roof are painted once onto a surface of the building's own and
+        # blitted from then on. They are the expensive half (a roof is a few hundred lines
+        # of thatch or shingle) and the half that never changes, and re-laying every course
+        # of it every frame was most of what a street of houses cost to look at. Everything
+        # after this is drawn live, in the order it always was: what the door is doing, what
+        # is left of the windows and the few things hung on the front of the house.
+        style = self.style()
+        r = self.rect
+        origin, shell = self._shell()
+        ox, oy = camera.world_to_screen(*origin)
+        screen.blit(shell, (round(ox), round(oy)))
+
+        sx, sy = camera.world_to_screen(r.left, r.top)
+        srect = pygame.Rect(sx, sy, r.width, r.height)
+        self._draw_door(screen, camera)
+
+        windows = self.window_rects()
+        for idx, window in enumerate(windows):
+            self._draw_window(
+                screen,
+                camera,
+                window,
+                idx in self.broken_windows,
+                f"{self.id}:window:{idx}",
+                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
+            )
+        self._draw_extras(screen, camera, srect, srect.inflate(-16, -16), windows, style)
+
+        if self.kind == "shop":
+            self._draw_awning(screen, camera)
+        elif self.kind == "tavern":
+            self._draw_tavern_sign(screen, camera)
+
+    def _shell(self) -> tuple[tuple[int, int], pygame.Surface]:
+        """The walls, the roof and the doorstep, painted onto a surface of their own, with
+        the world position of its top left corner. Kept for the life of the building and
+        dropped by `reset_geometry`, like the rest of the geometry it is painted from."""
+        if self._shell_surface is not None:
+            _SHELLS.move_to_end(self.id)
+            return self._shell_origin, self._shell_surface
+
+        pad = self.SHELL_PAD
+        area = self.bounds.inflate(pad * 2, pad * 2)
+        # Keyed rather than per-pixel transparent: nothing here is drawn half-see-through,
+        # and a keyed blit of a house-sized surface is several times the speed of an alpha
+        # one. The key is a colour no roof, wall or doorstep is ever painted in.
+        surface = pygame.Surface(area.size)
+        surface.fill(SHELL_KEY)
+        self._paint_shell(surface, _ShellCamera(area.left, area.top))
+        surface = surface.convert()
+        surface.set_colorkey(SHELL_KEY, pygame.RLEACCEL)
+        self._shell_origin = (area.left, area.top)
+        self._shell_surface = surface
+        _SHELLS[self.id] = weakref.ref(self)
+        while len(_SHELLS) > _SHELL_BUDGET:
+            _, ref = _SHELLS.popitem(last=False)
+            oldest = ref()
+            if oldest is not None:
+                oldest._shell_surface = None
+        return self._shell_origin, surface
+
+    def _paint_shell(self, screen: pygame.Surface, camera):
+        """What the shell holds. Written against a camera like every other draw here, so the
+        same code paints the surface as would paint the screen."""
         style = self.style()
         r = self.rect
         sx, sy = camera.world_to_screen(r.left, r.top)
@@ -59,30 +158,10 @@ class BuildingArt:
             pygame.draw.rect(screen, style["wall"], wrect)
             self._draw_roof(screen, wrect.inflate(-12, -12), style)
         pygame.draw.rect(screen, style["wall"], srect)
-
-        roof = srect.inflate(-16, -16)
-        self._draw_roof(screen, roof, style)
+        self._draw_roof(screen, srect.inflate(-16, -16), style)
 
         # The doorstep, wherever the door is.
         pygame.draw.rect(screen, (205, 185, 140), self._facade_screen(camera, 44, 10, 0, -10))
-        self._draw_door(screen, camera)
-
-        windows = self.window_rects()
-        for idx, window in enumerate(windows):
-            self._draw_window(
-                screen,
-                camera,
-                window,
-                idx in self.broken_windows,
-                f"{self.id}:window:{idx}",
-                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
-            )
-        self._draw_extras(screen, camera, srect, roof, windows, style)
-
-        if self.kind == "shop":
-            self._draw_awning(screen, camera)
-        elif self.kind == "tavern":
-            self._draw_tavern_sign(screen, camera)
 
     def style(self) -> dict:
         """How this building is built. Rolled once from its id, which is stable across a

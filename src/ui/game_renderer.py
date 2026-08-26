@@ -114,11 +114,18 @@ class GameRenderer:
 
         self.screen.fill(c.Colors.GREEN)
 
-        for x, y, kind in world.floor_details:
-            if not self._on_screen(camera, x, y, margin=5):
+        # The one loop long enough for the culling itself to cost something: a few hundred
+        # pebbles per chunk, so it asks the world for the chunks it can see rather than
+        # walking every one the player has loaded, and measures each against the view here
+        # rather than through a call per pebble.
+        ox, oy = camera.world_to_screen(0, 0)
+        details = c.World.FLOOR_DETAILS
+        for x, y, kind in world.floor_details_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 5):
+            sx, sy = x + ox, y + oy
+            if not (-5 <= sx <= c.Screen.WIDTH + 5 and -5 <= sy <= c.Screen.HEIGHT + 5):
                 continue
-            color, radius = c.World.FLOOR_DETAILS[kind]
-            pygame.draw.circle(self.screen, color, camera.world_to_screen(x, y), radius)
+            color, radius = details[kind]
+            pygame.draw.circle(self.screen, color, (sx, sy), radius)
 
         # Roads, ponds, grass and flowers: the ground itself, so they go under everything
         # standing on it (the props they came with are drawn further down, with the barrels).
