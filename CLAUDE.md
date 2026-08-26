@@ -117,6 +117,9 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 The short version. `docs/design/` explains each of these.
 
 - The LLM runs on a background thread via `LLMRequestQueue`. Never call `llama_cpp` directly from the main thread.
+- A settlement is asked of the model only once the player walks up to it (`WorldStreaming._prepare_settlements_near`, `Villages.PREPARE_DISTANCE`): its name, its shops' stock and the next villager's name are prepared there and nowhere else. Generating a village is not a reason to spend a call on it, and neither is loading a save.
+- The world's lore is guarded rather than trusted (`parse_world_context`): an answer with no sentence in it is asked again, and then shown as nothing at all. Only lore the model actually wrote is written to the save; `World.FALLBACK_CONTEXT` is what the other prompts quote when there is none, and it is never displayed.
+- A frame builds at most `World.CHUNK_LOADS_PER_FRAME` chunks, nearest first, except the ones the player could walk onto (`World.CHUNK_URGENT_RADIUS`). Crossing a border brings a whole edge into range and building it on that one frame is felt; `prepare` is the exception, because nothing is on screen yet.
 - `src/` is the package root; all imports are relative to it (e.g. `import core.constants as c`).
 - No tests exist; skip the pre-push hook accordingly.
 - Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it. To self-check a rendering change, a throwaway script that renders to an offscreen `Surface` is fine, with `SDL_VIDEODRIVER=dummy` set before `pygame.init()`.

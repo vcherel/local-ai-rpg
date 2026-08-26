@@ -61,6 +61,30 @@ class ConversationHistory:
         return conversation_text
 
 
+# The shortest thing that can still be a world: fewer words than this and the model has
+# handed back a title, a label or a single noun rather than the sentence it was asked for.
+_CONTEXT_MIN_WORDS = 8
+_CONTEXT_MIN_CHARS = 40
+
+
+def parse_world_context(response: str | None) -> str | None:
+    """Read the world's lore out of a response, or return None if there is no lore in it.
+
+    The lore is the one generation the player reads whole, on black, before anything else
+    happens, and a quantized model will now and then answer the prompt with a title: one
+    word, a newline, and the stream is cut there. That word used to be persisted as the
+    world and written across the middle of the screen on every launch since. Guarded here
+    rather than in the prompt, and the answer to a failure is nothing at all: no lore is
+    read as no lore yet, and the call is made again on the next session.
+    """
+    text = (response or "").strip().strip('"').strip()
+    # A leading label the model sometimes prefixes its own answer with.
+    text = re.sub(r"^(world|context|setting|lore)\s*:\s*", "", text, flags=re.IGNORECASE).strip()
+    if len(text) < _CONTEXT_MIN_CHARS or len(text.split()) < _CONTEXT_MIN_WORDS:
+        return None
+    return text
+
+
 def parse_shop_inventories(response: str, shop_count: int) -> list:
     """Read the compact stock list of every shop out of one response.
 

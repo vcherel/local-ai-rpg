@@ -24,13 +24,17 @@ class NPCNameGenerator:
         # whatever game starts next, so a name still being generated must not write to it.
         self.closed = False
 
-        self.start_generation()
-
     def close(self):
         self.closed = True
 
     def start_generation(self):
-        """Ensure one name is being prepared ahead of the next NPC that needs one."""
+        """Ensure one name is being prepared ahead of the next NPC that needs one.
+
+        Never called on construction: a session that opens on empty wilderness, or on a save
+        whose buffer is already full, should not spend a call on a name for nobody. What
+        asks for one is the player walking up to a settlement (`_prepare_settlements_near`)
+        and the end of each conversation, both of which are far enough ahead of the next NPC
+        that the name is waiting when it is wanted."""
         with self.cond:
             if self.closed or self.is_generating or self.ready_names:
                 return

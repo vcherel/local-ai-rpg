@@ -66,7 +66,7 @@ class WorldPlaces:
 
         A bandit camp's garrison is a number, not a set of entities: the first sighting rolls
         how many bandits live here, and from then on that count (and the leader's own flag) is
-        the camp. Every chunk load stands the survivors back up around the fire, `_unload_chunk`
+        the camp. Every chunk load stands the survivors back up around the fire, `_unload_chunks`
         takes them away again, and only a kill lowers the count, so walking off can never empty
         a camp and finding a hundred camps costs no more memory than finding one. They roll
         their kind as if the camp stood deeper into the wilds, so the cache behind them is

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import core.constants as c
 from core.audio import play_sound
+from core.utils import parse_world_context
 from game.entities.breakables import generate_breakables
 from game.entities.poi import pois_for_chunk
 from game.entities.terrain import blocking_index, generate_chunk_scenery, water_index
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from game.entities.buildings import Building
     from game.entities.player import Player
     from game.entities.village import Village
+    from llm.name_generator import NPCNameGenerator
 
 
 class WorldStreaming:
@@ -101,9 +103,6 @@ class WorldStreaming:
         self.breakables.extend(generate_breakables(buildings))
         self._populate_npcs(buildings, village)
         self._post_guards(village)
-        # The new merchants need stock, and the settlement needs a name.
-        self.start_shop_generation()
-        self._start_village_naming()
 
     def _plan_streets(self):
         """Wear the lanes between the houses of every settlement the world holds.
@@ -133,17 +132,27 @@ class WorldStreaming:
             kept.append(item)
         self.scenery = kept
 
-    def _unload_chunk(self, chunk: tuple[int, int]):
-        self.floor_details.pop(chunk, None)
+    def _unload_chunks(self, chunks: set):
+        """Drop everything the given chunks brought with them, in one pass over each list.
+
+        Taken as a set rather than one chunk at a time because they leave in groups: walking
+        over a border pushes a whole edge of the keep square out of range at once, and doing
+        it chunk by chunk rebuilt the scenery, the traps and the POIs once per chunk on the
+        frame that could least afford it.
+        """
+        if not chunks:
+            return
+        for chunk in chunks:
+            self.floor_details.pop(chunk, None)
         # Filtered on the chunk that generated it rather than the one it stands in: a copse
         # rolled at a chunk's edge spills over the border, and it leaves with its own chunk.
-        self.scenery = [s for s in self.scenery if s.chunk != chunk]
+        self.scenery = [s for s in self.scenery if s.chunk not in chunks]
         # A trap is rebuilt from its chunk seed like everything else here; only the fact
         # that one has already shut is worth carrying away with it.
-        self.traps = [t for t in self.traps if t.chunk != chunk]
+        self.traps = [t for t in self.traps if t.chunk not in chunks]
         dropped = set()
         for poi in self.pois:
-            if self._chunk_of(poi.x, poi.y) != chunk:
+            if self._chunk_of(poi.x, poi.y) not in chunks:
                 continue
             if poi.touched:
                 self.poi_state[poi.id] = poi.state()
@@ -155,24 +164,55 @@ class WorldStreaming:
         if dropped:
             self.monsters = [m for m in self.monsters if m.camp_id not in dropped]
             self.critters = [cr for cr in self.critters if cr.camp_id not in dropped]
-        self._loaded_chunks.discard(chunk)
+        self._loaded_chunks -= chunks
 
     def _sync_chunks(self, player: Player):
+        """Keep the ground around the player in step with where they are: queue what has
+        come into range, drop what has left it, and build a frame's worth of the queue.
+
+        Crossing a border used to build the whole edge that came into range on that one
+        frame, which is a village, its landmark, a wood and a band of traps in a single
+        update, and it is felt every time. What is queued here is two chunks away in the
+        direction of travel, so the frames after the crossing are ample time to build it.
+        """
         chunk = self._chunk_of(player.x, player.y)
-        if chunk == self._current_chunk:
+        if chunk != self._current_chunk:
+            self._current_chunk = chunk
+            cx, cy = chunk
+            load_r = c.World.CHUNK_LOAD_RADIUS
+            keep_r = c.World.CHUNK_KEEP_RADIUS
+            pending = [
+                (cx + dx, cy + dy)
+                for dx in range(-load_r, load_r + 1)
+                for dy in range(-load_r, load_r + 1)
+                if (cx + dx, cy + dy) not in self._loaded_chunks
+            ]
+            # Nearest first: the ground the player is walking onto is built before the
+            # corners of the square they may never turn towards.
+            pending.sort(key=lambda ch: max(abs(ch[0] - cx), abs(ch[1] - cy)))
+            self._pending_chunks = pending
+            self._unload_chunks(
+                {loaded for loaded in self._loaded_chunks if max(abs(loaded[0] - cx), abs(loaded[1] - cy)) > keep_r}
+            )
+        self._build_pending_chunks(player)
+
+    def _build_pending_chunks(self, player: Player, budget: int | None = None):
+        """Build up to `budget` queued chunks, plus any queued chunk near enough that the
+        player could walk into it before the queue got there anyway."""
+        if not self._pending_chunks:
             return
-        self._current_chunk = chunk
-        cx, cy = chunk
-        load_r = c.World.CHUNK_LOAD_RADIUS
-        keep_r = c.World.CHUNK_KEEP_RADIUS
-        for dx in range(-load_r, load_r + 1):
-            for dy in range(-load_r, load_r + 1):
-                candidate = (cx + dx, cy + dy)
-                if candidate not in self._loaded_chunks:
-                    self._load_chunk(candidate)
-        for loaded in list(self._loaded_chunks):
-            if max(abs(loaded[0] - cx), abs(loaded[1] - cy)) > keep_r:
-                self._unload_chunk(loaded)
+        cx, cy = self._current_chunk
+        budget = c.World.CHUNK_LOADS_PER_FRAME if budget is None else budget
+        built = 0
+        while self._pending_chunks:
+            candidate = self._pending_chunks[0]
+            urgent = max(abs(candidate[0] - cx), abs(candidate[1] - cy)) <= c.World.CHUNK_URGENT_RADIUS
+            if built >= budget and not urgent:
+                break
+            self._load_chunk(self._pending_chunks.pop(0))
+            built += 1
+        if not built:
+            return
         self._reindex_scenery()
         # A trunk generated by the chunk the player just walked into can land on top of
         # them (nothing knows where they stand at generation time), so they step out to
@@ -188,10 +228,15 @@ class WorldStreaming:
         freeze while a ring of chunks generates its wilderness, its landmarks and its traps,
         and then watches trees pop in around them. The generation is the same work either
         way, so it is done here instead, while nothing is on screen but black.
+
+        The whole ring at once, budget ignored: this is the one moment in the game with
+        nothing on screen to stutter, and spreading it over frames here would only move the
+        work back to the first frames the player can walk.
         """
         if self.underground is not None:
             return
         self._sync_chunks(player)
+        self._build_pending_chunks(player, budget=len(self._pending_chunks))
         self._reveal_around(player)
 
     def _reindex_scenery(self):
@@ -221,30 +266,83 @@ class WorldStreaming:
             "In a single very short sentence, describe an RPG world starting with 'The game takes place...' "
             "The sentence must contain one original detail that can serve as a starting point for adventures."
         )
-        for chunk in generate_response_stream_queued(prompt, system_prompt, "Context generation"):
-            if chunk:
-                self.context_window.push_chunk(chunk)
-                self.context = chunk
-        self.context_window.finish_streaming()
+        # Asked again if the first answer holds no lore. A quantized model now and then
+        # replies with a title rather than the sentence, and the stream is cut at the line
+        # break that follows it, so the whole answer is one stray word; a second roll is
+        # cheaper than a playthrough whose world is "Warlock".
+        for _ in range(c.World.CONTEXT_ATTEMPTS):
+            streamed = ""
+            for chunk in generate_response_stream_queued(prompt, system_prompt, "Context generation"):
+                if chunk:
+                    self.context_window.push_chunk(chunk)
+                    streamed = chunk
+            self.context = parse_world_context(streamed)
+            if self.context:
+                break
+            # Take the unreadable answer back off the black before asking again.
+            self.context_window.push_chunk("")
+
+        self._lore_generated = self.context is not None
+        # An answer with no lore in it leaves the screen empty rather than the word the
+        # stream happened to be cut on. Nothing is shown and nothing is saved, so the next
+        # session asks again; what the rest of the world quotes in its own prompts falls
+        # back to a plain sentence, since a village with no name and a merchant with no
+        # stock is a town the player cannot so much as talk to.
+        self.context_window.finish_streaming(self.context or "")
+        if not self._lore_generated:
+            self.context = c.World.FALLBACK_CONTEXT
 
         self.persist_world()
 
-        self._start_village_naming()
-        self.start_shop_generation()
         for boss in self.bosses:
             threading.Thread(target=self._generate_boss_identity, args=(boss, None), daemon=True).start()
         self._start_landmark_naming()
 
-    def _start_village_naming(self):
-        """Name every village still waiting for one, one short call each. A village keeps its
-        name for good, so this runs once per settlement in the life of a save."""
+    def _prepare_settlements_near(self, player: Player, dt, npc_name_generator: NPCNameGenerator):
+        """Ask the model for what a settlement the player is walking up to is about to need:
+        its name, its merchants' stock, and a name in the buffer for whoever they talk to.
+
+        All three used to be asked for the moment a village existed, and every one of them
+        again on every load, so a world the player had wandered through cost a call per town
+        and per shop for towns they never entered and shops they never opened. Nothing here
+        is generated until a settlement is within `Villages.PREPARE_DISTANCE`, which is far
+        enough out that the answers land before the player is in the street: the name is
+        what the discovery toast waits on, and a merchant with no stock cannot be talked to
+        at all.
+
+        Looked for a few times a second rather than every frame: it walks the villages and
+        the NPCs, and an answer is seconds away in any case.
+        """
         if not self.context:
             return
-        for village in self.villages:
+        self._prepare_timer -= dt
+        if self._prepare_timer > 0:
+            return
+        self._prepare_timer = c.Villages.PREPARE_INTERVAL_MS
+
+        pos = player.get_pos()
+        near = [v for v in self.villages if v.distance_to_point(pos) < c.Villages.PREPARE_DISTANCE]
+        if not near:
+            return
+
+        for village in near:
             if village.name or village.chunk in self._naming_villages:
                 continue
             self._naming_villages.add(village.chunk)
             threading.Thread(target=self._generate_village_name, args=(village,), daemon=True).start()
+
+        # One batched call for the shops of every settlement in reach, the same call that
+        # used to stock the whole world at once.
+        self.start_shop_generation(
+            [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready and self._in_any(npc, near)]
+        )
+        # And a name waiting for the first villager they speak to, which is the one thing
+        # here the player would otherwise stand and wait for.
+        npc_name_generator.start_generation()
+
+    @staticmethod
+    def _in_any(npc, villages) -> bool:
+        return any(village.contains_point(npc.x, npc.y) for village in villages)
 
     def _generate_village_name(self, village: Village):
         system_prompt = "You name settlements for an RPG world. Reply with the name only, no quotes, no punctuation."

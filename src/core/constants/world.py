@@ -88,6 +88,26 @@ class World:
     CHUNK_LOAD_RADIUS: int = 2
     # ...and stay loaded until this much farther away, to avoid load/unload thrashing at the edge.
     CHUNK_KEEP_RADIUS: int = 3
+    # How many chunks a single frame is allowed to build. Crossing a chunk border brings a
+    # whole edge of the load square into range at once, and building all of it on the frame
+    # the border was crossed is a visible stutter every thousand paces. The rest is built
+    # over the frames that follow, nearest first: they are two chunks away, and the player
+    # walks at a few hundred paces a second.
+    CHUNK_LOADS_PER_FRAME: int = 1
+    # ...except within this many chunks of the player, which is ground they could walk onto
+    # before the queue reaches it. That is built on the spot whatever the budget says.
+    CHUNK_URGENT_RADIUS: int = 1
+
+    # How many times the world's lore is asked for before the world gives up on having any.
+    CONTEXT_ATTEMPTS: int = 2
+    # Quoted by the prompts that ask about the world (village names, shop stock, boss names)
+    # when the lore call came back with nothing readable in it. Never shown to the player
+    # and never saved: it is here so a failed lore call costs the lore and nothing else, and
+    # the next session asks for a real world again.
+    FALLBACK_CONTEXT: str = (
+        "The game takes place in a wide green wilderness of scattered villages, old ruins "
+        "and roads nobody has walked in years."
+    )
 
     # Shortest gap between two World.persist_world writes. Every write serialises the whole
     # world, and generation threads finish in bursts; the periodic autosave catches the rest.
