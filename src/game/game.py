@@ -183,6 +183,8 @@ class Game:
 
         # The whole key map as one table. `HelpMenu.CONTROLS` is what tells the player about it.
         self.key_actions = {
+            pygame.K_1: self._swap_hands,
+            pygame.K_g: self._use_bomb,
             pygame.K_e: self._interact,
             pygame.K_b: self._trade_nearby,
             pygame.K_f: self._equip_pending_upgrade,
@@ -305,16 +307,12 @@ class Game:
         self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
     def _handle_key(self, event):
-        """One in-world key press. The two ranges (the four weapon keys, the potion
-        quickbar's letters) are checked first because they read the key rather than name
-        it; everything else is a plain key looked up in `self.key_actions`."""
+        """One in-world key press. The potion quickbar's letters are checked first because
+        they read the key rather than name it; everything else is a plain key looked up in
+        `self.key_actions`."""
         # A movement key pressed while the jaws are on the player is a struggle rather than
         # a step: the trap takes the seconds back one press at a time.
         if event.key in _STRUGGLE_KEYS and self._struggle():
-            return
-        weapon_keys = c.Player.HANDS * c.Player.POSITIONS_PER_HAND
-        if pygame.K_1 <= event.key <= pygame.K_1 + weapon_keys - 1:
-            self._select_weapon(event.key - pygame.K_1)
             return
         if event.unicode.lower() in c.Potions.QUICK_KEYS:
             self._drink_quick_potion(c.Potions.QUICK_KEYS.index(event.unicode.lower()))
@@ -393,20 +391,27 @@ class Game:
         self.player.equip(item)
         self.loot_notification.show(f"Equipped {item.name}", rarity_color(item.rarity))
 
-    def _select_weapon(self, key: int):
-        """Take up one of the four carried weapons. Keys 1 and 2 are the two the left click
-        swings or fires, 3 and 4 the two the right click does: which of them is the button
-        never changes, only what is in it.
+    def _swap_hands(self):
+        """Exchange the two weapons over: what the left click was using goes to the right
+        button and back. The same move the bag offers, without opening it, so the answer the
+        other hand carries is one press away mid fight.
 
-        An empty position is a choice like any other and puts that hand on bare hands, which
-        is why it is reported rather than refused."""
-        hand, index = divmod(key, c.Player.POSITIONS_PER_HAND)
-        item = self.player.select_weapon(hand, index)
-        button = "left" if hand == 0 else "right"
-        if item is None:
-            self.loot_notification.show(f"Bare hands ({button} click)", c.Colors.MUTED)
+        An empty hand swaps like any other, since bare hands on a button is a loadout rather
+        than a missing weapon, which is why the report names both sides."""
+        self.player.swap_hands()
+        held = [self.player.hand_weapon(hand) for hand in range(c.Player.HANDS)]
+        names = [item.name if item is not None else "bare hands" for item in held]
+        self.loot_notification.show(f"Left: {names[0]}  |  Right: {names[1]}", c.Colors.ACCENT)
+
+    def _use_bomb(self):
+        """Spend one out of the bomb slot: a mine laid underfoot, a grenade thrown at the
+        cursor. A key of its own rather than a mouse button, because a bomb is a piece of
+        ground the player has decided to fight over rather than a weapon a hand swings."""
+        bomb = self.player.equipped_item("bomb")
+        if bomb is None:
+            self.loot_notification.show("No bomb equipped", c.Colors.MUTED)
             return
-        self.loot_notification.show(f"{item.name} ready ({button} click)", rarity_color(item.rarity))
+        self.world.use_bomb(self.player, bomb)
 
     def _drink_quick_potion(self, slot: int):
         """Drink the potion bound to a HUD quick key, if that slot holds one."""

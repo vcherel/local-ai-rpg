@@ -60,23 +60,37 @@ from there and `Item.from_dict` recomputes it rather than restoring the saved va
 save picks up new artwork instead of keeping a stale silhouette. Nothing about an item's identity
 or behaviour lives in `shape`.
 
-## Two hands, two weapons in each, and the button never changes
+## Two hands, one weapon in each, and the button never changes
 
-The player has two weapon hands. Hand one is always the left mouse button and hand two always
-the right; keys 1 and 2 pick which of hand one's two weapons is up, keys 3 and 4 do the same for
-hand two. `HAND_SLOTS` is the whole arrangement, four equip slots in key order, and `active_hand`
-is which of each pair is in hand.
+The player has two weapon hands and one weapon in each. Hand one is always the left mouse button
+and hand two always the right; key 1 swaps the two over. `HAND_SLOTS` is the whole arrangement,
+two equip slots in button order, and there is nothing else to be in hand: what a hand holds is
+what is in its slot.
 
-Nothing is typed by family. Any weapon goes in any position, and what a click *does* is read off
+Carrying two weapons rather than four is what makes each of them a decision. Two is the number a
+fight can actually be fought out of: one answer on each button, chosen before it started, and the
+swap is a press rather than a hunt through a bag. Four positions meant the player was really
+picking from a list mid fight, and the two spares were carried as insurance against ever having
+chosen wrong.
+
+Nothing is typed by family. Either weapon goes in either hand, and what a click *does* is read off
 the archetype of whatever is in that hand at the time (`WorldCombat.handle_attack(hand)` sends a
 ranged archetype to `_fire_ranged` and everything else to a swing), so a bow in hand one fires on
-left click and a sword in hand two swings on right. Best melee in hand one and best ranged in
-hand two is only what `auto_equip_best` arranges, and only because the lower key should hold the
-better weapon; the player rearranges all four by right-clicking in the bag.
+left click and a sword in hand two swings on right. Melee on the left button and ranged on the
+right is only the default a weapon arrives at (`_default_hand`, used by `equip` and by
+`_best_loadout`); the player moves either one to the other button by right-clicking it in the bag
+or by pressing key 1.
 
-An empty position is a real choice rather than a gap: pressing its key puts that hand on bare
-hands, which still swing. That is why `select_weapon` returning None is reported rather than
-refused, and why `gear()` simply omits a hand instead of drawing a fallback weapon.
+`auto_equip_best` reads the same way round as picking up does, with one exception it earns: the
+best weapon carried goes on the left button whatever its family, and the best of the *other*
+family goes on the right (`_best_pair`). Leading with your best matters more than which button it
+sits under, and the second hand is worth more as the answer the first one cannot give than as a
+slightly weaker version of it. It is also the one thing that takes gear *off*: a slot the loadout
+does not want is emptied rather than left holding the worse item.
+
+An empty hand is a real choice rather than a gap: it puts that hand on bare hands, which still
+swing. That is why `select_weapon` returning None is an answer rather than a refusal, and why
+`gear()` simply omits a hand instead of drawing a fallback weapon.
 
 Nothing reads a weapon slot by name. Combat, the affix helpers, `weapon_bonus` and the drawn
 `gear()` all go through `hand_weapon(hand)`, and every on-hit effect is keyed by hand, so a
@@ -84,14 +98,19 @@ weapon's lifesteal can never fire off a blow struck with the other one. A projec
 hand that loosed it (`Projectile.hand`) for the same reason it already carried its element: the
 weapon may well be swapped before the arrow lands.
 
-## A bomb is a weapon that is spent
+## A bomb is spent, not wielded, so it has a slot of its own
 
-Both bombs live in a weapon position like anything else and are used by that hand's button. The
-mine is laid where the player stands and waits for something that would fight them; the grenade
-is thrown at the cursor and burns a fuse. Neither knows what an explosion is: both end in
+Both bombs live in the `bomb` slot and are thrown with G rather than with a mouse button. A bomb
+in a hand cost that hand a weapon for something used once, and worse, it made the two buttons
+mean different things depending on what was in them: a click that swings until the last charge is
+spent and then swings with a fist. Its own slot and its own key make it what it is, a piece of
+ground the player has decided to fight over, and leave both hands to the two weapons.
+
+The mine is laid where the player stands and waits for something that would fight them; the
+grenade is thrown at the cursor and burns a fuse. Neither knows what an explosion is: both end in
 `WorldCombat.explode`, the powder keg's own blast, so the damage, the gore, the shake and what a
-village makes of it are decided in one place. Spending the last one empties the position, and
-that hand falls back to bare hands rather than quietly equipping something else.
+village makes of it are decided in one place. Spending the last one empties the slot, and G then
+says there is no bomb rather than quietly reaching for another.
 
 ## The shield is worn on a side, and that side is where it works
 
@@ -106,11 +125,11 @@ from behind.
 
 ## What a key reaches for is a choice the player made, and it is saved
 
-The four weapon positions (number keys) and the potion quickbar (`potion_bar`,
-`Potions.QUICK_KEYS`) are both filled automatically only into a *free* slot (on pickup, through
-`Player._auto_slot`) and both reassigned by hand by right-clicking the item in the inventory.
-Picking up a nicer-sounding elixir can therefore never push the healing potion off the bar, and a
-bomb picked up takes a position only if one is free. Arrows are the one thing equipped outright on pickup, and only when nothing
+The two hands, the bomb slot and the potion quickbar (`potion_bar`, `Potions.QUICK_KEYS`) are
+all filled automatically only into a *free* slot (on pickup, through `Player._auto_slot`) and all
+reassigned by hand from the inventory. Picking up a nicer-sounding elixir can therefore never
+push the healing potion off the bar, and a bomb picked up takes the bomb slot only if it is
+empty. Arrows are the one thing equipped outright on pickup, and only when nothing
 is loaded: firing is the point of carrying them, and `ready_ammo` falls back to the cheapest
 stack anyway.
 

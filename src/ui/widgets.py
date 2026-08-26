@@ -18,18 +18,20 @@ if TYPE_CHECKING:
 
 # The equip slots as the UI shows them: (Player equip slot, caption, ghost glyph drawn when
 # empty). Shared by the HUD strip and the inventory paper-doll so the two can't disagree.
-# The four weapon positions come first, in key order: 1 and 2 are what the left click uses,
-# 3 and 4 what the right click uses, and each caption is the key that takes it up.
-# The four weapon positions in key order: index i is what number key i + 1 takes up. The
-# UI's own copy of the names `Player.WEAPON_SLOT_NAMES` holds, the way EQUIP_SLOTS already
-# restates every other slot name.
-WEAPON_SLOTS = ("hand1_a", "hand1_b", "hand2_a", "hand2_b")
+# The two weapon hands come first, then the bomb: those three are what a button or a key
+# spends directly, and they are drawn as their own row.
+WEAPON_SLOTS = ("weapon_main", "weapon_off")
+ACTION_SLOTS = (*WEAPON_SLOTS, "bomb")
+
+# What the player presses or clicks to use each of them, drawn on the slot so the strip
+# says what to do with what it shows. The UI's own copy of the key map `Game.key_actions`
+# holds, the way EQUIP_SLOTS restates the slot names.
+SLOT_KEYS = {"weapon_main": "L", "weapon_off": "R", "bomb": "G"}
 
 EQUIP_SLOTS = (
-    ("hand1_a", "Left 1", "sword"),
-    ("hand1_b", "Left 2", "sword"),
-    ("hand2_a", "Right 3", "bow"),
-    ("hand2_b", "Right 4", "bow"),
+    ("weapon_main", "Left click", "sword"),
+    ("weapon_off", "Right click", "bow"),
+    ("bomb", "Bomb", "bomb"),
     ("offhand", "Shield", "shield"),
     ("armor", "Armor", "cuirass"),
     ("accessory", "Trinket", "gem"),

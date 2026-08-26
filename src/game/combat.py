@@ -63,10 +63,6 @@ class WorldCombat:
         is bare hands, which still swings.
         """
         weapon = player.hand_weapon(hand)
-        if weapon is not None and weapon.item_type == "bomb":
-            self.use_bomb(player, weapon, hand)
-            return
-
         arch = c.weapon_archetype(weapon.name if weapon else None)
         self.blow_style = style_for_weapon(arch)
 
@@ -889,9 +885,9 @@ class WorldCombat:
         coins, loot_item = break_crate()
         self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
 
-    def use_bomb(self, player: Player, item, hand: int):
-        """Spend one bomb out of the hand that clicked: a mine laid where the player stands,
-        a grenade thrown at what they are aiming at.
+    def use_bomb(self, player: Player, item):
+        """Spend one out of the bomb slot: a mine laid where the player stands, a grenade
+        thrown at what the player is aiming at.
 
         Neither is a weapon that hits something. Both are a piece of ground the player has
         decided to fight over, exactly like a powder keg, and both end in the same `explode`
@@ -904,7 +900,7 @@ class WorldCombat:
         player.attack_ready_ms = now + c.Bombs.COOLDOWN_MS
         player.attack_swing_mult = 1.0
         player.end_spawn_grace()
-        player.start_attack_anim("right" if hand == 0 else "left")
+        player.start_attack_anim("right")
 
         if bomb_kind(item.name) == MINE:
             self.bombs.append(Bomb(player.x, player.y, MINE))
