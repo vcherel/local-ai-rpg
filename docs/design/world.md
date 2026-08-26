@@ -53,6 +53,23 @@ of them. The width is a wave along the route rather than a radius rolled per blo
 blob is drawn as a stretch of track laid along the way the route runs, which is the
 difference between a worn path and a string of beads.
 
+The layers of a track are drawn in passes over the whole chunk rather than per blob, for
+the same reason a river's three are (`GROUND_KINDS`): the blobs overlap heavily, so a blob
+that painted its own verge painted it over the band of the blob before it and ringed every
+one of them. A road stands twice, as `road_verge` and as `road`, and each pass finishes
+before the next begins.
+
+What a route may not run through is a landmark. A graveyard is four rows of stones spread
+over a few hundred pixels, so a road aimed at nothing in particular was laid straight
+through the graves and a footpath "reaching" one stopped in the middle of them. Every
+landmark now answers for how much ground it covers (`poi_footprint`), which is what a
+footpath stops at and what a wood is kept off. Where a road would cross one it is the
+landmark that stands down (`poi_site` asks `road_blobs_for_chunk`, the roads without the
+footpaths, since the footpaths are drawn from the landmarks and asking for those would ask a
+landmark whether it exists in order to decide whether it exists). The road was cut between
+two places people live; bending it round every graveyard in the wilds is what would make it
+read as a wandering line rather than as a route.
+
 ## Water is a speed penalty, not a wall
 
 Water is the one piece of terrain that is neither a wall nor scenery. Nothing is stopped

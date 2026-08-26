@@ -61,12 +61,34 @@ overlapping footprints get. `Building.doorstep` is that piece of ground, and it 
 nothing may be planted or scattered on (`generate_breakables`, `generate_chunk_scenery`).
 
 The lanes are then worn between the houses by `Village.plan_streets`: one from the edge of
-the plaza out to every front door, plus the rim of the square they all leave from. They are
-held on the village and drawn with it rather than generated into a chunk's scenery, because
-a street belongs to the settlement and reaches into whichever chunks it likes, and nothing
-solid grows on village grounds for it to have to be kept clear of. Nothing about them is
-saved: they are worked out from where the buildings ended up, and the buildings are in the
-save.
+the plaza out to every front door, one out to wherever each road from a neighbouring
+settlement stops, plus the rim of the square they all leave from. They are held on the
+village and drawn with it rather than generated into a chunk's scenery, because a street
+belongs to the settlement and reaches into whichever chunks it likes, and nothing solid
+grows on village grounds for it to have to be kept clear of. Nothing about them is saved:
+they are worked out from where the buildings ended up, and the buildings are in the save.
+
+A lane is *found* rather than drawn. The straight line from the plaza to a door was laid
+over whatever house stood between the two, so `_StreetGrid` floods the settlement once from
+the plaza across the ground the footprints and the wall leave free, and every lane is the
+walk back from its own end. One fill rather than one search per door is what makes them a
+network: two doors on the same side of town come back along the same lane instead of each
+wearing its own beside it. The grid is coarser than a lane is wide, since what it has to
+find is the gap between two buildings and no gap narrower than a lane is worth walking down,
+and the route is cut back to the corners it actually turns at (`_straighten`) because a
+route walked cell by cell reads as a staircase however fine the grid.
+
+The wall is laid into that fill and the gateways are not, which is the whole of how a lane
+gets out of a walled town: nothing decides which gate a road belongs to, the fill simply
+comes out of the nearest one. The far end of each of those lanes is where the road from the
+next settlement actually stops (`terrain.road_ends_at`), and only the sides a road arrives
+on get one: a lane out of every gate whether anything met it or not left four stubs of
+packed earth trailing off into the grass. The two halves have to be joined from the village
+side because a road is aimed at a settlement that may not have been built yet and stops at
+the worst case its site could have reached (`site_grounds_radius`), while the gate stands at
+the real wall, nearer in. That is also why the lanes are planted after the settlement is
+registered rather than inside `_build`: until it is on the map the roads are drawn from,
+there are no roads coming to it.
 
 ## Nothing walks the whole building list per frame
 

@@ -308,8 +308,13 @@ class Scenery:
         # A road between two settlements is the one track meant to be seen from a distance
         # and followed, so it is laid wider, in its own colour, on a trodden verge; a
         # footpath out to a landmark is a line worn in the grass and nothing more.
-        if self.kind == "road":
+        # The verge is a kind of its own standing at the same points (see
+        # c.Scenery.GROUND_KINDS): drawn here under its own blob, it painted over the blob
+        # before it and left the road ringed like a string of beads.
+        if self.kind == "road_verge":
             stretch(c.Scenery.ROAD_VERGE_COLOR, self.size + c.Scenery.ROAD_VERGE)
+            return
+        if self.kind == "road":
             stretch(c.Scenery.ROAD_MAIN_COLOR, self.size)
             return
         stretch(c.Scenery.ROAD_COLOR, self.size)
@@ -463,6 +468,7 @@ class Scenery:
 _DRAWERS = {
     "path": Scenery._draw_path,
     "road": Scenery._draw_path,
+    "road_verge": Scenery._draw_path,
     "patch": Scenery._draw_patch,
     "pond": Scenery._draw_pond,
     "lake": Scenery._draw_lake,

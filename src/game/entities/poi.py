@@ -9,7 +9,7 @@ import pygame
 
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
-from game.entities.terrain import river_points_for_chunk
+from game.entities.terrain import river_points_for_chunk, road_blobs_for_chunk
 from game.entities.village import register_site_cache, site_grounds_radius, village_site
 
 if TYPE_CHECKING:
@@ -388,6 +388,16 @@ _DRAWERS = {
 }
 
 
+def poi_footprint(kind: str) -> float:
+    """How much ground a landmark of this kind covers, as a radius from where it stands.
+
+    What is drawn rather than what is walked up to: a graveyard is four rows of stones
+    spread over a few hundred pixels while a signpost is one post. Everything that has to
+    keep clear of a landmark asks this, so a road, a footpath and a wood all agree on how
+    big the place is."""
+    return c.PointsOfInterest.FOOTPRINT.get(kind, c.PointsOfInterest.SIZE)
+
+
 @lru_cache(maxsize=2048)
 def poi_site(cx: int, cy: int) -> tuple[float, float, str] | None:
     """Where this chunk's landmark stands and what kind it is, or None for a chunk that
@@ -432,7 +442,20 @@ def poi_site(cx: int, cy: int) -> tuple[float, float, str] | None:
         return None
 
     kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
-    return x, y, rng.choices(kinds, weights=weights)[0]
+    kind = rng.choices(kinds, weights=weights)[0]
+
+    # Nothing is laid out across a road either. The roads are a pure function of the
+    # settlement sites, like the river above, so they can be asked about before the
+    # landmark exists; the neighbouring chunks are asked too, since a graveyard reaches
+    # further than the margin its own chunk keeps. What gives way is the landmark: the
+    # road was cut between two places people live, and bending it round every graveyard in
+    # the wilds is what made it read as a wandering line rather than a route.
+    clear = poi_footprint(kind) + c.PointsOfInterest.ROAD_MARGIN
+    for nx in range(cx - 1, cx + 2):
+        for ny in range(cy - 1, cy + 2):
+            if any(math.hypot(x - blob.x, y - blob.y) < clear + blob.width for blob in road_blobs_for_chunk(nx, ny)):
+                return None
+    return x, y, kind
 
 
 def pois_for_chunk(cx: int, cy: int, buildings: list[Building]) -> list[PointOfInterest]:

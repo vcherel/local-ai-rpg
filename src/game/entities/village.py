@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import math
 import random
+from collections import deque
 from functools import lru_cache
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 import pygame
@@ -432,9 +434,41 @@ class Village:
         village.gate_broken = set(data.get("gate_broken", []))
         return village
 
+    def street_reach(self) -> float:
+        """How far out the settlement's own lanes run: to where a road arriving from the
+        next village stops.
+
+        A road is aimed at the grounds of a settlement that may not have been built yet, so
+        it stops at the worst case its site could have reached (`site_grounds_radius`) while
+        the gate stands at the real wall, which is nearer in. The village closes that gap
+        from its own side rather than the road guessing at extents it cannot know."""
+        return max(self.grounds_radius, site_grounds_radius(*self.chunk))
+
+    def gateways(self) -> tuple[tuple[float, float], ...]:
+        """Where the roads from the neighbouring settlements stop outside this one, which is
+        where its own lanes have to reach for the two to read as one thing.
+
+        Only the sides a road actually arrives on: a lane run out of every gate whether
+        anything met it or not left four stubs of packed earth trailing off into the grass.
+        Which gate each one belongs to is not decided here, since the lane back in is found
+        rather than laid (`_StreetGrid`) and the way in is through the nearest gateway."""
+        # Imported here rather than at the top: the roads are laid out from the settlement
+        # sites this file owns, so terrain.py is the half of the pair that imports first.
+        from game.entities.terrain import road_ends_at
+
+        return road_ends_at(self.x, self.y, *self.chunk)
+
     def plan_streets(self, buildings: list[Building]):
         """Wear the lanes between the houses: one from the plaza out to every front door,
-        plus the ring round the square they all leave from.
+        one out through every gate to where the road from the next village stops, plus the
+        ring round the square they all leave from.
+
+        A lane is routed round the buildings rather than run straight at the door
+        (`_StreetGrid`): the straight line the lanes used to be was laid over whatever house
+        stood between the plaza and the door it was going to, which read as a street running
+        through somebody's front room. Every lane is walked back off one flood fill from the
+        plaza, so they join into one network on the way in instead of being a fan of spokes
+        that happen to meet.
 
         Held on the village for the session rather than saved, and worked out from where the
         buildings actually ended up rather than from the slot grid they started on: the
@@ -452,15 +486,27 @@ class Village:
         def on_rim(angle: float) -> tuple[float, float]:
             return self.x + math.cos(angle) * rim, self.y + math.sin(angle) * rim * squash
 
+        def lay(route: list[tuple[float, float]]):
+            for start, end in pairwise(route):
+                length = math.dist(start, end)
+                for i in range(int(length // step) + 1):
+                    t = i * step / max(1.0, length)
+                    street.append((start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t))
+            street.append(route[-1])
+
+        lanes = _StreetGrid(self, buildings)
         for building in buildings:
             if not building.has_door:
                 continue
             door = building.door_front()
-            start = on_rim(math.atan2(door[1] - self.y, door[0] - self.x))
-            length = math.dist(start, door)
-            for i in range(int(length // step) + 1):
-                t = i * step / max(1.0, length)
-                street.append((start[0] + (door[0] - start[0]) * t, start[1] + (door[1] - start[1]) * t))
+            # Nothing found its way in: the lane it always had, straight at the plaza.
+            lay(lanes.route(door) or [door, on_rim(math.atan2(door[1] - self.y, door[0] - self.x))])
+        for end in self.gateways():
+            # No fallback out here: a lane that could not find a gateway would be laid
+            # through the wall, and a road stopping at the ditch says more than that.
+            route = lanes.route(end)
+            if route is not None:
+                lay(route)
         for i in range(int(2 * math.pi * rim // step) + 1):
             street.append(on_rim(i * step / rim))
         self.streets = tuple(street)
@@ -718,6 +764,136 @@ class Village:
 _registered: dict[tuple[int, int], tuple[float, float, float]] = {}
 _keepouts: list[tuple[float, float, float]] = []
 _SITE_CACHES: list = []
+
+
+class _StreetGrid:
+    """The ground inside a settlement a lane may be worn into: what the buildings and the
+    wall leave free, as a grid, with the way back to the plaza already known from every
+    cell of it.
+
+    One flood fill out of the plaza answers every lane the place needs at once, which is
+    what makes them read as a network: two doors on the same side of town walk back along
+    the same lane instead of each wearing its own beside it. Built once per settlement and
+    thrown away with the plan; nothing here is kept or saved.
+    """
+
+    def __init__(self, village: Village, buildings: list[Building]):
+        self.step = c.Villages.STREET_GRID
+        reach = village.street_reach() + self.step * 2
+        self.origin = (village.x - reach, village.y - reach)
+        self.span = int(reach * 2 // self.step) + 1
+        keep = c.Villages.STREET_WIDTH
+        # A lane keeps its own width off whatever it passes, so it is never drawn brushing
+        # a wall. The gateways are the one gap left open: a gate leaf is not a stretch of
+        # wall, which is what lets the fill find its own way out of a walled town.
+        rects = [rect.inflate(keep * 2, keep * 2) for b in buildings for rect in b.footprint()]
+        rects += [rect.inflate(keep, keep) for rect in village.defences()["walls"]]
+        self.blocked: set[tuple[int, int]] = set()
+        for rect in rects:
+            self.blocked.update(self._cells_in(rect))
+        self.parent = self._flood(village)
+
+    def _cell(self, x: float, y: float) -> tuple[int, int]:
+        return int((x - self.origin[0]) // self.step), int((y - self.origin[1]) // self.step)
+
+    def _point(self, cell: tuple[int, int]) -> tuple[float, float]:
+        return self.origin[0] + (cell[0] + 0.5) * self.step, self.origin[1] + (cell[1] + 0.5) * self.step
+
+    def _cells_in(self, rect: pygame.Rect):
+        """Every cell of the grid standing on this rectangle."""
+        left, top = self._cell(rect.left, rect.top)
+        right, bottom = self._cell(rect.right, rect.bottom)
+        for gx in range(left, right + 1):
+            for gy in range(top, bottom + 1):
+                if rect.collidepoint(self._point((gx, gy))):
+                    yield gx, gy
+
+    def _free(self, cell: tuple[int, int]) -> bool:
+        return 0 <= cell[0] < self.span and 0 <= cell[1] < self.span and cell not in self.blocked
+
+    def _flood(self, village: Village) -> dict:
+        """Every cell the plaza can be walked to from, and which cell to take to get there.
+        Eight ways out of a cell rather than four, so a lane running across the grain of the
+        grid is a diagonal and not a staircase."""
+        rim = c.Villages.PLAZA_RADIUS
+        queue = deque()
+        parent: dict[tuple[int, int], tuple[int, int] | None] = {}
+        plaza = pygame.Rect(0, 0, rim * 2, round(rim * 1.5))
+        plaza.center = (round(village.x), round(village.y))
+        for cell in self._cells_in(plaza):
+            if self._free(cell):
+                parent[cell] = None
+                queue.append(cell)
+        while queue:
+            gx, gy = queue.popleft()
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    step = (gx + dx, gy + dy)
+                    if (dx or dy) and step not in parent and self._free(step):
+                        parent[step] = (gx, gy)
+                        queue.append(step)
+        return parent
+
+    def route(self, end: tuple[float, float]) -> list[tuple[float, float]] | None:
+        """The lane from the plaza out to one point, as the few corners it turns, or None
+        for somewhere the plaza cannot be walked to at all."""
+        start = self._nearest_free(end)
+        if start is None:
+            return None
+        cells = [start]
+        while self.parent[cells[-1]] is not None:
+            cells.append(self.parent[cells[-1]])
+        route = [end, *self._straighten([self._point(cell) for cell in cells])]
+        walked = sum(math.dist(a, b) for a, b in pairwise(route))
+        # A lane that has to go three times round the houses is not a lane anybody wore:
+        # something is walled in, and the straight one it used to have says more.
+        return route if walked <= math.dist(end, route[-1]) * c.Villages.STREET_DETOUR else None
+
+    def _nearest_free(self, point: tuple[float, float]) -> tuple[int, int] | None:
+        """The nearest cell to a doorstep (or a gateway) the plaza can be reached from. A
+        door stands against its own wall, so the cell it is in is one the lane may not run
+        through: the lane starts at the first one outside it."""
+        gx, gy = self._cell(*point)
+        for ring in range(6):
+            best = min(
+                (
+                    (gx + dx, gy + dy)
+                    for dx in range(-ring, ring + 1)
+                    for dy in range(-ring, ring + 1)
+                    if max(abs(dx), abs(dy)) == ring and (gx + dx, gy + dy) in self.parent
+                ),
+                key=lambda cell: math.dist(point, self._point(cell)),
+                default=None,
+            )
+            if best is not None:
+                return best
+        return None
+
+    def _straighten(self, points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """Cut the corners out of a route found on a grid: keep only the points it actually
+        has to turn at. A lane laid cell by cell reads as a staircase however fine the grid
+        is, and a village's lanes are the one place the player sees the grid at all."""
+        kept = [points[0]]
+        i = 0
+        while i < len(points) - 1:
+            far = i + 1
+            for j in range(len(points) - 1, i, -1):
+                if self._clear(points[i], points[j]):
+                    far = j
+                    break
+            kept.append(points[far])
+            i = far
+        return kept
+
+    def _clear(self, start: tuple[float, float], end: tuple[float, float]) -> bool:
+        """Whether a lane laid straight between two points would run over anything."""
+        length = math.dist(start, end)
+        for i in range(int(length / (self.step / 2)) + 1):
+            t = min(1.0, i * (self.step / 2) / max(1.0, length))
+            at = (start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t)
+            if not self._free(self._cell(*at)):
+                return False
+        return True
 
 
 def register_site_cache(clear):
@@ -1174,9 +1350,10 @@ def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> tup
     extent_y = round(
         max((max(abs(b.bounds.top - y), abs(b.bounds.bottom - y)) for b in buildings), default=c.Villages.PLAZA_RADIUS)
     )
-    village = Village(x, y, chunk, size, radius, extent_x, extent_y)
-    village.plan_streets(buildings)
-    return village, buildings
+    # The lanes are not laid here: they run out to where the roads from the neighbouring
+    # settlements stop, and a village rolled per playthrough is not on the map the roads
+    # are drawn from until it is registered. Whoever puts it in the world plans them.
+    return Village(x, y, chunk, size, radius, extent_x, extent_y), buildings
 
 
 def generate_village(x, y, chunk: tuple[int, int]) -> tuple[Village, list[Building]]:
