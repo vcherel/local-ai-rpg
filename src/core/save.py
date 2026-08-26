@@ -35,6 +35,7 @@ class SaveSystem:
         - felled: Trees the player has cut down, as "cx:cy:index" keys. A chunk's scenery is
           rolled from its seed, so what was felled is the one thing about it worth keeping
           (list[str])
+        - smashed: Boulders the player has broken open, keyed like `felled` (list[str])
         - bombs: Mines the player laid and has not set off, position and kind. A grenade is
           in the air for a second and is never saved (list[dict])
         - deaths: How many times the player has died this playthrough (int)

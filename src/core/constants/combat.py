@@ -217,6 +217,28 @@ class Trees:
 
 
 @dataclass(frozen=True)
+class Boulders:
+    """Breaking a boulder (game/combat.py `_smash_boulder`, game/entities/scenery.py).
+
+    The second thing in the wilderness the player can argue with, and written the same way
+    a tree is: a real pool of hit points, one weapon family that does the work properly
+    (a hammer here, an axe there), a few stones left on the ground and a wreck that the
+    world remembers (`World.smashed`) so the rock is still broken when the chunk streams
+    back in.
+    """
+
+    HP: int = 130
+    # A blunt weapon is what rock gives to; an edge chips at it.
+    HAMMER_MULT: float = 3.0
+    OTHER_MULT: float = 0.5
+    HIT_RADIUS: int = 34
+    STONE_DROPS: tuple = (1, 3)
+    XP_PER_SMASH: float = 4.0
+    SHAKE: float = 12.0
+    RUBBLE_COLOR: tuple = (134, 130, 120)
+
+
+@dataclass(frozen=True)
 class Explosion:
     """A powder keg going off (game/combat.py `explode`).
 

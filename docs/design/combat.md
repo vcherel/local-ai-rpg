@@ -121,6 +121,18 @@ player's to take back: every movement key pressed works the leg loose, and the k
 drawn under the struggle bar (`GameRenderer._draw_struggle_keys`), because a bar draining on its
 own says "wait" and the whole point of the trap is that it does not have to.
 
+A sprung trap is not litter either. Whoever laid the line is long gone, so a trap the player has
+already paid for can be set again with the ordinary interaction prompt (`WorldPlaces.rearm_trap`):
+it costs nothing but the seconds, and from then on it shuts on the next thing along, the player
+included. It is never offered from inside the jaws, since a prompt whose reward is being caught
+by it is a prompt that punishes taking it.
+
+Where traps may lie is the other half of that. A trap nobody can step on is a trap nobody can
+avoid either, so `traps_for_chunk` refuses every kind of solid ground rather than nudging off it:
+a wall, a gateway, a tower, a house, the doorstep in front of one, a trunk and the water, plus a
+settlement's whole grounds, because a hunter's line is set out in the woods and never down the
+street they live on.
+
 ## Projectiles
 
 An arrow is not choosy about whose it is: a monster's shot that misses the player hits whatever

@@ -214,6 +214,7 @@ class Game:
             "ladder": self._climb_back_up,
             "camp": lambda camp: self.world.rest_at_camp(self.player, camp),
             "shrine": lambda shrine: self.world.pray_at_shrine(self.player, shrine),
+            "trap": lambda trap: self.world.rearm_trap(trap),
         }
 
     def _restore_player_state(self):
@@ -476,7 +477,12 @@ class Game:
             dist = reach_of(door.centerx, door.centery)
             if dist > c.Buildings.INTERACT_DISTANCE:
                 continue
-            if building.door_overlaps(self.player.x, self.player.y, c.Player.SIZE / 2):
+            if building.locked:
+                # Locked from the outside is a wall, and the prompt says so rather than
+                # offering a key that does nothing; from the inside it is a bar to lift.
+                inside = building.contains_point(self.player.x, self.player.y)
+                label = "E: unbar the door" if inside else "The door is locked"
+            elif building.door_overlaps(self.player.x, self.player.y, c.Player.SIZE / 2):
                 # Standing in the doorway: the only thing E may do here is open it. Offering
                 # to close a door around oneself is how one used to end up sealed in it.
                 if building.door_open:
@@ -527,8 +533,8 @@ class Game:
                 )
 
     def _offer_places(self, offer, reach_of):
-        """A campfire to rest at and a shrine to pray at: the places that answer once and
-        then go quiet for a while."""
+        """A campfire to rest at, a shrine to pray at and a shut trap to set again: the
+        things standing in the open that answer a press."""
         camp = self.world.camp_in_reach(self.player)
         if camp is not None:
             cooling = self.world.rest_ready_in(camp.id)
@@ -540,6 +546,13 @@ class Game:
             offer(
                 Interaction("shrine", shrine, "E: pray at the shrine", shrine.x, shrine.y - 40),
                 reach_of(shrine.x, shrine.y),
+            )
+
+        trap = self.world.sprung_trap_in_reach(self.player)
+        if trap is not None:
+            offer(
+                Interaction("trap", trap, "E: set the trap again", trap.x, trap.y - 24),
+                reach_of(trap.x, trap.y),
             )
 
     def _offer_npc(self, offer, reach_of):
@@ -747,8 +760,15 @@ class Game:
     def _use_door(self, building):
         """Open or shut a door. Shutting one is the only way to put a wall between the player
         and whatever is chasing them, which is the point: a monster can beat a door down, but
-        it takes it several swings and they are audible."""
+        it takes it several swings and they are audible.
+
+        A locked one answers to nobody from the street. From the near side of it, though,
+        this is the player throwing the bar off, and the house is open from then on."""
         radius = c.Player.SIZE / 2
+        if building.locked:
+            if not building.contains_point(self.player.x, self.player.y):
+                return
+            building.unlock()
         in_doorway = building.door_overlaps(self.player.x, self.player.y, radius)
         if in_doorway and building.door_open:
             # The prompt refuses this too; the key must not disagree with it.

@@ -224,16 +224,30 @@ which is what keeps `MONSTER_KINDS` the one source of what a creature is worth.
 `Monster.move`, so a monster that spawned at noon still hits like a night monster after
 dark; only the danger bonus a new spawn rolls with is baked in at spawn time.
 
-## A tree is the one piece of wilderness that answers back
+## A tree and a boulder are the pieces of wilderness that answer back
 
 Everything in a chunk is rolled from `(cx, cy)` and thrown away when the chunk unloads, which is
-why nothing the player does to it could ever survive. Felling a tree is the exception, and it is
-handled the way a POI's state is: the chunk is still generated purely from its seed, and what the
-player did is laid over the top afterwards. `World.felled` holds `"cx:cy:index"` keys, and
-`_load_chunk` fells the matching pieces as they are generated, so a wood the player cleared is
-still clear when they walk back through it.
+why nothing the player does to it could ever survive. Felling a tree and breaking a boulder open
+are the exceptions, and both are handled the way a POI's state is: the chunk is still generated purely from its seed, and what the
+player did is laid over the top afterwards. `World.felled` and `World.smashed` hold
+`"cx:cy:index"` keys, and `_load_chunk` fells or breaks the matching pieces as they are generated,
+so a wood the player cleared is still clear when they walk back through it.
+
+They are two sets rather than one list of wrecks: a stump and a pile of rubble are laid back over
+the regenerated chunk by different calls, and one set would only have to be asked which it was
+looking at.
 
 An axe does the work several times over (`Trees.AXE_MULT`) and anything else is somebody hitting
 a tree with the wrong thing. What is left is a stump: no longer solid, no longer a canopy to fade
 under, still standing there so the wood reads as cut rather than as scenery that quietly vanished.
 The logs are ordinary loot, since there is no crafting for them to feed.
+
+A boulder is the same shape of thing with the weapon families swapped: a hammer is what breaks
+rock (`Boulders.HAMMER_MULT`), an edge chips at it, and what is left is rubble that no longer
+stops anything walking, plus a few stones on the ground. Which is why boulders are worth breaking
+at all: a rock is the wilderness's own wall, and taking one out opens a line that was closed.
+
+The one landmark that comes down the same way is the signpost (`PointsOfInterest.WRECKABLE`). It
+is a prop standing on a post rather than a place: a graveyard's rows and a stone circle are
+places, and levelling one would be levelling the landmark itself. Breaking a signpost pays
+nothing and costs whatever was written on it, which is the whole of its consequence.

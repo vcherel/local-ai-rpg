@@ -55,14 +55,18 @@ class Scenery:
         # How far this piece reaches, for the water and bridge lookups: nothing about water
         # blocks, so it needs a footprint of its own rather than borrowing blocking_radius.
         self.water_reach = self._water_reach()
-        # A tree is the one piece of wilderness the player can argue with: it takes hits,
-        # comes down, and leaves a stump standing where it was. `key` is what the world
-        # remembers a felled one by (`World.felled`), filled in by whoever generated the
-        # chunk; everything else here is None on anything that is not a tree.
+        # A tree and a boulder are the two pieces of wilderness the player can argue with:
+        # both take hits, and what is left of one (a stump, a pile of rubble) still stands
+        # where it was. `key` is what the world remembers a broken one by (`World.felled`
+        # for a tree, `World.smashed` for a boulder), filled in by whoever generated the
+        # chunk; `max_hp` is 0 on everything else, which is what says it cannot be argued
+        # with at all.
         self.key = ""
-        self.hp = c.Trees.HP if kind in c.Scenery.CANOPY_KINDS else 0
+        self.max_hp = c.Trees.HP if kind in c.Scenery.CANOPY_KINDS else (c.Boulders.HP if kind == "boulder" else 0)
+        self.hp = self.max_hp
         self.felled = False
         self.fell_start_ms = None
+        self.smashed = False
         if kind == "bridge":
             self.block_reach = math.hypot(self.size, c.Scenery.BRIDGE_WIDTH + c.Scenery.BRIDGE_RAIL * 2) / 2
 
@@ -107,6 +111,19 @@ class Scenery:
     @property
     def choppable(self) -> bool:
         return self.kind in c.Scenery.CANOPY_KINDS and not self.felled
+
+    @property
+    def smashable(self) -> bool:
+        return self.kind == "boulder" and not self.smashed
+
+    def smash(self):
+        """Break the boulder open. What is left is rubble: nothing to walk around any more,
+        and a low pile of broken stone on the ground so the rock reads as split rather than
+        as scenery that quietly vanished."""
+        self.smashed = True
+        self.hp = 0
+        self.blocking_radius = 0.0
+        self.block_reach = 0.0
 
     def fell(self):
         """Bring the tree down. What is left is a stump: nothing to walk around, nothing to
@@ -410,6 +427,9 @@ class Scenery:
 
     def _draw_boulder(self, screen, center):
         cx, cy = center
+        if self.smashed:
+            self._draw_rubble(screen, center)
+            return
         points = [(cx + px, cy + py) for px, py in self._shape["points"]]
         shadow = [(x + 4, y + 6) for x, y in points]
         pygame.draw.polygon(screen, (52, 62, 44), shadow)
@@ -417,6 +437,24 @@ class Scenery:
         pygame.draw.polygon(screen, tuple(round(v * 0.66) for v in self._shape["color"]), points, 2)
         highlight = [(cx + px * 0.45 - 4, cy + py * 0.45 - 5) for px, py in self._shape["points"]]
         pygame.draw.polygon(screen, tuple(min(255, round(v * 1.16)) for v in self._shape["color"]), highlight)
+        # The splits worked into it, so a rock two swings from giving looks like one.
+        self._draw_wear(screen, center, self._shape["radius"] * 0.7)
+
+    def _draw_rubble(self, screen, center):
+        """What a broken boulder leaves: the same stone in pieces, spread over the ground it
+        stood on and low enough to walk across."""
+        cx, cy = center
+        rng = random.Random(f"rubble:{round(self.x)},{round(self.y)}")
+        base = self._shape["color"]
+        radius = self._shape["radius"]
+        for _ in range(rng.randint(6, 9)):
+            ox = rng.uniform(-radius * 0.9, radius * 0.9)
+            oy = rng.uniform(-radius * 0.6, radius * 0.6)
+            r = rng.randint(5, 11)
+            shade = rng.randint(-16, 12)
+            color = tuple(max(0, min(255, v + shade)) for v in base)
+            pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
+            pygame.draw.circle(screen, tuple(round(v * 0.7) for v in color), (round(cx + ox), round(cy + oy)), r, 1)
 
     def _draw_canopy(self, screen, center):
         cx, cy = center
@@ -431,16 +469,17 @@ class Scenery:
         for ox, oy, r, color in self._shape["lobes"]:
             pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
         # What is left of it, so a tree worth two more swings looks like one.
-        self._draw_wear(screen, center)
+        self._draw_wear(screen, center, self._shape["trunk"])
 
-    def _draw_wear(self, screen, center):
-        """The cuts taken out of a standing tree, through the same crack system every other
-        hit-point pool in the world wears down through (`core/damage_fx.py`)."""
-        if self.hp >= c.Trees.HP:
+    def _draw_wear(self, screen, center, radius: float):
+        """The wear taken by a piece of wilderness still standing, through the same crack
+        system every other hit-point pool in the world wears down through
+        (`core/damage_fx.py`)."""
+        if not self.max_hp or self.hp >= self.max_hp:
             return
-        radius = round(self._shape["trunk"])
+        radius = round(radius)
         body = pygame.Rect(center[0] - radius, center[1] - radius, radius * 2, radius * 2)
-        draw_cracks(screen, body, max(0.0, self.hp / c.Trees.HP), self.key or f"{self.x},{self.y}")
+        draw_cracks(screen, body, max(0.0, self.hp / self.max_hp), self.key or f"{self.x},{self.y}")
 
     def _draw_fallen(self, screen, center):
         """A stump, and the tree still going over for the moment after it was cut: the

@@ -73,7 +73,9 @@ class BearTrap:
         pygame.draw.circle(screen, (66, 64, 60), center, round(radius * 0.35))
 
 
-def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) -> list[BearTrap]:
+def traps_for_chunk(
+    cx: int, cy: int, buildings: Iterable, scenery: Iterable, villages: Iterable = ()
+) -> list[BearTrap]:
     """Every trap set in one chunk, rolled from its coordinates alone.
 
     Traps belong to a settlement's hunting ground rather than to the map at large: a chunk
@@ -87,8 +89,9 @@ def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) ->
 
     rng = random.Random(f"traps:{cx},{cy}")
     size = c.World.CHUNK_SIZE
-    footprints = [b.bounds.inflate(c.Traps.CLEARANCE * 2, c.Traps.CLEARANCE * 2) for b in buildings]
     solids = [(s.x, s.y, max(s.blocking_radius, s.water_reach)) for s in scenery if s.blocking_radius or s.water_reach]
+    villages = list(villages)
+    buildings = list(buildings)
 
     traps: list[BearTrap] = []
     for _ in range(rng.randint(*c.Traps.PER_CHUNK)):
@@ -97,11 +100,36 @@ def traps_for_chunk(cx: int, cy: int, buildings: Iterable, scenery: Iterable) ->
         distance = min(math.hypot(x - sx, y - sy) for sx, sy in sites)
         if not c.Traps.MIN_FROM_VILLAGE <= distance <= c.Traps.MAX_FROM_VILLAGE:
             continue
-        if any(rect.collidepoint(x, y) for rect in footprints):
-            continue
-        # Never under a trunk or in the water: a trap has to be somewhere something can
-        # actually walk, and one nobody can step on is one nobody can avoid either.
-        if any(math.hypot(x - sx, y - sy) < radius + c.Traps.TRIGGER_RADIUS for sx, sy, radius in solids):
+        if not _open_ground(x, y, buildings, villages, solids):
             continue
         traps.append(BearTrap(x, y, (cx, cy)))
     return traps
+
+
+def _open_ground(x: float, y: float, buildings, villages, solids) -> bool:
+    """Whether a trap laid here would be lying on ground something can actually walk over.
+
+    A trap nobody can step on is a trap nobody can avoid either, so everything solid is
+    refused rather than nudged: a wall, a barred or open gateway, a tower, a house, the
+    doorstep in front of one, a trunk and the water. A settlement's whole grounds go with
+    them, since a line of traps is set out in the woods by somebody who lives in the town,
+    never down its own street.
+    """
+    clearance = c.Traps.CLEARANCE
+    reach = c.Traps.TRIGGER_RADIUS
+    for village in villages:
+        if village.distance_to_point((x, y)) < village.grounds_radius + clearance:
+            return False
+        if village.blocks(x, y, reach + clearance):
+            return False
+        gates = village.defences()["gates"]
+        if any(gate["rect"].inflate(clearance * 2, clearance * 2).collidepoint(x, y) for gate in gates):
+            return False
+    for building in buildings:
+        if building.covers(x, y, clearance):
+            return False
+        step = building.doorstep(clearance)
+        if step is not None and step.collidepoint(x, y):
+            return False
+    # Never under a trunk or in the water either.
+    return not any(math.hypot(x - sx, y - sy) < radius + reach for sx, sy, radius in solids)

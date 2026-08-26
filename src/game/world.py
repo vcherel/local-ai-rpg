@@ -229,6 +229,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # seed, so a felled tree has to be a player change kept beside the POI state rather
         # than something the generator could ever know.
         self.felled = set(self.save_system.load("felled", []))
+        # And which boulders they have broken open, keyed exactly the same way. A second
+        # set rather than a second meaning for the first: a stump and a pile of rubble are
+        # laid back over a regenerated chunk by different calls, and one list of "things
+        # the player wrecked" would have to be told which was which anyway.
+        self.smashed = set(self.save_system.load("smashed", []))
         # Mines are left lying where the player laid them, so walking back to one you set
         # last night is a real thing to do. A grenade is in the air and is never saved.
         self.bombs = [Bomb.from_dict(d) for d in self.save_system.load("bombs", [])]
@@ -509,6 +514,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             "pois": self._poi_state_snapshot(),
             "traps": self._trap_state_snapshot(),
             "felled": sorted(self.felled),
+            "smashed": sorted(self.smashed),
             "bombs": [bomb.to_dict() for bomb in self.bombs if bomb.kind == MINE],
             "tunnels": self._tunnel_state_snapshot(),
             "underground": (
