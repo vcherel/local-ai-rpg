@@ -190,6 +190,11 @@ class Villages:
     # settling for the player. Sight is walked step by step and monsters are the long list.
     MONSTER_PREY_TRIES: int = 3
     PANIC_RADIUS: float = 520.0
+    # How long somebody a monster has hurt keeps fighting back (`NPC.threaten`). Being bitten
+    # is its own reason to swing, whatever the militia roll said and whoever's ground the
+    # fight is on: long enough to see the fight through, short enough that a farmer who got
+    # away goes back to their day rather than hunting the thing across the map.
+    THREAT_MEMORY_S: float = 12.0
     # A boss standing on the grounds is not a monster in the street, and a village answers
     # it as such: everybody inside this runs, and the militia turns out from further off
     # than it would for a wolf. Nothing about this is the player's doing, so the settlement

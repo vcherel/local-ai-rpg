@@ -1220,4 +1220,4 @@ class Player(Entity):
         label = f"{int(self.hp)}/{self.max_hp}"
         draw_outlined_text(screen, label, c.Fonts.small, c.Colors.WHITE, center=rect.center)
 
-        self.draw_status_bubbles(screen, c.Screen.ORIGIN_X, c.Screen.ORIGIN_Y, c.Player.SIZE)
+        self.emit_status_fx(c.Player.SIZE)

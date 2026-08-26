@@ -1300,6 +1300,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             kb_dir=self._dir_from(monster.x, monster.y, target.x, target.y),
             blocked=self.blocked,
             by_player=False,
+            source=monster,
         )
 
     def _update_npcs(self, player: Player, dt, quest_system: QuestSystem):
@@ -1371,6 +1372,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             waypoint,
             target=enemy,
             terrain_mult=self.terrain_speed(npc.x, npc.y),
+            standoff=npc.melee_standoff(enemy.size),
             crowd=defenders,
         )
         if not damage:
@@ -1474,13 +1476,16 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 if shelter is not None:
                     flee[id(npc)] = shelter
                     continue
-            reach = c.Entities.NPC_ATTACK_RANGE + c.Player.SIZE / 2 - c.Entities.CHASE_RING_MARGIN
             if npc.is_archer:
                 # An archer holds the wall and shoots off it (`_loose_arrows`); walking out
                 # to swing a bow at the player is exactly what they are posted not to do.
                 orders[id(npc)] = c.Villages.ARCHER_RANGE * 0.7
+            elif npc.is_militia:
+                # Their own weapon's length, so the one with the pitchfork fights at the
+                # length of a pitchfork instead of walking up the player's nose with it.
+                orders[id(npc)] = npc.melee_standoff(c.Player.SIZE)
             else:
-                orders[id(npc)] = reach if npc.is_militia else c.Villages.MOB_STANDOFF
+                orders[id(npc)] = c.Villages.MOB_STANDOFF
         self._engaged = set(orders)
         return orders
 

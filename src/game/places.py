@@ -852,8 +852,15 @@ class WorldPlaces:
         windows are in: a villager standing in front of the facade sees straight in, one
         standing round the back does not. Waiting for the street to clear is still the
         answer, and now so is robbing the far side of a house."""
-        if not npc.sees(x, y, radius):
-            return False
+        return npc.sees(x, y, radius) and self.sight_reaches(npc, room)
+
+    def sight_reaches(self, npc: NPC, room) -> bool:
+        """Whether this villager is standing anywhere `room` is open to, the half of `can_see`
+        the walls answer and the wedge knows nothing about.
+
+        Its own method because the cones are drawn off it: a villager the walls have already
+        answered is not drawn at all, so a wedge lying across the player is never a wedge
+        that cannot see them."""
         standing_in = self.building_at(npc.x, npc.y)
         if room is None:
             return standing_in is None
@@ -992,17 +999,35 @@ class WorldPlaces:
         # for them, and would put the thing down before they ever met one.
         arrived = [m for m in self.monsters if m.revealed] + [boss for boss in self.bosses if boss.rising <= 0]
         intruders = [m for m in arrived if self.village_at(m.x, m.y, c.Villages.DEFEND_MARGIN) is not None]
-        if not intruders:
+        # Somebody being bitten is its own fight, so the loop is still walked with nothing on
+        # anyone's grounds: what is chewing on a farmer out in a field is nobody's intruder.
+        if not intruders and not any(npc.threatened_by is not None for npc in self.npcs):
             return fight, flee
 
         for npc in self.npcs:
             if npc.hostile:
                 # Already coming for the player: the monster is the least of their problems.
                 continue
+            # Anybody something has actually bitten fights back, militia roll or not and
+            # wherever they are standing: the roll decides who walks towards a fight, not
+            # who defends themselves in one. They break like anyone else once they are cut
+            # down far enough (`NPC.routed`), so a farmer swings, loses and runs for a door
+            # rather than dying on the spot or never lifting a hand.
+            threat = npc.threat
+            if threat is not None:
+                if not npc.routed:
+                    fight[id(npc)] = threat
+                    continue
+                refuge = self._refuge_for(npc)
+                if refuge is not None:
+                    flee[id(npc)] = refuge
+                    continue
+            if not intruders:
+                continue
             nearest = min(intruders, key=lambda m: npc.distance_to_point((m.x, m.y)))
             distance = npc.distance_to_point((nearest.x, nearest.y))
             boss = isinstance(nearest, Boss)
-            if npc.is_militia:
+            if npc.is_militia and not npc.routed:
                 if distance <= (c.Villages.BOSS_DEFEND_RADIUS if boss else c.Villages.DEFEND_RADIUS):
                     fight[id(npc)] = nearest
             elif distance <= (c.Villages.BOSS_PANIC_RADIUS if boss else c.Villages.PANIC_RADIUS):

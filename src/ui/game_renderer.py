@@ -362,16 +362,20 @@ class GameRenderer:
 
         Only up while the player is stood over something that isn't theirs: the cone is the
         question "is anyone looking right now", and a street permanently full of wedges would
-        be wallpaper. Red is the one that has the player in it. The wedge is drawn whole,
-        which is exactly what `World.can_see` tests: walls do not bite pieces out of the
-        shape, they decide whether the villager was ever looking into this room at all, so a
-        cone that reaches the player and stays pale is a villager the walls have answered."""
+        be wallpaper.
+
+        One rule, and the colour follows the wedge: white is somebody watching, red is the
+        player standing in what they are watching. Which is only readable because a villager
+        the walls have already answered (`World.sight_reaches`: another building, or round the
+        back of this one) is not drawn at all. A cone lying across the player used to stay
+        pale for exactly that reason, and a wedge that says nothing about whether you are
+        caught is worse than no wedge."""
         radius = world.witness_radius()
-        watchers = world.watchers_near(player.x, player.y)
+        room = world.theft_room(player.x, player.y)
+        watchers = [npc for npc in world.watchers_near(player.x, player.y) if world.sight_reaches(npc, room)]
         if not watchers:
             return
 
-        room = world.theft_room(player.x, player.y)
         if self._cone_overlay is None:
             # One surface for the life of the renderer: a fresh screen-sized alpha surface
             # per frame is an allocation the size of the window, every frame, for a wedge.
@@ -384,7 +388,9 @@ class GameRenderer:
             if not self._on_screen(camera, npc.x, npc.y, margin=radius):
                 continue
             points = [camera.world_to_screen(x, y) for x, y in world.vision_polygon(npc, radius)]
-            seen = world.can_see(npc, player.x, player.y, radius, room)
+            # The walls are already answered by which villagers are on this list, so what is
+            # left is exactly the wedge the player can see on the ground.
+            seen = npc.sees(player.x, player.y, radius)
             # Kept faint: several of these overlap on a busy street, and they are drawn on
             # the ground the player is trying to read, not over it.
             pygame.draw.polygon(overlay, (200, 70, 60, 38) if seen else (230, 225, 200, 16), points)
