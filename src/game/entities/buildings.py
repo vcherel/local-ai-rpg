@@ -220,6 +220,11 @@ class Building(BuildingArt):
         # the building's own id on first draw, so a street is a row of different houses
         # and each of them keeps its look for good.
         self._style = None
+        # The house painted onto its own surface (`BuildingArt._shell`), and where in the
+        # world its top left corner sits. Everything that holds still is in there and is
+        # blitted from then on; the door, the windows and the smoke are drawn over it.
+        self._shell_surface: pygame.Surface | None = None
+        self._shell_origin: tuple[int, int] = (0, 0)
 
     @property
     def rect(self) -> pygame.Rect:
@@ -301,6 +306,7 @@ class Building(BuildingArt):
         self._rect = None
         self._floors = None
         self._segments = None
+        self._shell_surface = None
 
     def _canon_rect(self) -> pygame.Rect:
         """This building's own footprint seen with its door in the bottom wall: the frame

@@ -41,10 +41,10 @@ class WorldStreaming:
         cx, cy = chunk
         size = c.World.CHUNK_SIZE
         rng = random.Random(f"{cx},{cy}")
-        for _ in range(c.World.DETAILS_PER_CHUNK):
-            x = cx * size + rng.uniform(0, size)
-            y = cy * size + rng.uniform(0, size)
-            self.floor_details.append((x, y, rng.choice(["stone", "flower"])))
+        self.floor_details[chunk] = [
+            (cx * size + rng.uniform(0, size), cy * size + rng.uniform(0, size), rng.choice(["stone", "flower"]))
+            for _ in range(c.World.DETAILS_PER_CHUNK)
+        ]
 
         self._ensure_village(chunk)
 
@@ -134,7 +134,7 @@ class WorldStreaming:
         self.scenery = kept
 
     def _unload_chunk(self, chunk: tuple[int, int]):
-        self.floor_details = [d for d in self.floor_details if self._chunk_of(d[0], d[1]) != chunk]
+        self.floor_details.pop(chunk, None)
         # Filtered on the chunk that generated it rather than the one it stands in: a copse
         # rolled at a chunk's edge spills over the border, and it leaves with its own chunk.
         self.scenery = [s for s in self.scenery if s.chunk != chunk]

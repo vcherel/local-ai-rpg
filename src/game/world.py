@@ -98,8 +98,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
 
     def _init_terrain_state(self):
         """The ground and what is indexed about it: all of it streamed, none of it saved."""
-        # Regenerated on the fly as the player explores; see _sync_chunks.
-        self.floor_details = []
+        # Regenerated on the fly as the player explores; see _sync_chunks. Kept chunk by
+        # chunk rather than in one list: there are a couple of hundred pebbles and flowers
+        # per chunk and the renderer wants the handful of chunks it can see, not all of them.
+        self.floor_details: dict[tuple[int, int], list] = {}
         # The wilderness: trees, rocks, grass, ponds and roads, streamed with the chunks
         # and never saved. Indexed by `_reindex_scenery` into what is drawn under the
         # entities, what is drawn with the props, and a fine grid of the solid ones for
@@ -602,6 +604,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             for cx in range(int((x - radius) // size), int((x + radius) // size) + 1)
             for cy in range(int((y - radius) // size), int((y + radius) // size) + 1)
         ]
+
+    def floor_details_in_range(self, x, y, radius):
+        """The pebbles and flowers scattered over the ground around a point."""
+        for chunk in self._chunk_window(x, y, radius):
+            yield from self.floor_details.get(chunk, ())
 
     def scenery_ground_in_range(self, x, y, radius):
         """The ground itself around a point (patches, ponds, roads, grass), yielded kind by

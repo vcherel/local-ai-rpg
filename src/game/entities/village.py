@@ -82,6 +82,8 @@ class Village:
         # already lying flat, which is exactly what `gate_broken` says.
         self.gate_falling: dict[int, float] = {}
         self._defences = None
+        # The worn patches round the plaza, rolled on first draw (`_trodden_earth`).
+        self._earth: tuple | None = None
 
     @staticmethod
     def _tier_for(x, y, size: str) -> int:
@@ -468,10 +470,31 @@ class Village:
         worth drawing, the same rule everything else in the world is drawn by."""
         width = c.Villages.STREET_WIDTH
         view = screen.get_rect().inflate(width * 2, width * 2)
+        # The offset is asked of the camera once and added to every blob: a town's worth of
+        # lanes is the one loop here long enough for the call itself to cost something.
+        ox, oy = camera.world_to_screen(0, 0)
+        left, top, right, bottom = view.left, view.top, view.right, view.bottom
         for x, y in self.streets:
-            sx, sy = camera.world_to_screen(x, y)
-            if view.collidepoint(sx, sy):
+            sx, sy = x + ox, y + oy
+            if left <= sx <= right and top <= sy <= bottom:
                 pygame.draw.circle(screen, c.Villages.PLAZA_COLOR, (round(sx), round(sy)), width)
+
+    def _trodden_earth(self) -> tuple:
+        """The worn patches round the edge of the plaza, as offsets from the middle of it.
+        Rolled once from the village's position, so they hold still as the camera pans and
+        the roll is not made again every frame."""
+        if self._earth is not None:
+            return self._earth
+        rng = random.Random(f"plaza:{self.x},{self.y}")
+        width = c.Villages.PLAZA_RADIUS * 2
+        height = round(c.Villages.PLAZA_RADIUS * 1.5)
+        blobs = []
+        for _ in range(14):
+            angle = rng.uniform(0, 2 * math.pi)
+            dist = rng.uniform(0.4, 1.0)
+            blobs.append((math.cos(angle) * width / 2 * dist, math.sin(angle) * height / 2 * dist, rng.randint(4, 11)))
+        self._earth = tuple(blobs)
+        return self._earth
 
     def draw(self, screen: pygame.Surface, camera: Camera):
         """The plaza: packed earth and a well. The name is the minimap strip's job; written on
@@ -482,16 +505,9 @@ class Village:
         plaza.center = (round(cx), round(cy))
         pygame.draw.ellipse(screen, c.Villages.PLAZA_COLOR, plaza)
 
-        # Trodden earth around the edge of the plaza, seeded from the village position so
-        # it holds still as the camera pans.
-        rng = random.Random(f"plaza:{self.x},{self.y}")
         darker = tuple(round(v * 0.88) for v in c.Villages.PLAZA_COLOR)
-        for _ in range(14):
-            angle = rng.uniform(0, 2 * math.pi)
-            dist = rng.uniform(0.4, 1.0)
-            px = cx + math.cos(angle) * plaza.width / 2 * dist
-            py = cy + math.sin(angle) * plaza.height / 2 * dist
-            pygame.draw.circle(screen, darker, (round(px), round(py)), rng.randint(4, 11))
+        for dx, dy, radius in self._trodden_earth():
+            pygame.draw.circle(screen, darker, (round(cx + dx), round(cy + dy)), radius)
 
         self._draw_well(screen, (round(cx), round(cy)))
         self._draw_defences(screen, camera)
@@ -499,7 +515,11 @@ class Village:
     def _draw_defences(self, screen: pygame.Surface, camera: Camera):
         """The wall and everything that belongs to it, drawn under whatever walks over the
         ground. A palisade is a row of sharpened logs, a stone wall is coursed blocks: the
-        material is how far out the settlement stands, read before anything is fought."""
+        material is how far out the settlement stands, read before anything is fought.
+
+        A town's wall stands further out than the screen is wide, so most of what is here is
+        somewhere behind the player: every piece is measured against the view before it is
+        drawn, and a stretch of wall lays only the courses actually in it."""
         defences = self.defences()
         if not defences["walls"]:
             return
@@ -508,10 +528,13 @@ class Village:
         body = c.Villages.WALL_STONE if stone else c.Villages.WALL_COLOR
         top = c.Villages.WALL_STONE_TOP if stone else c.Villages.WALL_TOP
         edge = (78, 76, 70) if stone else (68, 52, 34)
+        view = screen.get_rect()
+        ox, oy = camera.world_to_screen(0, 0)
 
         for trench in defences["ditch"]:
-            sx, sy = camera.world_to_screen(trench.left, trench.top)
-            rect = pygame.Rect(round(sx), round(sy), trench.width, trench.height)
+            rect = pygame.Rect(round(trench.left + ox), round(trench.top + oy), trench.width, trench.height)
+            if not view.colliderect(rect):
+                continue
             # A lip of turned earth round the edge and a darker floor, so a ditch reads as
             # something dug rather than as a shadow lying on the grass.
             pygame.draw.rect(screen, (104, 88, 62), rect)
@@ -519,13 +542,22 @@ class Village:
             pygame.draw.rect(screen, (56, 46, 32), rect.inflate(-26, -26))
 
         for wall in defences["walls"]:
-            sx, sy = camera.world_to_screen(wall.left, wall.top)
-            rect = pygame.Rect(round(sx), round(sy), wall.width, wall.height)
+            rect = pygame.Rect(round(wall.left + ox), round(wall.top + oy), wall.width, wall.height)
+            if not view.colliderect(rect):
+                continue
             pygame.draw.rect(screen, body, rect)
             along_x = rect.width > rect.height
             span = rect.width if along_x else rect.height
             step = 18 if stone else 14
-            for offset in range(4, max(5, span - 4), step):
+            # Only the courses standing in the view: a wall runs the length of the town and
+            # the screen holds a fraction of it.
+            seen = view.clip(rect)
+            start = (seen.left - rect.left) if along_x else (seen.top - rect.top)
+            stop = (seen.right - rect.left) if along_x else (seen.bottom - rect.top)
+            # Kept on the same 4-then-every-`step` grid the whole wall is coursed on, so a
+            # block sits where it would have whichever end of the wall is on screen.
+            first = 4 + max(0, (start - 4) // step) * step
+            for offset in range(first, min(max(5, span - 4), stop + step), step):
                 block = (
                     pygame.Rect(rect.left + offset, rect.top, step - 4, rect.height)
                     if along_x
@@ -535,9 +567,14 @@ class Village:
                 pygame.draw.rect(screen, edge, block, 1)
             pygame.draw.rect(screen, edge, rect, 2)
 
+        length = c.Villages.SPIKE_LENGTH
+        # A stake is drawn from its base upwards, so one planted below the screen still has
+        # its point on it: the margin goes the way the stake does.
+        left, top_edge, right, bottom = view.left - 8, view.top - 8, view.right + 8, view.bottom + length
         for sx, sy in defences["spikes"]:
-            px, py = camera.world_to_screen(sx, sy)
-            length = c.Villages.SPIKE_LENGTH
+            px, py = sx + ox, sy + oy
+            if not (left <= px <= right and top_edge <= py <= bottom):
+                continue
             base = (round(px), round(py))
             pygame.draw.circle(screen, (52, 42, 30), base, 6)
             pygame.draw.line(screen, (62, 48, 32), base, (base[0], base[1] - length), 8)
@@ -545,12 +582,24 @@ class Village:
             # The point, catching the light: a stake read from above is a pale tip.
             pygame.draw.line(screen, (238, 230, 210), (base[0], base[1] - length), (base[0], base[1] - length + 6), 3)
 
+        # A gateway is drawn from its middle out, so it counts as on screen from a leaf's
+        # length outside the view.
+        reach = c.Villages.GATE_WIDTH
         for index, gate in enumerate(defences["gates"]):
+            gx, gy = gate["pos"]
+            if (
+                abs(gx + ox - view.centerx) > view.width / 2 + reach
+                or abs(gy + oy - view.centery) > view.height / 2 + reach
+            ):
+                continue
             self._draw_gate(screen, camera, index, gate)
 
+        radius = self.tower_radius
         for tx, ty in defences["towers"]:
-            sx, sy = camera.world_to_screen(tx, ty)
-            radius = self.tower_radius
+            sx, sy = tx + ox, ty + oy
+            tower = pygame.Rect(round(sx - radius - 4), round(sy - radius - 4), radius * 2 + 8, radius * 2 + 8)
+            if not view.colliderect(tower):
+                continue
             pygame.draw.circle(screen, (60, 52, 44), (round(sx), round(sy)), radius + 3)
             pygame.draw.circle(screen, c.Villages.TOWER_STONE, (round(sx), round(sy)), radius)
             pygame.draw.circle(screen, (104, 100, 94), (round(sx), round(sy)), round(radius * 0.6))

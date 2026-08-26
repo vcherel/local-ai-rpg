@@ -1,5 +1,6 @@
 import math
 import random
+from collections import OrderedDict
 
 import pygame
 
@@ -229,6 +230,14 @@ class Entity:
             self.draw_status_bubbles(screen, x, y, size)
 
 
+# Bodies drawn from a kept sprite, bounded because a crowd carries one each: the least
+# recently asked for goes when it is full. A swing is stepped this finely through its arc,
+# which is finer than the few frames one lasts.
+_SPRITE_CACHE: OrderedDict = OrderedDict()
+_SPRITE_CACHE_MAX = 160
+_ATTACK_STEPS = 16
+
+
 # How far a shove is allowed to carry a body between two collision tests.
 KNOCKBACK_STEP = 8.0
 
@@ -349,22 +358,26 @@ def push_apart(body, crowd, radius: float, radius_of, blocked=None):
         body.y += push_y
 
 
-def draw_human(
-    surface: pygame.Surface,
-    x: int,
-    y: int,
-    size: int,
-    color: tuple,
-    angle: float,
-    attack_progress: float = 0.0,
-    attack_hand: str | None = None,
-    gear: dict | None = None,
-    walk: float = 0.0,
-):
-    """`walk` is how far through the stride this body is (game/entities/entities.py `Gait`):
-    the arms swing fore and aft with it and the whole sprite lifts a little at each step, so
-    a person crossing a field reads as walking rather than sliding. The arm mid attack keeps
-    its swing: what it is doing matters more than where it is in its stride."""
+def _gear_key(gear: dict | None):
+    """A gear dict as something hashable. Every value in one is a colour, a name or a flag,
+    so the dict is its own key once it is flattened."""
+    if not gear:
+        return None
+    return tuple(sorted((slot, tuple(sorted(spec.items()))) for slot, spec in gear.items()))
+
+
+def _body_sprite(size, color, attack_progress, attack_hand, gear, arm_swing, key):
+    """One body drawn facing up its own surface: the circle, what it is wearing, its two
+    arms wherever the stride and the swing have put them, and whatever each hand holds.
+
+    Kept, because it is the same handful of circles frame after frame: what really changes
+    as somebody walks past is which way they are facing, and that is a rotation of the
+    finished sprite rather than a different sprite."""
+    sprite = _SPRITE_CACHE.get(key)
+    if sprite is not None:
+        _SPRITE_CACHE.move_to_end(key)
+        return sprite
+
     border_thickness = 2
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
@@ -402,8 +415,6 @@ def draw_human(
 
     # Forward is up in the sprite's own space, so a stride carries one arm up the surface
     # and the other down it. Opposite arms, like anything that walks on two legs.
-    arm_swing = walk * c.Entities.GAIT_ARM
-
     left_arm_x = padding + arm_radius + distance_arm
     left_arm_y = arm_y
     if attack_hand == "left":
@@ -430,12 +441,45 @@ def draw_human(
     # One weapon per hand, and a hand with nothing in it is simply not drawn holding
     # anything: bare hands are a loadout the player can choose, not a missing sprite.
     # Hand one is the right arm (the left mouse button), hand two the left.
-    for key, hand, arm in (("hand2", "left", (left_arm_x, left_arm_y)), ("hand1", "right", (right_arm_x, right_arm_y))):
-        spec = gear.get(key) if gear else None
+    hands = (("hand2", "left", (left_arm_x, left_arm_y)), ("hand1", "right", (right_arm_x, right_arm_y)))
+    for slot, hand, arm in hands:
+        spec = gear.get(slot) if gear else None
         if spec is None or not spec.get("kind"):
             continue
         swing = attack_progress if attack_hand == hand else 0.0
         draw_weapon(char_surf, arm, spec, size, hand, swing)
+
+    _SPRITE_CACHE[key] = char_surf
+    if len(_SPRITE_CACHE) > _SPRITE_CACHE_MAX:
+        _SPRITE_CACHE.popitem(last=False)
+    return char_surf
+
+
+def draw_human(
+    surface: pygame.Surface,
+    x: int,
+    y: int,
+    size: int,
+    color: tuple,
+    angle: float,
+    attack_progress: float = 0.0,
+    attack_hand: str | None = None,
+    gear: dict | None = None,
+    walk: float = 0.0,
+):
+    """`walk` is how far through the stride this body is (game/entities/entities.py `Gait`):
+    the arms swing fore and aft with it and the whole sprite lifts a little at each step, so
+    a person crossing a field reads as walking rather than sliding. The arm mid attack keeps
+    its swing: what it is doing matters more than where it is in its stride."""
+    # The stride is stepped to whole pixels of arm swing and a swing to a sixteenth of its
+    # arc, so a street of people is a handful of sprites rather than one per body per frame.
+    # Both steps are finer than the animation they carry, and both are what the sprite is
+    # drawn from as well as what it is keyed on: nothing is drawn away from where it was
+    # asked to be, it is asked for in whole steps.
+    arm_swing = round(walk * c.Entities.GAIT_ARM)
+    attack_progress = round(attack_progress * _ATTACK_STEPS) / _ATTACK_STEPS if attack_hand else 0.0
+    key = (size, color, attack_progress, attack_hand, _gear_key(gear), arm_swing)
+    char_surf = _body_sprite(size, color, attack_progress, attack_hand, gear, arm_swing, key)
 
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))
