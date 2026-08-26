@@ -1621,9 +1621,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # somewhere else: no ground streams in around the player, nothing is discovered, no
         # event finds them, and the map remembers nothing of a place with no landmarks.
         # What is down there was put there when they climbed down, and that is all.
+        # The map is the exception: it remembers the dark too, on its own finer grid, so a
+        # cave unfolds on the minimap as it is walked exactly as the countryside does.
+        self._reveal_around(player)
         if self.underground is None:
             self._sync_chunks(player)
-            self._reveal_around(player)
             self.events.update(dt, player, quest_system, npc_name_generator)
             self._check_poi_discovery(player)
             self._prepare_settlements_near(player, dt, npc_name_generator)

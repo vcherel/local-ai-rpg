@@ -119,12 +119,18 @@ the player sees of the dark should be the dark, not something already swinging a
 
 ### The light stops at the rock
 
-The lantern is cut out of the dark clipped to the floor rectangles the player is actually
-standing on, never as a plain circle: a plain circle shone through the walls, so standing
-in a corridor lit the rooms on the far side of it and the layout was given away from the
-doorway. Rooms and corridors overlap generously, so standing in a doorway lights both and
-what is round a corner stays round it. `Tunnels.DARKNESS` is full black for the same
-reason: at anything less the far side of the cave stayed legible.
+The lantern is cut out of the dark clipped to floor rather than drawn as a plain circle: a
+plain circle shone through the walls, so standing in a corridor lit the rooms on the far
+side of it and the layout was given away from the doorway. What it is clipped to is
+`Tunnel._lit_floor`: the rectangles being stood on, and everything that opens onto them
+within `Tunnels.LIGHT_RADIUS`, spread along the overlaps. Clipping to the one rectangle
+under the player's feet was the same idea done too tightly, and it flickered: a room and
+the corridor leaving it are two rectangles, so half of every doorway went black and the
+view snapped over as the seam was crossed. Spreading along the overlaps keeps the light off
+floor that is not joined to the floor being walked, while the set of lit pieces only ever
+changes out at the radius, where a piece was contributing nothing anyway.
+`Tunnels.DARKNESS` is full black for the same reason: at anything less the far side of the
+cave stayed legible.
 
 ### A cave is worth walking to; a well is a cellar
 

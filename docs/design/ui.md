@@ -15,6 +15,18 @@ and what let a prompt point at something other than what the key did.
 small zoom. Anything that would let the player scout from the HUD instead of walking (monster
 dots, a full-screen map, zoom) is a deliberate omission, not a missing feature.
 
+Underground the same memory is kept on a finer grid (`Fog.TUNNEL_CELL`, `World.fog_cell`)
+and only as far as the lantern reaches, and only over floor: rock is not somewhere the
+player has been. So a cave draws itself room by room as it is walked, the map is scaled to
+hold the whole dug-out (`Minimap.TUNNEL_RANGE`), and the one mark on it is the way back
+out. It is the surface's system down to the cells being cells of the same world grid, which
+is what gets it saved and reloaded with everything else.
+
+Under the map, the distance strip reads from the world centre on the surface (difficulty is
+distance from it) and from the way in underground, where the same sum would report a
+million paces of nothing. It takes the longest phrasing that fits its panel: past four
+digits the sentence ran off the end of the strip, and the number is the half worth reading.
+
 The single exception is a rumour's mark (`World.mark_rumor` / `rumor_marks`): somewhere the
 player was *told* about, held session-only and rubbed out on arrival, which is what turns a
 rumour into somewhere to go. It marks a place, never a creature, and nothing else may put a pin
