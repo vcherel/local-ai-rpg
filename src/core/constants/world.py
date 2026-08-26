@@ -366,12 +366,22 @@ class Buildings:
     CRATE_ITEM_CHANCE: float = 0.2
 
     # Two windows flank the door on every non-landmark building's front facade;
-    # broken ones stay broken (per-building index set, like broken crates).
-    WINDOW_W: int = 24
+    # broken ones stay broken (per-building index set, like broken crates). Wide enough for
+    # a body to get through, because that is what a broken one is for: the hole a shattered
+    # pane leaves is the way into a house whose door is locked, so the pane on the wall has
+    # to be the size of the gap the wall loses.
+    WINDOW_W: int = 46
     WINDOW_H: int = 20
     WINDOW_Y_FROM_BOTTOM: int = 45
     WINDOW_X_FROM_DOOR: int = 40
     WINDOW_HIT_RADIUS: int = 18
+    # Some houses are locked, rolled off the building's own id so the same one is always
+    # locked and the player can learn which. A locked door never opens for the player from
+    # outside: the answer is a window, and once inside the door is unbarred from the near
+    # side for good. Shops and taverns are never locked, since a shut shop is a merchant
+    # the player cannot trade with rather than a puzzle.
+    LOCK_KINDS: tuple = ("house",)
+    LOCK_CHANCE: float = 0.3
 
     WALL_COLOR: tuple = (72, 56, 44)
     FLOOR_COLOR: tuple = (152, 112, 72)
@@ -512,6 +522,9 @@ class Traps:
     # gives it away is the ring of jaws, and only from about as far off as it can be avoided.
     SIZE: int = 26
     TRIGGER_RADIUS: int = 26
+    # How close the player has to be to set a shut one again. Wider than the jaws, so the
+    # prompt is offered from beside the trap rather than from on top of it.
+    REARM_DISTANCE: int = 70
     # Steel jaws through a leg. It is meant to be the worst thing in the woods that is not
     # alive: what makes a trap frightening is that a careless walk out of town costs a real
     # part of the health bar and not only the seconds afterwards.
@@ -920,6 +933,11 @@ class PointsOfInterest:
 
     # A cache is stone and iron banding, not a barrel: it takes real work to open.
     CACHE_HP: int = 45
+    # A signpost is the one landmark that is a prop: a post somebody can put a weapon
+    # through, worth about as much work as a barrel. What it costs is what was written on
+    # it, so breaking one before reading it is the player's own doing.
+    SIGNPOST_HP: int = 30
+    WRECKABLE: tuple = ("signpost",)
     CACHE_COIN_MIN: int = 6
     CACHE_COIN_MAX: int = 16
     CACHE_ITEM_CHANCE: float = 0.5

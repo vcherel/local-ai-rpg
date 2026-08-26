@@ -108,6 +108,26 @@ several swings, audible, permanent once through). Nothing else about the world m
 breakable to let a monster take a shortcut: if a monster cannot reach the player, the
 answer is navigation, not demolition.
 
+## A locked house is a wall with a window in it
+
+Some houses are locked, rolled off the building's own id (`Buildings.LOCK_CHANCE`), so the same
+one is locked every time and a street is worth learning rather than worth trying. A locked door
+is deliberately not a tougher door: no lockpicking, no key, nothing to grind at. The way in is
+the window beside it, which the player already knew how to break and which until now did nothing
+at all.
+
+That is what makes the two halves one change. A shattered pane is cut out of the wall shell
+(`Building.window_gaps`, subtracted in `_wall_segments` exactly as the opening between the two
+halves of an L is), so the hole is a hole to everything that walks, the player and a chaser
+alike; and `Buildings.WINDOW_W` is wide enough for a body, because a gap the player cannot fit
+through would be a lie told by the drawing. Once inside, they throw the bar off themselves
+(`Building.unlock`, persisted): a house broken into is never a room they have to leave the way
+they came.
+
+Breaking somebody's window in front of them is vandalism, answered by whoever saw it on the same
+per-offence ladder that wrecking their furniture is (`World.report_crime`). Out of sight of the
+street it costs nothing, which is the point: which window of which house is a decision.
+
 ## A town is walled and the wall is one thing
 
 `Village.defences()` is a ring set outside the last house, with a gate in the middle of

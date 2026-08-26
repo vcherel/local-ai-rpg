@@ -58,6 +58,12 @@ class PointOfInterest:
         # a POI is rebuilt from its chunk seed every time the chunk loads, and half a
         # strongbox's worth of dents is not worth a line in the save.
         self.cache_hp = c.PointsOfInterest.CACHE_HP
+        # A signpost is the one landmark that is a prop rather than a place: it stands in
+        # the open on a post, and it comes down like anything else in the world with a
+        # hit-point pool. That it was broken is saved (there is nothing left to read on a
+        # broken one); how far along the player got with it is not, like every other pool.
+        self.wrecked = False
+        self.prop_hp = c.PointsOfInterest.SIGNPOST_HP
 
     @property
     def variant(self) -> str:
@@ -73,6 +79,13 @@ class PointOfInterest:
         return self.kind in ("ruins", "farmstead") or self.variant == "bandit"
 
     @property
+    def wreckable(self) -> bool:
+        """Whether this landmark is a prop somebody can put a weapon through. Only what
+        stands on its own the way a barrel does: a graveyard's rows and a stone circle are
+        places rather than props, and levelling one would be levelling the landmark."""
+        return self.kind in c.PointsOfInterest.WRECKABLE and not self.wrecked
+
+    @property
     def has_fire(self) -> bool:
         """Every camp keeps a fire going, cleared out or not: it is what the player rests at,
         and a bandit camp is worth remembering precisely because taking it leaves one burning
@@ -83,7 +96,14 @@ class PointOfInterest:
     def touched(self) -> bool:
         """True once this POI holds state worth saving; an untouched one is fully described
         by its chunk seed."""
-        return self.looted or self.discovered or self.prayed or self.npc_spawned or self.guards_alive is not None
+        return (
+            self.looted
+            or self.discovered
+            or self.prayed
+            or self.npc_spawned
+            or self.wrecked
+            or self.guards_alive is not None
+        )
 
     @property
     def guards_remaining(self) -> int:
@@ -113,6 +133,7 @@ class PointOfInterest:
             "discovered": self.discovered,
             "npc_spawned": self.npc_spawned,
             "prayed": self.prayed,
+            "wrecked": self.wrecked,
             "guards_alive": self.guards_alive,
             "leader_alive": self.leader_alive,
         }
@@ -122,6 +143,7 @@ class PointOfInterest:
         self.discovered = state.get("discovered", False)
         self.npc_spawned = state.get("npc_spawned", False)
         self.prayed = state.get("prayed", False)
+        self.wrecked = state.get("wrecked", False)
         # A save from before camps counted their garrison leaves this None, so the camp
         # rolls a fresh one the next time it is walked up to.
         self.guards_alive = state.get("guards_alive")
@@ -139,6 +161,10 @@ class PointOfInterest:
             wear = pygame.Rect(0, 0, 56, 44)
             wear.center = center
             draw_cracks(screen, wear, self.cache_hp / c.PointsOfInterest.CACHE_HP, self.id)
+        if self.wreckable and self.prop_hp < c.PointsOfInterest.SIGNPOST_HP:
+            wear = pygame.Rect(0, 0, 40, 40)
+            wear.center = (center[0], center[1] - 10)
+            draw_cracks(screen, wear, self.prop_hp / c.PointsOfInterest.SIGNPOST_HP, self.id)
 
     def _draw_farmstead(self, screen, center):
         """A caved-in barn with its fence still half standing. Lootable like a ruins pile,
@@ -269,8 +295,18 @@ class PointOfInterest:
 
     def _draw_signpost(self, screen, center):
         cx, cy = center
-        pygame.draw.line(screen, (96, 72, 46), (cx, cy + 26), (cx, cy - 30), 5)
         rng = random.Random(f"sign:{self.x},{self.y}")
+        if self.wrecked:
+            # Snapped off at the foot: the stump of the post, and both boards face down in
+            # the grass where nobody can read them.
+            pygame.draw.line(screen, (96, 72, 46), (cx, cy + 26), (cx, cy + 12), 5)
+            for i, side in enumerate((1, -1)):
+                board = pygame.Rect(0, 0, 44, 14)
+                board.center = (cx + side * 26, cy + 6 + i * 16)
+                pygame.draw.rect(screen, (128, 104, 68), board, border_radius=2)
+                pygame.draw.rect(screen, (86, 66, 40), board, 2, border_radius=2)
+            return
+        pygame.draw.line(screen, (96, 72, 46), (cx, cy + 26), (cx, cy - 30), 5)
         for i, side in enumerate((1, -1)):
             board = pygame.Rect(0, 0, 44, 14)
             board.center = (cx + side * 22, cy - 20 + i * 18)

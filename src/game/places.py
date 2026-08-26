@@ -512,6 +512,33 @@ class WorldPlaces:
             return None
         return self.tunnel_at(chunk, kind)
 
+    def sprung_trap_in_reach(self, player: Player):
+        """The shut bear trap the player could set again, or None. Nothing else about a trap
+        is ever offered: a trap still waiting is left well alone."""
+        # Never from inside the jaws: setting one under your own foot would shut it on the
+        # foot, which is a prompt that punishes the player for taking it.
+        clear = c.Traps.TRIGGER_RADIUS + c.Player.SIZE / 2
+        best = None
+        for trap in self.traps:
+            if not trap.sprung:
+                continue
+            distance = trap.distance_to_point(player.get_pos())
+            if clear < distance < c.Traps.REARM_DISTANCE and (best is None or distance < best[0]):
+                best = (distance, trap)
+        return None if best is None else best[1]
+
+    def rearm_trap(self, trap):
+        """Haul the jaws back open and set the plate. Whoever laid the line is long gone, so
+        a trap the player has already paid for is one they can turn round and leave for
+        whatever comes after them: it costs nothing but the seconds it takes, and from then
+        on it shuts on the next thing along, the player included."""
+        trap.sprung = False
+        self.trap_state.pop(trap.id, None)
+        play_sound("trap_snap")
+        get_particles().spawn_burst(trap.x, trap.y, (150, 148, 140), count=10, speed=4, life=320, size=3, gravity=0.4)
+        if self.notify:
+            self.notify("The trap is set again", c.Colors.MUTED)
+
     def shrine_in_reach(self, player: Player) -> PointOfInterest | None:
         """The shrine the player could pray at right now: near enough, and not yet answered.
         A spent shrine offers nothing, so it stops prompting entirely."""
@@ -1078,6 +1105,10 @@ class WorldPlaces:
                 if self.notify:
                     self.notify(random.choice(c.PointsOfInterest.LANDMARK_MESSAGES[poi.kind]), c.Colors.WHITE)
             elif poi.kind == "signpost":
+                if poi.wrecked:
+                    # Nothing left to read: whoever put the post through took the directions
+                    # with it, and walking up to it again will not bring them back.
+                    continue
                 poi.discovered = True
                 if self.notify:
                     self.notify(self._signpost_directions(poi), (200, 190, 150))

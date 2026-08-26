@@ -197,6 +197,11 @@ class Building(BuildingArt):
         self.door_open = False
         self.door_broken = False
         self.door_hp = c.Buildings.DOOR_HP
+        # Whether this one is locked is rolled from the id on first ask and kept, like the
+        # style and the wing; `door_unlocked` is the player having let themselves out from
+        # the inside, which is persisted because a house broken into stays broken into.
+        self._locked: bool | None = None
+        self.door_unlocked = False
         # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
         # persisted: it lives only for the current play session, same as indoor monsters.
         self.dropped_items: list[Item] = []
@@ -215,7 +220,7 @@ class Building(BuildingArt):
         self._rect: pygame.Rect | None = None
         self._floors: list[pygame.Rect] | None = None
         self._segments: list[pygame.Rect] | None = None
-        self._segments_door: bool | None = None
+        self._segments_door: tuple | None = None
         # How this one is built (roof material and form, wall tint, extras). Rolled from
         # the building's own id on first draw, so a street is a row of different houses
         # and each of them keeps its look for good.
@@ -405,6 +410,30 @@ class Building(BuildingArt):
         return self.has_door and not self.door_open and not self.door_broken
 
     @property
+    def locked(self) -> bool:
+        """True while the front door will not open for the player at all.
+
+        Rolled from the building's own id, so the same house is locked every time and a
+        street is worth learning rather than worth trying. A locked door is not a tougher
+        door: it is a wall with a window beside it, and the window is the way in
+        (`window_gaps`). Once the player is inside, they unbar it themselves and it is a
+        door like any other from then on."""
+        if not self.has_door or self.door_broken or self.door_unlocked:
+            return False
+        if self._locked is None:
+            self._locked = (
+                self.kind in c.Buildings.LOCK_KINDS
+                and random.Random(f"lock:{self.id}").random() < c.Buildings.LOCK_CHANCE
+            )
+        return self._locked
+
+    def unlock(self):
+        """Unbar the door from the inside, for good. What somebody who climbed in through
+        the window does on their way out, so a house broken into is never a room the player
+        has to leave the way they came."""
+        self.door_unlocked = True
+
+    @property
     def door_key(self) -> str:
         """Identity of this door for `core.damage_fx`, which is keyed by string."""
         return f"{self.id}:door"
@@ -435,9 +464,10 @@ class Building(BuildingArt):
 
     def toggle_door(self) -> bool:
         """Open a shut door or shut an open one. Returns the new open state; a door that has
-        been beaten down is past opening or closing and stays as it is."""
-        if not self.has_door or self.door_broken:
-            return True
+        been beaten down is past opening or closing and stays as it is, and a locked one
+        does not answer at all until somebody inside has unbarred it."""
+        if not self.has_door or self.door_broken or self.locked:
+            return self.door_open
         self.door_open = not self.door_open
         return self.door_open
 
@@ -453,15 +483,35 @@ class Building(BuildingArt):
         self.door_broken = True
         return True
 
+    def _window_offsets(self) -> list[float]:
+        """Where along the front wall the two windows sit, either side of the door. The one
+        place that is decided, so the pane that is drawn and the hole a broken one leaves in
+        the wall are always the same slot."""
+        if not self.has_door:
+            return []
+        offset = c.Buildings.DOOR_WIDTH / 2 + c.Buildings.WINDOW_X_FROM_DOOR + c.Buildings.WINDOW_W / 2
+        return [side * offset for side in (-1, 1)]
+
     def window_rects(self) -> list[pygame.Rect]:
         """Two windows flanking the door on the front facade, in world coordinates.
         The landmark has no facade at all, so it gets none."""
-        if not self.has_door:
-            return []
-        long_side, depth = c.Buildings.WINDOW_W, c.Buildings.WINDOW_H
+        depth = c.Buildings.WINDOW_H
         inset = c.Buildings.WINDOW_Y_FROM_BOTTOM - depth
-        offset = c.Buildings.DOOR_WIDTH / 2 + c.Buildings.WINDOW_X_FROM_DOOR + long_side / 2
-        return [self._facade_slot(long_side, depth, side * offset, inset) for side in (-1, 1)]
+        return [self._facade_slot(c.Buildings.WINDOW_W, depth, offset, inset) for offset in self._window_offsets()]
+
+    def window_gaps(self) -> list[pygame.Rect]:
+        """The holes the shattered windows leave in the wall: one slot through the full
+        thickness of the facade per broken pane.
+
+        The pane itself is drawn a little way inside the wall, the way everything on a
+        facade is; what the wall actually loses is the whole depth of it, because a window
+        somebody has put through is a way into the house and not a decoration."""
+        wall = c.Buildings.WALL_THICKNESS
+        return [
+            self._facade_slot(c.Buildings.WINDOW_W, wall, offset)
+            for index, offset in enumerate(self._window_offsets())
+            if index in self.broken_windows
+        ]
 
     def _wall_segments(self) -> list[pygame.Rect]:
         """The building's solid shell as a few thin rects, with a permanent door-sized
@@ -472,12 +522,14 @@ class Building(BuildingArt):
         have between them: `_wing_opening` is cut out of every segment, which turns two
         boxes standing against each other into one room with a corner in it.
 
-        Kept once built, and rebuilt only when the door opens or comes down: a shut door is
-        part of the shell and an open one is a gap in it, and nothing else about a standing
-        building's walls ever changes."""
-        if self._segments is not None and self._segments_door == self.door_closed:
+        Kept once built, and rebuilt only when the door opens or comes down or a window is
+        put through: a shut door is part of the shell and an open one is a gap in it, a
+        broken window is a second gap, and nothing else about a standing building's walls
+        ever changes."""
+        state = (self.door_closed, len(self.broken_windows))
+        if self._segments is not None and self._segments_door == state:
             return self._segments
-        self._segments_door = self.door_closed
+        self._segments_door = state
         r = self.rect
         if not self.has_door:
             self._segments = [r]
@@ -515,6 +567,10 @@ class Building(BuildingArt):
         # A shut door is part of the shell; open it or break it and the gap is back.
         if self.door_closed:
             segments.append(self.door_rect())
+        # And every window somebody has put through is a hole in it, which is what makes
+        # breaking one the way into a house whose door will not open.
+        for gap in self.window_gaps():
+            segments = [piece for seg in segments for piece in _subtract(seg, gap)]
         self._segments = segments
         return segments
 
@@ -568,6 +624,7 @@ class Building(BuildingArt):
             "looted": self.looted,
             "broken_props": sorted(self.broken_props),
             "broken_windows": sorted(self.broken_windows),
+            "door_unlocked": self.door_unlocked,
             "door_open": self.door_open,
             "door_broken": self.door_broken,
         }
@@ -580,6 +637,7 @@ class Building(BuildingArt):
         building.looted = data["looted"]
         building.broken_props = set(data.get("broken_props", []))
         building.broken_windows = set(data.get("broken_windows", []))
+        building.door_unlocked = data.get("door_unlocked", False)
         building.door_open = data.get("door_open", False)
         building.door_broken = data.get("door_broken", False)
         return building

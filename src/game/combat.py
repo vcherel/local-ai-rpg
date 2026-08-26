@@ -230,6 +230,18 @@ class WorldCombat:
             self._hit_poi(player, poi_hit, prop_damage, blow)
             return
 
+        prop_poi = next(
+            (
+                p
+                for p in self.pois
+                if p.wreckable and p.distance_to_point(pos) < hit_radius + c.PointsOfInterest.HIT_RADIUS
+            ),
+            None,
+        )
+        if prop_poi is not None:
+            self._wreck_poi(prop_poi, prop_damage, blow)
+            return
+
         breakable = next(
             (b for b in self.breakables if b.distance_to_point(pos) < hit_radius + c.Breakables.HIT_RADIUS), None
         )
@@ -237,22 +249,32 @@ class WorldCombat:
             self._hit_breakable(player, breakable, prop_damage, quest_system, blow)
             return
 
-        tree = next(
-            (
-                item
-                for item in self.scenery_near(*pos)
-                if item.choppable and math.hypot(item.x - pos[0], item.y - pos[1]) < hit_radius + c.Trees.HIT_RADIUS
-            ),
-            None,
-        )
-        if tree is not None:
-            self._chop_tree(player, tree, arch, prop_damage, blow)
+        wild = self._wilderness_in_reach(pos, hit_radius)
+        if wild is not None:
+            if wild.choppable:
+                self._chop_tree(player, wild, arch, prop_damage, blow)
+            else:
+                self._smash_boulder(player, wild, arch, prop_damage, blow)
             return
 
         window_hit = self._find_window_in_reach(pos, hit_radius)
         if window_hit is not None:
             building, idx, window = window_hit
-            self._hit_window(building, idx, window, prop_damage, blow)
+            self._hit_window(player, building, idx, window, prop_damage, blow)
+
+    def _wilderness_in_reach(self, pos, hit_radius: float):
+        """The tree or the boulder a swing at `pos` lands on, or None. The two things in the
+        wilderness that answer a weapon, found the same way and each by its own reach."""
+        for item in self.scenery_near(*pos):
+            if item.choppable:
+                reach = c.Trees.HIT_RADIUS
+            elif item.smashable:
+                reach = c.Boulders.HIT_RADIUS
+            else:
+                continue
+            if math.hypot(item.x - pos[0], item.y - pos[1]) < hit_radius + reach:
+                return item
+        return None
 
     def _chop_tree(self, player: Player, tree, arch, prop_damage: int, blow: float):
         """One swing into a trunk. An axe is what a tree is felled with and does the work
@@ -280,6 +302,59 @@ class WorldCombat:
             log.rarity = "common"
             log.start_pop_anim(tree.x, tree.y)
             self.items.append(log)
+
+    def _smash_boulder(self, player: Player, boulder, arch, prop_damage: int, blow: float):
+        """One swing into a rock. A hammer is what breaks stone and does the work several
+        times over; an edge chips at it, which is slow but not impossible.
+
+        A broken boulder leaves rubble and a few stones on the ground, and the world
+        remembers it was broken (`World.smashed`) so it is still open when the chunk streams
+        back in, exactly as a felled tree is."""
+        mult = c.Boulders.HAMMER_MULT if arch.name == "hammer" else c.Boulders.OTHER_MULT
+        boulder.hp -= max(1, round(prop_damage * mult))
+        self._prop_chip(boulder.x, boulder.y, c.Boulders.RUBBLE_COLOR, "hit", boulder.key, blow)
+        if boulder.hp > 0:
+            return
+
+        boulder.smash()
+        if boulder.key:
+            self.smashed.add(boulder.key)
+        play_sound("crate_break")
+        get_shake().add(c.Boulders.SHAKE)
+        get_particles().spawn_burst(
+            boulder.x,
+            boulder.y,
+            c.Boulders.RUBBLE_COLOR,
+            count=24,
+            speed=7,
+            life=600,
+            size=5,
+            gravity=0.5,
+            shape="shard",
+        )
+        player.stats.train("strength", c.Boulders.XP_PER_SMASH)
+        for _ in range(random.randint(*c.Boulders.STONE_DROPS)):
+            stone = Item(boulder.x + random.uniform(-16, 16), boulder.y + random.uniform(-16, 16), "Stone", "misc")
+            stone.rarity = "common"
+            stone.start_pop_anim(boulder.x, boulder.y)
+            self.items.append(stone)
+
+    def _wreck_poi(self, poi: PointOfInterest, prop_damage: int, blow: float):
+        """One swing into a landmark that is a prop rather than a place: a signpost. It
+        comes down like a barrel, pays nothing, and stays down (`PointOfInterest.wrecked`),
+        which costs the player whatever was written on it."""
+        poi.prop_hp -= prop_damage
+        if poi.prop_hp > 0:
+            self._prop_chip(poi.x, poi.y, (150, 120, 80), "crate_break", f"poi:{poi.id}", blow)
+            return
+        poi.wrecked = True
+        get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(
+            poi.x, poi.y, (150, 120, 80), count=18, speed=6, life=520, size=4, gravity=0.5, shape="shard"
+        )
+        if self.notify:
+            self.notify("The signpost comes down", c.Colors.MUTED)
 
     @staticmethod
     def _targets_in_reach(
@@ -412,7 +487,7 @@ class WorldCombat:
         if key is not None:
             get_damage_fx().hit(key, angle)
 
-    def _hit_window(self, building: Building, idx: int, window, damage: int, angle: float = 0.0):
+    def _hit_window(self, player: Player, building: Building, idx: int, window, damage: int, angle: float = 0.0):
         """Crack a window, and shatter it once it has taken enough."""
         remaining = building.window_hp.get(idx, c.Buildings.WINDOW_HP) - damage
         if remaining > 0:
@@ -422,7 +497,7 @@ class WorldCombat:
             )
             return
         building.window_hp.pop(idx, None)
-        self._break_window(building, idx, window)
+        self._break_window(player, building, idx, window)
 
     def _blocking_door(self, chaser, player: Player) -> Building | None:
         """The shut door standing between a chaser and the player, once the chaser is at it.
@@ -620,9 +695,13 @@ class WorldCombat:
             shape="shard",
         )
 
-    def _break_window(self, building: Building, idx: int, window):
-        """Shatter a window: no loot, just a satisfying crash."""
+    def _break_window(self, player: Player, building: Building, idx: int, window):
+        """Shatter a window. No loot, and two things that are not the crash: the hole is a
+        way into the house (`Building.window_gaps`, which is what makes a locked door worth
+        answering), and putting somebody's window through in front of them is vandalism like
+        wrecking their room, answered on the same ladder by whoever saw it."""
         building.broken_windows.add(idx)
+        self.report_crime(window.centerx, window.centery, player)
         get_shake().add(c.Combat.WINDOW_SHAKE)
         play_sound("glass_break")
         get_particles().spawn_burst(
