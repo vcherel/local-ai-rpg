@@ -778,6 +778,15 @@ class Fog:
     CELL: int = 250
     REVEAL_RADIUS: int = 620
 
+    # Underground the same memory is kept on a much finer grid, and only as far as the
+    # player can see. A tunnel is a few rooms wide where the surface is a countryside, so
+    # surface-sized cells would blot the whole place in on the first step down; revealing
+    # only what the lantern reaches is what makes a cave unfold on the map as it is walked.
+    # The cells are world cells like any other (a tunnel is ordinary world space), just
+    # counted at this size, and they are saved and reloaded with the rest.
+    TUNNEL_CELL: int = 70
+    TUNNEL_REVEAL_RADIUS: int = 320
+
 
 @dataclass(frozen=True)
 class PointsOfInterest:

@@ -27,12 +27,20 @@ class Minimap:
     # World span across the whole map. Roughly one and a half screens, so it orients
     # without scouting ahead.
     RANGE: int = 2600
+    # Underground the map is scaled to the place rather than to the view: a dug-out is a
+    # handful of rooms strung out over a few thousand paces, and the whole of one wants to
+    # fit on the panel so the player can see what they have cleared and what they have not.
+    TUNNEL_RANGE: int = 3200
     # World units to a pace, for the "paces from home" strip: the raw distance runs to five
     # figures and reads as noise, where a pace is a number a person can hold in their head.
     PACE: int = 32
 
     UNSEEN_COLOR: tuple = (18, 17, 22)
     GROUND_COLOR: tuple = (58, 74, 48)
+    # Remembered floor underground: stone rather than grass, since that is what was walked.
+    TUNNEL_GROUND_COLOR: tuple = (104, 92, 78)
+    # The way back out, the one thing down there worth marking.
+    EXIT_COLOR: tuple = (226, 214, 156)
     PLAZA_COLOR: tuple = (120, 98, 70)
     PLAYER_COLOR: tuple = (245, 245, 245)
     POI_COLORS = {

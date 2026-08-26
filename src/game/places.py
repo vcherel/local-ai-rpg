@@ -353,6 +353,9 @@ class WorldPlaces:
         stood up now rather than streamed, because nothing streams underground."""
         self.surface_return = (player.x, player.y)
         self.underground = tunnel
+        # The cells change size on the way down, so the last one walked through means
+        # nothing any more.
+        self._last_reveal_cell = None
         player.x, player.y = tunnel.entrance
         self.projectiles.clear()
         self._populate_tunnel(tunnel)
@@ -380,6 +383,7 @@ class WorldPlaces:
         self.tunnel_state[tunnel.id] = tunnel.state()
         self.underground = None
         self.surface_return = None
+        self._last_reveal_cell = None
         self._clear_tunnel_monsters(tunnel)
         self.projectiles.clear()
 
@@ -1106,23 +1110,41 @@ class WorldPlaces:
         reach = "not far" if distance < 1800 else ("a fair walk" if distance < 3200 else "a long way")
         return f"The camper points {bearing}: {label}, {reach} from here."
 
+    @property
+    def fog_cell(self) -> int:
+        """How coarsely the map remembers where the player has been. One size on the surface
+        and a much finer one underground, where the whole place would otherwise be a single
+        cell. Both are cells of the same world grid, so the tunnels sit in their own far-off
+        corner of it and nothing has to know which kind a saved cell was."""
+        return c.Fog.TUNNEL_CELL if self.underground is not None else c.Fog.CELL
+
     def is_explored(self, x, y) -> bool:
         """True once the player has walked close enough to this spot for the map to remember it."""
-        cell = c.Fog.CELL
+        cell = self.fog_cell
         return (int(x // cell), int(y // cell)) in self.explored
 
     def _reveal_around(self, player: Player):
         """Remember the ground around the player. Only recomputed when they cross into a new
-        cell, so the common case costs one comparison."""
-        cell = c.Fog.CELL
+        cell, so the common case costs one comparison.
+
+        Underground the reach is the lantern's rather than the horizon's, and only floor is
+        remembered: rock is not somewhere the player has been, and leaving it out is what
+        makes the map draw the rooms and the corridors themselves as they are walked instead
+        of a smear over the middle of them."""
+        tunnel = self.underground
+        cell = self.fog_cell
+        radius = c.Fog.TUNNEL_REVEAL_RADIUS if tunnel is not None else c.Fog.REVEAL_RADIUS
         here = (int(player.x // cell), int(player.y // cell))
         if here == self._last_reveal_cell:
             return
         self._last_reveal_cell = here
-        span = int(c.Fog.REVEAL_RADIUS // cell) + 1
+        span = int(radius // cell) + 1
         for dx in range(-span, span + 1):
             for dy in range(-span, span + 1):
                 gx, gy = here[0] + dx, here[1] + dy
                 center = ((gx + 0.5) * cell, (gy + 0.5) * cell)
-                if math.hypot(center[0] - player.x, center[1] - player.y) <= c.Fog.REVEAL_RADIUS:
-                    self.explored.add((gx, gy))
+                if math.hypot(center[0] - player.x, center[1] - player.y) > radius:
+                    continue
+                if tunnel is not None and not tunnel.contains_point(*center):
+                    continue
+                self.explored.add((gx, gy))

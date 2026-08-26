@@ -26,6 +26,13 @@ _LANTERN_MASK: pygame.Surface | None = None
 _DARK_OVERLAY: pygame.Surface | None = None
 
 
+def _distance_to_rect(rect: pygame.Rect, x: float, y: float) -> float:
+    """How far a point is from the nearest edge of a rectangle, zero inside it."""
+    dx = max(rect.left - x, 0.0, x - rect.right)
+    dy = max(rect.top - y, 0.0, y - rect.bottom)
+    return math.hypot(dx, dy)
+
+
 def _lantern_mask() -> pygame.Surface:
     """The player's light as one continuous gradient, built once and kept.
 
@@ -112,6 +119,13 @@ class Tunnel:
             x, y = x + math.cos(angle) * gap, y + math.sin(angle) * gap
 
         self._floor = self.rooms + self.corridors
+        # Which pieces of floor open onto which, worked out once. The player's light travels
+        # along these and nowhere else, so it reaches round a doorway without ever crossing
+        # rock (see `_lit_floor`).
+        self._adjacent = [
+            [j for j, other in enumerate(self._floor) if j != i and rect.colliderect(other)]
+            for i, rect in enumerate(self._floor)
+        ]
         # The shaft comes down into the first room, and it is the only way back up.
         self.entrance = self.rooms[0].center
         # The furthest room from the way in, which is the one worth walking to. A well has
@@ -163,6 +177,33 @@ class Tunnel:
             if not any(rect.left <= px <= rect.right and rect.top <= py <= rect.bottom for rect in self._floor):
                 return True
         return False
+
+    def _lit_floor(self, x: float, y: float) -> list[pygame.Rect]:
+        """The pieces of floor the player's light may fall on: the ones they are standing on,
+        and everything joined to those that is close enough to be lit at all.
+
+        Clipping to the single rectangle under the player is what made the dark flicker: a
+        room and the corridor leaving it are two rectangles, so half of a doorway went black
+        and the whole view snapped over as the player crossed the seam. Spreading along the
+        overlaps instead means the light stops at rock (it never jumps to floor that is not
+        joined to the floor being stood on) while the set of lit pieces only ever changes at
+        the light's own radius, where the piece was contributing nothing anyway.
+        """
+        reach = c.Tunnels.LIGHT_RADIUS
+        here = [i for i, rect in enumerate(self._floor) if rect.collidepoint(x, y)]
+        if not here:
+            # Off the floor entirely (thrown clear, or loaded standing in rock): light the
+            # nearest piece rather than nothing at all.
+            here = [min(range(len(self._floor)), key=lambda i: _distance_to_rect(self._floor[i], x, y))]
+        seen = set(here)
+        queue = list(here)
+        while queue:
+            for j in self._adjacent[queue.pop()]:
+                if j in seen or _distance_to_rect(self._floor[j], x, y) > reach:
+                    continue
+                seen.add(j)
+                queue.append(j)
+        return [self._floor[i] for i in seen]
 
     def contains_point(self, x: float, y: float) -> bool:
         return any(rect.collidepoint(x, y) for rect in self._floor)
@@ -275,8 +316,9 @@ class Tunnel:
         And it stops at the rock. The lantern used to be cut out of the dark as a plain
         circle, which meant it shone straight through a wall: standing in a corridor lit the
         rooms on the far side of it and gave the whole layout away from the doorway. The
-        cut-out is clipped to the floor the player is actually standing on (a room, a
-        corridor, both where the two overlap), so what is round a corner stays round it."""
+        cut-out is clipped to the floor the light can actually reach (`_lit_floor`: what is
+        being stood on and whatever opens onto it), so what is round a corner stays round
+        it while a doorway is lit on both sides of the seam."""
         global _DARK_OVERLAY
         if _DARK_OVERLAY is None:
             _DARK_OVERLAY = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
@@ -288,9 +330,7 @@ class Tunnel:
         # Taking the lower of the two alphas cuts the light out of the dark: inside the
         # radius the gradient wins, outside it the mask is already full dark and nothing
         # changes. Done once per piece of floor under the player, clipped to that piece.
-        for rect in self._floor:
-            if not rect.collidepoint(player.x, player.y):
-                continue
+        for rect in self._lit_floor(player.x, player.y):
             overlay.set_clip(self._to_screen(camera, rect))
             overlay.blit(light, area, special_flags=pygame.BLEND_RGBA_MIN)
         overlay.set_clip(None)

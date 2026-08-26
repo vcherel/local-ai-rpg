@@ -54,34 +54,46 @@ class Minimap:
         self.screen.set_clip(inner)
         pygame.draw.rect(self.screen, c.Minimap.UNSEEN_COLOR, inner)
 
-        scale = inner.width / c.Minimap.RANGE
+        tunnel = world.underground
+        span = c.Minimap.TUNNEL_RANGE if tunnel is not None else c.Minimap.RANGE
+        scale = inner.width / span
 
         def to_map(wx, wy) -> tuple:
             return (inner.centerx + (wx - player.x) * scale, inner.centery + (wy - player.y) * scale)
 
-        self._draw_explored(world, player, inner, scale, to_map)
-        self._draw_villages(world, player, scale, to_map)
-        self._draw_buildings(world, player, scale, to_map)
-        self._draw_pois(world, to_map)
-        self._draw_rumors(world, inner, scale, to_map)
+        self._draw_explored(world, player, span, scale, to_map)
+        # Underground there is nothing else on the map: no village, no building, no landmark
+        # and no rumour is within a million paces of a tunnel. The one mark worth drawing is
+        # the way back out, and only once the player has walked past it.
+        if tunnel is not None:
+            self._draw_exit(world, tunnel, to_map)
+        else:
+            self._draw_villages(world, player, scale, to_map)
+            self._draw_buildings(world, player, scale, to_map)
+            self._draw_pois(world, to_map)
+            self._draw_rumors(world, inner, scale, to_map)
         self._draw_player(player, inner)
 
         self.screen.set_clip(previous_clip)
         self._draw_compass(inner)
         self._draw_strips(world, player, self.rect.bottom)
 
-    def _draw_explored(self, world: World, player: Player, inner: pygame.Rect, scale: float, to_map):
+    def _draw_explored(self, world: World, player: Player, span: float, scale: float, to_map):
         """The remembered ground, one flat square per explored cell. Cells are big enough
-        that the edge of what the player knows reads as a ragged frontier."""
-        cell = c.Fog.CELL
-        half = c.Minimap.RANGE / 2
+        that the edge of what the player knows reads as a ragged frontier.
+
+        Underground the same squares are smaller and stone-coloured (`World.fog_cell`), so a
+        cave draws itself room by room as it is lit rather than arriving whole."""
+        cell = world.fog_cell
+        color = c.Minimap.TUNNEL_GROUND_COLOR if world.underground is not None else c.Minimap.GROUND_COLOR
+        half = span / 2
         size = math.ceil(cell * scale) + 1
         for gx in range(int((player.x - half) // cell), int((player.x + half) // cell) + 1):
             for gy in range(int((player.y - half) // cell), int((player.y + half) // cell) + 1):
                 if (gx, gy) not in world.explored:
                     continue
                 left, top = to_map(gx * cell, gy * cell)
-                pygame.draw.rect(self.screen, c.Minimap.GROUND_COLOR, pygame.Rect(round(left), round(top), size, size))
+                pygame.draw.rect(self.screen, color, pygame.Rect(round(left), round(top), size, size))
 
     def _draw_villages(self, world: World, player: Player, scale: float, to_map):
         for village in world.villages:
@@ -119,6 +131,16 @@ class Minimap:
                 pygame.draw.polygon(self.screen, color, [(x, y - 4), (x - 4, y + 3), (x + 4, y + 3)])
             else:
                 pygame.draw.circle(self.screen, color, (round(x), round(y)), 3)
+
+    def _draw_exit(self, world: World, tunnel, to_map):
+        """The shaft or the cave mouth, the one thing underground the player has to be able
+        to find again. Drawn like a landmark, and like a landmark only once it has been
+        walked to: it is where they came in, so it always has been."""
+        if not world.is_explored(*tunnel.entrance):
+            return
+        x, y = to_map(*tunnel.entrance)
+        pygame.draw.circle(self.screen, c.Minimap.EXIT_COLOR, (round(x), round(y)), 4)
+        pygame.draw.circle(self.screen, (40, 36, 30), (round(x), round(y)), 4, 1)
 
     def _draw_player(self, player: Player, inner: pygame.Rect):
         """A small arrow at the middle of the map, pointing where the player faces. Sprites
@@ -175,15 +197,40 @@ class Minimap:
         # centre and nothing else, so this strip is the one number that says how dangerous
         # the ground under the player's feet is, and it belongs with the map that says where
         # that ground is.
-        y = self._draw_text_strip(self._distance_label(player), c.Colors.MUTED, y)
+        y = self._draw_text_strip(self._distance_label(world, player), c.Colors.MUTED, y)
         self._draw_clock(world, y)
         self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
 
     @staticmethod
-    def _distance_label(player: Player) -> str:
+    def _distance_label(world: World, player: Player) -> str:
+        """How far out the player has walked, and from what.
+
+        On the surface that is the world centre, since difficulty here is distance from it.
+        Underground it cannot be: a tunnel is carved a million paces from anywhere, so the
+        same sum would report a number that says nothing about the ground being stood on.
+        Down there the reading is from the way in instead, which is the only distance that
+        means anything in a cave: how far back the daylight is.
+
+        The wording is the longest of the phrasings that fits the panel. At four digits the
+        full sentence runs off the end of its strip, and a distance is worth reading exactly
+        where a preposition is not."""
+        if world.underground is not None:
+            ex, ey = world.underground.entrance
+            paces = round(math.hypot(player.x - ex, player.y - ey) / c.Minimap.PACE)
+            return Minimap._widest(f"{paces:,} paces from the way in", f"{paces:,} paces in")
         center = c.World.WORLD_SIZE // 2
         paces = round(math.hypot(player.x - center, player.y - center) / c.Minimap.PACE)
-        return f"{paces:,} paces from home".replace(",", " ")
+        return Minimap._widest(f"{paces:,} paces from home", f"{paces:,} paces out")
+
+    @staticmethod
+    def _widest(*options: str) -> str:
+        """The first phrasing that fits a strip, thousands spaced rather than commaed. The
+        last one is taken whether it fits or not, so there is always an answer."""
+        for option in options:
+            text = option.replace(",", " ")
+            if c.Fonts.small.size(text)[0] <= c.Minimap.SIZE - c.Minimap.PADDING * 2:
+                return text
+        return options[-1].replace(",", " ")
 
     def _draw_text_strip(self, text: str, color: tuple, top: int) -> int:
         """One line of its own under the map, returning where the next strip starts."""
