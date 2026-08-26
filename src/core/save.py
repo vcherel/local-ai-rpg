@@ -19,8 +19,6 @@ class SaveSystem:
         - equipped: Currently equipped item ids, keyed by slot (dict[str, str | None])
         - potion_bar: Item ids on the HUD potion quickbar, None per empty slot. A choice the
           save keeps, so which potion a quick key drinks survives a pickup (list)
-        - active_hands: Which of its two weapons each hand is currently holding, one index
-          per hand (list[int])
         - items: All world items, the master list quests and inventory link into (list[dict])
         - npcs: NPC state including their quests (list[dict])
         - monsters: Monster positions, hp and kind (list[dict])

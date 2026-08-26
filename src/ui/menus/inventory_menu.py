@@ -226,9 +226,9 @@ class InventoryMenu(BaseMenu):
                 return True
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-            # Right click walks a weapon along the four positions (keys 1 to 4), or a potion
-            # along the quickbar, and then off the end: the only way to arrange the hands by
-            # hand, since equipping and picking up only ever fill a position that is free.
+            # Right click walks a weapon from one hand to the other and then off the end,
+            # or a potion along the quickbar: the only way to say which button a weapon
+            # answers to, since equipping and picking up only ever fill a hand that is free.
             rel_x, rel_y = event.pos[0] - menu_x, event.pos[1] - menu_y
             entry = self._entry_at(rel_x, rel_y, rows)
             if entry is not None:
@@ -288,7 +288,7 @@ class InventoryMenu(BaseMenu):
 
         self.draw_hint(
             surface,
-            "Click to equip, unequip or drink. Right click a weapon or potion for its key. ESC or I to close",
+            "Click to equip, unequip or drink. Right click a weapon to move it hand to hand. ESC or I to close",
         )
         self.blit_panel(surface)
 
@@ -302,21 +302,19 @@ class InventoryMenu(BaseMenu):
         first_rect = self._paperdoll_rects()[0][3]
         surface.blit(header, (self.padding, first_rect.y - 24 - header.get_height() - 6))
 
-        held = {player.hand_slot(hand) for hand in range(c.Player.HANDS)}
         for item_type, label, glyph, rect in self._paperdoll_rects():
             item = player.equipped_item(item_type)
             hovered = self.hovered_equip == item_type
-            # All four weapons are carried; the one each hand is actually holding takes the
-            # gold label, border and corner dot, since the positions are otherwise identical.
-            in_hand = item_type in held
+            # The three slots a button or a key spends take the gold caption and say what
+            # uses them, since what a slot is for is the whole of what the doll tells.
+            key = widgets.SLOT_KEYS.get(item_type)
+            caption = f"{label} [{key}]" if key is not None and key != label[0] else label
 
-            label_surf = c.Fonts.small.render(label, True, c.Colors.ACCENT if in_hand else c.Colors.MUTED)
+            label_surf = c.Fonts.small.render(caption, True, c.Colors.ACCENT if key else c.Colors.MUTED)
             surface.blit(label_surf, (rect.centerx - label_surf.get_width() // 2, rect.y - 22))
 
             border = c.Colors.ACCENT if item else c.Colors.SLOT_BORDER
-            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border, border_w=3 if in_hand else 2)
-            if in_hand:
-                pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 10, rect.y + 10), 4)
+            widgets.draw_slot(surface, rect, hovered=hovered, border_color=border, border_w=3 if key else 2)
 
             if item is not None:
                 widgets.draw_item_scaled(surface, item, rect.centerx, rect.centery - 6, 58)
@@ -387,13 +385,10 @@ class InventoryMenu(BaseMenu):
 
         if equipped:
             pygame.draw.circle(surface, c.Colors.ACCENT, (rect.x + 12, rect.y + 12), 5)
-        # Whichever key would reach for the item, drawn on it: a number for one of the four
-        # weapon positions, a letter for a potion on the quickbar.
-        bound = None
-        slot = player.equipped_slot_of(item)
-        if slot in widgets.WEAPON_SLOTS:
-            bound = str(widgets.WEAPON_SLOTS.index(slot) + 1)
-        elif item.id in player.potion_bar:
+        # Whichever button or key would reach for the item, drawn on it: the mouse button
+        # for a weapon, G for the bomb, a letter for a potion on the quickbar.
+        bound = widgets.SLOT_KEYS.get(player.equipped_slot_of(item))
+        if bound is None and item.id in player.potion_bar:
             bound = c.Potions.QUICK_KEYS[player.potion_bar.index(item.id)].upper()
         if bound is not None:
             key = c.Fonts.small.render(bound, True, c.Colors.ACCENT)

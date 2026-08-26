@@ -25,15 +25,15 @@ if TYPE_CHECKING:
 
 class GameRenderer:
     # Everything below sits inside one permanent panel in the top left corner:
-    # a row of icon buttons, then coin/item/quest counters, then the four carried weapons
-    # in key order, then what is worn. Kept as small as it can be read at: the
+    # a row of icon buttons, then coin/item/quest counters, then the two hands and the bomb,
+    # then what is worn. Kept as small as it can be read at: the
     # panel is drawn over the world and over anything the screen edge is trying to point
     # at, so every slot here costs the player a piece of the view.
     HUD_PANEL_RECT = pygame.Rect(8, 8, 284, 176)
     HUD_ICON_SIZE = 34
     HUD_ICON_GAP = 6
-    # Equip slots, four to a row. No captions under them: the ghost glyph says what an empty
-    # slot takes, and the captions were what forced the row twice as wide as its icons.
+    # Equip slots, up to four to a row. No captions under them: the ghost glyph says what an
+    # empty slot takes, and the captions were what forced the row twice as wide as its icons.
     HUD_SLOT_SIZE = 34
     HUD_SLOT_STEP = 38
 
@@ -674,20 +674,18 @@ class GameRenderer:
             x += width + gap
 
     def _draw_equipped(self, player: Player, top: int) -> int:
-        """The HUD paper-doll, in two rows: the four carried weapons in key order, then what
-        is worn.
+        """The HUD paper-doll, in two rows: what a button or a key spends (the two hands and
+        the bomb), then what is worn.
 
-        The weapon each hand is actually holding is gold-bordered and its key number is
-        marked, so the strip says both what the player is fighting with and what one press
-        would put in their hands instead. The ammo slot carries the count of the quiver the
+        Each of the three carries the button or key that uses it, so the strip says what to
+        press as well as what is held. The ammo slot carries the count of the quiver the
         next shot would spend, in red once it is empty. Returns the y it ends at, so what
         comes under it doesn't have to guess."""
         slot = self.HUD_SLOT_SIZE
         left = self.HUD_PANEL_RECT.x + 10
-        in_hand = {player.hand_slot(hand) for hand in range(c.Player.HANDS)}
         rows = (
-            [entry for entry in widgets.EQUIP_SLOTS if entry[0] in widgets.WEAPON_SLOTS],
-            [entry for entry in widgets.EQUIP_SLOTS if entry[0] not in widgets.WEAPON_SLOTS],
+            [entry for entry in widgets.EQUIP_SLOTS if entry[0] in widgets.ACTION_SLOTS],
+            [entry for entry in widgets.EQUIP_SLOTS if entry[0] not in widgets.ACTION_SLOTS],
         )
 
         y = top
@@ -700,17 +698,16 @@ class GameRenderer:
                     item = player.ready_ammo()
                 rect = pygame.Rect(left + i * self.HUD_SLOT_STEP, y, slot, slot)
 
-                held = slot_name in in_hand
-                border = c.Colors.ACCENT if held else (rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER)
-                widgets.draw_slot(self.screen, rect, border_color=border, border_w=3 if held else 2)
+                border = rarity_color(item.rarity) if item else c.Colors.SLOT_BORDER
+                widgets.draw_slot(self.screen, rect, border_color=border)
                 if item is not None:
                     widgets.draw_item_scaled(self.screen, item, rect.centerx, rect.centery, 26)
                 else:
                     draw_shape_with_border(self.screen, glyph, rect.center, 12, (60, 60, 70), 2, (84, 84, 98))
 
-                if slot_name in widgets.WEAPON_SLOTS:
-                    key = str(widgets.WEAPON_SLOTS.index(slot_name) + 1)
-                    label = c.Fonts.small.render(key, True, c.Colors.ACCENT if held else c.Colors.MUTED)
+                key = widgets.SLOT_KEYS.get(slot_name)
+                if key is not None:
+                    label = c.Fonts.small.render(key, True, c.Colors.ACCENT)
                     self.screen.blit(label, (rect.x + 4, rect.y + 2))
 
                 if slot_name == "ammo":

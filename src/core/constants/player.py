@@ -39,11 +39,10 @@ class Player:
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
 
-    # The player has two weapon hands: hand one is the left mouse button, hand two the
-    # right. Each holds two weapons the number keys switch between (1/2 for hand one, 3/4
-    # for hand two), so a fight is fought out of four answers chosen before it started.
+    # The player has two weapon hands, one weapon in each: hand one is the left mouse
+    # button, hand two the right. Key 1 swaps the two over, so a fight is fought out of the
+    # two answers chosen before it started.
     HANDS: int = 2
-    POSITIONS_PER_HAND: int = 2
 
 
 @dataclass(frozen=True)
