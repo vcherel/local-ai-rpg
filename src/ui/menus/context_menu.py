@@ -55,9 +55,12 @@ class ContextMenu(BaseMenu):
         """Called from background thread with the latest accumulated text."""
         self._chunk_queue.put(("chunk", accumulated))
 
-    def finish_streaming(self):
-        """Called from background thread once generation is complete."""
-        self._chunk_queue.put(("done", None))
+    def finish_streaming(self, text: str | None = None):
+        """Called from background thread once generation is complete. `text` is the finished
+        lore once it has been read out of the answer, and replaces whatever the stream put on
+        screen: an answer that held no lore ends as an empty screen rather than as the stray
+        word the stream was cut on."""
+        self._chunk_queue.put(("done", text))
 
     def show(self, text: str, intro: bool = False):
         """Show an already generated context. `intro` is a continued game opening on it, held
@@ -83,6 +86,8 @@ class ContextMenu(BaseMenu):
                     self.context_text = data
                     changed = True
                 elif kind == "done":
+                    if data is not None:
+                        self.context_text = data
                     self._generating = False
                     self._ready = True
                     self._ready_at = pygame.time.get_ticks()

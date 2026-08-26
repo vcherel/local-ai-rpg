@@ -198,7 +198,7 @@ class EventSystem:
         self.merchant_heading = random.uniform(0, 2 * math.pi)
         self.merchant_timer = c.Events.MERCHANT_DURATION_MS
         self.notify("A traveling merchant is on the road nearby", c.Colors.MERCHANT)
-        self.world.start_shop_generation()
+        self.world.start_shop_generation([npc])
 
     def _tick_merchant(self, dt, player: Player):
         """The pair walk while they are here and leave when their time is up.

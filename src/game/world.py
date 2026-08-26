@@ -12,6 +12,7 @@ import core.constants as c
 from core.audio import play_sound
 from core.daynight import DayNightCycle
 from core.decals import get_decals
+from core.utils import parse_world_context
 from game.combat import WorldCombat
 from game.entities.bomb import MINE, Bomb
 from game.entities.boss import Boss
@@ -67,7 +68,15 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.save_system = save_system
         self.context_window = context_window
         self.notify = notify
-        self.context = self.save_system.load("context", None)
+        # Read through the same guard the generation is: a save written before that guard
+        # existed can hold a stray word where the lore should be, and it would otherwise be
+        # written across the black on every launch for the rest of the playthrough.
+        self.context = parse_world_context(self.save_system.load("context", None))
+        # Whether the lore in hand is lore the model actually wrote, as against the fallback
+        # a failed call leaves behind: only the real thing is ever written to the save.
+        self._lore_generated = self.context is not None
+        if not self._lore_generated:
+            self.save_system.update("context", None)
         self.events = EventSystem(self, notify)
         self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
         self._load_persisted_state()
@@ -88,7 +97,6 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             # before anything in the world moves, rather than as a panel over a street.
             self.context_window.show(self.context, intro=True)
             self._start_landmark_naming()
-            self._start_village_naming()
 
     def _init_state(self):
         """Every list, index and timer the world keeps, before anything is loaded or built."""
@@ -112,6 +120,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self._scenery_by_cell: dict = {}
         self._water_by_cell: dict = {}
         self._loaded_chunks = set()
+        # Chunks in range and not built yet, nearest first, a few per frame; see
+        # `WorldStreaming._build_pending_chunks`.
+        self._pending_chunks: list[tuple[int, int]] = []
         self._current_chunk = None
         self._last_reveal_cell = None
 
@@ -183,6 +194,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self._shops_generating = False
         self._landmark_naming = False
         self._naming_villages: set = set()
+        # Counts down to the next look around for a settlement worth preparing; see
+        # `WorldStreaming._prepare_settlements_near`. Nothing here is urgent to the frame.
+        self._prepare_timer = 0.0
 
         # Throttles persist_world: several generation threads finishing at once would
         # otherwise each serialise the entire world back to disk.
@@ -253,8 +267,6 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         for village in self.villages:
             if village.defended and not any(npc.is_guard and village.contains_point(npc.x, npc.y) for npc in self.npcs):
                 self._post_guards(village)
-        if self.context:
-            self.start_shop_generation()
 
     def _create_new_world(self):
         village, buildings = generate_starting_world()
@@ -446,7 +458,8 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             return
         for key, value in state.items():
             self.save_system.update(key, value)
-        self.save_system.update("context", self.context)
+        if self._lore_generated:
+            self.save_system.update("context", self.context)
         self.save_system.save_all()
 
     def _poi_state_snapshot(self) -> dict:
@@ -1011,9 +1024,17 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             missing = c.Villages.SHOP_STOCK_TARGET - len(npc.shop_items)
             npc.add_stock(roll_shop_stock(missing, luck=npc.stock_luck) if missing > 0 else [])
 
-    def start_shop_generation(self):
-        """Stock every merchant still waiting for one, in a single background call."""
-        merchants = [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready]
+    def start_shop_generation(self, merchants: list | None = None):
+        """Stock the given merchants, in a single background call.
+
+        `merchants` is the shortlist the caller wants filled: the shops of a settlement the
+        player is walking up to (`_prepare_settlements_near`) or the one merchant an event
+        has just put on the road. Passing nothing stocks every merchant still waiting, which
+        is a whole world's worth of calls and is only what a caller standing in front of all
+        of them would want."""
+        if merchants is None:
+            merchants = [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready]
+        merchants = [npc for npc in merchants if npc.is_merchant and not npc.shop_ready]
         if not merchants or not self.context or self._shops_generating:
             return
         self._shops_generating = True
@@ -1027,9 +1048,6 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         finally:
             self._shops_generating = False
         self.persist_world()
-        # A merchant that showed up mid-batch (the wandering merchant event) was skipped
-        # by the guard, so give it its own pass now that this one is done.
-        self.start_shop_generation()
 
     @staticmethod
     def _shop_staples() -> list:
@@ -1608,6 +1626,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             self._reveal_around(player)
             self.events.update(dt, player, quest_system, npc_name_generator)
             self._check_poi_discovery(player)
+            self._prepare_settlements_near(player, dt, npc_name_generator)
             self._check_village_discovery(player)
             self._clear_reached_rumors(player)
 
@@ -1720,7 +1739,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # Monsters left far behind despawn, freeing their slot to respawn near the player.
         # Camp guards are the exception: they hold a place rather than roam, and their camp
         # would look abandoned while its chunk is still loaded. They leave with the chunk
-        # instead (see WorldStreaming._unload_chunk). Nothing despawns while the player is
+        # instead (see WorldStreaming._unload_chunks). Nothing despawns while the player is
         # underground: every monster on the surface is a world away from a tunnel, and the
         # whole map would empty out and refill itself over one climb down.
         if self.underground is None:

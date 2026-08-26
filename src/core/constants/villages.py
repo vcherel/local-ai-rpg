@@ -97,6 +97,14 @@ class Villages:
     # Walking this close to the plaza discovers the village (one toast, then its name
     # shows on the map).
     DISCOVER_DISTANCE: int = 420
+    # How close the player has to come before a settlement is worth an LLM call. Its name
+    # and its merchants' stock are both prepared here and nowhere else: a town the player
+    # never walks up to costs nothing, and one they are walking up to is ready by the time
+    # they are in the street, since this reaches well past DISCOVER_DISTANCE.
+    PREPARE_DISTANCE: int = 1200
+    # How often the world looks around for a settlement worth preparing. Nothing about it
+    # is urgent to the frame, and the look walks every village and every villager.
+    PREPARE_INTERVAL_MS: int = 400
     # A wilderness point of interest keeps this far from a village site, generated or not.
     MIN_DIST_FROM_POI: int = 1100
 

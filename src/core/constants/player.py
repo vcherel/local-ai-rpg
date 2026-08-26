@@ -56,13 +56,17 @@ class Magic:
     is paced instead of rationed, and what decides how deep and how fast is the magic stat.
     """
 
-    # Pool at magic level 1, and what one bolt costs out of it.
-    POOL: int = 60
+    # Pool at magic level 1, and what one bolt costs out of it. Two casts and a little,
+    # so a wand found in the first hour is an opening move rather than the whole answer:
+    # the untrained caster fires, then has to close or run while the pool comes back.
+    POOL: int = 34
     BOLT_COST: int = 14
     # Mana per millisecond, held off for REGEN_DELAY_MS after the last cast so emptying the
-    # pool is felt: a staff carries a fight, it does not carry it alone.
-    REGEN_RATE: float = 0.012
-    REGEN_DELAY_MS: int = 900
+    # pool is felt: a staff carries a fight, it does not carry it alone. At level 1 a bolt
+    # costs about three and a half seconds of standing there, which is a whole fight's worth
+    # of decision; the magic stat is what buys that time back.
+    REGEN_RATE: float = 0.004
+    REGEN_DELAY_MS: int = 1400
     BAR_COLOR: tuple = (120, 150, 255)
     EMPTY_COLOR: tuple = (150, 120, 220)
 
@@ -173,8 +177,8 @@ class Stats:
     # is spent from and how fast that pool comes back. So a caster is built by casting, and
     # a swordsman picking up a staff is holding a beginner's weapon.
     MAGIC_DAMAGE_PER_LEVEL: int = 3  # flat damage on anything a staff puts in the air
-    MAGIC_POOL_PER_LEVEL: int = 8  # extra mana
-    MAGIC_REGEN_PER_LEVEL: float = 0.0015  # extra mana per millisecond
+    MAGIC_POOL_PER_LEVEL: int = 10  # extra mana
+    MAGIC_REGEN_PER_LEVEL: float = 0.0014  # extra mana per millisecond
     BARTER_PER_LEVEL: float = 0.03  # 3% better prices per level
     # How much of the water penalty each level of swimming buys back, from Scenery.SWIM_SPEED
     # toward SWIM_SPEED_MAX. The only stat with no effect on land: it turns a river from a
