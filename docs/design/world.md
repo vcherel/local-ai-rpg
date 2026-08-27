@@ -184,12 +184,19 @@ Three levers pulled together rather than one:
 - *How many*: `World.roaming_cap`, eased over a long ramp out to
   `ROAMING_CAP_FAR_DISTANCE`.
 - *What has a name*: `Boss.MIN_DIST_FROM_START` is the floor under every boss, the first
-  world's guardian at its landmark included, and `Boss.ROAM_MIN_DISTANCE` (which quest
-  bosses are also placed from, in a band outward) keeps a roaming one well past that. How
-  many there are is the same ramp again: `World.boss_cap` runs from `MAX_ACTIVE_NEAR` to
+  world's guardian at its landmark included, and `Boss.ROAM_MIN_DISTANCE` sits just past it,
+  so a roaming one is met on the walk out of the settled ring rather than only by an
+  expedition. A quest's hunt target is placed further out still, in a band from
+  `Boss.QUEST_SPAWN_MIN_DISTANCE`, because that walk is what the quest pays for. How many
+  there are is the same ramp again: `World.boss_cap` runs from `MAX_ACTIVE_NEAR` to
   `MAX_ACTIVE_FAR` and the roll itself from `ROAM_CHANCE_NEAR` to `ROAM_CHANCE_FAR`, both
   out to `DENSITY_FAR_DISTANCE`. The deep wilds are thick with bosses; the settled ring
   holds one at a time.
+- That cap counts the wilds' own population and nothing else (`World.wild_bosses`,
+  `Boss.counts_against_cap`). A fixture never despawns and was put where it is for a reason
+  of its own: the ruin's guardian, a cave's warden, a quest's target. Counting them spends
+  the ring's whole budget forever on something already standing there, which is why the near
+  world used to hold no boss at all beyond the guardian itself.
 
 And the fourth lever is what a town sells. A merchant's rarity rolls take
 `NPC.stock_luck`, off their settlement's own tier, so the shelves lean up with the walk

@@ -1064,7 +1064,12 @@ class Game:
         last. `_combat_until` is a short hold, so a pack picked off one at a time is one
         fight rather than eight crossfades."""
         player = self.player
-        if any(boss.distance_to_point(player.get_pos()) < c.Music.BOSS_RANGE for boss in self.world.bosses):
+        # One still waiting to climb out is not a fight yet, and the score is not what tells
+        # the player a boss is coming: the ground opening under it is.
+        if any(
+            not boss.rising and boss.distance_to_point(player.get_pos()) < c.Music.BOSS_RANGE
+            for boss in self.world.bosses
+        ):
             return "boss"
         if self.world.events.blood_intensity > 0:
             return "blood"

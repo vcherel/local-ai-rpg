@@ -643,6 +643,11 @@ class Boss:
     RISE_MS: float = 1300.0
     RISE_SHAKE: float = 30.0
     RISE_FLASH: float = 0.45
+    # How near the player has to be, on the same ground, before the climb starts at all.
+    # An arrival nobody watched is not an arrival: the roar, the flash, the shake and the
+    # banner are the loudest thing in the world and they are worth nothing spent on an
+    # empty screen. Inside the view's half-width, so the whole climb is on it.
+    RISE_WITNESS_DIST: int = 800
 
     # A shrinking boss (BossKind.shrinks) steps down a band each time its health passes the
     # threshold, and never back up. Each band is (health fraction it starts at, size, speed
@@ -657,11 +662,15 @@ class Boss:
     # A slain boss always drops a lootbox of this rarity, on top of the usual roll.
     REWARD_RARITY: str = "legendary"
 
-    # Wandering far from the world center can spawn a roaming boss, rolled on this cadence.
-    # Deliberately well past the settled ring: a boss is what the deep wilds hold, not
-    # something met on the walk to the second village.
-    ROAM_MIN_DISTANCE: int = 5500
-    # How wide a band past that a quest's hunt target is placed in.
+    # Wandering out from the world center can spawn a roaming boss, rolled on this cadence.
+    # Just past the floor under every boss (`MIN_DIST_FROM_START`), so the walk out of the
+    # settled ring is where one is first met rather than somewhere only a long expedition
+    # reaches. How many there are out there is still the ramp below.
+    ROAM_MIN_DISTANCE: int = 3000
+    # Where a quest's hunt target is placed instead, and how wide a band past that. Kept far
+    # past the roaming floor on purpose: hunting a named boss is meant to be a walk past
+    # everything the player already knows.
+    QUEST_SPAWN_MIN_DISTANCE: int = 5500
     QUEST_SPAWN_BAND: int = 2500
     # No boss of any kind stands closer than this to the world centre, however it was
     # spawned: the landmark guardian placed there from the first frame, a roaming one, a
