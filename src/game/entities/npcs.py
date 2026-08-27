@@ -126,6 +126,10 @@ class NPC(Entity):
         # other fact about a fight.
         self.threatened_by = None
         self.threat_until = 0.0
+        # The building this one goes home to at night, found once from their doorstep
+        # (`World._home_for`) and kept for the session: a house does not move, and the walk
+        # home is asked for every frame of every night.
+        self.home_building = None
 
     @property
     def hostile(self) -> bool:
@@ -439,6 +443,7 @@ class NPC(Entity):
         waypoint=None,
         target=None,
         refuge=None,
+        refuge_reach: float | None = None,
         face_player=True,
         terrain_mult: float = 1.0,
         standoff: float = 0.0,
@@ -474,7 +479,7 @@ class NPC(Entity):
         if target is not None:
             return self._hunt(target, dt, blocked, waypoint, standoff)
         if refuge is not None:
-            self._run_to(refuge, dt, blocked)
+            self._run_to(refuge, dt, blocked, refuge_reach)
             return 0
 
         if (
@@ -509,10 +514,14 @@ class NPC(Entity):
         step_towards(self, angle, speed, blocked, radius)
         return angle
 
-    def _run_to(self, refuge, dt, blocked=None):
+    def _run_to(self, refuge, dt, blocked=None, reach: float | None = None):
         """A villager with no stomach for the fight, making for the nearest door. They stop
-        once they are on the spot rather than jittering on it."""
-        if self.distance_to_point(refuge) <= c.Entities.NPC_ATTACK_RANGE:
+        once they are on the spot rather than jittering on it.
+
+        `reach` is how near counts as arrived, an arm's length by default. Somebody going in
+        for the night wants a shorter one: arm's length off the middle of a room is a
+        doorstep, and a villager who stopped there stood on it until dawn."""
+        if self.distance_to_point(refuge) <= (c.Entities.NPC_ATTACK_RANGE if reach is None else reach):
             return
         self.orientation = self._step_towards(refuge, dt, blocked) + math.pi / 2
 

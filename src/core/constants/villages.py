@@ -24,29 +24,33 @@ class Villages:
     # Settlements are meant to be a find, not scenery: a bigger region and a lower chance
     # put a real stretch of wilderness between one and the next, which only works because
     # that wilderness has cover, landmarks and roads of its own (Scenery, PointsOfInterest).
-    REGION_CHUNKS: int = 4
+    # Eight chunks square at a 0.4 chance is roughly 12,000 between neighbours in the
+    # settled ring and 7,000 out in the wilds, which is a march rather than a stroll: a
+    # village has to be visible from outside its own walls to be worth that walk, which is
+    # what the tier ladder below is for.
+    REGION_CHUNKS: int = 8
     # How likely a region is to settle at all, and how likely it is to settle a second
     # chunk, both read off how far out the region stands: the deep wilds are emptier of
     # people than the settled ring only because nobody drew any villages out there, which
     # left walking outward feeling like walking off the map. Density is the one lever a
     # region grid has, so both of these ramp to REGION_FAR_DISTANCE and stop.
-    REGION_CHANCE: float = 0.55
-    REGION_CHANCE_FAR: float = 1.0
+    REGION_CHANCE: float = 0.40
+    REGION_CHANCE_FAR: float = 0.85
     REGION_SECOND_CHANCE: float = 0.0
-    REGION_SECOND_CHANCE_FAR: float = 0.85
+    REGION_SECOND_CHANCE_FAR: float = 0.45
     REGION_FAR_DISTANCE: int = 24000
     # Two regions can both settle near their shared border; the later one stands down, so
     # there is always this much empty wilderness between one settlement and the next. The
     # same rule settles the two a single far-out region may offer.
-    MIN_GAP: int = 3200
+    MIN_GAP: int = 7000
     # ...and how close they may stand out where settlements are meant to be thick on the
     # ground. A gap is what keeps two villages from reading as one sprawl, so it can close
     # up as the density rises but never past the point where their walls would meet.
-    MIN_GAP_FAR: int = 2500
+    MIN_GAP_FAR: int = 5500
     # Kept away from the chunk's own edges so the cluster stays inside its own region.
     CHUNK_MARGIN: int = 380
     # The starting town already sits here; no streamed village crowds it.
-    MIN_DIST_FROM_SPAWN: int = 3000
+    MIN_DIST_FROM_SPAWN: int = 4200
 
     # Buildings sit on a loose grid around an open plaza, close enough to read as one
     # settlement, far enough apart for the doors (always on the south facade) to be usable.
@@ -57,6 +61,12 @@ class Villages:
     # what it has. A pass fixes every pair it sees, so a few of them clear even a street of
     # L-shaped houses; the cap is only there so a pathological seed cannot loop forever.
     SEPARATE_PASSES: int = 12
+
+    # What a settlement's tier adds to whatever its size is made of. A tier 2 village has
+    # half again the houses of a tier 0 one and a second shop, so the difference between a
+    # border hamlet and a deep wilds town is a skyline before it is a stat block. Applied
+    # to both ends of each range, so the roll is still a roll.
+    EXTRA_BUILDINGS_BY_TIER: tuple = ({}, {"house": 2}, {"house": 4, "shop": 1})
 
     # Relative pick weight per settlement size, and what each one is made of.
     SIZE_WEIGHTS: tuple = (("hamlet", 5), ("village", 4), ("town", 2))
@@ -240,14 +250,17 @@ class Villages:
     # or the moment somebody is killed here and the place holds a grudge.
     BAR_GATES_MOB: int = 3
 
-    # A town is worth defending, and a hamlet has nothing to defend with: only the largest
-    # settlements (and the starting town) stand a wall. The ring follows the settlement's
+    # A settlement worth defending stands a wall. The ring follows the settlement's
     # own footprint rather than being a square around its diagonal, with a gate cut in the
     # middle of each side, so there is always a way in from whichever direction the player
     # or a pack arrives, and the wall itself is something to be routed round rather than a
     # box with one door. A tower stands at each corner: solid, and the one piece of a
     # village that reads from a long way off.
-    WALLED_SIZES: tuple = ("town", "village")
+    # A wall is the settlement's tier, not its size: what buys one is the walk out, so a
+    # hamlet four days from the centre stands a palisade and the village on the starting
+    # town's doorstep never does. The single biggest thing that says which tier a place is
+    # from outside it.
+    WALL_TIER: int = 1
     WALL_MARGIN: int = 150
     WALL_THICKNESS: int = 26
     # Big enough to read as a way in from across a field, and wide enough that a chased
@@ -279,9 +292,12 @@ class Villages:
     TIER_DISTANCES: tuple = (6500, 14000)
     TIER_SIZE_BONUS = {"hamlet": -1, "village": 0, "town": 1}
     MAX_TIER: int = 2
-    WALL_STYLE_BY_TIER: tuple = ("palisade", "palisade", "stone")
-    WALL_THICKNESS_BY_TIER: tuple = (26, 32, 40)
-    TOWER_RADIUS_BY_TIER: tuple = (44, 52, 62)
+    WALL_STYLE_BY_TIER: tuple = ("none", "palisade", "stone")
+    WALL_THICKNESS_BY_TIER: tuple = (26, 32, 44)
+    # Towers are the piece of a settlement that reads from furthest off, so the step between
+    # a tier 1 watchpost and a tier 2 stone drum is deliberately large. Tier 0 stands none:
+    # it has no wall to put them on.
+    TOWER_RADIUS_BY_TIER: tuple = (0, 52, 76)
     GUARDS_PER_POST_BY_TIER: tuple = (1, 1, 2)
     # Archers are posted in the towers, where they can see over the wall. A tier 0 wall is
     # watched by spearmen alone.
@@ -333,6 +349,29 @@ class Villages:
     # How long a gate a villager has let themselves through stands open before it shuts
     # again behind them (`Village.let_through`).
     GATE_HOLD_MS: float = 900.0
+
+    # A settlement shuts itself for the night, which is not the same as barring itself.
+    # Shut is a gate: anyone on either side works it open with a press and walks through,
+    # and it leans closed behind them. Barred is a wall, and only a grudge or a real mob
+    # ever puts the beam across. The two ride the same leaves, so a village that shuts at
+    # dusk and is provoked at midnight simply stops opening for the player.
+    NIGHT_GATES: bool = True
+
+    # What a village hangs on its wall, which is the cheapest thing that says how far out
+    # the player has walked. Banners on the gatehouses from tier 1, a brazier burning at
+    # each gate and on each tower from tier 2, lit only once it is actually dark.
+    BANNER_TIER: int = 1
+    BRAZIER_TIER: int = 2
+    BANNER_COLORS: tuple = ((150, 58, 52), (58, 76, 132), (126, 104, 44))
+    BRAZIER_STONE: tuple = (86, 82, 76)
+    BRAZIER_FLAME: tuple = (250, 186, 88)
+    BRAZIER_GLOW: tuple = (255, 176, 78)
+    BRAZIER_RADIUS: int = 62
+    # How much of a settlement is awake after dark, by tier: a hamlet is three lamps and a
+    # deep wilds town is a constellation. Read per building off its own id, so the same
+    # windows are lit all night rather than flickering as the camera pans.
+    LIT_WINDOW_FRAC_BY_TIER: tuple = (0.3, 0.6, 0.9)
+    WINDOW_LIGHT: tuple = (255, 206, 128)
 
     # The player working a barred gate open from the inside: the bar is a beam, so lifting
     # it is a hold rather than a press, and it is slow enough that a mob at your back is a

@@ -147,14 +147,16 @@ the world exempt from the free-spot search, from `unstick` and from the crowd th
 in around the player: a tower is solid, so every one of those walked them off it, and an
 archer who has been walked off their tower is a guard stranded outside their own wall
 shooting at a player standing safely inside it. They never move at all, and never needed
-to: `_loose_arrows` shoots `over_walls`, which is what a roof is for. Only `Villages.WALLED_SIZES` (and the starting town) get any of it: a hamlet
-has nothing to defend with.
+to: `_loose_arrows` shoots `over_walls`, which is what a roof is for. Only a settlement of
+`Villages.WALL_TIER` or better gets any of it: what buys a wall is the walk out, not the
+word on the signpost, so a hamlet four days from the centre stands a palisade and the
+village on the starting town's doorstep never does.
 
 A gate is the only part of a wall that gives, for the same reason a door is the only part
 of a house that does. The stretches, the towers and the gatehouses are never breakable:
 there is a gate on every side and `_detour_corner` routes round the wall already, so
 nothing is ever unable to reach anything. What a gate answers is a question the wall
-created: `World._bar_gates` shuts a settlement's gates while it is angry at the player,
+created: `World._work_gates` shuts a settlement's gates while it is angry at the player,
 which is when the player is inside a town that wants them dead, and
 `WorldCombat._hit_gate` / `bash_gates` let them hack their way out (or a pack beat its way
 in) on the same hit-point pool a front door uses. `gate_broken` is persisted, `gate_hp` is
@@ -190,6 +192,37 @@ The leaves swing rather than blink (`Village.advance_gates`), open meaning folde
 the inside of their own wall, since a gate stands open nearly always. It is drawing alone:
 `gate_closed` flips on the frame a settlement turns and the leaves catch up with it.
 
+## Shutting for the night is not barring
+
+A village closes its gates after dark (`Village.shut_for_night`, set every frame from
+`DayNightCycle.curfew`), and that is a different act from barring them. No beam goes across:
+anyone on either side works one open with a press and walks through
+(`Village.push_open`, `Game._push_gate`), and it leans closed behind them. Barring is the
+wall, and only a grudge or a real mob puts it up. The two ride the same leaves and the same
+`gate_closed`, so a village that shut at dusk and is provoked at midnight simply stops
+opening for the player. A gate that is only shut is not something to hack at either:
+`WorldCombat._gate_in_reach` answers on `barred` alone, since a leaf that opens to a press
+is nobody's obstacle.
+
+## A village goes to bed
+
+`World._npc_sleeps` is the night's one order: everyone who is not a guard and is not already
+after the player walks to their own building and stays in it. It is the same act as running
+from a monster (`_npc_flees`) with a different destination, so the door, the gate and the
+waypoint round the houses all come for free, and their home is found once off the doorstep
+they were stood up at (`_home_for`, kept on the villager: a house does not move).
+
+Two things about that walk had to be written down. A villager is walked *square through*
+their own doorway rather than at the middle of the room, because the diagonal to the middle
+clips the wall beside the door and they slide along it all night. And the door is shut by
+the last one in, never the first (`_households_in`): `shut_door` clears whoever is standing
+in the frame rather than sealing them in it, so a resident who shuts up while their
+neighbour is still on the step puts that neighbour back into the street, and the two do it
+to each other until dawn.
+
+A guard is exempt, as they are from everything else: the post is where they belong. So is
+anyone in a fight, because a village with a mob in it is not a village going to bed.
+
 ## How well defended a settlement is is one number
 
 `Village.tier` is rolled once from the distance to the world centre and the size, then
@@ -201,6 +234,16 @@ how much health its people have. Adding a new difference between settlements mea
 a row indexed by tier, not a new flag. It is the same idea as `MonsterKind.min_distance`,
 pointed at a place rather than at a creature: walking further out should be visible before
 anything is fought.
+
+Four of those are things the player can see from outside the wall before they can count
+anything: whether there is a wall at all (`WALL_TIER`), how much settlement there is
+(`EXTRA_BUILDINGS_BY_TIER`, worth houses and a second shop), how big the towers are, and
+what is hung and lit on the wall after dark (banners from `BANNER_TIER`, gate and tower
+braziers from `BRAZIER_TIER`, and how many windows are lit through
+`LIT_WINDOW_FRAC_BY_TIER`). The tier is worked out one step before the layout is rolled
+(`_composition_for`), because it is worth buildings, and `_worst_case_footprint` takes it
+too: a bound on how much ground a settlement will cover is not a bound at all if a deep
+wilds village is half again as big as a near one of the same name.
 
 ## A village is made strong in numbers, in health and behind its wall
 

@@ -186,6 +186,12 @@ class Building(BuildingArt):
         # apart, crates and tables alike.
         self.broken_props: set = set()
         self.broken_windows: set = set()  # indices into window_rects() already shattered
+        # Which settlement's tier lights this one's windows after dark, or -1 for a building
+        # standing out in the wilderness, which is never lit. Session-only and set by
+        # whoever puts the building in the world (`village._build`, `World._light_windows`):
+        # a house does not know its village, it knows how well kept the street is.
+        self.village_tier: int = -1
+        self._lamps: frozenset | None = None
         # Damage taken by a crate/window still standing, by index. Session-only, like the
         # loot on the floor: what a save has to remember is what finally broke, not how
         # far along the player got with the rest.
@@ -312,6 +318,7 @@ class Building(BuildingArt):
         self._floors = None
         self._segments = None
         self._shell_surface = None
+        self._lamps = None
 
     def _canon_rect(self) -> pygame.Rect:
         """This building's own footprint seen with its door in the bottom wall: the frame

@@ -44,6 +44,14 @@ class DayNightCycle:
         return self.darkness > 0.5
 
     @property
+    def curfew(self) -> bool:
+        """Whether a village has called it a night: its people head home and its gates lean
+        shut (`World._work_gates`). True from partway through dusk to partway through dawn,
+        earlier than `is_night` so the street empties over the sunset rather than at a
+        stroke."""
+        return self.darkness >= c.DayNight.CURFEW_DARKNESS
+
+    @property
     def phase(self) -> str:
         """What the clock in the HUD calls the current stretch of the cycle."""
         d = c.DayNight

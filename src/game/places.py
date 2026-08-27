@@ -826,7 +826,7 @@ class WorldPlaces:
         for dog in self.critters:
             if dog.village_key == key:
                 dog.hostile = False
-        # The gates come back off the bar on the next frame of `_bar_gates` now that nobody
+        # The gates come back off the bar on the next frame of `_work_gates` now that nobody
         # inside is angry, so the player can walk back into the place they died in.
         return village
 
@@ -843,6 +843,24 @@ class WorldPlaces:
                 continue
             index = village.gate_at(player.x, player.y, c.Buildings.INTERACT_DISTANCE)
             if index is not None:
+                return village, index
+        return None
+
+    def shut_gate_in_reach(self, player: Player) -> tuple | None:
+        """The gate the player is standing at that is shut but not barred, as (village,
+        index), or None.
+
+        A village shuts itself for the night without deciding anything about the player, so
+        this one is a press rather than a hold (`Village.push_open`): the cost of arriving
+        after dark is a beat at the gate. A barred gate is never offered here, since it is
+        the other prompt's (`barred_gate_in_reach`)."""
+        for village in self.villages:
+            if not village.defended or village.barred or not village.shut_for_night:
+                continue
+            if village.distance_to_point((player.x, player.y)) > village.grounds_radius:
+                continue
+            index = village.gate_at(player.x, player.y, c.Buildings.INTERACT_DISTANCE)
+            if index is not None and not village.gate_ajar(index):
                 return village, index
         return None
 

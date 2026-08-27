@@ -56,10 +56,11 @@ class Village:
         # it is, then persisted like the wall itself. Everything that differs between a
         # border hamlet and a deep wilds town reads this and nothing else.
         self.tier = self._tier_for(x, y, size) if tier is None else int(tier)
-        # Whether this one stands a wall. Rolled from the size when the settlement is
-        # built and then persisted, like everything else about a village: the wall is part
-        # of what the place is, not something rederived from a seed.
-        self.defended = size in c.Villages.WALLED_SIZES
+        # Whether this one stands a wall, which is its tier and no longer its size: what
+        # buys a palisade is the walk out, so a hamlet in the deep wilds has one and the
+        # village next to the starting town does not. Persisted, like everything else about
+        # a village: the wall is part of what the place is, not something rederived.
+        self.defended = self.tier >= c.Villages.WALL_TIER
         # How far the outermost wall of the outermost building stands from the middle, per
         # axis. The wall is set from these rather than from `radius`, which is a diagonal
         # and would leave a field of nothing between the last house and the palisade; two
@@ -72,6 +73,11 @@ class Village:
         # of a wall that gives: `gate_broken` is persisted like a beaten-down front door,
         # the damage a standing one has taken is session-only like a crate's.
         self.barred = False
+        # And shut for the night, which is a different thing: the leaves are closed but no
+        # beam is across them, so anyone on either side works one open with a press
+        # (`push_open`) and walks through. Set every frame from the clock by
+        # `World._work_gates`, so it is never saved.
+        self.shut_for_night = False
         self.gate_broken: set[int] = set()
         self.gate_hp: dict[int, int] = {}
         # How far each leaf has actually swung, 0 shut and 1 wide open, and how long a gate
@@ -226,9 +232,11 @@ class Village:
 
     def gate_closed(self, index: int) -> bool:
         """True while this gateway is shut: a wall to anything trying to walk through it.
-        A gate is only ever shut because the settlement wants the player out (or something
-        else in the street), and a broken one never shuts again."""
-        return self.barred and index not in self.gate_broken
+        A gate is shut either because the settlement wants somebody out (`barred`) or
+        because it is night (`shut_for_night`); the difference is not in the leaf but in
+        what it takes to move it, which is `push_open` against `lift_bar`. A broken one
+        never shuts again."""
+        return (self.barred or self.shut_for_night) and index not in self.gate_broken
 
     def gate_ajar(self, index: int) -> bool:
         """Whether this gateway is being held open for somebody. A barred gate is still a
@@ -244,15 +252,26 @@ class Village:
         This is the way out of a town that has shut itself, and the reason breaking a gate is
         no longer the only one. It is slow to earn (`Game._lift_gate`) rather than slow to
         use: a beam is either up or it is not."""
-        if self.gate_closed(index):
-            self.gate_hold[index] = c.Villages.GATE_LIFT_HOLD_MS
+        self.hold_open(index, c.Villages.GATE_LIFT_HOLD_MS)
+
+    def push_open(self, index: int):
+        """A gate shut for the night, shouldered open. No beam is across it, so this is one
+        press rather than the hold a bar takes: the cost of a curfew is a beat at the gate,
+        not a way in that has to be earned."""
+        self.hold_open(index, c.Villages.GATE_LIFT_HOLD_MS)
 
     def let_through(self, index: int):
-        """Work a barred gate open for a moment. Its people know their own gate: they lift
-        the bar, walk out, and it shuts behind them, which is why the player hammering on
-        the far side of it is still shut out."""
+        """Work a shut gate open for a moment. Its people know their own gate: they lift the
+        bar, walk out, and it shuts behind them, which is why the player hammering on the far
+        side of a *barred* one is still shut out."""
+        self.hold_open(index, c.Villages.GATE_HOLD_MS)
+
+    def hold_open(self, index: int, ms: float):
+        """Hold one shut gateway open for `ms`, whoever is walking through it. The one place
+        a leaf is ever worked against what the settlement wants, so a bar lifted, a villager
+        let through and a night gate shouldered aside are three labels on one act."""
         if self.gate_closed(index):
-            self.gate_hold[index] = c.Villages.GATE_HOLD_MS
+            self.gate_hold[index] = ms
 
     def advance_gates(self, dt, listener=None):
         """Carry every leaf one frame towards where it should be standing.
@@ -542,9 +561,13 @@ class Village:
         self._earth = tuple(blobs)
         return self._earth
 
-    def draw(self, screen: pygame.Surface, camera: Camera):
+    def draw(self, screen: pygame.Surface, camera: Camera, darkness: float = 0.0):
         """The plaza: packed earth and a well. The name is the minimap strip's job; written on
-        the ground it was one more label lying over the street."""
+        the ground it was one more label lying over the street.
+
+        `darkness` is the sky (`DayNightCycle.darkness`): the only thing about a village that
+        is drawn differently after dark is the fire on its wall, and a fire is worth nothing
+        at noon."""
         self._draw_streets(screen, camera)
         cx, cy = camera.world_to_screen(self.x, self.y)
         plaza = pygame.Rect(0, 0, c.Villages.PLAZA_RADIUS * 2, round(c.Villages.PLAZA_RADIUS * 1.5))
@@ -556,9 +579,9 @@ class Village:
             pygame.draw.circle(screen, darker, (round(cx + dx), round(cy + dy)), radius)
 
         self._draw_well(screen, (round(cx), round(cy)))
-        self._draw_defences(screen, camera)
+        self._draw_defences(screen, camera, darkness)
 
-    def _draw_defences(self, screen: pygame.Surface, camera: Camera):
+    def _draw_defences(self, screen: pygame.Surface, camera: Camera, darkness: float = 0.0):
         """The wall and everything that belongs to it, drawn under whatever walks over the
         ground. A palisade is a row of sharpened logs, a stone wall is coursed blocks: the
         material is how far out the settlement stands, read before anything is fought.
@@ -639,6 +662,21 @@ class Village:
             ):
                 continue
             self._draw_gate(screen, camera, index, gate)
+            if self.tier >= c.Villages.BANNER_TIER:
+                self._draw_banners(screen, (gx + ox, gy + oy), gate["along_x"])
+            if self.tier >= c.Villages.BRAZIER_TIER:
+                # Standing in front of the two gatehouses rather than in the gateway: a
+                # fire in the middle of the way through is a fire in everybody's way, and it
+                # would be drawn over the leaves it is meant to light.
+                out = self.wall_thickness / 2 + 20
+                away = math.copysign(1.0, (gy - self.y) if gate["along_x"] else (gx - self.x))
+                for side in (-1, 1):
+                    shift = side * (c.Villages.GATE_WIDTH / 2 + c.Villages.GATEHOUSE / 2)
+                    if gate["along_x"]:
+                        spot = (gx + shift + ox, gy + away * out + oy)
+                    else:
+                        spot = (gx + away * out + ox, gy + shift + oy)
+                    self._draw_brazier(screen, spot, darkness)
 
         radius = self.tower_radius
         for tx, ty in defences["towers"]:
@@ -649,13 +687,68 @@ class Village:
             pygame.draw.circle(screen, (60, 52, 44), (round(sx), round(sy)), radius + 3)
             pygame.draw.circle(screen, c.Villages.TOWER_STONE, (round(sx), round(sy)), radius)
             pygame.draw.circle(screen, (104, 100, 94), (round(sx), round(sy)), round(radius * 0.6))
-            # Crenellations, read from above as blocks around the rim.
-            for i in range(8):
-                angle = i * math.pi / 4
+            # Crenellations, read from above as blocks around the rim. A bigger drum carries
+            # more of them rather than the same eight stretched round it, which is most of
+            # what makes a tier 2 tower read as heavier and not merely nearer.
+            merlons = 8 if radius < 60 else 12
+            for i in range(merlons):
+                angle = 2 * math.pi * i / merlons
                 block = pygame.Rect(0, 0, 14, 14)
                 block.center = (round(sx + math.cos(angle) * radius), round(sy + math.sin(angle) * radius))
                 pygame.draw.rect(screen, (168, 164, 156), block)
                 pygame.draw.rect(screen, (70, 66, 60), block, 1)
+            if self.tier >= c.Villages.BRAZIER_TIER:
+                self._draw_brazier(screen, (sx, sy), darkness)
+
+    def _draw_banners(self, screen: pygame.Surface, center, along_x: bool):
+        """The settlement's colours hung either side of a gateway, from tier 1.
+
+        Nothing but a look, and the cheapest one there is: two rectangles on the gatehouse
+        say a place is kept before the player is near enough to count its guards. The colour
+        is rolled off the village's own position, so a town flies the same one every time it
+        is walked up to."""
+        sx, sy = center
+        color = c.Villages.BANNER_COLORS[hash((round(self.x), round(self.y))) % len(c.Villages.BANNER_COLORS)]
+        shade = tuple(round(v * 0.7) for v in color)
+        for side in (-1, 1):
+            shift = side * (c.Villages.GATE_WIDTH / 2 + c.Villages.GATEHOUSE / 2)
+            cx = sx + (shift if along_x else 0)
+            cy = sy + (0 if along_x else shift)
+            cloth = pygame.Rect(0, 0, 14, 30) if along_x else pygame.Rect(0, 0, 30, 14)
+            cloth.center = (round(cx), round(cy))
+            pygame.draw.rect(screen, color, cloth)
+            pygame.draw.rect(screen, shade, cloth, 2)
+            # The point at the bottom of a hanging banner, which is what stops it reading as
+            # a crate sitting on the wall.
+            tip = (cloth.centerx, cloth.bottom + 7) if along_x else (cloth.right + 7, cloth.centery)
+            tail = (
+                [(cloth.left, cloth.bottom), (cloth.right, cloth.bottom), tip]
+                if along_x
+                else [(cloth.right, cloth.top), (cloth.right, cloth.bottom), tip]
+            )
+            pygame.draw.polygon(screen, color, tail)
+
+    @staticmethod
+    def _draw_brazier(screen: pygame.Surface, center, darkness: float):
+        """A fire in a stone bowl, standing at a gate or on a tower from tier 2.
+
+        Drawn cold in daylight and lit as the sky goes: the glow is the one thing in a
+        village that answers the clock, and a town seen across a field at night is a ring of
+        embers before it is anything else."""
+        sx, sy = round(center[0]), round(center[1])
+        if darkness > 0.15:
+            radius = c.Villages.BRAZIER_RADIUS
+            glow = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            for step in range(4, 0, -1):
+                pygame.draw.circle(
+                    glow, (*c.Villages.BRAZIER_GLOW, round(16 * darkness)), (radius, radius), radius * step / 4
+                )
+            screen.blit(glow, (sx - radius, sy - radius))
+        pygame.draw.circle(screen, (48, 44, 40), (sx, sy), 12)
+        pygame.draw.circle(screen, c.Villages.BRAZIER_STONE, (sx, sy), 10)
+        if darkness > 0.15:
+            pygame.draw.circle(screen, (196, 76, 34), (sx, sy), 7)
+            pygame.draw.circle(screen, c.Villages.BRAZIER_FLAME, (sx, sy), 4)
 
     def _draw_gate(self, screen: pygame.Surface, camera: Camera, index: int, gate: dict):
         """One gateway: its two posts, and the pair of leaves hung between them at whatever
@@ -984,7 +1077,7 @@ def _site_reach(cx: int, cy: int, x: int, y: int) -> float:
     rng = random.Random(f"village-layout:{cx},{cy}")
     sizes, weights = zip(*c.Villages.SIZE_WEIGHTS)
     size = rng.choices(sizes, weights=weights)[0]
-    radius, extent_x, extent_y = _worst_case_footprint(size)
+    radius, extent_x, extent_y = _worst_case_footprint(size, Village._tier_for(x, y, size))
     return Village(x, y, (cx, cy), size, radius, extent_x, extent_y).grounds_radius
 
 
@@ -1087,14 +1180,17 @@ def village_site(cx: int, cy: int) -> tuple[int, int] | None:
     return site[2], site[3]
 
 
-@lru_cache(maxsize=8)
-def _worst_case_footprint(size: str) -> tuple[int, int, int]:
-    """The biggest (radius, extent_x, extent_y) a settlement of this size can lay out.
+@lru_cache(maxsize=32)
+def _worst_case_footprint(size: str, tier: int = 0) -> tuple[int, int, int]:
+    """The biggest (radius, extent_x, extent_y) a settlement of this size and tier can lay
+    out.
 
     Rolled without an rng: every count is taken at its maximum, every building at its
     largest and the jitter at its worst, so the answer is an upper bound on a village that
-    has not been generated yet rather than a guess at the one that will be."""
-    composition = c.Villages.START_COMPOSITION if size == "start" else c.Villages.COMPOSITION[size]
+    has not been generated yet rather than a guess at the one that will be. The tier is in
+    it because it is worth houses (`Villages.EXTRA_BUILDINGS_BY_TIER`): a bound taken off
+    the size alone is not a bound at all once a deep wilds village is half again as big."""
+    composition = c.Villages.START_COMPOSITION if size == "start" else _composition_for(size, tier)
     count = sum(high for _low, high in composition.values())
     slots = _plaza_slots(count, random.Random(0))
     jitter = c.Villages.SLOT_JITTER
@@ -1158,6 +1254,21 @@ def settlements_near_chunk(cx: int, cy: int, chunk_radius: int) -> tuple[tuple[f
         if max(abs(chunk[0] - cx), abs(chunk[1] - cy)) <= chunk_radius:
             sites.append((x, y, chunk[0], chunk[1], radius))
     return tuple(sites)
+
+
+def _composition_for(size: str, tier: int) -> dict:
+    """What a settlement of this size and tier is made of.
+
+    The size says what kind of place it is, the tier says how much of it there is: a deep
+    wilds village carries the same shape as a near one with more houses in it and a second
+    shop, so walking out is visible as a skyline before it is anything else. Both ends of
+    each range move together, so what was a roll stays a roll."""
+    composition = dict(c.Villages.COMPOSITION[size])
+    extra = c.Villages.EXTRA_BUILDINGS_BY_TIER[max(0, min(tier, len(c.Villages.EXTRA_BUILDINGS_BY_TIER) - 1))]
+    for kind, more in extra.items():
+        low, high = composition[kind]
+        composition[kind] = (low + more, high + more)
+    return composition
 
 
 def _building_kinds(composition: dict, rng: random.Random) -> list[str]:
@@ -1353,7 +1464,12 @@ def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> tup
     # The lanes are not laid here: they run out to where the roads from the neighbouring
     # settlements stop, and a village rolled per playthrough is not on the map the roads
     # are drawn from until it is registered. Whoever puts it in the world plans them.
-    return Village(x, y, chunk, size, radius, extent_x, extent_y), buildings
+    village = Village(x, y, chunk, size, radius, extent_x, extent_y)
+    for building in buildings:
+        # Which settlement's tier lights this one's windows after dark. A building out in
+        # the wilderness keeps -1 and is never lit: nobody lives in a ruin.
+        building.village_tier = village.tier
+    return village, buildings
 
 
 def generate_village(x, y, chunk: tuple[int, int]) -> tuple[Village, list[Building]]:
@@ -1362,7 +1478,9 @@ def generate_village(x, y, chunk: tuple[int, int]) -> tuple[Village, list[Buildi
     rng = random.Random(f"village-layout:{chunk[0]},{chunk[1]}")
     sizes, weights = zip(*c.Villages.SIZE_WEIGHTS)
     size = rng.choices(sizes, weights=weights)[0]
-    return _build(x, y, chunk, size, c.Villages.COMPOSITION[size], rng)
+    # The tier is worked out before anything is laid out, because it is worth houses: it is
+    # the same answer `Village` gives itself, asked one step early.
+    return _build(x, y, chunk, size, _composition_for(size, Village._tier_for(x, y, size)), rng)
 
 
 def generate_starting_world() -> tuple[Village, list[Building]]:

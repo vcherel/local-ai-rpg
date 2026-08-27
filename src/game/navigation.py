@@ -194,7 +194,8 @@ class WorldNavigation:
                 building.door_open = True
 
     def pass_gate_for(self, chaser, radius: float, target) -> bool:
-        """A villager reaching their own barred gate lets themselves through it.
+        """A villager reaching their own shut gate lets themselves through it, barred or
+        only closed for the night.
 
         The bar is theirs: they lift it, step across the gateway and it swings shut behind
         them (`Village.let_through`), which is the difference between a wall that keeps the
@@ -207,8 +208,6 @@ class WorldNavigation:
         doorway that `Building.clear_of_door` is.
         """
         for village in self._village_solids_by_chunk.get(self._chunk_of(chaser.x, chaser.y), ()):
-            if not village.barred:
-                continue
             for index, gate in enumerate(village.defences()["gates"]):
                 if not village.gate_closed(index):
                     continue
@@ -242,10 +241,11 @@ class WorldNavigation:
                 body.x, body.y = building.clear_of_door(body.x, body.y, radius)
 
     def clear_gateways(self, village, player: Player):
-        """Step anything standing in a barred gateway out of it, to the side it is already
-        nearer. The gates bar themselves the moment a settlement turns (`_bar_gates`), with
-        no regard for who happened to be walking through one; the same rule holds as for a
-        door, that nothing is ever sealed inside a leaf."""
+        """Step anything standing in a shut gateway out of it, to the side it is already
+        nearer. The gates bar themselves the moment a settlement turns and lean shut the
+        moment it is dark (`_work_gates`), neither with any regard for who happened to be
+        walking through one; the same rule holds as for a door, that nothing is ever sealed
+        inside a leaf."""
         bodies = None
         for index, gate in enumerate(village.defences()["gates"]):
             if not village.gate_closed(index) or village.gate_ajar(index):
