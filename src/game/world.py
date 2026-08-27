@@ -272,6 +272,17 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         for village in self.villages:
             if village.defended and not any(npc.is_guard and village.contains_point(npc.x, npc.y) for npc in self.npcs):
                 self._post_guards(village)
+        self._light_windows()
+
+    def _light_windows(self):
+        """Tell every building which settlement's tier lights its windows after dark.
+
+        Set on the buildings a village is laid out with (`village._build`), so this is only
+        ever the loaded ones: which village a saved house belongs to is a fact about where
+        it stands, not something worth a key in the save."""
+        for building in self.buildings:
+            village = self.village_at(building.x, building.y)
+            building.village_tier = village.tier if village is not None else -1
 
     def _create_new_world(self):
         village, buildings = generate_starting_world()
@@ -1336,10 +1347,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # never in the crowd: a body on a tower roof is not one of the ring of people pushing
         # in around the player, and being shouldered by that ring is what walked them off it.
         crowd = [npc for npc in self.npcs if id(npc) in mob and not npc.is_archer]
+        all_home = self._households_in(mob) if self.daynight.curfew else frozenset()
         defenders = [npc for npc in self.npcs if id(npc) in fight]
         self.assign_surround_slots(crowd, player)
         self._throw_stones(player, mob)
-        self._bar_gates(player, dt)
+        self._work_gates(player, dt)
         self._loose_arrows(fight, mob, player)
 
         for npc in self.npcs:
@@ -1377,6 +1389,17 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 self._npc_flees(npc, shelter, player, dt)
                 continue
 
+            # Night, and nothing to fight: whoever is not already after the player leaves
+            # off what they were doing and goes home to bed. A settlement after dark is a
+            # street of shut doors and lit windows, which is what makes coming back into one
+            # at dusk worth something and makes the wilds at night worth avoiding.
+            if self.daynight.curfew and id(npc) not in mob and not npc.is_guard:
+                home = self._home_for(npc)
+                if home is not None:
+                    self._npc_sleeps(npc, home, player, dt, shut=id(home) in all_home)
+                    continue
+
+            self._wake_up(npc)
             self._npc_walks(npc, player, dt, mob, crowd, indoors)
 
     def _npc_fights(self, npc: NPC, enemy, player: Player, dt, quest_system: QuestSystem, defenders: list):
@@ -1425,6 +1448,104 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             # them; either way the street is emptier than it was. Whoever is standing in the
             # frame is stepped out of it rather than sealed in it.
             self.shut_door(shelter, player)
+
+    @staticmethod
+    def _wake_up(npc: NPC):
+        """Morning: somebody who went to bed behind their own shut door opens it again.
+
+        Their wander is anchored on their doorstep, which is outside, so this is all it takes
+        to put the street back: without it the first night a settlement kept was the last day
+        anybody was seen in it."""
+        home = npc.home_building
+        if home is not None and home.door_closed and home.contains_point(npc.x, npc.y):
+            home.door_open = True
+
+    def _households_in(self, mob: dict) -> frozenset:
+        """Which homes have everybody who lives there back inside, as ids of the buildings.
+
+        The one thing a villager going to bed cannot work out for themselves: shutting the
+        door behind you while your neighbour is still on the step puts them back out into the
+        street (`shut_door` clears the frame rather than sealing anyone in it), and the two
+        of you do that to each other until morning. So the door is only ever shut by the last
+        one in."""
+        households: dict = {}
+        for npc in self.npcs:
+            if npc.is_guard or id(npc) in mob:
+                continue
+            home = self._home_for(npc)
+            if home is None:
+                continue
+            households.setdefault(id(home), []).append((home, npc))
+        return frozenset(
+            key for key, people in households.items() if all(home.contains_point(one.x, one.y) for home, one in people)
+        )
+
+    def _home_for(self, npc: NPC) -> Building | None:
+        """The building this one lives in: the one nearest the doorstep they were stood up
+        at, which is the door they came out of.
+
+        A merchant's home is their shop, so a night shuts the shop with them inside it
+        rather than leaving them standing in the street beside it. Anyone whose house has
+        been streamed out from under them has no home to walk to and simply keeps their
+        street.
+
+        Found once and kept on the villager: a building does not move once its settlement is
+        laid out, and this is asked of everybody in the world on every frame of every
+        night."""
+        if npc.home_building is None:
+            homes = [b for b in self.buildings_near(*npc.home) if b.has_door]
+            # Measured to the doorstep and not to the middle of the building, because a
+            # villager's home *is* a doorstep (`World._populate_npcs`): off the centres, the
+            # shop across the lane won half the street.
+            npc.home_building = min(homes, key=lambda b: math.dist(npc.home, b.door_front()), default=None)
+        return npc.home_building
+
+    def _npc_sleeps(self, npc: NPC, home: Building, player: Player, dt, shut: bool = True):
+        """One villager's frame spent walking home for the night and staying in.
+
+        The same walk as running from a monster (`_npc_flees`), because it is the same act:
+        the door is opened, the gate is worked if their house is the other side of one, and
+        it is shut behind them. What is different is only where they are going, which is
+        their own roof rather than the nearest one.
+
+        The last stride is walked at the room and not at the doorway: a refuge is arrived at
+        from `Entities.NPC_ATTACK_RANGE` off it, which is far enough short of a door front to
+        leave somebody standing on their own step all night. So the point they are sent to is
+        that much shorter than an arm's length (`refuge_reach`), so they stop in the room
+        rather than in the frame of their own door."""
+        radius = c.Entities.NPC_SIZE / 2
+        inside = (home.x, home.interior_rect().centery)
+        door = home.door_rect()
+        self.pass_gate_for(npc, radius, Point(*inside))
+        if home.contains_point(npc.x, npc.y):
+            goal = inside
+        elif math.hypot(npc.x - door.centerx, npc.y - door.centery) <= c.Buildings.DOOR_BASH_REACH * 3:
+            # Their own door, and they have come up to it: it is open before they reach it,
+            # the way anyone's is when they are the one who lives there. They are walked
+            # square through the gap rather than at the middle of the room, which is a
+            # diagonal that clips the wall beside the door: they slid along it all night.
+            home.door_open = True
+            nx, ny = home.outward()
+            step_in = c.Buildings.WALL_THICKNESS + radius + 6
+            goal = (door.centerx - nx * step_in, door.centery - ny * step_in)
+        else:
+            self.open_door_for(npc)
+            goal = self.chase_waypoint(npc, Point(*inside), radius) or inside
+        npc.update(
+            player,
+            dt,
+            self.blocked,
+            refuge=goal,
+            refuge_reach=radius,
+            terrain_mult=self.terrain_speed(npc.x, npc.y),
+            face_player=False,
+        )
+        if shut and home.contains_point(npc.x, npc.y) and not home.door_broken:
+            # In for the night, and the door shut behind them, but only once everybody who
+            # lives here is in (`_households_in`). Whoever is standing in the frame is
+            # stepped out of it rather than sealed in it, exactly as when a village is
+            # running from something.
+            self.shut_door(home, player)
 
     def _npc_walks(self, npc: NPC, player: Player, dt, mob: dict, crowd: list, indoors: bool):
         """One villager's frame spent hunting the player, or spent on their own street."""
@@ -1506,9 +1627,14 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self._engaged = set(orders)
         return orders
 
-    def _bar_gates(self, player: Player, dt):
-        """Shut the gates of any settlement that has turned on the player, open them again
-        once it has calmed down, and carry every leaf a frame along its swing.
+    def _work_gates(self, player: Player, dt):
+        """Bar the gates of any settlement that has turned on the player, lean them shut for
+        the night, open them again once it is calm and light, and carry every leaf a frame
+        along its swing.
+
+        Shutting for the night is not barring: no beam goes across, so anyone on either side
+        works one open with a press and walks through (`Village.push_open`). Barring is the
+        wall, and only a grudge or a real mob puts it up.
 
         A gate is the one part of a wall that is ever a wall to the player: while it is
         barred, getting out of a town you have set against you means heaving the beam up
@@ -1524,8 +1650,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 continue
             angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
             village.barred = any(npc.grudge for npc in angry) or len(angry) >= c.Villages.BAR_GATES_MOB
+            village.shut_for_night = c.Villages.NIGHT_GATES and self.daynight.curfew
             village.advance_gates(dt, (player.x, player.y))
-            if village.barred:
+            if village.barred or village.shut_for_night:
+                # Whichever of the two shut it, nothing is ever sealed inside a leaf.
                 self.clear_gateways(village, player)
 
     def _loose_arrows(self, fight: dict, mob: dict, player: Player):

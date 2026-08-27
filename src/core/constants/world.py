@@ -207,6 +207,12 @@ class DayNight:
     DUSK_END: float = 0.55
     NIGHT_END: float = 0.85
 
+    # How dark it has to be before a village calls it a night: its people leave off what
+    # they were doing and walk home, and its gates lean shut. Lower than `is_night` (0.5)
+    # on purpose, so the street empties through dusk and is empty by dark rather than
+    # everyone turning on their heel at the same instant.
+    CURFEW_DARKNESS: float = 0.35
+
     NIGHT_COLOR: tuple = (15, 20, 60)
     NIGHT_MAX_ALPHA: int = 90
 
@@ -732,14 +738,17 @@ class Scenery:
     # Roads: every village site is joined to its nearest ROAD_LINKS neighbours, and the
     # chunk being generated lays down the packed earth of whatever passes through it.
     # Nothing that blocks may stand within CLEARANCE of one, so a road is always walkable.
-    ROAD_SITE_CHUNK_RADIUS: int = 8
+    ROAD_SITE_CHUNK_RADIUS: int = 15
     # More than one link per settlement is what makes the map a network rather than a
     # chain, and the cap on a road's length is what keeps a lone village in the deep wilds
     # from being joined to a town half a world away by a road nobody would have cut. Never
     # longer than ROAD_SITE_CHUNK_RADIUS reaches, or a chunk in the middle of one would not
     # know the road existed.
+    # Both grew with the gap between settlements (`Villages.MIN_GAP`): a road that cannot
+    # reach the nearest neighbour is a village with no road at all, and the deep wilds were
+    # meant to be sparse, not trackless.
     ROAD_LINKS: int = 3
-    ROAD_MAX_LENGTH: int = 7000
+    ROAD_MAX_LENGTH: int = 14000
     # How much dry ground a road keeps between itself and a settlement it is only passing:
     # its own two ends are met at the gate, anything else in the way is bowed around.
     ROAD_VILLAGE_CLEARANCE: int = 120

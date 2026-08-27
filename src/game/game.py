@@ -209,6 +209,7 @@ class Game:
             "bed": lambda _target: self._sleep_in_bed(),
             "door": self._use_door,
             "gate": lambda _target: None,
+            "nightgate": self._push_gate,
             "well": self._climb_down_well,
             "cave": self._enter_cave,
             "ladder": self._climb_back_up,
@@ -444,6 +445,7 @@ class Game:
         self._offer_indoors(offer, reach_of)
         self._offer_doors(offer, reach_of)
         self._offer_gate(offer, reach_of)
+        self._offer_night_gate(offer, reach_of)
         self._offer_underground(offer, reach_of)
         self._offer_places(offer, reach_of)
         self._offer_npc(offer, reach_of)
@@ -504,6 +506,30 @@ class Game:
         leaf = village.defences()["gates"][index]["rect"]
         label = f"Hold E: heave the bar up ({int((1 - self.gate_lift) * c.Villages.GATE_LIFT_S) + 1}s)"
         offer(Interaction("gate", found, label, leaf.centerx, leaf.top - 10), reach_of(leaf.centerx, leaf.centery))
+
+    def _offer_night_gate(self, offer, reach_of):
+        """The gate a village has leaned shut for the night, which is one press rather than
+        the hold a bar takes. Never offered on a barred gate: that one is the other prompt,
+        and being shut out of a town you have angered is not something a keystroke undoes."""
+        found = self.world.shut_gate_in_reach(self.player)
+        if found is None:
+            return
+        village, index = found
+        leaf = village.defences()["gates"][index]["rect"]
+        offer(
+            Interaction("nightgate", found, "E: push the gate open", leaf.centerx, leaf.top - 10),
+            reach_of(leaf.centerx, leaf.centery),
+        )
+
+    def _push_gate(self, target):
+        """Shoulder a night gate open and step through it, the way the settlement's own
+        people do. It leans shut again behind them."""
+        village, index = target
+        village.push_open(index)
+        play_sound("door")
+        radius = c.Player.SIZE / 2
+        self.player.x, self.player.y = village.gate_side_point(index, self.player.x, self.player.y, radius, across=True)
+        self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, radius)
 
     def _offer_underground(self, offer, reach_of):
         """The two ends of the dark: the way back up when down there, the two ways down when

@@ -69,10 +69,13 @@ class BuildingArt:
     # front wall, everything else outside the walls is drawn live over the top.
     SHELL_PAD = 24
 
-    def draw(self, screen: pygame.Surface, camera: Camera, player_inside: bool = False):
+    def draw(self, screen: pygame.Surface, camera: Camera, player_inside: bool = False, darkness: float = 0.0):
         """`player_inside` swaps this one building from its normal solid-roof look to a
         cutaway (no roof, floor and furniture visible) so the player can be seen standing
-        in it while the rest of the map keeps drawing around it, same camera, no cut."""
+        in it while the rest of the map keeps drawing around it, same camera, no cut.
+
+        `darkness` is the sky: after dark some of the windows of a village have a lamp
+        behind them, and how many of them is the settlement's tier (`_lit_windows`)."""
         if self.kind == "landmark":
             self._draw_ruin(screen, camera)
             return
@@ -98,6 +101,7 @@ class BuildingArt:
         self._draw_door(screen, camera)
 
         windows = self.window_rects()
+        lamps = self._lit_windows(darkness)
         for idx, window in enumerate(windows):
             self._draw_window(
                 screen,
@@ -106,6 +110,7 @@ class BuildingArt:
                 idx in self.broken_windows,
                 f"{self.id}:window:{idx}",
                 self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
+                lit=darkness if idx in lamps else 0.0,
             )
         self._draw_extras(screen, camera, srect, srect.inflate(-16, -16), windows, style)
 
@@ -545,9 +550,33 @@ class BuildingArt:
         pygame.draw.circle(screen, (208, 176, 96), (leaf.right - 10, leaf.centery), 3)
         draw_cracks(screen, leaf, self.door_hp / c.Buildings.DOOR_HP, self.door_key)
 
+    def _lit_windows(self, darkness: float) -> frozenset:
+        """Which of this building's windows have a lamp behind them, as indices.
+
+        Nothing in the wilderness is ever lit, and how much of a settlement is awake is its
+        tier (`Villages.LIT_WINDOW_FRAC_BY_TIER`): a border hamlet after dark is three
+        windows and a deep wilds town is a constellation, which is the difference read from
+        outside the wall at the hour the wall itself is hardest to see. Rolled off the
+        building's own id and kept, so the same rooms stay lit all night."""
+        if self.village_tier < 0 or darkness < c.DayNight.CURFEW_DARKNESS:
+            return frozenset()
+        if self._lamps is None:
+            ladder = c.Villages.LIT_WINDOW_FRAC_BY_TIER
+            frac = ladder[max(0, min(self.village_tier, len(ladder) - 1))]
+            count = len(self.window_rects())
+            rng = random.Random(f"lamps:{self.id}")
+            self._lamps = frozenset(rng.sample(range(count), round(count * frac)))
+        return self._lamps
+
     @staticmethod
     def _draw_window(
-        screen, camera: Camera, window: pygame.Rect, broken: bool, damage_key: str = "", hp_frac: float = 1.0
+        screen,
+        camera: Camera,
+        window: pygame.Rect,
+        broken: bool,
+        damage_key: str = "",
+        hp_frac: float = 1.0,
+        lit: float = 0.0,
     ):
         wx, wy = camera.world_to_screen(window.left, window.top)
         wrect = pygame.Rect(round(wx), round(wy), window.width, window.height)
@@ -561,7 +590,17 @@ class BuildingArt:
             return
         pygame.draw.rect(screen, (70, 50, 35), wrect)
         pane = wrect.inflate(-4, -4)
-        pygame.draw.rect(screen, (150, 195, 210), pane)
+        if lit > 0:
+            # A lamp behind the glass: a little spill on the wall around it, so the pane is
+            # the brightest thing in it, and both are worth more the darker it has got.
+            reach = round(max(pane.width, pane.height) * 1.6)
+            glow = pygame.Surface((reach * 2, reach * 2), pygame.SRCALPHA)
+            for step in (3, 2, 1):
+                pygame.draw.circle(glow, (*c.Villages.WINDOW_LIGHT, round(14 * lit)), (reach, reach), reach * step / 3)
+            screen.blit(glow, (pane.centerx - reach, pane.centery - reach))
+            pygame.draw.rect(screen, c.Villages.WINDOW_LIGHT, pane)
+        else:
+            pygame.draw.rect(screen, (150, 195, 210), pane)
         pygame.draw.line(screen, (70, 50, 35), (pane.centerx, pane.top), (pane.centerx, pane.bottom), 2)
         pygame.draw.line(screen, (70, 50, 35), (pane.left, pane.centery), (pane.right, pane.centery), 2)
         # A cracked pane before it shatters: the same wear every other breakable shows.

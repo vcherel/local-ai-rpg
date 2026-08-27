@@ -19,6 +19,21 @@ which is impossible. So: the map is endless and deterministic, what stands on it
 generated on demand and kept. New villages must go through `World._ensure_village` so
 their buildings reach the chunk index (`_index_buildings`) and `set_active_buildings`.
 
+## A settlement is a landmark, so there are few of them
+
+The region grid (`Villages.REGION_CHUNKS`, eight chunks square) settles at most one chunk
+per region, two out where `REGION_SECOND_CHANCE_FAR` has ramped in, and a site that lands
+inside a neighbour's `MIN_GAP` stands down. Both levers point the same way: a village is
+worth walking to only if the walk is real. In the settled ring that is about twelve
+thousand between one settlement and the next, out in the wilds about seven, and the floor
+under both is the gap rather than the chance, which is why raising the chance alone once
+changed nothing at all.
+
+What pays for that emptiness is everything else the wilderness has: landmarks, roads,
+tunnels, caves. And what pays for the walk itself is the roads, which had to grow with the
+gap: `Scenery.ROAD_MAX_LENGTH` and `ROAD_SITE_CHUNK_RADIUS` are both set off it, because a
+road that cannot reach the nearest neighbour is a settlement with no road at all.
+
 ## The wilderness is terrain, not entities
 
 Everything in `scenery.py` (trees, boulders, grass, ponds, roads, ground patches) is
@@ -230,6 +245,13 @@ which is what keeps `MONSTER_KINDS` the one source of what a creature is worth.
 `World.night_damage_mult` and the detection multiplier are read per frame and passed into
 `Monster.move`, so a monster that spawned at noon still hits like a night monster after
 dark; only the danger bonus a new spawn rolls with is baked in at spawn time.
+
+It is a state of the settlements too. `DayNightCycle.curfew` (darkness past
+`DayNight.CURFEW_DARKNESS`, deliberately earlier than `is_night`, so the street empties over
+the sunset rather than at a stroke) is what villagers and gates both read: everyone who is
+not fighting walks home and stays in (`World._npc_sleeps`), and the gates lean shut
+(`Village.shut_for_night`). Come morning `World._wake_up` opens the door they shut behind
+them, since their wander is anchored on a doorstep they can no longer reach.
 
 ## A tree and a boulder are the pieces of wilderness that answer back
 

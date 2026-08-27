@@ -517,8 +517,15 @@ class WorldCombat:
         return building
 
     def _gate_in_reach(self, pos, reach: float):
-        """The barred gate a blow at `pos` lands on, as (village, index), or None."""
+        """The barred gate a blow at `pos` lands on, as (village, index), or None.
+
+        Barred and not merely shut: a gate closed for the night has no beam across it and
+        opens to a press from either side, so hacking one down would be work nobody has any
+        reason to do. Only the wall a settlement puts between itself and you answers a
+        weapon."""
         for village in self._village_solids_by_chunk.get(self._chunk_of(*pos), ()):
+            if not village.barred:
+                continue
             index = village.gate_at(pos[0], pos[1], reach)
             if index is not None:
                 return village, index

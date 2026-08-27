@@ -114,6 +114,10 @@ class GameRenderer:
 
         self.screen.fill(c.Colors.GREEN)
 
+        # How dark the sky is, asked once for the frame: the wall braziers and the lit
+        # windows of a village are the only things out here drawn differently after dark.
+        darkness = world.daynight.darkness
+
         # The one loop long enough for the culling itself to cost something: a few hundred
         # pebbles per chunk, so it asks the world for the chunks it can see rather than
         # walking every one the player has loaded, and measures each against the view here
@@ -142,11 +146,11 @@ class GameRenderer:
             # and reach every door, so a hamlet culled on its plaza alone lost its lanes.
             reach = village.grounds_radius + 40
             if self._on_screen(camera, village.x, village.y, margin=reach):
-                village.draw(self.screen, camera)
+                village.draw(self.screen, camera, darkness)
 
         for building in world.buildings_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 500):
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
-                building.draw(self.screen, camera, player_inside=building is interior)
+                building.draw(self.screen, camera, player_inside=building is interior, darkness=darkness)
 
         # Filtered exactly as the entities and the items below are: a splat left on another
         # building's floor is under a roof that is still on, and used to show through it.
