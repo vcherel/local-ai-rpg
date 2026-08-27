@@ -127,6 +127,10 @@ fight at all: rooted, drawn as a hole widening under it with cracks running out,
 roar, the white flash, the shake and the banner all landing on the frame it finishes. The
 thing that matters most in the world is the thing that may least afford to appear from
 nowhere. One loaded out of a save is already standing there and does not climb out again.
+The climb waits for somebody to watch it (`Boss._witnessed`): every boss is updated wherever
+it stands, so one that rose on its own would spend the loudest moment in the game on an
+empty screen, whether it was a quest target stood up thousands of paces out or a boss on the
+surface while the player was down a tunnel. It waits, and it arrives when they walk up.
 
 *A settlement answers it.* `WorldPlaces.militia_orders` counts bosses among the intruders,
 at their own wider `Villages.BOSS_DEFEND_RADIUS` / `BOSS_PANIC_RADIUS`, and a slam catches

@@ -76,8 +76,24 @@ class Boss(Monster):
         # what lands there and how long is left of its telegraph. Session-only: a fight left
         # mid-cast is a fight the player walked out of.
         self.pending_summons: list[dict] = []
+        # A boss that belongs to a place rather than to the population of the wilds: the
+        # first world's landmark guardian. A cave's warden and a quest's hunt target are the
+        # same thing, told apart by `camp_id` and `quest_tag`; see `counts_against_cap`.
+        self.fixture = False
 
     # ------------------------------------------------------------------ identity / save
+
+    @property
+    def counts_against_cap(self) -> bool:
+        """Whether this one is part of what the wilds hold around the player (`World.boss_cap`).
+
+        A fixture is not. The guardian standing at the ruin, the warden waiting in a vault
+        and the boss a quest sent the player after were each put somewhere for a reason of
+        their own and none of them despawns, so counting them spends the whole budget of the
+        settled ring forever on something already standing there: with the cap at one near
+        the centre, the guardian alone left no room for a single roaming boss or boss event
+        in the entire near world."""
+        return not (self.fixture or self.camp_id or self.quest_tag)
 
     def set_identity(self, text: str):
         """Parse an LLM name like 'Gorroth, the Bonecrusher' into name + title."""
@@ -105,6 +121,7 @@ class Boss(Monster):
             "title": self.title,
             "enraged": self.enraged,
             "quest_tag": self.quest_tag,
+            "fixture": self.fixture,
         }
 
     @classmethod
@@ -117,6 +134,7 @@ class Boss(Monster):
         # One that was already standing there before the save is not made to climb out of
         # the ground again: an arrival is something the player watched happen once.
         boss.rising = 0.0
+        boss.fixture = data.get("fixture", False)
         boss._apply_shrink(quiet=True)
         if data.get("enraged"):
             boss._apply_enrage_stats()
@@ -131,9 +149,11 @@ class Boss(Monster):
     def update_boss(self, world: World, player: Player, dt, quest_system: QuestSystem):
         dist = self.distance_to_point((player.x, player.y))
 
-        # Still coming up out of the ground: it holds where it is until it has arrived.
+        # Still coming up out of the ground: it holds where it is until it has arrived, and
+        # it does not even start until somebody is there to watch it (`_witnessed`).
         if self.rising > 0:
-            self._rise(dt)
+            if self._witnessed(world, player):
+                self._rise(dt)
             self.update_attack_anim(dt)
             return
 
@@ -173,6 +193,19 @@ class Boss(Monster):
 
         # Last, so anything arriving this frame is stood up after the boss has had its own.
         self._advance_summons(world, dt)
+
+    def _witnessed(self, world: World, player: Player) -> bool:
+        """Whether the player is standing where they would see this one climb out: near
+        enough, and on the same ground.
+
+        Every boss is updated every frame wherever it is, so without this the whole arrival
+        (the roar, the white, the shake, the banner) lands on an empty screen for a quest
+        target stood up thousands of paces away, or for one on the surface while the player
+        is down a tunnel. A boss nobody is near simply waits, and arrives when they walk up
+        to it."""
+        if (world.underground.id if world.underground else "") != self.camp_id:
+            return False
+        return self.distance_to_point((player.x, player.y)) <= c.Boss.RISE_WITNESS_DIST
 
     def _rise(self, dt):
         """Climb out of the ground. The ring drawing itself shut under it is the whole of the

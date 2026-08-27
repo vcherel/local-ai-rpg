@@ -904,6 +904,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             nearest = min(nearest, math.hypot(x - site_x, y - site_y) - radius)
         return nearest
 
+    def wild_bosses(self) -> int:
+        """How many of the bosses standing in the world count towards the cap: the ones that
+        are the wilds' own population rather than fixtures put somewhere for a reason
+        (`Boss.counts_against_cap`)."""
+        return sum(1 for boss in self.bosses if boss.counts_against_cap)
+
     def boss_cap(self, player: Player) -> int:
         """How many bosses the world holds at once around the player: one on the settled
         ring, up to `Boss.MAX_ACTIVE_FAR` out in the deep wilds. The same shape as the
@@ -936,7 +942,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # to is measured from a settlement rather than from the stone it guards.
         spot = self._guardian_spot(landmark)
         if spot is not None:
-            self.spawn_boss(*spot)
+            # It belongs to the ruin and it never leaves it, so it is not one of the bosses
+            # the wilds are counted to hold around the player.
+            self.spawn_boss(*spot).fixture = True
 
     def _guardian_spot(self, landmark: Building) -> tuple[float, float] | None:
         front = (landmark.x, landmark.y + landmark.h / 2 + 90)
@@ -948,15 +956,18 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
     def spawn_boss_for_quest(self) -> Boss:
         """Spawn a boss out in the dangerous outer wilds as a quest hunt target.
 
-        The band starts where roaming bosses start and runs outward from there. The world
-        has no edge, so it is deliberately not clamped to the settled ring: hunting one
-        is meant to be a walk past everything the player already knows.
+        The band starts at `Boss.QUEST_SPAWN_MIN_DISTANCE`, well past where roaming ones
+        begin, and runs outward from there. The world has no edge, so it is deliberately not
+        clamped to the settled ring: hunting one is meant to be a walk past everything the
+        player already knows.
         """
         center = c.World.WORLD_SIZE // 2
         x = y = center
         for _ in range(20):
             angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(c.Boss.ROAM_MIN_DISTANCE, c.Boss.ROAM_MIN_DISTANCE + c.Boss.QUEST_SPAWN_BAND)
+            dist = random.uniform(
+                c.Boss.QUEST_SPAWN_MIN_DISTANCE, c.Boss.QUEST_SPAWN_MIN_DISTANCE + c.Boss.QUEST_SPAWN_BAND
+            )
             x = center + math.cos(angle) * dist
             y = center + math.sin(angle) * dist
             if self.boss_spawn_ok(x, y):
@@ -997,7 +1008,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 quest.boss_name = boss.display_name
 
     def _maybe_spawn_roaming_boss(self, player: Player):
-        if len(self.bosses) >= self.boss_cap(player):
+        if self.wild_bosses() >= self.boss_cap(player):
             return
         center = c.World.WORLD_SIZE // 2
         if math.hypot(player.x - center, player.y - center) < c.Boss.ROAM_MIN_DISTANCE:
