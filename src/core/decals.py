@@ -136,7 +136,7 @@ def _splat_surface(radius, color, stretch, angle) -> pygame.Surface:
     return surface
 
 
-def _print_surface(radius, color, stretch, angle) -> pygame.Surface:
+def _print_surface(radius, color, _stretch, angle) -> pygame.Surface:
     """One bloody footprint: a sole and the toes in front of it, pointing the way it walked."""
     radius = max(2.0, radius)
     long_r = radius * 1.6

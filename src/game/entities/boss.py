@@ -14,6 +14,7 @@ from core.impact_fx import get_impacts
 from core.particles import get_particles
 from core.screen_fx import get_banner, get_flash
 from core.text_fx import draw_outlined_text
+from game.blow import Blow
 from game.entities.monster_art import draw_monster
 from game.entities.monsters import Monster
 from game.entities.projectile import Projectile
@@ -142,10 +143,6 @@ class Boss(Monster):
 
     # ------------------------------------------------------------------ per-frame update
 
-    @property
-    def _cd_mult(self) -> float:
-        return c.Boss.ENRAGE_COOLDOWN_MULT if self.enraged else 1.0
-
     def update_boss(self, world: World, player: Player, dt, quest_system: QuestSystem):
         dist = self.distance_to_point((player.x, player.y))
 
@@ -187,7 +184,8 @@ class Boss(Monster):
             self.ability_cd -= dt
             if self.ability_cd <= 0 and self.slam_windup <= 0:
                 self._use_ability(world, player)
-                self.ability_cd = random.uniform(*c.Boss.ABILITY_COOLDOWN_RANGE_MS) * self._cd_mult
+                cooldown_mult = c.Boss.ENRAGE_COOLDOWN_MULT if self.enraged else 1.0
+                self.ability_cd = random.uniform(*c.Boss.ABILITY_COOLDOWN_RANGE_MS) * cooldown_mult
         else:
             self.update_attack_anim(dt)
 
@@ -324,10 +322,12 @@ class Boss(Monster):
                 damage,
                 player,
                 quest_system,
-                kb_dir=world._dir_from(self.x, self.y, npc.x, npc.y),
-                blocked=world.blocked,
-                by_player=False,
-                source=self,
+                Blow(
+                    kb_dir=world._dir_from(self.x, self.y, npc.x, npc.y),
+                    blocked=world.blocked,
+                    by_player=False,
+                    source=self,
+                ),
             )
 
     def _cast_volley(self, world: World, player: Player):

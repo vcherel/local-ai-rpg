@@ -477,7 +477,7 @@ def poi_site(cx: int, cy: int) -> tuple[float, float, str] | None:
     if any(math.hypot(x - wx, y - wy) < radius + c.PointsOfInterest.MIN_DIST_FROM_WATER for wx, wy, radius in river):
         return None
 
-    kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS)
+    kinds, weights = zip(*c.PointsOfInterest.KIND_WEIGHTS, strict=True)
     kind = rng.choices(kinds, weights=weights)[0]
 
     # Nothing is laid out across a road either. The roads are a pure function of the

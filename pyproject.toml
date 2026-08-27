@@ -28,7 +28,7 @@ sources = ["src"]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "RUF"]
+select = ["E", "F", "I", "UP", "RUF", "ARG", "SIM", "B"]
 ignore = [
     # Deliberate: the LLM output filter needs the real unicode dash/quote ranges it strips.
     "RUF001",

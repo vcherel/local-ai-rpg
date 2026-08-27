@@ -896,7 +896,7 @@ class Game:
             elapsed += step
             self.world.pass_time(skip_ms * (step / duration) / 1000)
 
-            self.game_renderer.draw_world(self.camera, self.world, self.player, self.interior, None, None)
+            self.game_renderer.draw_world(self.camera, self.world, self.player, self.interior, None)
             self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
             # Full black at the halfway mark, clear at both ends.
             overlay.set_alpha(int(255 * math.sin(math.pi * elapsed / duration)))
@@ -1120,12 +1120,7 @@ class Game:
         every frame whether or not the world moved, so a menu never sits over a stale view."""
         quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
         self.game_renderer.draw_world(
-            self.camera,
-            self.world,
-            self.player,
-            self.interior,
-            None if self.active_menu else self.interaction,
-            quest_target,
+            self.camera, self.world, self.player, self.interior, None if self.active_menu else self.interaction
         )
         # No sky underground: the tunnel draws its own darkness around the player instead.
         if self.world.underground is None:

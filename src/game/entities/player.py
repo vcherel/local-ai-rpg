@@ -43,19 +43,6 @@ WEAPON_SLOT_NAMES = HAND_SLOTS
 # written by its own name everywhere instead of through an attribute looked up off a table.
 EQUIP_SLOT_NAMES = (*WEAPON_SLOT_NAMES, "bomb", "offhand", "armor", "accessory", "ammo")
 
-# Every slot a save written before the two hands could have left a weapon in, best first.
-# They are read out into `_legacy_weapons` on load and the best two kept once the bag has
-# been relinked and a bonus can actually be compared (`_migrate_legacy_weapons`).
-_LEGACY_WEAPON_SLOTS = (
-    "hand1_a",
-    "hand2_a",
-    "hand1_b",
-    "hand2_b",
-    "melee_weapon",
-    "ranged_weapon",
-    "melee_weapon_2",
-)
-
 # Held down to raise the shield. A hold rather than a toggle, so blocking is something
 # you do for the blow you saw coming instead of a stance you leave switched on.
 BLOCK_KEY = pygame.K_SPACE
@@ -128,8 +115,7 @@ def _best_pair(weapons) -> list:
     """The two weapons to hold, out of everything on offer: the strongest of the lot on the
     left button whatever its family, and the best of the *other* family on the right, so
     the player leads with their best and still carries the answer the other family gives.
-    Either may be None. The one rule behind both `_best_loadout` and an old save's four
-    weapons being cut down to two."""
+    Either may be None. The one rule behind `_best_loadout`."""
     ranked = sorted(weapons, key=lambda item: (-item.bonus, item.name))
     if not ranked:
         return [None, None]
@@ -168,12 +154,6 @@ class Player(Entity):
 
         saved_equipped = save_system.load("equipped", {})
         self.equipped = {slot: saved_equipped.get(slot) for slot in EQUIP_SLOT_NAMES}
-
-        # What an older save left in the four weapon positions it used to have. Kept as ids
-        # until the bag is relinked, since telling the best two apart needs the items.
-        self._legacy_weapons = [
-            saved_equipped[slot] for slot in _LEGACY_WEAPON_SLOTS if saved_equipped.get(slot) is not None
-        ]
 
         # The weapon whose projectile is in the air right now, so a boomerang is not drawn
         # still sitting in the hand that threw it. Session-only; `WorldProjectiles` keeps it
@@ -500,33 +480,10 @@ class Player(Entity):
 
     def restock_bars(self):
         """Fill any free quickbar slot, the ammo slot and the bomb slot from what is already
-        carried, and cut an older save's four weapons down to the two hands.
-        Run once the saved inventory has been relinked: a bag loaded from a save made before
-        the quickbar was a choice would otherwise open with nothing on it, and which two of
-        four weapons are the best can only be answered with the items in hand."""
-        self._migrate_legacy_weapons()
+        carried. Run once the saved inventory has been relinked: a bag loaded from a save made
+        before the quickbar was a choice would otherwise open with nothing on it."""
         for item in self.inventory:
             self._auto_slot(item)
-
-    def _migrate_legacy_weapons(self):
-        """A save written when each hand carried two weapons opens holding the best two, by
-        the same rule `auto_equip_best` arranges them by. Anything else it was carrying is
-        still carried, just in the bag; a bomb in one of those positions goes to the slot
-        bombs have now."""
-        if not self._legacy_weapons:
-            return
-        carried = {item.id: item for item in self.inventory}
-        held = [carried[item_id] for item_id in self._legacy_weapons if item_id in carried]
-        self._legacy_weapons = []
-
-        for slot, item in zip(HAND_SLOTS, _best_pair([i for i in held if i.item_type == "weapon"]), strict=True):
-            if item is not None and self.equipped[slot] is None:
-                self.equipped[slot] = item.id
-        if self.equipped["bomb"] is None:
-            bomb = next((item for item in held if item.item_type == "bomb"), None)
-            if bomb is not None:
-                self.equipped["bomb"] = bomb.id
-        self.save_system.update("equipped", self.equipped_ids())
 
     # --- potion quickbar --------------------------------------------------------
     # The same arrangement as the weapon positions, and for the same reason: what the quick

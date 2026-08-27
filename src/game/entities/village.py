@@ -18,6 +18,14 @@ if TYPE_CHECKING:
     from core.camera import Camera
 
 
+def _wall_piece(mid: tuple, along_x: bool, offset: float, length: float, depth: float) -> pygame.Rect:
+    """A block of wall `length` long, `offset` along its side of the ring from the gateway
+    in the middle of it. `mid` is that gateway and `along_x` which way the side runs."""
+    rect = pygame.Rect(0, 0, round(length), round(depth)) if along_x else pygame.Rect(0, 0, round(depth), round(length))
+    rect.center = (round(mid[0] + offset), round(mid[1])) if along_x else (round(mid[0]), round(mid[1] + offset))
+    return rect
+
+
 class Village:
     """A cluster of buildings around an open plaza, the shape every settlement takes.
 
@@ -177,34 +185,22 @@ class Village:
             mid = (self.x + nx * half_x, self.y + ny * half_y)
             run = half_along - gate / 2  # one stretch, gate edge to corner
 
-            def piece(offset: float, length: float, depth: float) -> pygame.Rect:
-                """A block of wall `length` long, `offset` along the side from its gateway."""
-                rect = (
-                    pygame.Rect(0, 0, round(length), round(depth))
-                    if along_x
-                    else pygame.Rect(0, 0, round(depth), round(length))
-                )
-                rect.center = (
-                    (round(mid[0] + offset), round(mid[1])) if along_x else (round(mid[0]), round(mid[1] + offset))
-                )
-                return rect
-
             for side in (-1, 1):
-                walls.append(piece(side * (gate / 2 + run / 2), run, thickness))
+                walls.append(_wall_piece(mid, along_x, side * (gate / 2 + run / 2), run, thickness))
                 # The gatehouse: the wall thickened where it meets the gateway, so a gate
                 # reads as a way through something rather than a hole in a fence. Solid like
                 # the rest, which is all navigation needs to know about it.
-                walls.append(piece(side * (gate / 2 + house / 2), house, thickness * 2.0))
+                walls.append(_wall_piece(mid, along_x, side * (gate / 2 + house / 2), house, thickness * 2.0))
                 if self.tier >= c.Villages.SPIKE_TIER:
                     spikes.extend(self._stakes(mid, (nx, ny), along_x, side, gate, run))
                 if self.tier >= c.Villages.DITCH_TIER:
-                    trench = piece(side * (gate / 2 + run / 2), run, c.Villages.DITCH_WIDTH)
+                    trench = _wall_piece(mid, along_x, side * (gate / 2 + run / 2), run, c.Villages.DITCH_WIDTH)
                     trench.center = (
                         trench.centerx + nx * c.Villages.DITCH_OFFSET,
                         trench.centery + ny * c.Villages.DITCH_OFFSET,
                     )
                     ditch.append(trench)
-            leaf = piece(0, gate, thickness)
+            leaf = _wall_piece(mid, along_x, 0, gate, thickness)
             gates.append({"pos": mid, "rect": leaf, "along_x": along_x})
 
         for cx in (-1, 1):
@@ -1075,7 +1071,7 @@ def _site_reach(cx: int, cy: int, x: int, y: int) -> float:
     ground each of them would take, and `village_site` is the thing being decided, so it
     cannot also be the thing that is asked."""
     rng = random.Random(f"village-layout:{cx},{cy}")
-    sizes, weights = zip(*c.Villages.SIZE_WEIGHTS)
+    sizes, weights = zip(*c.Villages.SIZE_WEIGHTS, strict=True)
     size = rng.choices(sizes, weights=weights)[0]
     radius, extent_x, extent_y = _worst_case_footprint(size, Village._tier_for(x, y, size))
     return Village(x, y, (cx, cy), size, radius, extent_x, extent_y).grounds_radius
@@ -1306,7 +1302,9 @@ def _assign_slots(kinds: list[str], slots: list[tuple[float, float]]) -> list[tu
         free.remove(choice)
         mine.append(choice)
         placed.append((kind, choice))
-    placed.extend(zip([k for k in kinds if k == "house"], free))
+    # Whichever runs out first stops it: there are as many houses left as there are
+    # free slots only when the composition happens to fill the grid exactly.
+    placed.extend(zip([k for k in kinds if k == "house"], free, strict=False))
     return placed
 
 
@@ -1476,7 +1474,7 @@ def generate_village(x, y, chunk: tuple[int, int]) -> tuple[Village, list[Buildi
     """Lay out the village that chunk (cx, cy) offers. Called once, the first time the
     player walks into range; after that the result lives in the save like the starting town."""
     rng = random.Random(f"village-layout:{chunk[0]},{chunk[1]}")
-    sizes, weights = zip(*c.Villages.SIZE_WEIGHTS)
+    sizes, weights = zip(*c.Villages.SIZE_WEIGHTS, strict=True)
     size = rng.choices(sizes, weights=weights)[0]
     # The tier is worked out before anything is laid out, because it is worth houses: it is
     # the same answer `Village` gives itself, asked one step early.

@@ -339,15 +339,17 @@ class WorldStreaming:
         # One batched call for the shops of every settlement in reach, the same call that
         # used to stock the whole world at once.
         self.start_shop_generation(
-            [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready and self._in_any(npc, near)]
+            [
+                npc
+                for npc in self.npcs
+                if npc.is_merchant
+                and not npc.shop_ready
+                and any(village.contains_point(npc.x, npc.y) for village in near)
+            ]
         )
         # And a name waiting for the first villager they speak to, which is the one thing
         # here the player would otherwise stand and wait for.
         npc_name_generator.start_generation()
-
-    @staticmethod
-    def _in_any(npc, villages) -> bool:
-        return any(village.contains_point(npc.x, npc.y) for village in villages)
 
     def _generate_village_name(self, village: Village):
         system_prompt = "You name settlements for an RPG world. Reply with the name only, no quotes, no punctuation."

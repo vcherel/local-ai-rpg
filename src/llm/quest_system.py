@@ -137,7 +137,7 @@ class QuestSystem:
         npc.quest = quest
         self.active_quests.append(quest)
 
-    def _build_kill_mob(self, npc, quest_info, common, _names) -> Quest | None:
+    def _build_kill_mob(self, _npc, quest_info, common, _names) -> Quest | None:
         if not quest_info.get("monster_hint"):
             return None
         kind = self._resolve_monster_kind(quest_info["monster_hint"])
@@ -155,7 +155,7 @@ class QuestSystem:
             **common,
         )
 
-    def _build_loot_mob(self, npc, quest_info, common, _names) -> Quest | None:
+    def _build_loot_mob(self, _npc, quest_info, common, _names) -> Quest | None:
         if not quest_info.get("item_name") or not quest_info.get("monster_hint"):
             return None
         kind = self._resolve_monster_kind(quest_info["monster_hint"])
@@ -178,7 +178,7 @@ class QuestSystem:
         """How far this quest sends the player, which is what it is paid for (`coin_band`)."""
         return math.hypot(x - npc.x, y - npc.y)
 
-    def _build_slay_boss(self, npc, quest_info, common, _names) -> Quest | None:
+    def _build_slay_boss(self, npc, _quest_info, common, _names) -> Quest | None:
         # No world reference means we can't place the boss; drop the quest rather than
         # leave an untargetable objective.
         if self.world is None:
@@ -194,7 +194,7 @@ class QuestSystem:
             **common,
         )
 
-    def _build_clear_camp(self, npc, quest_info, common, _names) -> Quest | None:
+    def _build_clear_camp(self, npc, _quest_info, common, _names) -> Quest | None:
         # No world to look through, or no camp still held anywhere near: drop the quest
         # rather than send the player after a place that doesn't exist.
         camp = self.world.find_bandit_camp(npc.x, npc.y, c.Quests.MIN_TARGET_DISTANCE) if self.world else None

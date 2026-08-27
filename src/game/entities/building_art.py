@@ -177,7 +177,7 @@ class BuildingArt:
         rng = random.Random(f"style:{self.id}")
 
         def pick(weights):
-            names, values = zip(*weights)
+            names, values = zip(*weights, strict=True)
             return rng.choices(names, weights=values)[0]
 
         material = pick(c.Buildings.ROOF_MATERIALS)

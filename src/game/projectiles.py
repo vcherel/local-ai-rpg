@@ -10,6 +10,7 @@ from core.audio import play_sound
 from core.camera import get_shake
 from core.floating_text import get_floating_text
 from core.particles import get_particles
+from game.blow import Blow
 from game.entities.entities import Entity
 from game.entities.items import rarity_tier
 from game.entities.projectile import ARROW_COLOR, BOLT_COLOR, Projectile
@@ -181,19 +182,18 @@ class WorldProjectiles:
             # doing, so it is uncredited (`by_player=False`): no xp, no loot, no quest
             # progress, and a villager felled by a goblin's stray arrow does not turn the
             # village on the player who was only walking past.
-            if proj.hostile:
-                if proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
-                    # A raised shield turns away what arrives on the side it is worn: the
-                    # shot glances off the face of it and nothing lands. Everything else
-                    # goes through `receive_damage` with the shot as its source, so the
-                    # shield still eats its share of a blow it only half covers.
-                    if player.shield_side_hit(proj):
-                        self._deflect(proj, player)
-                        continue
-                    player.receive_damage(proj.damage, source=proj)
-                    get_shake().add(proj.shake)
-                    self.projectiles.remove(proj)
+            if proj.hostile and proj.distance_to_point((player.x, player.y)) < c.Projectile.SIZE + c.Player.SIZE / 2:
+                # A raised shield turns away what arrives on the side it is worn: the
+                # shot glances off the face of it and nothing lands. Everything else
+                # goes through `receive_damage` with the shot as its source, so the
+                # shield still eats its share of a blow it only half covers.
+                if player.shield_side_hit(proj):
+                    self._deflect(proj, player)
                     continue
+                player.receive_damage(proj.damage, source=proj)
+                get_shake().add(proj.shake)
+                self.projectiles.remove(proj)
+                continue
 
             by_player = proj.by_player and not proj.hostile
             # Whatever this arrow opens up bleeds the way something struck from a distance
@@ -280,11 +280,13 @@ class WorldProjectiles:
             proj.damage,
             player,
             quest_system,
-            shake=proj.shake if by_player else 0.0,
-            knockback=proj.knockback,
-            kb_dir=kb_dir,
-            blocked=self.blocked,
-            by_player=by_player,
+            Blow(
+                shake=proj.shake if by_player else 0.0,
+                knockback=proj.knockback,
+                kb_dir=kb_dir,
+                blocked=self.blocked,
+                by_player=by_player,
+            ),
         )
         if by_player:
             self._apply_on_hit_effects(target, targets, proj.damage, player, quest_system, died, proj.hand)
@@ -328,7 +330,7 @@ class WorldProjectiles:
     def _projectile_hits_npc(
         self, proj: Projectile, player: Player, quest_system: QuestSystem, by_player: bool = True
     ) -> bool:
-        npc = self._projectile_target(proj, self.npcs, lambda n: c.Entities.NPC_SIZE // 2)
+        npc = self._projectile_target(proj, self.npcs, lambda _n: c.Entities.NPC_SIZE // 2)
         if npc is None:
             return False
 
@@ -339,12 +341,14 @@ class WorldProjectiles:
             proj.damage,
             player,
             quest_system,
-            shake=proj.shake if by_player else 0.0,
-            knockback=proj.knockback,
-            kb_dir=self._dir_from(0, 0, proj.vx, proj.vy),
-            blocked=self.blocked,
-            by_player=by_player,
-            source=None if by_player else proj.owner,
+            Blow(
+                shake=proj.shake if by_player else 0.0,
+                knockback=proj.knockback,
+                kb_dir=self._dir_from(0, 0, proj.vx, proj.vy),
+                blocked=self.blocked,
+                by_player=by_player,
+                source=None if by_player else proj.owner,
+            ),
         )
         frac = player.lifesteal_frac(proj.hand) if by_player else 0.0
         if frac > 0:

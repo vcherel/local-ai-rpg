@@ -348,7 +348,7 @@ class Scenery:
         # per lobe would let the next lobe's bank paint over the last lobe's middle, which
         # is the artefact that made a river read as a row of scales.
         cx, cy = center
-        for color, scale in zip(c.Scenery.WATER_COLORS, (1.0, 0.9, 0.5)):
+        for color, scale in zip(c.Scenery.WATER_COLORS, (1.0, 0.9, 0.5), strict=True):
             for ox, oy, rx, ry in self._shape["lobes"]:
                 rect = pygame.Rect(0, 0, max(2, round(rx * 2 * scale)), max(2, round(ry * 2 * scale)))
                 rect.center = (round(cx + ox), round(cy + oy))

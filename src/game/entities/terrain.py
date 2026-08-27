@@ -52,7 +52,7 @@ class Deck(NamedTuple):
 
 
 def _pick(weights: Sequence[tuple[str, int]], rng: random.Random) -> str:
-    names, values = zip(*weights)
+    names, values = zip(*weights, strict=True)
     return rng.choices(names, weights=values)[0]
 
 
