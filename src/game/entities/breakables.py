@@ -70,7 +70,7 @@ class Breakable:
         body.center = center
         draw_cracks(screen, body, hp_frac, f"{self.x},{self.y}")
 
-    def _draw_barrel(self, screen: pygame.Surface, center, rng, hp_frac: float, flash: float):
+    def _draw_barrel(self, screen: pygame.Surface, center, _rng, hp_frac: float, flash: float):
         w, h = c.Breakables.SIZE, int(c.Breakables.SIZE * 1.3)
         body = pygame.Rect(0, 0, w, h)
         body.center = center
@@ -81,7 +81,7 @@ class Breakable:
             pygame.draw.line(screen, (66, 44, 24), (body.left + 2, band_y), (body.right - 2, band_y), 3)
         self._draw_wear(screen, center, hp_frac, c.Breakables.SIZE)
 
-    def _draw_powder_keg(self, screen: pygame.Surface, center, rng, hp_frac: float, flash: float):
+    def _draw_powder_keg(self, screen: pygame.Surface, center, _rng, hp_frac: float, flash: float):
         """A keg of black powder: squatter and darker than a barrel, iron-banded, with a
         fuse out of the lid. It has to be told apart from an ordinary barrel at a glance,
         because walking up and hitting one is a very different decision."""
@@ -178,7 +178,7 @@ _DRAWERS = {
 
 
 def _pick_kind(rng: random.Random) -> str:
-    kinds, weights = zip(*c.Breakables.KIND_WEIGHTS)
+    kinds, weights = zip(*c.Breakables.KIND_WEIGHTS, strict=True)
     return rng.choices(kinds, weights=weights)[0]
 
 

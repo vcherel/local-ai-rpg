@@ -297,7 +297,7 @@ def _draw_skeleton(sprite, center, size, color, breath, hand):
     return {"hands": hands, "eyes": (at(0.48, -0.1), at(0.48, 0.1))}
 
 
-def _draw_wraith(sprite, center, size, color, breath, hand):
+def _draw_wraith(sprite, center, size, color, breath, _hand):
     """No legs and no edges: a hooded core over tatters that thin out behind it, drifting
     between two alphas as it breathes. The only creature in the world you can see through."""
     s = size
@@ -323,7 +323,7 @@ def _draw_wraith(sprite, center, size, color, breath, hand):
     return {"hands": hands, "eyes": (at(0.3, -0.1), at(0.3, 0.1))}
 
 
-def _draw_blob(sprite, center, size, color, breath, hand):
+def _draw_blob(sprite, center, size, color, breath, _hand):
     """The slime: a translucent mass that squashes and stretches instead of breathing, with a
     dark nucleus suspended in it and a couple of drips sliding off the back."""
     at = _local(center, size)
@@ -342,7 +342,7 @@ def _draw_blob(sprite, center, size, color, breath, hand):
     return {"eyes": (at(0.16, -0.17), at(0.16, 0.17))}
 
 
-def _draw_beast(sprite, center, size, color, breath, hand):
+def _draw_beast(sprite, center, size, color, breath, _hand):
     """The wolf: a standing quadruped with its hackles up. Drawn a little under its own size
     because it runs long rather than wide, the same reason wildlife has its own hit radius."""
     s = _breathed(size, breath) * 0.82
@@ -404,7 +404,7 @@ def _draw_robed(sprite, center, size, color, breath, hand):
     return {"hands": hands, "eyes": (at(0.38, -0.1), at(0.38, 0.1))}
 
 
-def _draw_creeper(sprite, center, size, color, breath, hand):
+def _draw_creeper(sprite, center, size, color, breath, _hand):
     """The creeper: a swollen sack of powder on four stubby legs, cracked open along the
     seams by the light of what is inside it. It carries nothing and it never swings, so the
     silhouette has to say "this is about to go off" on its own: bloated where everything else
@@ -479,7 +479,7 @@ def _husk(sprite, center, size, color, breath, hand, torn: bool):
         _poly(sprite, _shade(color, 90), maw)
         teeth = [at(0.44, -0.1), at(0.3, -0.18), at(0.2, -0.04), at(0.24, 0.12), at(0.38, 0.16)]
         pygame.draw.lines(sprite, BONE, False, teeth, 2)
-        for side, pos in zip((-1, 1), hands.values()):
+        for side, pos in zip((-1, 1), hands.values(), strict=True):
             tip = (pos[0] + side * s * 0.22, pos[1] - s * 0.22)
             pygame.draw.line(sprite, BONE, pos, tip, 2)
     else:

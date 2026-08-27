@@ -197,7 +197,7 @@ class ShopMenu(BaseMenu):
 
         return True
 
-    def _scroll(self, rows: int, mouse_x: int, mouse_y: int):
+    def _scroll(self, rows: int, mouse_x: int, _mouse_y: int):
         """Scroll whichever column the cursor sits over, the sell one by default."""
         menu_x, _ = self.get_centered_position()
         if mouse_x - menu_x < self._sell_panel_x():
@@ -302,7 +302,6 @@ class ShopMenu(BaseMenu):
                 self._draw_row(
                     surface,
                     bx,
-                    pw,
                     row,
                     item,
                     price,
@@ -318,9 +317,7 @@ class ShopMenu(BaseMenu):
             index = self.sell_scroll + row
             price = self._sell_price(item)
             equipped = item.id in equipped_ids
-            self._draw_row(
-                surface, sx, pw, row, item, price, self.hovered_sell == index, (255, 180, 80), equipped=equipped
-            )
+            self._draw_row(surface, sx, row, item, price, self.hovered_sell == index, (255, 180, 80), equipped=equipped)
         self._draw_scrollbar(surface, sx + pw + 4, len(sell_items), self.sell_scroll)
         self._draw_bulk_buttons(surface)
         self._draw_auto_equip_button(surface)
@@ -355,7 +352,7 @@ class ShopMenu(BaseMenu):
             ("Valuables", self._valuables(), pygame.key.name(SELL_VALUABLES_KEY).upper()),
             ("Unused gear", self._unused_gear(), pygame.key.name(SELL_GEAR_KEY).upper()),
         )
-        for rect, (caption, items, key) in zip(self._bulk_button_rects(), batches):
+        for rect, (caption, items, key) in zip(self._bulk_button_rects(), batches, strict=True):
             total = sum(self._sell_price(item) for item in items)
             label = f"[{key}] Sell {caption.lower()}  {total}g" if items else f"No {caption.lower()}"
             widgets.draw_button(
@@ -387,7 +384,6 @@ class ShopMenu(BaseMenu):
         self,
         surface: pygame.Surface,
         panel_x: int,
-        panel_w: int,
         index: int,
         item: Item,
         price: int,

@@ -93,15 +93,13 @@ class GameRenderer:
         building = world.building_at(x, y)
         return building is not None and building is not interior
 
-    def draw_world(
-        self, camera: Camera, world: World, player: Player, interior=None, interaction=None, quest_target=None
-    ):
+    def draw_world(self, camera: Camera, world: World, player: Player, interior=None, interaction=None):
         """`interior` is the building (if any) the player is currently standing inside; that
         one building draws as a roofless cutaway instead of its normal solid block, while
         everything else, indoors or out, keeps drawing in this same pass around it.
         `interaction` is what the interact key would act on right now (Game.current_interaction),
-        drawn as the one prompt on screen; `quest_target` is where the tracked quest points,
-        the only thing that still gets an offscreen arrow."""
+        drawn as the one prompt on screen. The quest arrow is not drawn here: it goes over the
+        HUD, so `draw_ui` puts it up last of everything."""
         # Underground the ground is the tunnel and there is nothing else: no sky, no
         # wilderness, no buildings, because none of it is generated where a tunnel is dug.
         # Everything that walks, flies or lies on the floor keeps drawing below exactly as
@@ -109,7 +107,7 @@ class GameRenderer:
         if world.underground is not None:
             world.underground.draw(self.screen, camera)
             get_decals().draw(self.screen, camera)
-            self._draw_entities(camera, world, player, interior, interaction, quest_target, underground=True)
+            self._draw_entities(camera, world, player, interior, interaction, underground=True)
             return
 
         self.screen.fill(c.Colors.GREEN)
@@ -193,7 +191,6 @@ class GameRenderer:
             player,
             interior,
             interaction,
-            quest_target,
             overlay=lambda: self._draw_canopies(camera, world, player, canopies),
         )
 
@@ -226,7 +223,6 @@ class GameRenderer:
         player: Player,
         interior,
         interaction,
-        quest_target,
         underground=False,
         overlay=None,
     ):
@@ -676,7 +672,7 @@ class GameRenderer:
         x = c.Screen.ORIGIN_X - (sum(widths) + gap * (len(widths) - 1)) // 2
         y = bottom - height
 
-        for (color, label), width in zip(chips, widths):
+        for (color, label), width in zip(chips, widths, strict=True):
             rect = pygame.Rect(x, y, width, height)
             widgets.draw_panel(self.screen, rect)
             pygame.draw.circle(self.screen, color, (rect.x + pad + 4, rect.centery), 5)

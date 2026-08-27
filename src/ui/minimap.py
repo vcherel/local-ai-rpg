@@ -71,7 +71,7 @@ class Minimap:
             self._draw_villages(world, player, scale, to_map)
             self._draw_buildings(world, player, scale, to_map)
             self._draw_pois(world, to_map)
-            self._draw_rumors(world, inner, scale, to_map)
+            self._draw_rumors(world, inner, to_map)
         self._draw_player(player, inner)
 
         self.screen.set_clip(previous_clip)
@@ -157,7 +157,7 @@ class Minimap:
         label = c.Fonts.small.render("N", True, c.Colors.MUTED)
         self.screen.blit(label, label.get_rect(midtop=(inner.centerx, inner.top + 2)))
 
-    def _draw_rumors(self, world: World, inner: pygame.Rect, scale: float, to_map):
+    def _draw_rumors(self, world: World, inner: pygame.Rect, to_map):
         """The one thing on this map the player has not walked to: where a rumour said to go.
         A lead further out than the map's range is pinned to the edge in its direction, so
         it still says which way to set off, and it is rubbed out on arrival by World."""

@@ -467,9 +467,9 @@ class Monster(Entity):
         damage = 0
         # A detonator never swings: its whole attack is the blast the world sets off for it.
         swings = not self.kind.detonate and (not self.kind.ranged or cornered)
-        if swings and self.attack_token and dist < self.melee_reach * c.Entities.SWING_WINDUP_REACH_MULT:
-            if self.start_attack_anim(dist):
-                damage = round(self.kind.damage * damage_mult)
+        in_windup = swings and self.attack_token and dist < self.melee_reach * c.Entities.SWING_WINDUP_REACH_MULT
+        if in_windup and self.start_attack_anim(dist):
+            damage = round(self.kind.damage * damage_mult)
 
         # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
         self.orientation += math.pi / 2

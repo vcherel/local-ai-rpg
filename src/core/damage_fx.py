@@ -70,7 +70,9 @@ def tint(color: tuple, flash: float) -> tuple:
     """`color` blended toward the flash colour by `flash` (0..1)."""
     if flash <= 0:
         return color
-    return tuple(round(chan + (target - chan) * flash) for chan, target in zip(color, c.DamageFx.FLASH_COLOR))
+    return tuple(
+        round(chan + (target - chan) * flash) for chan, target in zip(color, c.DamageFx.FLASH_COLOR, strict=True)
+    )
 
 
 def draw_cracks(screen: pygame.Surface, rect: pygame.Rect, hp_frac: float, seed):

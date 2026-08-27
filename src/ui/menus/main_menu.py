@@ -93,11 +93,10 @@ def run_main_menu(screen, clock) -> str:
                 pygame.quit()
                 sys.exit()
 
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
-                    choice = main_menu.handle_click(event.pos)
-                    if choice:
-                        return choice
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                choice = main_menu.handle_click(event.pos)
+                if choice:
+                    return choice
 
         main_menu.draw(clock.get_time())
         pygame.display.flip()

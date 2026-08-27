@@ -16,6 +16,7 @@ from core.impact_fx import get_impacts
 from core.particles import get_particles
 from core.screen_fx import get_flash, get_hitstop, get_trap_fx
 from core.swing_arcs import get_swings
+from game.blow import PLAIN_BLOW, Blow
 from game.entities.bomb import GRENADE, MINE, Bomb
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable
@@ -162,9 +163,9 @@ class WorldCombat:
             (self.bosses, self.bosses, lambda e: e.kind.size, strike_monster, True),
             (self.monsters, self.monsters, lambda e: e.kind.size, strike_monster, True),
             ([cr for cr in self.critters if cr.hostile], None, lambda e: e.hit_radius * 2, strike_critter, True),
-            ([npc for npc in self.npcs if npc.hostile], None, lambda e: c.Entities.NPC_SIZE, strike_npc, True),
+            ([npc for npc in self.npcs if npc.hostile], None, lambda _e: c.Entities.NPC_SIZE, strike_npc, True),
             (self.critters, None, lambda e: e.hit_radius * 2, strike_critter, False),
-            (self.npcs, None, lambda e: c.Entities.NPC_SIZE, strike_npc, False),
+            (self.npcs, None, lambda _e: c.Entities.NPC_SIZE, strike_npc, False),
         )
         carries_on = arch.cleave or arch.pierce_melee
         engaged = False
@@ -651,9 +652,9 @@ class WorldCombat:
                 victim.startle()
             return
         if isinstance(victim, NPC):
-            self._resolve_npc_hit(victim, damage, player, quest_system, blocked=self.blocked, by_player=False)
+            self._resolve_npc_hit(victim, damage, player, quest_system, Blow(blocked=self.blocked, by_player=False))
             return
-        self._resolve_monster_hit(victim, self.monsters, damage, player, quest_system, by_player=False)
+        self._resolve_monster_hit(victim, self.monsters, damage, player, quest_system, Blow(by_player=False))
 
     def bash_doors(self, player: Player, damage_mult: float = 1.0):
         """Let every monster held up at a shut door beat on it.
@@ -746,7 +747,7 @@ class WorldCombat:
         return (dx / dist, dy / dist)
 
     @staticmethod
-    def _knockback(target, radius, kb_dir, distance, blocked):
+    def _knockback(target, _radius, kb_dir, distance, _blocked):
         """Shove a target along kb_dir: hand it the impulse the blow is worth and let it
         travel.
 
@@ -757,7 +758,7 @@ class WorldCombat:
         (`entities.apply_impulse`); `World.advance_impulses` spends it over the next few
         frames, walls and all, and the body is off its feet (`staggered`) while it does.
 
-        `radius` and `blocked` are the caller's business no longer, kept in the signature
+        `_radius` and `_blocked` are the caller's business no longer, kept in the signature
         because every strike site has them to hand and the sweep needs neither.
         """
         if not kb_dir or distance <= 0:
@@ -792,11 +793,7 @@ class WorldCombat:
             damage,
             player,
             quest_system,
-            crit=crit,
-            shake=shake,
-            knockback=arch.knockback,
-            kb_dir=kb_dir,
-            blocked=blocked,
+            Blow(crit=crit, shake=shake, knockback=arch.knockback, kb_dir=kb_dir, blocked=blocked),
         )
         self._apply_on_hit_effects(monster, monster_list, damage, player, quest_system, died, hand)
         self._apply_chainstrike(monster, monster_list, damage, player, quest_system, blocked, hand)
@@ -814,11 +811,7 @@ class WorldCombat:
             damage,
             player,
             quest_system,
-            crit=crit,
-            shake=shake,
-            knockback=arch.knockback,
-            kb_dir=kb_dir,
-            blocked=blocked,
+            Blow(crit=crit, shake=shake, knockback=arch.knockback, kb_dir=kb_dir, blocked=blocked),
         )
 
     def _strike_critter(self, critter: Critter, base_damage, arch, player: Player):
@@ -1089,10 +1082,12 @@ class WorldCombat:
                     blast_damage(distance),
                     player,
                     quest_system,
-                    knockback=knockback,
-                    kb_dir=self._dir_from(x, y, monster.x, monster.y),
-                    blocked=self.blocked,
-                    by_player=by_player,
+                    Blow(
+                        knockback=knockback,
+                        kb_dir=self._dir_from(x, y, monster.x, monster.y),
+                        blocked=self.blocked,
+                        by_player=by_player,
+                    ),
                 )
 
         for critter, distance in caught(self.critters, lambda cr: cr.hit_radius):
@@ -1109,23 +1104,26 @@ class WorldCombat:
                 if by_player:
                     self.aggro_pack(critter)
 
-        for npc, distance in caught(self.npcs, lambda n: c.Entities.NPC_SIZE / 2):
+        for npc, distance in caught(self.npcs, lambda _n: c.Entities.NPC_SIZE / 2):
             self._resolve_npc_hit(
                 npc,
                 blast_damage(distance),
                 player,
                 quest_system,
-                knockback=knockback,
-                kb_dir=self._dir_from(x, y, npc.x, npc.y),
-                blocked=self.blocked,
-                by_player=by_player,
+                Blow(
+                    knockback=knockback,
+                    kb_dir=self._dir_from(x, y, npc.x, npc.y),
+                    blocked=self.blocked,
+                    by_player=by_player,
+                ),
             )
 
         player_distance = math.hypot(player.x - x, player.y - y)
         if player_distance < radius:
-            player.receive_damage(
-                round(blast_damage(player_distance) * player_mult), source=self._blast_source(by_player)
-            )
+            # What the death screen names: the keg is the player's own doing, the creeper
+            # somebody else's.
+            killer = "a powder keg" if by_player else "a creeper"
+            player.receive_damage(round(blast_damage(player_distance) * player_mult), source=killer)
             # The blast is not choosy about who it throws either: standing next to a keg
             # costs the player the ground it puts between them and wherever they meant to be.
             self._knockback(
@@ -1139,6 +1137,8 @@ class WorldCombat:
             for b in list(self.breakables)
             if b.kind == "powder" and math.hypot(b.x - x, b.y - y) < c.Explosion.CHAIN_RADIUS
         ]:
+            # Re-checked rather than trusted: the list was taken before the chain started,
+            # and a recursive blast below may already have taken this keg off.
             if keg in self.breakables:
                 self.breakables.remove(keg)
                 # A keg is still a keg whatever lit it, but the credit follows the hand that
@@ -1174,16 +1174,10 @@ class WorldCombat:
             gravity=0.55,
             shape="shard",
         )
-        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS):
+        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS, strict=True):
             get_impacts().pulse(x, y, radius * frac, ring_color)
         if self.notify and message:
             self.notify(message, (255, 170, 60))
-
-    @staticmethod
-    def _blast_source(by_player: bool) -> str:
-        """What the death screen names when a blast is what killed the player. The keg is the
-        player's own doing; the creeper is somebody else's."""
-        return "a powder keg" if by_player else "a creeper"
 
     def detonate_creeper(self, monster: Monster, player: Player, quest_system: QuestSystem):
         """A creeper's fuse burning out: it comes off the map and the blast goes off where it
@@ -1275,24 +1269,21 @@ class WorldCombat:
         damage: int,
         player: Player,
         quest_system: QuestSystem,
-        crit: bool = False,
-        shake: float = 0.0,
-        knockback: float = 0.0,
-        kb_dir=None,
-        blocked=None,
-        by_player: bool = True,
+        blow: Blow = PLAIN_BLOW,
     ) -> bool:
         """Applies damage to a monster and its kill rewards. Returns True if it died."""
         if monster.dead:
             return True
-        get_shake().add(shake)
-        self._pop_damage(monster.x, monster.y - monster.kind.size / 2, damage, crit)
+        get_shake().add(blow.shake)
+        self._pop_damage(monster.x, monster.y - monster.kind.size / 2, damage, blow.crit)
         if monster.receive_damage(damage):
-            self._kill_monster(monster, monster_list, player, quest_system, direction=kb_dir, by_player=by_player)
+            self._kill_monster(
+                monster, monster_list, player, quest_system, direction=blow.kb_dir, by_player=blow.by_player
+            )
             return True
-        self._hit_feedback(monster.x, monster.y, crit, kb_dir)
+        self._hit_feedback(monster.x, monster.y, blow.crit, blow.kb_dir)
         if not monster.knockback_immune:
-            self._knockback(monster, monster.kind.size / 2, kb_dir, knockback, blocked)
+            self._knockback(monster, monster.kind.size / 2, blow.kb_dir, blow.knockback, blow.blocked)
         return False
 
     def _spill_blood(self, x, y, body_color, direction=None, boss: bool = False):
@@ -1426,15 +1417,7 @@ class WorldCombat:
             get_particles().spawn_burst(target.x, target.y, (140, 200, 255), count=8, speed=4, life=300, size=3)
             kb_dir = self._dir_from(primary.x, primary.y, target.x, target.y)
             died = self._resolve_monster_hit(
-                target,
-                target_list,
-                chain_damage,
-                player,
-                quest_system,
-                shake=0.0,
-                knockback=0.0,
-                kb_dir=kb_dir,
-                blocked=blocked,
+                target, target_list, chain_damage, player, quest_system, Blow(kb_dir=kb_dir, blocked=blocked)
             )
             self._apply_on_hit_effects(target, target_list, chain_damage, player, quest_system, died, hand)
 
@@ -1481,10 +1464,7 @@ class WorldCombat:
             max(1, int(damage * c.Staffs.CHAIN_FRAC)),
             player,
             quest_system,
-            shake=0.0,
-            knockback=0.0,
-            kb_dir=self._dir_from(primary.x, primary.y, nearest.x, nearest.y),
-            blocked=self.blocked,
+            Blow(kb_dir=self._dir_from(primary.x, primary.y, nearest.x, nearest.y), blocked=self.blocked),
         )
 
     def _on_boss_killed(self, boss: Boss, quest_system: QuestSystem, direction=None):
@@ -1506,13 +1486,7 @@ class WorldCombat:
         damage: int,
         player: Player,
         quest_system: QuestSystem,
-        crit: bool = False,
-        shake: float = 0.0,
-        knockback: float = 0.0,
-        kb_dir=None,
-        blocked=None,
-        by_player: bool = True,
-        source=None,
+        blow: Blow = PLAIN_BLOW,
     ) -> bool:
         """Applies damage to an NPC and handles death. Returns True if it died.
 
@@ -1530,8 +1504,8 @@ class WorldCombat:
         # Whatever bit them is what they turn round and swing at (`WorldPlaces.militia_orders`).
         # Only ever something the player did not do: the player's own blows are answered by
         # the village as a whole, on the ladder below, and not by one farmer taking a swing.
-        if not by_player and source is not None:
-            npc.threaten(source)
+        if not blow.by_player and blow.source is not None:
+            npc.threaten(blow.source)
         # A settlement warns before it turns (`WorldPlaces.strike_village`): the first blow
         # the player lands there is answered with a shout and nothing else, so snapping at
         # somebody in the street is a thing the player is told they are about to do rather
@@ -1539,17 +1513,17 @@ class WorldCombat:
         # Cutting down somebody who has thrown their weapon down is the one offence with no
         # ladder under it: they are kneeling with their hands empty in front of the whole
         # street, and there is nothing left to warn anybody about.
-        if by_player and (npc.surrendered or self.strike_village(npc, player)):
+        if blow.by_player and (npc.surrendered or self.strike_village(npc, player)):
             if npc.surrendered and self.notify:
                 self.notify("You struck someone who had yielded", c.Colors.RED)
             for provoked in self.provoke_village(npc):
                 # Nobody hands in a task to someone they are trying to kill; drop it rather
                 # than leave an uncompletable quest in the log.
                 quest_system.remove_quest(provoked)
-        get_shake().add(shake)
-        self._pop_damage(npc.x, npc.y - c.Entities.NPC_SIZE / 2, damage, crit)
+        get_shake().add(blow.shake)
+        self._pop_damage(npc.x, npc.y - c.Entities.NPC_SIZE / 2, damage, blow.crit)
         if npc.receive_damage(damage):
-            if by_player:
+            if blow.by_player:
                 for provoked in self.hold_grudge(npc):
                     quest_system.remove_quest(provoked)
             stolen_item = quest_system.on_npc_killed(npc)
@@ -1558,14 +1532,14 @@ class WorldCombat:
             # Drop any quest this NPC was offering so it can't become uncompletable
             quest_system.remove_quest(npc)
             play_sound("monster_death")
-            if by_player:
+            if blow.by_player:
                 get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
-            self._spill_blood(npc.x, npc.y, npc.color, kb_dir)
-            self._drop_villager_loot(npc, player, by_player)
+            self._spill_blood(npc.x, npc.y, npc.color, blow.kb_dir)
+            self._drop_villager_loot(npc, player, blow.by_player)
             self.npcs.remove(npc)
             return True
-        self._hit_feedback(npc.x, npc.y, crit, kb_dir)
-        self._knockback(npc, c.Entities.NPC_SIZE / 2, kb_dir, knockback, blocked)
+        self._hit_feedback(npc.x, npc.y, blow.crit, blow.kb_dir)
+        self._knockback(npc, c.Entities.NPC_SIZE / 2, blow.kb_dir, blow.knockback, blow.blocked)
         return False
 
     def _drop_villager_loot(self, npc: NPC, player: Player, by_player: bool):

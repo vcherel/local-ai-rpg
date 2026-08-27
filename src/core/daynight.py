@@ -72,7 +72,7 @@ class DayNightCycle:
         alpha = c.DayNight.NIGHT_MAX_ALPHA * darkness
         if blood_intensity > 0:
             blood = c.DayNight.BLOOD_NIGHT_COLOR
-            color = tuple(round(v + (b - v) * blood_intensity) for v, b in zip(color, blood))
+            color = tuple(round(v + (b - v) * blood_intensity) for v, b in zip(color, blood, strict=True))
             alpha += (c.DayNight.BLOOD_NIGHT_ALPHA - alpha) * blood_intensity
         alpha = int(alpha)
         if alpha <= 0:

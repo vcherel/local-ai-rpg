@@ -470,7 +470,7 @@ class NPC(Entity):
         than stacking on the one spot nearest the player."""
         dt *= terrain_mult
         if crowd:
-            push_apart(self, crowd, c.Entities.NPC_SIZE / 2, lambda other: c.Entities.NPC_SIZE / 2, blocked)
+            push_apart(self, crowd, c.Entities.NPC_SIZE / 2, lambda _other: c.Entities.NPC_SIZE / 2, blocked)
         # A stone thrown from the back of a mob starts a swing too, and that one is not in
         # `_hunt`: the animation is advanced here so it always finishes wherever it began.
         if target is None:

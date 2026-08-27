@@ -15,10 +15,6 @@ ITEMS_PER_SHOP = 4
 TOKENS_PER_ITEM = 22
 
 
-def _roles(shop_count: int) -> list:
-    return [SHOP_ROLES[i % len(SHOP_ROLES)] for i in range(shop_count)]
-
-
 def generate_shop_inventories(context: str, shop_count: int) -> list:
     """Stock every merchant in the world with a single LLM call.
 
@@ -30,7 +26,7 @@ def generate_shop_inventories(context: str, shop_count: int) -> list:
     if shop_count <= 0:
         return []
 
-    roles = _roles(shop_count)
+    roles = [SHOP_ROLES[i % len(SHOP_ROLES)] for i in range(shop_count)]
     shop_list = "\n".join(f"{i + 1}. {role}" for i, role in enumerate(roles))
     system_prompt = "You stock RPG shops. Reply with the item lines only, no other text."
     prompt = (
