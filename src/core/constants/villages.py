@@ -343,24 +343,31 @@ class Villages:
     # take GATE_SWING_MS to open, and open means folded right back against the inside of
     # their own wall, since a gate stands open nearly always and one left sticking into the
     # street is a pair of planks in the way of every villager who never touches them.
-    # Purely what is drawn, never what is collided against: a barred gate is a wall from the
-    # frame it is barred (`Village.gate_closed`), the leaves only catch up with it.
-    GATE_SWING_MS: float = 260.0
-    # Shutting is the slow half: a leaf that big is heaved open in a hurry and then leans
-    # itself closed, and the difference is most of what tells the player which of the two
-    # is happening. A creak while it travels, a thud when it lands.
+    # Long enough to read as weight: a leaf this size is shouldered round, not flicked, and
+    # the wait is what tells the player the wall is heavy. Where the leaves are is also what
+    # is collided against (`Village.gate_leaf_hit`), so the gap between them is a gap for as
+    # long as it looks like one.
+    GATE_SWING_MS: float = 900.0
+    # Shutting is the slower half: a leaf that big is heaved open and then leans itself
+    # closed, and the difference is most of what tells the player which of the two is
+    # happening. A creak while it travels, a thud when it lands.
     GATE_CLOSE_MS: float = 1500.0
     # How far off a gate can be heard shutting. Beyond it the leaves still move, quietly:
     # a town two chunks away closing up is not an event in this street.
     GATE_SOUND_RANGE: float = 1100.0
     GATE_SWING_DEG: float = 168.0
+    # Past this much of the swing a leaf is folded back against the inside of its own wall,
+    # which is solid already, so it stops being an obstacle of its own rather than standing
+    # a plank's worth into the street beside every gateway in the game.
+    GATE_LEAF_CLEAR: float = 0.94
     # A gate that has been beaten down does not simply vanish: the leaves are kicked outward
     # off their hinges and go over, and only then is the gateway a hole.
     GATE_BREAK_MS: float = 620.0
     GATE_BREAK_DEG: float = 96.0
     # How long a gate a villager has let themselves through stands open before it shuts
-    # again behind them (`Village.let_through`).
-    GATE_HOLD_MS: float = 900.0
+    # again behind them (`Village.let_through`). Longer than the leaves take to swing, or
+    # the hold would be over before there was anything to walk through.
+    GATE_HOLD_MS: float = 1600.0
 
     # A settlement shuts itself for the night, which is not the same as barring itself.
     # Shut is a gate: anyone on either side works it open with a press and walks through,
@@ -390,7 +397,7 @@ class Villages:
     # real reason to break the gate instead. Once lifted it stands open long enough to walk
     # through and then falls back into place.
     GATE_LIFT_S: float = 4.0
-    GATE_LIFT_HOLD_MS: float = 1800.0
+    GATE_LIFT_HOLD_MS: float = 2500.0
     # Being hit while heaving at it loses this much of the lift: a gate is not opened in the
     # middle of a fight.
     GATE_LIFT_HIT_LOSS: float = 0.4

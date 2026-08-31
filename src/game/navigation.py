@@ -254,11 +254,15 @@ class WorldNavigation:
                 body.x, body.y = building.clear_of_door(body.x, body.y, radius)
 
     def clear_gateways(self, village, player: Player):
-        """Step anything standing in a shut gateway out of it, to the side it is already
-        nearer. The gates bar themselves the moment a settlement turns and lean shut the
-        moment it is dark (`_work_gates`), neither with any regard for who happened to be
+        """Step anything the closing leaves have reached out of the gateway, to the side it is
+        already nearer. The gates bar themselves the moment a settlement turns and lean shut
+        the moment it is dark (`_work_gates`), neither with any regard for who happened to be
         walking through one; the same rule holds as for a door, that nothing is ever sealed
-        inside a leaf."""
+        inside a leaf.
+
+        What decides is the leaf and not the order it was given: a body is left alone while
+        the leaves are still swinging in on it, since until they arrive it can walk out on
+        its own, which is the whole of what a slow gate is for."""
         bodies = None
         for index, gate in enumerate(village.defences()["gates"]):
             if not village.gate_closed(index) or village.gate_ajar(index):
@@ -268,6 +272,8 @@ class WorldNavigation:
                 bodies = self.bodies(player)
             for body, radius in bodies:
                 if not leaf.inflate(radius * 2, radius * 2).collidepoint(body.x, body.y):
+                    continue
+                if not village.gate_leaf_hit(index, body.x, body.y, radius):
                     continue
                 x, y = village.gate_side_point(index, body.x, body.y, radius, across=False)
                 if not self.blocked(x, y, radius):

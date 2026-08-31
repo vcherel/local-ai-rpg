@@ -26,6 +26,18 @@ def _wall_piece(mid: tuple, along_x: bool, offset: float, length: float, depth: 
     return rect
 
 
+def _point_to_segment(x, y, start, end) -> float:
+    """How far (x, y) lies off the segment `start`-`end`. A leaf is a plank on a hinge, so
+    what it stands in the way of is measured from its line rather than from a box round it:
+    a box round a leaf halfway open covers most of the gateway it is halfway out of."""
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    span = dx * dx + dy * dy
+    if span <= 0.0:
+        return math.hypot(x - start[0], y - start[1])
+    t = max(0.0, min(1.0, ((x - start[0]) * dx + (y - start[1]) * dy) / span))
+    return math.hypot(x - (start[0] + t * dx), y - (start[1] + t * dy))
+
+
 class Village:
     """A cluster of buildings around an open plaza, the shape every settlement takes.
 
@@ -277,11 +289,12 @@ class Village:
     def advance_gates(self, dt, listener=None):
         """Carry every leaf one frame towards where it should be standing.
 
-        Nothing here is collided against: `gate_closed` flips the instant a settlement turns,
-        and this is the leaf catching up with it. A gate that shuts on the frame it is barred
-        is a wall appearing out of nothing; one that swings is a gate.
+        `gate_closed` flips the instant a settlement turns and this is the leaf catching up
+        with it, so it is the leaf and not the intention that is walked into
+        (`gate_leaf_hit`). A gate that shuts on the frame it is barred is a wall appearing
+        out of nothing; one that swings is a gate.
 
-        Opening is quick and shutting is slow, and the leaf lands with a thud: which of the
+        Opening is heavy and shutting is heavier still, and the leaf lands with a thud: which of the
         two is happening is something the player should be able to hear from the street.
         `listener` is where they are standing, so a town over the hill shuts up quietly.
         """
@@ -316,6 +329,76 @@ class Village:
     def gate_open_frac(self, index: int) -> float:
         """How far this gate is drawn open, 0 to 1."""
         return self.gate_frac.get(index, 0.0 if self.gate_closed(index) else 1.0)
+
+    def gate_leaves(self, index: int) -> list[dict]:
+        """Where this gateway's two leaves actually are this frame: each one's hinge, the
+        pair of axes it is written in (`axis` along the gateway from the hinge inwards,
+        `normal` into the settlement), how far it has swung off the gateway's line, and how
+        long and how thick it is.
+
+        The one account of where a leaf is standing. It is what the leaves are drawn from
+        and what they are collided against, so a gate halfway shut on screen is halfway shut
+        to walk into as well."""
+        gate = self.defences()["gates"][index]
+        gx, gy = gate["pos"]
+        along_x = gate["along_x"]
+        leaf = gate["rect"]
+        half = c.Villages.GATE_WIDTH / 2
+        thickness = leaf.height if along_x else leaf.width
+        theta = math.radians(c.Villages.GATE_SWING_DEG) * self.gate_open_frac(index)
+        # Both leaves swing back into the settlement, so an open gateway reads as a way
+        # through from either side of the wall rather than as a leaf lying across one.
+        toward_middle = math.copysign(1.0, (self.y - gy) if along_x else (self.x - gx))
+        normal = (0.0, toward_middle) if along_x else (toward_middle, 0.0)
+        if index in self.gate_broken:
+            # Going over rather than swinging: the leaves are kicked the other way, outward
+            # off their hinges, shrinking as they go flat. Not the same picture as opening,
+            # which is the whole point of working it out at all.
+            falling = self.gate_fall_progress(index)
+            theta = -math.radians(c.Villages.GATE_BREAK_DEG) * falling
+            thickness *= 1.0 - falling * 0.55
+            half *= 1.0 - falling * 0.25
+        leaves = []
+        for side in (-1, 1):
+            hinge = (gx + side * half, gy) if along_x else (gx, gy + side * half)
+            axis = (-side, 0.0) if along_x else (0.0, -side)
+            leaves.append(
+                {
+                    "hinge": hinge,
+                    "axis": axis,
+                    "normal": normal,
+                    "theta": theta,
+                    "length": half,
+                    "thickness": thickness,
+                }
+            )
+        return leaves
+
+    def gate_leaf_hit(self, index: int, x, y, radius: float) -> bool:
+        """Whether a body of `radius` standing at (x, y) is up against one of this gateway's
+        leaves, where the leaves are now rather than where the gate wants them.
+
+        `gate_closed` flips on the frame a settlement bars itself or the light goes, and the
+        leaves are still out in the gateway swinging towards each other. What is walked into
+        is the plank, not the intention: until the two of them meet, the gap between them is
+        a gap, and until they are folded back a gate reported open is still in the way."""
+        if index in self.gate_broken:
+            # Beaten down: the leaves are off their hinges and the gateway is a hole.
+            return False
+        if self.gate_open_frac(index) >= c.Villages.GATE_LEAF_CLEAR:
+            # Folded right back against the inside of its own wall, which is already solid.
+            return False
+        for leaf in self.gate_leaves(index):
+            hinge, (ax, ay), (nx, ny) = leaf["hinge"], leaf["axis"], leaf["normal"]
+            reach = leaf["length"]
+            cos, sin = math.cos(leaf["theta"]), math.sin(leaf["theta"])
+            tip = (
+                hinge[0] + (ax * cos + nx * sin) * reach,
+                hinge[1] + (ay * cos + ny * sin) * reach,
+            )
+            if _point_to_segment(x, y, hinge, tip) < radius + leaf["thickness"] / 2:
+                return True
+        return False
 
     def gate_side_point(self, index: int, x, y, radius: float, across: bool) -> tuple:
         """(x, y) stepped clear of this gate's leaf along the gateway's own line: to the far
@@ -401,8 +484,8 @@ class Village:
 
     def blocks(self, x, y, radius) -> bool:
         """The well in the middle of the plaza is solid, and so is the wall around a walled
-        town, its towers and any gate currently barred; everything else in a village is a
-        building, collided against by the buildings themselves."""
+        town, its towers and whatever of a gate's leaves stands in the gateway; everything
+        else in a village is a building, collided against by the buildings themselves."""
         if math.hypot(self.x - x, self.y - y) < c.Villages.WELL_RADIUS + radius:
             return True
         if not self.defended:
@@ -411,9 +494,10 @@ class Village:
         for tower in defences["towers"]:
             if math.hypot(tower[0] - x, tower[1] - y) < self.tower_radius + radius:
                 return True
-        solids = list(defences["walls"])
-        solids += [gate["rect"] for index, gate in enumerate(defences["gates"]) if self.gate_closed(index)]
-        for wall in solids:
+        for index in range(len(defences["gates"])):
+            if self.gate_leaf_hit(index, x, y, radius):
+                return True
+        for wall in defences["walls"]:
             nearest_x = min(max(x, wall.left), wall.right)
             nearest_y = min(max(y, wall.top), wall.bottom)
             if math.hypot(x - nearest_x, y - nearest_y) < radius:
@@ -843,29 +927,25 @@ class Village:
             # left to hang.
             return
 
-        leaf = gate["rect"]
-        half = c.Villages.GATE_WIDTH / 2
-        thickness = leaf.height if along_x else leaf.width
-        theta = math.radians(c.Villages.GATE_SWING_DEG) * self.gate_open_frac(index)
-        # Both leaves swing back into the settlement, so an open gateway reads as a way
-        # through from either side of the wall rather than as a leaf lying across one.
-        toward_middle = math.copysign(1.0, (self.y - gy) if along_x else (self.x - gx))
-        normal = (0.0, toward_middle) if along_x else (toward_middle, 0.0)
-        if index in self.gate_broken:
-            # Going over rather than swinging: the leaves are kicked the other way, outward
-            # off their hinges, shrinking as they go flat and darkening into the ground. Not
-            # the same picture as opening, which is the whole point of drawing it at all.
-            theta = -math.radians(c.Villages.GATE_BREAK_DEG) * falling
-            thickness *= 1.0 - falling * 0.55
-            half *= 1.0 - falling * 0.25
-        for side in (-1, 1):
-            hinge = (gx + side * half, gy) if along_x else (gx, gy + side * half)
-            axis = (-side, 0.0) if along_x else (0.0, -side)
-            fallen = falling if index in self.gate_broken else 0.0
-            self._draw_leaf(screen, camera, hinge, axis, normal, theta, half, thickness, fallen=fallen)
+        # `fallen` only darkens the wood toward the ground it is landing on; the swing
+        # itself, broken or not, is `gate_leaves`.
+        fallen = falling if index in self.gate_broken else 0.0
+        for leaf_at in self.gate_leaves(index):
+            self._draw_leaf(
+                screen,
+                camera,
+                leaf_at["hinge"],
+                leaf_at["axis"],
+                leaf_at["normal"],
+                leaf_at["theta"],
+                leaf_at["length"],
+                leaf_at["thickness"],
+                fallen=fallen,
+            )
 
         health = self.gate_health(index)
         if health < 1.0 and self.gate_open_frac(index) < 0.05:
+            leaf = gate["rect"]
             lx, ly = camera.world_to_screen(leaf.left, leaf.top)
             rect = pygame.Rect(round(lx), round(ly), leaf.width, leaf.height)
             draw_cracks(screen, rect, health, self.gate_key(index))
