@@ -190,6 +190,61 @@ class WorldVillagers:
         if home is not None and home.door_closed and home.contains_point(npc.x, npc.y):
             home.door_open = True
 
+    def plan_morning(self) -> None:
+        """Where everybody will be standing by the time the player opens their eyes.
+
+        The one thing a slept night owes the player: hours went by, so the street cannot be
+        the exact tableau they lay down in. Everyone is got out of bed here (their door
+        opened behind them, like any other dawn) and given a spot on their own patch to be
+        found at, drawn the way their wander draws one: somewhere within the radius they
+        already stroll, round the doorstep or the post they belong to. A guard's patch is
+        their post and a merchant's is their shop, so the plan needs no ladder of roles.
+
+        Nobody hostile is planned: a village that has turned is hunting the player and the
+        night changed nothing about that. Neither is a tower archer, who is on their roof
+        where they belong."""
+        radius = c.Entities.NPC_SIZE / 2
+        self.morning_walk = []
+        for npc in self.npcs:
+            if npc.is_archer or npc.hostile or npc.surrendered:
+                continue
+            if npc.asleep:
+                # Out of bed before they are walked anywhere: the door is only opened for
+                # somebody standing inside their own house, which is where they still are.
+                self._wake_up(npc)
+                npc.asleep = False
+            spread = npc.wander.radius
+            angle = random.uniform(0, 2 * math.pi)
+            distance = random.uniform(spread / 3, spread)
+            spot = (npc.home[0] + math.cos(angle) * distance, npc.home[1] + math.sin(angle) * distance)
+            target = self.free_spot_near(spot[0], spot[1], radius, rings=3)
+            self.morning_walk.append((npc, (npc.x, npc.y), target))
+            npc.wander.interrupt()
+
+    def drift_to_morning(self, progress: float) -> None:
+        """Move everybody `progress` of the way to the spot `plan_morning` picked for them.
+
+        A night is not a teleport: the fade the player watches is the walk, eased at both
+        ends and facing the way it is going, so the gait animates itself off the ground
+        covered like any other step. No route is worked out and no wall is slid along,
+        because the screen is black across the middle of it and hours are not a stride;
+        what matters is that the two ends are real. Once there, everybody is put back on
+        open ground and picks a fresh stroll, and the plan is spent."""
+        eased = min(1.0, max(0.0, progress))
+        eased = eased * eased * (3 - 2 * eased)
+        for npc, start, target in self.morning_walk:
+            npc.x = start[0] + (target[0] - start[0]) * eased
+            npc.y = start[1] + (target[1] - start[1]) * eased
+            if target != start:
+                npc.orientation = math.atan2(target[1] - start[1], target[0] - start[0]) + math.pi / 2
+        if progress < 1.0:
+            return
+        radius = c.Entities.NPC_SIZE / 2
+        for npc, _start, _target in self.morning_walk:
+            self.unstick(npc, radius)
+            npc.wander.interrupt()
+        self.morning_walk = []
+
     def _households_in(self, mob: dict) -> frozenset:
         """Which homes have everybody who lives there back inside, as ids of the buildings.
 

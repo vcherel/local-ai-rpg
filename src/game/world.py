@@ -132,6 +132,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         keep the ground around the player populated."""
         self.items: list[Item] = []
         self.npcs: list[NPC] = []
+        # Where each villager is being walked to while the player sleeps a night away, as
+        # (npc, where they lay down, where they will be standing at dawn). Session-only and
+        # empty every frame but the second or so of a fade (`WorldVillagers.plan_morning`).
+        self.morning_walk: list = []
         self.monsters: list[Monster] = []
         # Named, multi-phase bosses. Kept apart from monsters: they never despawn, don't
         # count toward the monster cap, and get their own update, health bar and rewards.
