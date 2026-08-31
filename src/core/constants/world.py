@@ -575,16 +575,21 @@ class Scenery:
     # Drawn under the entities with the floor, rather than over it with the props, and in
     # this order: the broad patches of ground first, then what lies on them, so a road is
     # never buried under the meadow it crosses.
-    # A river is laid down in three passes rather than three circles per blob: the blobs
-    # overlap each other, so a per-blob bank ring paints over its neighbour's deep middle
-    # and the course reads as a row of scales. "river" carries the water itself and draws
-    # the bank; the other two are decoration standing at the same points, nothing more.
+    # Water is laid down in three passes rather than three shapes per body: the blobs of a
+    # course overlap each other and a river runs into a lake, so a bank drawn per body
+    # paints over its neighbour's deep middle and the water reads as a row of scales. The
+    # first kind of each body carries the water itself; the other two are decoration
+    # standing at the same point, nothing more (see WATER_LAYERS).
     GROUND_KINDS: tuple = (
         "patch",
         "pond",
         "lake",
         "river",
+        "pond_body",
+        "lake_body",
         "river_body",
+        "pond_deep",
+        "lake_deep",
         "river_deep",
         "path",
         "road_verge",
@@ -594,6 +599,17 @@ class Scenery:
         "grass",
         "flowers",
     )
+    # Every body of water stands three times, once per layer, and the layer is the kind:
+    # the bank of everything is laid down, then the body of everything, then the deep of
+    # everything. Still water drawn body by body had the river's bank painted across the
+    # middle of the lake it ran into, which is the same fault the river was split up for.
+    WATER_LAYERS = {
+        "pond": ("pond", "pond_body", "pond_deep"),
+        "lake": ("lake", "lake_body", "lake_deep"),
+        "river": ("river", "river_body", "river_deep"),
+    }
+    # How much of a body of water each of those three passes covers.
+    WATER_LAYER_SCALE: tuple = (1.0, 0.9, 0.5)
     # The kinds the player wades through rather than walks over. A bridge sits on top of
     # them in the draw order for the same reason it does in the world.
     WATER_KINDS: tuple = ("pond", "lake", "river")
