@@ -342,11 +342,18 @@ class BuildingArt:
         pygame.draw.rect(screen, (60, 45, 35), band, 2)
 
     def _draw_tavern_sign(self, screen, camera: Camera):
-        """Hung beside the door. The board stays the right way up whichever wall it is on:
-        a sign nobody can read is a decoration."""
+        """Hung beside the door, off the front of the building rather than on it. The board
+        stays the right way up whichever wall it is on: a sign nobody can read is a
+        decoration.
+
+        Outside the wall like the awning, because the wall is not the tavern's to hang
+        things on: a board is as wide as the font makes it, the window is only forty from
+        the jamb, and painted onto the facade it landed on the pane. Far enough along to
+        clear a porch, which is the other thing hung out here."""
         text = c.Fonts.small.render("TAVERN", True, (60, 45, 35))
         width = text.get_width() + 16
-        anchor = self._facade_screen(camera, width, 24, c.Buildings.DOOR_WIDTH / 2 + 12 + width / 2, 4)
+        beside = (c.Buildings.DOOR_WIDTH + 46) / 2 + 8 + width / 2
+        anchor = self._facade_screen(camera, width, 24, beside, -30)
         sign = pygame.Rect(0, 0, width, 24)
         sign.center = anchor.center
         pygame.draw.rect(screen, (225, 190, 70), sign)
@@ -549,6 +556,40 @@ class BuildingArt:
             pygame.draw.line(screen, frame, (plank_x, leaf.top + 2), (plank_x, leaf.bottom - 3), 1)
         pygame.draw.circle(screen, (208, 176, 96), (leaf.right - 10, leaf.centery), 3)
         draw_cracks(screen, leaf, self.door_hp / c.Buildings.DOOR_HP, self.door_key)
+        if self.locked:
+            self._draw_lock(screen, leaf)
+
+    @staticmethod
+    def _draw_lock(screen: pygame.Surface, leaf: pygame.Rect):
+        """The hasp and padlock across a locked leaf. A house the player cannot walk into
+        says so on its own door rather than on the prompt they get for trying it, and says
+        it after dark as well, which is what the pale iron is for: the shape alone is lost
+        under the night tint on a door that is already the darkest thing on the facade.
+
+        Laid across the leaf's short axis, so it reads the same on all four facings."""
+        iron, edge, shine = (176, 182, 192), (44, 40, 38), (232, 236, 242)
+        along_x = leaf.width > leaf.height
+        # Over the middle of the leaf only: the planks and the handle are what a door looks
+        # like, and a band across the whole of it hid the door to say something about it.
+        band = (
+            pygame.Rect(0, 0, round(leaf.width * 0.55), 8)
+            if along_x
+            else pygame.Rect(0, 0, 8, round(leaf.height * 0.55))
+        )
+        band.center = leaf.center
+        pygame.draw.rect(screen, iron, band)
+        pygame.draw.rect(screen, edge, band, 1)
+        body = pygame.Rect(0, 0, 10, 10)
+        body.center = band.center
+        # The shackle stands out of the body across the leaf, so it is the half of the ring
+        # facing off the door that is drawn: on a side wall that is the left half, not the top.
+        if along_x:
+            pygame.draw.arc(screen, shine, body.move(0, -5), 0, math.pi, 2)
+        else:
+            pygame.draw.arc(screen, shine, body.move(-5, 0), math.pi / 2, math.pi * 1.5, 2)
+        pygame.draw.rect(screen, iron, body, border_radius=2)
+        pygame.draw.rect(screen, edge, body, 1, border_radius=2)
+        pygame.draw.circle(screen, edge, body.center, 2)
 
     def _lit_windows(self, darkness: float) -> frozenset:
         """Which of this building's windows have a lamp behind them, as indices.
@@ -556,16 +597,21 @@ class BuildingArt:
         Nothing in the wilderness is ever lit, and how much of a settlement is awake is its
         tier (`Villages.LIT_WINDOW_FRAC_BY_TIER`): a border hamlet after dark is three
         windows and a deep wilds town is a constellation, which is the difference read from
-        outside the wall at the hour the wall itself is hardest to see. Rolled off the
-        building's own id and kept, so the same rooms stay lit all night."""
+        outside the wall at the hour the wall itself is hardest to see.
+
+        The fraction is the share of the settlement's houses with somebody still up, not the
+        share of one house's windows: read per window it lit every house in every settlement
+        and rounded two tiers to the same answer, which is a village with no dark houses in
+        it. A house that is up lights all of its own, so a street reads as houses rather than
+        as panes. Rolled off the building's own id and kept, so the same houses stay lit all
+        night."""
         if self.village_tier < 0 or darkness < c.DayNight.CURFEW_DARKNESS:
             return frozenset()
         if self._lamps is None:
             ladder = c.Villages.LIT_WINDOW_FRAC_BY_TIER
             frac = ladder[max(0, min(self.village_tier, len(ladder) - 1))]
-            count = len(self.window_rects())
-            rng = random.Random(f"lamps:{self.id}")
-            self._lamps = frozenset(rng.sample(range(count), round(count * frac)))
+            awake = random.Random(f"lamps:{self.id}").random() < frac
+            self._lamps = frozenset(range(len(self.window_rects()))) if awake else frozenset()
         return self._lamps
 
     @staticmethod
