@@ -74,6 +74,15 @@ that painted its own verge painted it over the band of the blob before it and ri
 one of them. A road stands twice, as `road_verge` and as `road`, and each pass finishes
 before the next begins.
 
+A crossing stands on the track rather than beside it. The deck goes at the middle of the
+wet run measured along the *road*, laid along the road's own heading, and where a road runs
+into the water beside a crossing a river lane had already laid, that deck is moved onto the
+road and turned along it instead of a second one being built next to it. Centred on the
+water instead, a deck was shifted off the line of the road that was supposed to walk over
+it, by as much as a crossing's own length. The earth is then laid right up to it and under
+its planks: a road that stopped at the bank left the deck's two landings standing on
+nothing, and a deck is wider than the widest road, so none of it shows.
+
 What a route may not run through is a landmark. A graveyard is four rows of stones spread
 over a few hundred pixels, so a road aimed at nothing in particular was laid straight
 through the graves and a footpath "reaching" one stopped in the middle of them. Every
@@ -94,6 +103,15 @@ ground (`World.water_at`, reading the same fine grid the trunks use). A deck is 
 exception to water blocking nothing: its two rails are solid (`Scenery._rail_blocks`), open
 only at the ends, since a crossing you can walk off the side of is a strip of floor rather
 than a bridge.
+
+Every body of water, running or still, is drawn in three passes over the chunk rather than
+three shapes per body (`Scenery.WATER_LAYERS`): the bank of everything, then the body of
+everything, then the deep middle of everything. Drawn body by body, the blobs of a course
+paint over each other and a river running into a lake paints its dark bank straight across
+the lit middle of it. The layer *is* the kind, so the order lives in `GROUND_KINDS` with
+everything else and a body of water standing three times is three pieces of scenery at one
+point; only the first of the three is registered as water, since what a pond covers is one
+answer however many times it is painted.
 
 Only the player ever gets better at it: `Stats.swim_multiplier` climbs from
 `Scenery.SWIM_SPEED` toward `SWIM_SPEED_MAX` as the swimming stat trains, and never

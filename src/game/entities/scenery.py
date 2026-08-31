@@ -51,6 +51,10 @@ class Scenery:
         # has to reach the collision index while nothing about its middle blocks.
         self.block_reach = self.blocking_radius
         self.ground = kind in c.Scenery.GROUND_KINDS
+        # Which body of water this is a layer of and which of the three it is. Everything
+        # that is not water is its own family and its only layer (see Scenery.WATER_LAYERS).
+        self.family = _WATER_FAMILY.get(kind, kind)
+        self.layer = _WATER_LAYER.get(kind, 0)
         self._shape = self._roll_shape()
         # How far this piece reaches, for the water and bridge lookups: nothing about water
         # blocks, so it needs a footprint of its own rather than borrowing blocking_radius.
@@ -89,10 +93,10 @@ class Scenery:
             # The rails count as deck: a body pressed against one is standing on the
             # crossing, not wading beside it.
             return abs(along) <= self.size / 2 and abs(across) <= c.Scenery.BRIDGE_WIDTH / 2 + c.Scenery.BRIDGE_RAIL
-        if self.kind == "river":
+        if self.family == "river":
             reach = self.size
             return dx * dx + dy * dy < reach * reach
-        if self.kind not in ("pond", "lake"):
+        if self.family not in ("pond", "lake"):
             return False
         # A pond is a clutch of overlapping ellipses rather than one: the shape that is
         # swum in has to be the shape that was drawn, so every lobe is asked.
@@ -173,7 +177,9 @@ class Scenery:
     # ------------------------------------------------------------------ shape
 
     def _roll_shape(self) -> dict:
-        rng = random.Random(f"{self.kind}:{round(self.x)},{round(self.y)}")
+        # Seeded on the family rather than on the kind: the three layers of one pond are one
+        # shape drawn three times, so all three have to roll the same lobes.
+        rng = random.Random(f"{self.family}:{round(self.x)},{round(self.y)}")
         if self.kind in ("tree", "pine"):
             return self._roll_canopy(rng)
         if self.kind == "boulder":
@@ -184,8 +190,8 @@ class Scenery:
             return self._roll_flowers(rng)
         if self.kind == "pebbles":
             return self._roll_pebbles(rng)
-        if self.kind in ("pond", "lake"):
-            return self._roll_pond(rng, c.Scenery.LAKE_RADIUS if self.kind == "lake" else c.Scenery.POND_RADIUS)
+        if self.family in ("pond", "lake"):
+            return self._roll_pond(rng, c.Scenery.LAKE_RADIUS if self.family == "lake" else c.Scenery.POND_RADIUS)
         if self.kind == "bridge":
             return self._roll_bridge(rng)
         if self.kind == "patch":
@@ -267,7 +273,7 @@ class Scenery:
         """Still water as a clutch of overlapping ellipses. One clean ellipse gave every
         pond and every lake on the map the same egg, which reads as a decal dropped on the
         ground rather than as a shore."""
-        lake = self.kind == "lake"
+        lake = self.family == "lake"
         rx = rng.randint(*radius)
         ry = round(rx * rng.uniform(0.55, 0.85))
         lobes = [(0.0, 0.0, float(rx), float(ry))]
@@ -344,18 +350,17 @@ class Scenery:
             pygame.draw.ellipse(screen, self._shape["color"], rect)
 
     def _draw_pond(self, screen, center):
-        # Bank, then body, then deep, each in one pass over every lobe. Drawing all three
-        # per lobe would let the next lobe's bank paint over the last lobe's middle, which
-        # is the artefact that made a river read as a row of scales.
+        """One pass of still water: the bank, the body or the deep middle, whichever layer
+        this piece stands for. All three of every body are laid down in passes of their own
+        (see Scenery.WATER_LAYERS), so a river running into a lake shares its shoreline
+        instead of striping the middle of it."""
         cx, cy = center
-        for color, scale in zip(c.Scenery.WATER_COLORS, (1.0, 0.9, 0.5), strict=True):
-            for ox, oy, rx, ry in self._shape["lobes"]:
-                rect = pygame.Rect(0, 0, max(2, round(rx * 2 * scale)), max(2, round(ry * 2 * scale)))
-                rect.center = (round(cx + ox), round(cy + oy))
-                pygame.draw.ellipse(screen, color, rect)
-
-    def _draw_lake(self, screen, center):
-        self._draw_pond(screen, center)
+        color = c.Scenery.WATER_COLORS[self.layer]
+        scale = c.Scenery.WATER_LAYER_SCALE[self.layer]
+        for ox, oy, rx, ry in self._shape["lobes"]:
+            rect = pygame.Rect(0, 0, max(2, round(rx * 2 * scale)), max(2, round(ry * 2 * scale)))
+            rect.center = (round(cx + ox), round(cy + oy))
+            pygame.draw.ellipse(screen, color, rect)
 
     def _draw_river(self, screen, center):
         # One blob of the course, and only its bank: the body and the deep middle stand at
@@ -504,13 +509,20 @@ class Scenery:
 # kind, so a search for "_draw_boulder" finds both where it is written and where it is
 # used, and a kind with nothing to draw is simply absent. Grass and reeds are the same
 # blades, a tree and a pine the same canopy: only the shape rolled for them differs.
+_WATER_FAMILY = {kind: family for family, kinds in c.Scenery.WATER_LAYERS.items() for kind in kinds}
+_WATER_LAYER = {kind: layer for kinds in c.Scenery.WATER_LAYERS.values() for layer, kind in enumerate(kinds)}
+
 _DRAWERS = {
     "path": Scenery._draw_path,
     "road": Scenery._draw_path,
     "road_verge": Scenery._draw_path,
     "patch": Scenery._draw_patch,
     "pond": Scenery._draw_pond,
-    "lake": Scenery._draw_lake,
+    "pond_body": Scenery._draw_pond,
+    "pond_deep": Scenery._draw_pond,
+    "lake": Scenery._draw_pond,
+    "lake_body": Scenery._draw_pond,
+    "lake_deep": Scenery._draw_pond,
     "river": Scenery._draw_river,
     "river_body": Scenery._draw_river_body,
     "river_deep": Scenery._draw_river_deep,

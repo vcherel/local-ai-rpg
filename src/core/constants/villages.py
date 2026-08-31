@@ -90,6 +90,14 @@ class Villages:
     # stood on undisturbed grass read as sheds dropped in a field.
     STREET_WIDTH: int = 15
     STREET_STEP: int = 16
+    # The worn edge either side of a lane, laid under it in a pass of its own exactly as a
+    # road's verge is: without it the trodden earth reads as a ribbon dropped on the grass.
+    STREET_EDGE: int = 3
+    STREET_EDGE_COLOR: tuple = (120, 96, 68)
+    # How far inside the gate a lane takes to narrow from the width of the road arriving
+    # outside it down to its own (`Village.plan_streets`). A road is twice a lane wide, so
+    # the two met as a step until the lane was worn out to it.
+    STREET_TAPER: int = 260
     # A lane is routed on a grid of this size rather than run straight at the door: a
     # straight line from the plaza was laid over whatever house stood between the two.
     # Coarser than the lane is wide, since what it has to find is the gap between two

@@ -97,6 +97,22 @@ the real wall, nearer in. That is also why the lanes are planted after the settl
 registered rather than inside `_build`: until it is on the map the roads are drawn from,
 there are no roads coming to it.
 
+A lane is kept as the few corners it turns, not as a line of blobs, and each corner carries
+the width the lane has there. Laid blob by blob it was a string of beads: circles of one
+radius strung closer together than they are wide still scallop every edge, and flat colour
+with no anti-aliasing is exactly where that reads. The network is drawn instead in two
+passes over the whole of it, a worn edge under and the trodden earth over the top, for the
+same reason a road's verge is a kind of its own (`Scenery._draw_path`): a stretch that drew
+both painted its own edge across the middle of the one before it.
+
+The width is also how a lane and a road meet. A road is more than twice a lane wide and
+carries a verge, so the two used to meet as a step with a round cap on the end of it. The
+lane out of a gate now starts at the arriving road's own width (`road_ends_at` hands back
+the width where it stopped, not just the point) and narrows to a lane's over
+`STREET_TAPER` on the way in, and the colour and the verge follow that one number
+(`Village._lane_look`): wide is a road, narrow is a lane, and the ground between them is
+the same track changing its mind about which it is.
+
 What the village draws as trodden earth is trodden earth, so nothing grows out of it. The
 wilderness already keeps everything solid off a settlement's whole grounds; the tufts and
 the flowers (`Scenery.DECOR_KINDS`) are what the grounds are *made* of, so they keep off

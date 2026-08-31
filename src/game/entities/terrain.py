@@ -129,19 +129,24 @@ def _routes_near_chunk(cx: int, cy: int) -> list[Route]:
     return [routes[key] for key in sorted(routes)]
 
 
-def road_ends_at(x: float, y: float, cx: int, cy: int) -> tuple[tuple[float, float], ...]:
+def road_ends_at(x: float, y: float, cx: int, cy: int) -> tuple[tuple[float, float, float], ...]:
     """Where every road leaving this settlement stops, which is the outside of one of its
-    gateways (`_approach`).
+    gateways (`_approach`), and how wide the road is where it stops.
 
     A settlement lays its own lanes out to these (`Village.gateways`): the road stops at
     the grounds the site *could* have reached, since it is drawn from the map rather than
     from a village that may not have been built yet, and only the village itself knows
-    where its wall actually stands."""
+    where its wall actually stands. The width goes with the point because the lane is worn
+    out to it at the road's own width and narrows on the way in: a road is twice a lane
+    wide and a track that changed width at the gate read as two tracks meeting there."""
     ends = []
     for route in _settlement_routes(cx, cy):
-        for near, far in (route[:2], route[1::-1]):
-            if math.dist((near[0], near[1]), (x, y)) < 1:
-                ends.append(_approach(near[0], near[1], near[2], far[0], far[1]))
+        for at_start, (near, far) in ((True, route[:2]), (False, route[1::-1])):
+            if math.dist((near[0], near[1]), (x, y)) >= 1:
+                continue
+            line = _route_line(route)
+            width = (line[0] if at_start else line[-1]).width if line else float(c.Scenery.ROAD_WIDTH[0])
+            ends.append((*_approach(near[0], near[1], near[2], far[0], far[1]), width))
     return tuple(ends)
 
 
@@ -496,9 +501,14 @@ def _route_crossings(route: Route) -> tuple[Deck, ...]:
     def close(wet_run):
         if not wet_run:
             return
-        blob, water = wet_run[len(wet_run) // 2]
+        # Stood on the road rather than on the middle of the water: a road crossing off the
+        # centre of a blob was given a deck shifted sideways off its own line, which the
+        # track then ran onto from the side. The span is the wet run's own length as well
+        # as the water's width, since a crossing taken at an angle is the longer of the two.
+        blob, _water = wet_run[len(wet_run) // 2]
         widest = max(w[2] for _b, w in wet_run)
-        decks.append(Deck(water[0], water[1], blob.heading, _deck_length(widest * 2)))
+        run_length = math.dist((wet_run[0][0].x, wet_run[0][0].y), (wet_run[-1][0].x, wet_run[-1][0].y))
+        decks.append(Deck(blob.x, blob.y, blob.heading, _deck_length(max(widest * 2, run_length))))
 
     for blob in _route_line(route):
         water = _water_under(blob.x, blob.y)
@@ -526,9 +536,10 @@ def _chunk_terrain(cx: int, cy: int) -> tuple[tuple, tuple, tuple]:
     same row of bridges the run-per-crossing rule is there to prevent.
 
     Two crossings never stand within `BRIDGE_MIN_GAP` of each other, and when a road runs
-    into the water beside one a lane had already laid, the deck that is there is turned
-    along the road rather than a second one being built next to it: a bridge is where a
-    track meets a river, so the track decides which way it lies.
+    into the water beside one a lane had already laid, the deck that is there is moved onto
+    the road and turned along it rather than a second one being built next to it: a bridge
+    is where a track meets a river, so the track decides where it stands and which way it
+    lies.
     """
     size = c.World.CHUNK_SIZE
     bounds = pygame.Rect(cx * size, cy * size, size, size)
@@ -558,8 +569,12 @@ def _chunk_terrain(cx: int, cy: int) -> tuple[tuple, tuple, tuple]:
             if near is None:
                 decks.append(deck)
             else:
-                standing = decks[near]
-                decks[near] = Deck(standing.x, standing.y, deck.angle, max(standing.length, deck.length))
+                # Stood where the road crosses rather than where the lane had already put
+                # one: a bridge is where a track meets a river, so the track decides both
+                # where it lies and which way. Left where it was, the deck the road was
+                # merged into could be a hundred paces upstream of the road that is
+                # supposed to be walking over it.
+                decks[near] = Deck(deck.x, deck.y, deck.angle, max(decks[near].length, deck.length))
     return roads, _chunk_river(cx, cy)[0], tuple(deck for deck in decks if bounds.collidepoint(deck.x, deck.y))
 
 
@@ -597,12 +612,13 @@ def generate_chunk_scenery(
     # Every deck within reach of this chunk, its own and its neighbours', as ground no
     # trunk or boulder may stand on: a crossing walled in at the end of it is worse than
     # no crossing at all, because the player walked over to use it.
-    bridge_zones = [
-        (deck.x, deck.y, math.hypot(deck.length, c.Scenery.BRIDGE_WIDTH) / 2 + c.Scenery.BRIDGE_CLEARANCE)
+    decks = [
+        Scenery(deck.x, deck.y, "bridge", chunk, size=deck.length, biome=biome, angle=deck.angle)
         for ox in (-1, 0, 1)
         for oy in (-1, 0, 1)
         for deck in _chunk_terrain(cx + ox, cy + oy)[2]
     ]
+    bridge_zones = [(deck.x, deck.y, deck.block_reach + c.Scenery.BRIDGE_CLEARANCE) for deck in decks]
 
     # Circles nothing at all may stand in, and circles only solid things are kept out of.
     # Reaching past the doorstep as well as past the walls: the clear ground in front of a
@@ -656,23 +672,31 @@ def generate_chunk_scenery(
     # A road stands twice, as its verge and as its band, so each is laid down in a pass of
     # its own over the whole chunk: a blob that drew both painted its verge over the band
     # of the blob before it (see Scenery._draw_path).
+    # The earth is laid right up to a crossing and under its planks: a road that stopped at
+    # the bank left the deck's two landings standing on nothing, since a deck reaches past
+    # the water it spans. Nothing shows for it, a deck being wider than the widest road.
     items = [
         Scenery(blob.x, blob.y, kind, chunk, size=blob.width, biome=biome, angle=blob.heading)
         for blob in roads
-        if not in_water(blob.x, blob.y)
+        if not in_water(blob.x, blob.y) or any(deck.covers(blob.x, blob.y) for deck in decks)
         for kind in (("road_verge", "road") if blob.kind == "road" else (blob.kind,))
     ]
-    # Three pieces per blob of river: the water itself, and the two layers of colour that
-    # are drawn in their own passes over it, since one blob painting all three would paint
-    # over its neighbour (see Scenery._draw_river).
-    for kind in ("river", "river_body", "river_deep"):
+    # Three pieces per body of water, running or still: the water itself, and the two layers
+    # of colour drawn in their own passes over it, since one body painting all three would
+    # paint over its neighbour (see Scenery.WATER_LAYERS).
+    for kind in c.Scenery.WATER_LAYERS["river"]:
         items += [Scenery(x, y, kind, chunk, size=radius, biome=biome) for x, y, radius in river]
-    items += still
+    for piece in still:
+        items.append(piece)
+        items += [
+            Scenery(piece.x, piece.y, kind, chunk, biome=biome) for kind in c.Scenery.WATER_LAYERS[piece.kind][1:]
+        ]
     # A crossing wherever the lane says so, plus one wherever a road runs into the water:
     # that is where anybody would have built one, and it keeps a road from stopping dead.
-    # Both kinds are already in `bridges`, rolled by `_chunk_terrain`.
-    for deck in bridges:
-        items.append(Scenery(deck.x, deck.y, "bridge", chunk, size=deck.length, biome=biome, angle=deck.angle))
+    # Both kinds are already in `bridges`, rolled by `_chunk_terrain`; the neighbours' decks
+    # were only ever borrowed to keep this chunk's ground clear at the end of one.
+    own = {(deck.x, deck.y) for deck in bridges}
+    items += [deck for deck in decks if (deck.x, deck.y) in own]
 
     def free(x: float, y: float, solid: bool) -> bool:
         for zx, zy, radius in solid_zones:
