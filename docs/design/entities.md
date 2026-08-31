@@ -36,7 +36,24 @@ leaning against a wall was inside every candidate route's obstacle, every way ro
 back barred, and the chaser walked flat into the wall the player was standing at. The one
 goal allowed to lie inside a shell is the doorway of the building that shell belongs to,
 which `chase_waypoint` names (`through`): walking round that building would be walking away
-from its door.
+from its door. The same holds inside a room, where the shells are the furniture: the thing
+being walked *to* is never walked round, or a villager sent to the foot of their own bed is
+routed round the bed.
+
+Two more things about a corner, both of them bodies that stopped where nothing was wrong.
+A corner is a step and never a destination, so whoever is walking to one has to be told the
+difference: `_hunt` always knew it, `NPC._run_to` did not, and a villager running for a door
+or walking home to bed arrived at the corner of a house and stood on it. And a one-corner
+route whose corner is already underfoot answers with the goal rather than with that corner,
+since the route was only costed because the way on from it is clear; answering with the
+corner is telling a body to walk to where it already stands.
+
+A body halfway through a doorway is standing in the wall rather than on the floor, so
+`building_at` disowns it and the route was costed as if it were out in the open: every way
+round the shell it is standing *inside* comes back barred, and it was sent flat at whatever
+it was chasing, into the jamb beside the gap it was walking through. A doorway belongs to
+its building (`World.doorway_building_at`, the leaf's own rect and not the doorstep), so a
+body in one goes through `_door_goal` like anything else and walks square out of the gap.
 
 `Monster._steer` probes a lookahead distance rather than one step so a monster turns away from
 a wall early instead of grinding into it, never probing past the goal itself (a wall behind the

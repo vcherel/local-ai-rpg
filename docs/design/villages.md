@@ -248,16 +248,39 @@ from a monster (`_npc_flees`) with a different destination, so the door, the gat
 waypoint round the houses all come for free, and their home is found once off the doorstep
 they were stood up at (`_home_for`, kept on the villager: a house does not move).
 
-Two things about that walk had to be written down. A villager is walked *square through*
-their own doorway rather than at the middle of the room, because the diagonal to the middle
-clips the wall beside the door and they slide along it all night. And the door is shut by
-the last one in, never the first (`_households_in`): `shut_door` clears whoever is standing
-in the frame rather than sealing them in it, so a resident who shuts up while their
-neighbour is still on the step puts that neighbour back into the street, and the two do it
-to each other until dawn.
+Two things about that walk had to be written down. The whole of it is routed, the last
+stride included: a corner is a step and never a destination (`NPC._run_to` takes the
+waypoint apart from the refuge, exactly as `_hunt` does), because a body that arrives at the
+corner of its own house stops on it, and one that stops there at dusk is still there at
+dawn. And the door is shut by the last one in, never the first (`_households_in`):
+`shut_door` clears whoever is standing in the frame rather than sealing them in it, so a
+resident who shuts up while their neighbour is still on the step puts that neighbour back
+into the street, and the two do it to each other until dawn.
 
 A guard is exempt, as they are from everything else: the post is where they belong. So is
 anyone in a fight, because a village with a mob in it is not a village going to bed.
+
+## Going to bed is getting into a bed
+
+The walk home ends in a bed and not in the middle of the floor (`_npc_sleeps`,
+`_turn_in`). Each household is dealt its own beds once (`_bed_for`, the people who live here
+in a fixed order against the beds in a fixed order), so the same person has the same bed
+every night and two of them never climb into one; a cottage has a single bed and a tavern
+three or four, and whoever the house has no bed for stands in the room as everybody used to.
+
+A bed is furniture, so it is solid, so this is the one place in a settlement a body is
+deliberately put on top of something solid. That buys one exemption and no more: a sleeper
+is skipped by `unstick` and `unwedge` for as long as they are in bed, the same exemption a
+tower archer has from being walked off their roof, and *anything* to do at all (dawn, a
+mob, a monster in the street) puts them on their feet first, where the ordinary `unstick`
+is what steps them off the mattress. The walk itself stops beside the bed (`_bedside`, the
+foot of it, nudged to standable ground because a room is furnished before anybody is asked
+to cross it), never on it.
+
+The player sees it from the other side: a bed with somebody in it is not a bed to sleep in
+(`World.bed_taken`), so the prompt names the sleeper and the key refuses. Which bed is free
+is a real question in a tavern after dark rather than a formality, and nobody is tipped out
+of their own to make room.
 
 ## How well defended a settlement is is one number
 
@@ -388,6 +411,13 @@ yielded kneels under a white flag with empty hands, is nobody's enemy for
 `Villages.SURRENDER_S` (`NPC.surrendered` outranks even a grudge), and then gets up and runs
 for a door like anyone else; nobody yields twice. Cutting one down is the single offence with
 no ladder under it: it turns the settlement on the spot.
+
+A rout always ends in something. With no door within reach (a fight out in the fields, or a
+village whose houses are the other side of a chunk border) `_refuge_for` used to give back
+nothing at all and the villager fell straight through to the ordinary orders, turning round
+and fighting on at full aggression at a fifth of their health. It answers with open ground
+away from whatever beat them instead (`Villages.ROUT_RUN`), and `_npc_flees` takes a bare
+point as happily as a building: running is a rout too.
 
 This exists because a villager quietly ceasing to attack at low health reads as a broken
 villager rather than a beaten one. The rule is that a state the player can see the

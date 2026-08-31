@@ -459,6 +459,15 @@ class Building(BuildingArt):
             return False
         return self.door_rect().inflate(radius * 2, radius * 2).collidepoint(x, y)
 
+    def in_doorway(self, x, y) -> bool:
+        """Whether a body standing at (x, y) is in the door gap itself, mid-threshold.
+
+        Deliberately the leaf's own rect and not `door_overlaps`, which is grown by the
+        body's radius and so answers True for somebody on the doorstep: this is the
+        question of whether a body is *in the wall*, which is the one case where the floor
+        (`contains_point`) says it belongs to no building at all."""
+        return self.has_door and self.door_rect().collidepoint(x, y)
+
     def clear_of_door(self, x, y, radius: float) -> tuple:
         """(x, y) stepped out of the doorway along the front wall's own normal, to whichever
         side of it the body is already nearer.

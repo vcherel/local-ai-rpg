@@ -147,8 +147,13 @@ class WorldNavigation:
         its way round a house exactly like a wolf does.
         """
         monster = chaser
-        monster_building = self.building_at(monster.x, monster.y)
-        player_building = self.building_at(player.x, player.y)
+        # A body halfway through a doorway is standing in the wall rather than on the floor,
+        # so `building_at` disowns it and the route is costed as if it were out in the open:
+        # every way round the shell it is standing *inside* comes back barred, and it is sent
+        # flat at whatever it is chasing, into the jamb beside the gap it was walking through.
+        # The doorway belongs to the building, and that is the answer used here.
+        monster_building = self.building_at(monster.x, monster.y) or self.doorway_building_at(monster.x, monster.y)
+        player_building = self.building_at(player.x, player.y) or self.doorway_building_at(player.x, player.y)
         start = (monster.x, monster.y)
 
         if monster_building is player_building:
@@ -161,7 +166,15 @@ class WorldNavigation:
                 # steered into the furniture and stuck there while the player stood in a
                 # corner two steps away.
                 solids = [rect for rect, _kind in monster_building.interior_layout()["solids"]]
-                corner = self._detour_corner(start, (player.x, player.y), radius, solids, chaser=chaser)
+                # The one thing never walked round is the thing being walked to, indoors for
+                # the same reason as out: a goal pressed against the table is reached by
+                # walking at the table, and costing the way round it sends the body off round
+                # the room instead. A villager going to bed is exactly that, since the foot
+                # of a bed stands against the bed.
+                goal = (player.x, player.y)
+                margin = (radius + 8) * 2
+                through = next((rect for rect in solids if rect.inflate(margin, margin).collidepoint(goal)), None)
+                corner = self._detour_corner(start, goal, radius, solids, through=through, chaser=chaser)
                 # A room is small enough that the way round a table can be a point inside the
                 # wall behind it. Sending a monster at one is worse than sending it nowhere:
                 # steering gets round furniture on its own, it just needs the room to do it.
@@ -420,8 +433,16 @@ class WorldNavigation:
                     if solid.clipline(last, goal):
                         continue
                     cost = math.dist(start, first) + math.dist(first, last) + math.dist(last, goal)
-                    # Aim at the next corner along once this one is effectively reached.
-                    target = first if math.dist(start, first) > radius + 6 else last
+                    # Aim at the next corner along once this one is effectively reached, and
+                    # at the goal itself once there is no next one: a one-corner route whose
+                    # corner is underfoot used to answer with that same corner, so whoever
+                    # was walking it was told to walk to where they already stood. A body
+                    # that arrives is a body that stops, which is a villager standing at the
+                    # corner of their own house until morning. The way on from a rounded
+                    # corner is clear by construction, since the route was only costed at all
+                    # because nothing solid lies between it and the goal.
+                    rounded = math.dist(start, first) <= radius + 6
+                    target = (goal if last is first else last) if rounded else first
                     route = (cost, target, first)
                     if best is None or cost < best[0]:
                         best = route
