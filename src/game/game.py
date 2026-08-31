@@ -892,12 +892,18 @@ class Game:
         Deliberately not instant: the tint moving under the fade is the only thing that says
         hours went by. Nothing in the world takes a step while it runs (`World.update` is not
         called), but every clock in it moves, and whatever was coursing through the player's
-        veins at bedtime has worn off by morning."""
+        veins at bedtime has worn off by morning.
+
+        Nothing takes a step, but the settlement is not the tableau it was either: everybody
+        is got out of bed and walked to somewhere plausible to be found at over the length
+        of the fade (`World.plan_morning`, `World.drift_to_morning`), so waking up is a
+        street that has moved on rather than the same one with a lighter sky."""
         skip_ms = self.world.daynight.time_until(c.Buildings.SLEEP_WAKE_PROGRESS)
         duration = c.Buildings.SLEEP_FADE_MS
         overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT))
         overlay.fill((0, 0, 0))
 
+        self.world.plan_morning()
         elapsed = 0.0
         while elapsed < duration:
             # Input is swallowed for the second and a half this lasts; the pump is only
@@ -906,6 +912,7 @@ class Game:
             step = min(self.clock.tick(60), duration - elapsed)
             elapsed += step
             self.world.pass_time(skip_ms * (step / duration) / 1000)
+            self.world.drift_to_morning(elapsed / duration)
 
             self.game_renderer.draw_world(self.camera, self.world, self.player, self.interior, None)
             self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
@@ -916,6 +923,8 @@ class Game:
 
         # Whatever was pressed while the screen was black is not an instruction about the
         # morning, so it is dropped rather than replayed the moment the player can see.
+        # Whatever the loop's last frame left, everybody ends the night on open ground.
+        self.world.drift_to_morning(1.0)
         pygame.event.clear()
         self.player.clear_buffs()
 

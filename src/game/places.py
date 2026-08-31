@@ -944,26 +944,41 @@ class WorldPlaces:
         seen = [npc for npc in self.watchers_near(x, y) if self.can_see(npc, x, y, radius, room)]
         return min(seen, key=lambda npc: npc.distance_to_point((x, y)), default=None)
 
-    def squatter_witness(self, x: float, y: float) -> NPC | None:
-        """Whoever finds the player asleep in a bed that isn't theirs, or None where nobody
-        lives close enough to walk in on them.
+    def squat_witness_radius(self) -> float:
+        """How far a stranger asleep in somebody's bed is noticed from, right now.
 
-        Deliberately not `theft_witness`: taking something is an instant somebody either
-        had eyes on or did not, and a night is hours of a settlement's people coming and
-        going. So there is no cone and no line of sight here, only the household: anyone of
-        this settlement standing within `Crime.SQUAT_WITNESS_RADIUS` of the bed by morning
-        has found the player in it, which is what makes a tavern room something taken rather
-        than something free."""
+        Wider than a theft's, because a night is hours rather than an instant, and cut by
+        the same thing: the light. Full in daylight, down to `Crime.NIGHT_WITNESS_MULT` of
+        itself at the depth of night, so being up and gone before the street is worth as
+        much as robbing a house after dark is."""
+        return c.Crime.SQUAT_WITNESS_RADIUS * (1.0 - (1.0 - c.Crime.NIGHT_WITNESS_MULT) * self.daynight.darkness)
+
+    def squatter_witness(self, x: float, y: float) -> NPC | None:
+        """Whoever finds the player asleep in a bed that isn't theirs, or None if nobody
+        does.
+
+        Two ways of being found, and they are the whole rule. The household is the first:
+        whoever lives in this room walks past its bed every morning, so neither the light
+        nor which way they happen to be turned saves the player from the people whose house
+        it is. Everybody else is answered exactly as a theft is (`can_see`): near enough for
+        the hour's light (`squat_witness_radius`), facing this way, and standing somewhere
+        the room is open to them. Somebody still in their own bed across the street has seen
+        nothing at all.
+
+        Which makes an empty house on the dark edge of a settlement a bed the player can
+        actually take, and the tavern with its keeper asleep next door a gamble."""
         village = self.village_at(x, y)
         if village is None:
             return None
-        found = [
-            npc
-            for npc in self.npcs
-            if not npc.hostile
-            and village.contains_point(npc.x, npc.y)
-            and npc.distance_to_point((x, y)) < c.Crime.SQUAT_WITNESS_RADIUS
-        ]
+        room = self.theft_room(x, y)
+        radius = self.squat_witness_radius()
+        found = []
+        for npc in self.npcs:
+            if npc.hostile or not village.contains_point(npc.x, npc.y):
+                continue
+            lives_here = room is not None and self._home_for(npc) is room
+            if lives_here or (not npc.asleep and self.can_see(npc, x, y, radius, room)):
+                found.append(npc)
         return min(found, key=lambda npc: npc.distance_to_point((x, y)), default=None)
 
     def report_crime(self, x: float, y: float, player: Player) -> NPC | None:
