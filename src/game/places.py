@@ -16,6 +16,7 @@ from game.entities.poi import PointOfInterest, pois_for_chunk
 from game.entities.tunnel import Tunnel, has_tunnel
 from game.entities.village import Village, village_site
 from game.loot import roll_shop_stock
+from game.navigation import Point
 
 if TYPE_CHECKING:
     from game.entities.buildings import Building
@@ -1063,7 +1064,7 @@ class WorldPlaces:
                 if not npc.routed:
                     fight[id(npc)] = threat
                     continue
-                refuge = self._refuge_for(npc)
+                refuge = self._refuge_for(npc, threat)
                 if refuge is not None:
                     flee[id(npc)] = refuge
                     continue
@@ -1076,16 +1077,26 @@ class WorldPlaces:
                 if distance <= (c.Villages.BOSS_DEFEND_RADIUS if boss else c.Villages.DEFEND_RADIUS):
                     fight[id(npc)] = nearest
             elif distance <= (c.Villages.BOSS_PANIC_RADIUS if boss else c.Villages.PANIC_RADIUS):
-                refuge = self._refuge_for(npc)
+                refuge = self._refuge_for(npc, nearest)
                 if refuge is not None:
                     flee[id(npc)] = refuge
         return fight, flee
 
-    def _refuge_for(self, npc: NPC) -> Building | None:
-        """The nearest building this one can get behind a door of. Any door will do: a
-        frightened person takes the nearest one, not their own."""
+    def _refuge_for(self, npc: NPC, threat=None) -> Building | Point | None:
+        """Where this one breaks for: the nearest building they can get behind a door of, or
+        open ground away from `threat` when there is no door within reach.
+
+        Any door will do; a frightened person takes the nearest one, not their own. The
+        second answer is what a rout in a field is: with no shelter this used to give back
+        nothing at all, and the caller fell straight through to the ordinary orders, so a
+        farmer cut to nothing out in the open turned round and fought on at full aggression.
+        A rout has to end in something, and running is the something."""
         shelters = [b for b in self.buildings_near(npc.x, npc.y) if b.has_door and not b.door_broken]
-        return min(shelters, key=lambda b: npc.distance_to_point((b.x, b.y)), default=None)
+        nearest = min(shelters, key=lambda b: npc.distance_to_point((b.x, b.y)), default=None)
+        if nearest is not None or threat is None:
+            return nearest
+        angle = math.atan2(npc.y - threat.y, npc.x - threat.x)
+        return Point(npc.x + math.cos(angle) * c.Villages.ROUT_RUN, npc.y + math.sin(angle) * c.Villages.ROUT_RUN)
 
     def house_to_rob(self, npc: NPC) -> Building | None:
         """A house in this NPC's village whose chest nobody has emptied yet, for a steal quest

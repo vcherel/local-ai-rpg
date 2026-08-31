@@ -130,6 +130,14 @@ class NPC(Entity):
         # (`World._home_for`) and kept for the session: a house does not move, and the walk
         # home is asked for every frame of every night.
         self.home_building = None
+        # The bed in that house this one turns in to, dealt once among the household
+        # (`World._bed_for`), and whether they are in it right now. A body asleep is a body
+        # lying on a solid: it is the one thing in a settlement never unstuck, never
+        # unwedged and never walked, the same exemption a tower archer has. Session-only,
+        # like everything else about a night: dawn puts everybody back on their feet.
+        self.bed = None
+        self.bed_dealt = False
+        self.asleep = False
 
     @property
     def hostile(self) -> bool:
@@ -479,7 +487,7 @@ class NPC(Entity):
         if target is not None:
             return self._hunt(target, dt, blocked, waypoint, standoff)
         if refuge is not None:
-            self._run_to(refuge, dt, blocked, refuge_reach)
+            self._run_to(refuge, dt, blocked, refuge_reach, waypoint)
             return 0
 
         if (
@@ -514,16 +522,24 @@ class NPC(Entity):
         step_towards(self, angle, speed, blocked, radius)
         return angle
 
-    def _run_to(self, refuge, dt, blocked=None, reach: float | None = None):
+    def _run_to(self, refuge, dt, blocked=None, reach: float | None = None, waypoint=None):
         """A villager with no stomach for the fight, making for the nearest door. They stop
         once they are on the spot rather than jittering on it.
 
         `reach` is how near counts as arrived, an arm's length by default. Somebody going in
         for the night wants a shorter one: arm's length off the middle of a room is a
-        doorstep, and a villager who stopped there stood on it until dawn."""
-        if self.distance_to_point(refuge) <= (c.Entities.NPC_ATTACK_RANGE if reach is None else reach):
+        doorstep, and a villager who stopped there stood on it until dawn.
+
+        `waypoint` is the way round a wall, and it is a step and never a destination, exactly
+        as it is for somebody hunting (`_hunt`). Arriving at the corner of a house is no
+        reason to stand on it while the door is still round the other side: measured against
+        the corner instead of against the refuge, a routed villager froze in the street and a
+        villager walking home froze on the corner of their own house."""
+        if waypoint is None and self.distance_to_point(refuge) <= (
+            c.Entities.NPC_ATTACK_RANGE if reach is None else reach
+        ):
             return
-        self.orientation = self._step_towards(refuge, dt, blocked) + math.pi / 2
+        self.orientation = self._step_towards(waypoint or refuge, dt, blocked) + math.pi / 2
 
     def _ring_point(self, target, standoff: float, blocked=None) -> tuple:
         """The spot this one is trying to hold: its own bearing around the target, at

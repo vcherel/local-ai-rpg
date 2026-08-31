@@ -206,7 +206,7 @@ class Game:
         self.interact_actions = {
             "npc": self._talk_to,
             "chest": lambda _target: self._open_interior_chest(),
-            "bed": lambda _target: self._sleep_in_bed(),
+            "bed": self._sleep_in_bed,
             "door": self._use_door,
             "gate": lambda _target: None,
             "nightgate": self._push_gate,
@@ -468,7 +468,7 @@ class Game:
             for bed in layout["beds"]:
                 dist = reach_of(bed.centerx, bed.centery)
                 if dist <= indoor_reach:
-                    offer(Interaction("bed", bed, self._bed_label(), bed.centerx, bed.top), dist)
+                    offer(Interaction("bed", bed, self._bed_label(bed), bed.centerx, bed.top), dist)
 
     def _offer_doors(self, offer, reach_of):
         """Every front door in reach, and whether E would open it or shut it."""
@@ -771,10 +771,13 @@ class Game:
             return label
         return f"{label} ({witness.name or 'someone'} is watching)"
 
-    def _bed_label(self) -> str:
+    def _bed_label(self, bed) -> str:
         """What the prompt over a bed says. No bed is paid for and none of them is the
-        player's, so all of them read the same way: whether it is still warm, and who is
-        watching them climb into it."""
+        player's, so all of them read the same way: whether there is somebody in it, whether
+        it is still warm, and who is watching them climb into it."""
+        sleeper = self.world.bed_taken(bed)
+        if sleeper is not None:
+            return f"{sleeper.name or 'Someone'} is asleep in this bed"
         if self._sleep_threat():
             return "Too dangerous to sleep with that out there"
         cooling = self._bed_cooling()
@@ -809,7 +812,15 @@ class Game:
             self.player.x, self.player.y = building.clear_of_door(self.player.x, self.player.y, radius)
             self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, radius)
 
-    def _sleep_in_bed(self):
+    def _sleep_in_bed(self, bed):
+        # Somebody is already in it. A house has one bed and a tavern has several, so which
+        # bed is free is a real answer after dark rather than a formality, and nobody is
+        # tipped out of their own to make room for the player.
+        sleeper = self.world.bed_taken(bed)
+        if sleeper is not None:
+            name = sleeper.name or "Someone"
+            self.loot_notification.show(f"{name} is asleep in this bed", c.Colors.MUTED)
+            return
         # A bed is the one full night's rest in the game: unlike a campfire it heals
         # everything, shakes off the post-death weakness and puts the night behind the
         # player. None of them is bought and none of them is the player's: a tavern room

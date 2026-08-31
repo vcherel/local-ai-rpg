@@ -854,6 +854,22 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
                 return building
         return None
 
+    def doorway_building_at(self, x, y) -> Building | None:
+        """The building whose doorway (x, y) is standing in, or None.
+
+        `building_at` is the floor, and a doorway is a hole in the wall rather than a piece
+        of floor: by that question a body mid-threshold belongs to nowhere, which is exactly
+        the body navigation has no way round (`WorldNavigation.chase_waypoint`)."""
+        for building in self.buildings_near(x, y):
+            if building.in_doorway(x, y):
+                return building
+        return None
+
+    def bed_taken(self, bed) -> NPC | None:
+        """Whoever is asleep in this bed, or None. A villager in their own bed is a body in
+        it: the player takes another one or comes back in the morning."""
+        return next((npc for npc in self.npcs if npc.asleep and npc.bed == bed), None)
+
     # ------------------------------------------------------------------ bosses
 
     def spawn_boss(

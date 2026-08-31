@@ -248,6 +248,10 @@ class Villages:
     # yielded is the one offence that skips the ladder outright.
     SURRENDER_S: float = 9.0
     HELP_SHOUT_RANGE: float = 520.0
+    # How far somebody with no door to run to puts between themselves and whatever beat
+    # them. Past MOB_ENGAGE_RANGE, so a rout out in the fields actually leaves the fight
+    # rather than jogging to the edge of it and turning round.
+    ROUT_RUN: float = 600.0
     HELP_SHOUTS: tuple = (
         "To me! To me!",
         "Help, someone!",

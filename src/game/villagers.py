@@ -64,6 +64,18 @@ class WorldVillagers:
                 # (`_loose_arrows`), so the frame is run with nothing to walk to.
                 npc.update(player, dt, self.blocked, face_player=False)
                 continue
+            if npc.asleep:
+                # In bed, which is a piece of furniture and so a solid: the other body in a
+                # settlement exempt from being put back on open ground, for the same reason
+                # the archer on the roof is. Anything at all to do (dawn, a fight, a monster
+                # in the street) has them out of it first, and the `unstick` below is what
+                # puts their feet on the floor.
+                if self.daynight.curfew and not (id(npc) in mob or id(npc) in fight or id(npc) in flee):
+                    # Given the frame anyway, with their own spot as the place to go, so
+                    # anger still cools overnight and nothing else moves them.
+                    npc.update(player, dt, self.blocked, refuge=(npc.x, npc.y), face_player=False)
+                    continue
+                npc.asleep = False
             # Anything standing inside a solid is put back on open ground before it tries to
             # move: from in there every step it could take would be refused, and a villager
             # a village was built on top of stayed in the wall for the rest of the save.
@@ -72,11 +84,17 @@ class WorldVillagers:
             # an L, the neck between two houses) is prised out of it: that one is invisible
             # to `blocked` and only shows up as a body that has meant to move for a while
             # and has not.
+            # Walking home is meaning to move like any other errand. Left out of this, the
+            # one rescue written for a body pinned on a corner was switched off for exactly
+            # the walk that pins them there.
+            going_home = self.daynight.curfew and not npc.is_guard and id(npc) not in mob
             self.unwedge(
                 npc,
                 c.Entities.NPC_SIZE / 2,
                 dt,
-                wants_move=bool(id(npc) in mob or id(npc) in fight or id(npc) in flee or npc.wander.target is not None),
+                wants_move=bool(
+                    id(npc) in mob or id(npc) in fight or id(npc) in flee or going_home or npc.wander.target is not None
+                ),
             )
             enemy = fight.get(id(npc))
             # The orders were worked out once for the whole street, so the neighbour who
@@ -131,20 +149,31 @@ class WorldVillagers:
             Blow(kb_dir=self._dir_from(npc.x, npc.y, enemy.x, enemy.y), blocked=self.blocked, by_player=False),
         )
 
-    def _npc_flees(self, npc: NPC, shelter: Building, player: Player, dt):
-        """One villager's frame spent running for a door and shutting it behind them."""
-        self.open_door_for(npc)
-        inside = (shelter.x, shelter.interior_rect().centery)
-        self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*inside))
-        waypoint = self.chase_waypoint(npc, Point(*inside), c.Entities.NPC_SIZE / 2)
+    def _npc_flees(self, npc: NPC, shelter, player: Player, dt):
+        """One villager's frame spent running for a door and shutting it behind them, or
+        simply spent running.
+
+        `shelter` is a building when there is one to get behind and a bare point when there
+        is not (`WorldPlaces._refuge_for`): a rout in a field is still a rout, and it ends
+        in open ground rather than in a doorway.
+
+        The way round a wall is handed in as a waypoint and not as the destination: a corner
+        is a step, and somebody who arrives at one stops on it."""
+        door = isinstance(shelter, Building)
+        goal = (shelter.x, shelter.interior_rect().centery) if door else (shelter.x, shelter.y)
+        if door:
+            self.open_door_for(npc)
+        self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*goal))
+        waypoint = self.chase_waypoint(npc, Point(*goal), c.Entities.NPC_SIZE / 2)
         npc.update(
             player,
             dt,
             self.blocked,
-            refuge=waypoint or inside,
+            waypoint,
+            refuge=goal,
             terrain_mult=self.terrain_speed(npc.x, npc.y),
         )
-        if shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
+        if door and shelter.contains_point(npc.x, npc.y) and not shelter.door_broken:
             # Behind the door and shutting it. The player can be shut out or shut in with
             # them; either way the street is emptier than it was. Whoever is standing in the
             # frame is stepped out of it rather than sealed in it.
@@ -202,51 +231,124 @@ class WorldVillagers:
         return npc.home_building
 
     def _npc_sleeps(self, npc: NPC, home: Building, player: Player, dt, shut: bool = True):
-        """One villager's frame spent walking home for the night and staying in.
+        """One villager's frame spent walking home for the night, getting into bed and
+        staying there.
 
         The same walk as running from a monster (`_npc_flees`), because it is the same act:
         the door is opened, the gate is worked if their house is the other side of one, and
         it is shut behind them. What is different is only where they are going, which is
-        their own roof rather than the nearest one.
+        their own bed rather than the nearest roof.
 
-        The last stride is walked at the room and not at the doorway: a refuge is arrived at
-        from `Entities.NPC_ATTACK_RANGE` off it, which is far enough short of a door front to
-        leave somebody standing on their own step all night. So the point they are sent to is
-        that much shorter than an arm's length (`refuge_reach`), so they stop in the room
-        rather than in the frame of their own door."""
+        The whole walk is routed, the last stride included. The way round the corner of the
+        house is a waypoint and never the destination, or they arrive at the corner and stand
+        on it until dawn, and the way across the room is routed too, so the table is walked
+        round rather than into.
+
+        Arriving is getting into bed (`_turn_in`), not stopping in the middle of the floor: a
+        settlement after dark should be bodies in beds behind lit windows. Whoever the house
+        has no bed for stands in the room as they always did."""
         radius = c.Entities.NPC_SIZE / 2
         inside = (home.x, home.interior_rect().centery)
         door = home.door_rect()
         self.pass_gate_for(npc, radius, Point(*inside))
+        bed = self._bed_for(npc, home)
         if home.contains_point(npc.x, npc.y):
             goal = inside
-        elif math.hypot(npc.x - door.centerx, npc.y - door.centery) <= c.Buildings.DOOR_BASH_REACH * 3:
-            # Their own door, and they have come up to it: it is open before they reach it,
-            # the way anyone's is when they are the one who lives there. They are walked
-            # square through the gap rather than at the middle of the room, which is a
-            # diagonal that clips the wall beside the door: they slid along it all night.
-            home.door_open = True
-            nx, ny = home.outward()
-            step_in = c.Buildings.WALL_THICKNESS + radius + 6
-            goal = (door.centerx - nx * step_in, door.centery - ny * step_in)
+            if bed is not None:
+                goal = self._bedside(home, bed, radius)
+                # Arrived at the foot of it, or simply up against it: either is close enough
+                # to climb in. The second half is what a room with the table pushed up to
+                # the bed answers, where the foot of it is not somewhere anybody can stand.
+                if npc.distance_to_point(goal) <= radius + 8 or self._rect_reach(npc, bed) <= radius + 8:
+                    self._turn_in(npc, home, bed)
         else:
             self.open_door_for(npc)
-            goal = self.chase_waypoint(npc, Point(*inside), radius) or inside
-        npc.update(
-            player,
-            dt,
-            self.blocked,
-            refuge=goal,
-            refuge_reach=radius,
-            terrain_mult=self.terrain_speed(npc.x, npc.y),
-            face_player=False,
-        )
+            # Their own door opens for them from further off than a stranger's does: they
+            # live here. Left to `open_door_for` alone they walked up to a shut leaf of their
+            # own and stood against it.
+            if math.hypot(npc.x - door.centerx, npc.y - door.centery) <= c.Buildings.DOOR_BASH_REACH * 3:
+                home.door_open = True
+            goal = inside
+        if not npc.asleep:
+            npc.update(
+                player,
+                dt,
+                self.blocked,
+                self.chase_waypoint(npc, Point(*goal), radius),
+                refuge=goal,
+                refuge_reach=radius,
+                terrain_mult=self.terrain_speed(npc.x, npc.y),
+                face_player=False,
+            )
         if shut and home.contains_point(npc.x, npc.y) and not home.door_broken:
             # In for the night, and the door shut behind them, but only once everybody who
             # lives here is in (`_households_in`). Whoever is standing in the frame is
             # stepped out of it rather than sealed in it, exactly as when a village is
             # running from something.
             self.shut_door(home, player)
+
+    def _bed_for(self, npc: NPC, home: Building):
+        """The bed in this house that is this one's, or None when the household is bigger
+        than the house.
+
+        Dealt once and kept, the way the house itself is: the people who live here in a fixed
+        order against the beds in a fixed order, so the same person has the same bed every
+        night and two of them never climb into one. A cottage has a single bed and a tavern
+        three or four; whoever the house has none for sleeps on their feet, which is what
+        everybody used to do."""
+        if not npc.bed_dealt:
+            npc.bed_dealt = True
+            residents = sorted((one for one in self.npcs if self._home_for(one) is home), key=id)
+            beds = home.interior_layout()["beds"]
+            index = residents.index(npc)
+            npc.bed = beds[index] if index < len(beds) else None
+        if npc.bed is not None and npc.bed not in home.interior_layout()["beds"]:
+            # Broken up while they were out. A pile of splinters is not a bed, and it drops
+            # out of the layout the moment it comes apart (`Building.damage_prop_at`).
+            npc.bed = None
+        return npc.bed
+
+    def _bedside(self, home: Building, bed, radius: float) -> tuple:
+        """The floor at the foot of a bed: where somebody stands to get into it.
+
+        A bed is furniture, so it is solid, so the walk home ends beside it rather than on
+        it. Off the head-to-foot axis and towards the middle of the room, since the head of
+        a bed is against a wall whichever way the house is turned."""
+        room = home.interior_rect()
+        if bed.height >= bed.width:
+            side = 1.0 if room.centery >= bed.centery else -1.0
+            spot = (bed.centerx, bed.centery + side * (bed.height / 2 + radius + 4))
+        else:
+            side = 1.0 if room.centerx >= bed.centerx else -1.0
+            spot = (bed.centerx + side * (bed.width / 2 + radius + 4), bed.centery)
+        # A room is furnished before anybody is asked to walk across it, so the foot of a bed
+        # can have the table standing on it. Somewhere near it will do.
+        return self.free_spot_near(spot[0], spot[1], radius, rings=2)
+
+    @staticmethod
+    def _rect_reach(npc: NPC, rect) -> float:
+        """How far a villager is from the nearest edge of a rectangle."""
+        near_x = min(max(npc.x, rect.left), rect.right)
+        near_y = min(max(npc.y, rect.top), rect.bottom)
+        return math.hypot(npc.x - near_x, npc.y - near_y)
+
+    @staticmethod
+    def _turn_in(npc: NPC, home: Building, bed):
+        """Get into bed: lie down on it, head to the wall, and stop being a body that walks.
+
+        This is the one place in a settlement something is deliberately put on top of a solid,
+        so a sleeper is exempt from `unstick` and `unwedge` for as long as they are in it
+        (`_update_npcs`), exactly as a tower archer is exempt from being walked off their
+        roof. Anything at all to do puts them back on their feet first."""
+        npc.x, npc.y = bed.center
+        npc.asleep = True
+        npc.wander.interrupt()
+        room = home.interior_rect()
+        if bed.height >= bed.width:
+            heading = -math.pi / 2 if bed.centery <= room.centery else math.pi / 2
+        else:
+            heading = math.pi if bed.centerx <= room.centerx else 0.0
+        npc.orientation = heading + math.pi / 2
 
     def _npc_walks(self, npc: NPC, player: Player, dt, mob: dict, crowd: list, indoors: bool):
         """One villager's frame spent hunting the player, or spent on their own street."""
