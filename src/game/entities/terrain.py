@@ -615,6 +615,18 @@ def generate_chunk_scenery(
     solid_zones += [(p.x, p.y, max(c.Scenery.CLEARANCE_POI, poi_footprint(p.kind))) for p in pois]
     open_zones = [(v.x, v.y, v.grounds_radius + c.Scenery.CLEARANCE_VILLAGE) for v in villages]
 
+    def on_road(x: float, y: float) -> bool:
+        """Whether (x, y) is on the band of a road or a footpath. The tufts are drawn over
+        the roads rather than under them, so grass that ignored one grew through it; the
+        verge is left to them, since the edge of a road is where grass belongs."""
+        return any(math.hypot(x - blob.x, y - blob.y) < blob.width for blob in roads)
+
+    def on_street(x: float, y: float) -> bool:
+        """Whether (x, y) stands on a settlement's lanes or its plaza. What the village
+        draws as trodden earth is trodden earth: a tuft growing out of the middle of it is
+        the one thing about a street the player reads as a mistake."""
+        return any(v.street_at(x, y, c.Scenery.STREET_CLEARANCE) for v in villages)
+
     def clear_of_places(x: float, y: float) -> bool:
         return not any(math.hypot(x - zx, y - zy) < radius for zx, zy, radius in solid_zones + open_zones)
 
@@ -629,8 +641,8 @@ def generate_chunk_scenery(
             x = cx * size + rng.uniform(0, size)
             y = cy * size + rng.uniform(0, size)
             piece = Scenery(x, y, kind, chunk, biome=biome)
-            on_road = any(math.hypot(x - blob.x, y - blob.y) < piece.water_reach for blob in roads)
-            if clear_of_places(x, y) and not on_road:
+            crossed = any(math.hypot(x - blob.x, y - blob.y) < piece.water_reach for blob in roads)
+            if clear_of_places(x, y) and not crossed:
                 still.append(piece)
 
     water = list(river) + [(p.x, p.y, p.water_reach) for p in still]
@@ -682,13 +694,14 @@ def generate_chunk_scenery(
 
     for kind, clusters, members, spread in c.Scenery.BIOMES[biome]:
         solid = kind in c.Scenery.BLOCK_RADIUS
+        decor = kind in c.Scenery.DECOR_KINDS
         for _ in range(rng.randint(*clusters)):
             gx = cx * size + rng.uniform(0, size)
             gy = cy * size + rng.uniform(0, size)
             for _ in range(rng.randint(*members)):
                 x = gx + rng.uniform(-spread, spread)
                 y = gy + rng.uniform(-spread, spread)
-                if free(x, y, solid):
+                if free(x, y, solid) and not (decor and (on_street(x, y) or on_road(x, y))):
                     items.append(Scenery(x, y, kind, chunk, biome=biome))
     return items
 

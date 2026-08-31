@@ -60,6 +60,9 @@ class Village:
         # world holds them. Session-only: the buildings they are worn between are saved,
         # so the same streets come back with them.
         self.streets: tuple = ()
+        # The lanes bucketed on a grid, built the first time anything asks what is standing
+        # on one (`street_at`) and dropped whenever they are laid again.
+        self._lane_cells: dict | None = None
         # How well defended this one is, rolled once from how far out it stands and how big
         # it is, then persisted like the wall itself. Everything that differs between a
         # border hamlet and a deep wilds town reads this and nothing else.
@@ -525,6 +528,41 @@ class Village:
         for i in range(int(2 * math.pi * rim // step) + 1):
             street.append(on_rim(i * step / rim))
         self.streets = tuple(street)
+        self._lane_cells = None
+
+    def street_at(self, x: float, y: float, margin: float = 0.0) -> bool:
+        """Whether (x, y) stands on the settlement's trodden earth: one of its lanes, or the
+        plaza they all leave from. The grounds are the whole place, this is the ground the
+        place is actually walked on, which is what the wilderness has to keep off.
+
+        The lanes of a town are several hundred blobs and this is asked once per tuft of
+        grass in every chunk around it, so they are bucketed on a grid whose cell is as wide
+        as the widest reach anything asks about: the answer is always in the nine cells
+        around the point."""
+        if not self.streets:
+            return False
+        reach = c.Villages.STREET_WIDTH + margin
+        rx, ry = c.Villages.PLAZA_RADIUS + reach, c.Villages.PLAZA_RADIUS * 0.75 + reach
+        if ((x - self.x) / rx) ** 2 + ((y - self.y) / ry) ** 2 < 1:
+            return True
+        cell = self._lane_cell()
+        if self._lane_cells is None:
+            self._lane_cells = {}
+            for lx, ly in self.streets:
+                self._lane_cells.setdefault((int(lx // cell), int(ly // cell)), []).append((lx, ly))
+        gx, gy = int(x // cell), int(y // cell)
+        return any(
+            math.hypot(x - lx, y - ly) < reach
+            for dx in (-1, 0, 1)
+            for dy in (-1, 0, 1)
+            for lx, ly in self._lane_cells.get((gx + dx, gy + dy), ())
+        )
+
+    @staticmethod
+    def _lane_cell() -> int:
+        """The grid `street_at` buckets the lanes on: as wide as the widest reach anything
+        asks about, which is what makes the nine cells round a point the whole search."""
+        return c.Villages.STREET_WIDTH + c.Scenery.STREET_CLEARANCE
 
     def _draw_streets(self, screen: pygame.Surface, camera: Camera):
         """A settlement's lanes are a few hundred blobs and only the ones on screen are

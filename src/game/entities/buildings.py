@@ -63,12 +63,14 @@ class _RoomSpace:
         self.chest: pygame.Rect | None = None
 
     def add(self, rect: pygame.Rect, kind: str) -> pygame.Rect | None:
-        """Put one piece of furniture down, stepped out of any way through the room first.
+        """Put one piece of furniture down, stepped out of anything already there first.
 
         The arrangements below place their fixed pieces (a bed against the back wall, a
         shop's counter) by measurement rather than by search, so this is where they are kept
-        off the corridor in from the door and out of the neck of an L. Returns where the
-        piece actually ended up, or None if there was nowhere for it to go."""
+        off the corridor in from the door, out of the neck of an L, and off each other: a
+        room is measured for one piece at a time, and in a narrow one the measurements
+        overlap. Returns where the piece actually ended up, or None if there was nowhere for
+        it to go."""
         placed = self._nudge_clear(rect)
         if placed is None:
             return None
@@ -76,10 +78,14 @@ class _RoomSpace:
         return placed
 
     def _nudge_clear(self, rect: pygame.Rect) -> pygame.Rect | None:
-        """The same piece, moved off whatever way through the room it is standing in, by the
-        shortest step that still leaves it on the floor."""
-        for _ in range(3):
-            band = next((clear for clear in self.keep_clear if rect.colliderect(clear)), None)
+        """The same piece, moved off whatever it is standing in, by the shortest step that
+        still leaves it on the floor: a way through the room, or a piece already put down.
+
+        Both are the same problem, so both are stepped out of the same way. One step can
+        land the piece on the next thing along, which is why it is tried more than once."""
+        blockers = self.keep_clear + [placed for placed, _kind in self.solids]
+        for _ in range(4):
+            band = next((zone for zone in blockers if rect.colliderect(zone)), None)
             if band is None:
                 return rect
             moves = [

@@ -772,6 +772,15 @@ class Scenery:
     ROAD_WOBBLE_FULL: int = 4000  # the length at which a road wanders by the full wobble
     ROAD_DETAIL: float = 0.22  # amplitude of the shorter wave, as a fraction of the wobble
     ROAD_CLEARANCE: int = 55
+    # The small things lying on the ground rather than making it: what a chunk scatters
+    # over its floor once the broad patches are down. They are the only kinds kept off a
+    # road's band and a settlement's lanes, since a patch is the ground itself and a road
+    # laid over one loses nothing.
+    DECOR_KINDS: tuple = ("grass", "flowers", "pebbles", "reeds")
+    # How far off a settlement's lanes and its plaza that decoration keeps. Nothing solid
+    # grows on village grounds at all; this is the tufts and the flowers, which do, and
+    # which only have to stay off the trodden earth itself.
+    STREET_CLEARANCE: int = 8
     ROAD_COLOR: tuple = (128, 106, 76)
     # The bigger road between two villages: warmer and lighter than a footpath, with a
     # trodden verge drawn under it so the width reads from across a field.

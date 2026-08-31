@@ -125,7 +125,11 @@ class WorldStreaming:
 
         A chunk keeps its own scenery clear of what already stands in it, but a village
         reaches into the chunks around it and those may have been generated first, so the
-        trees that would end up in the middle of the street are taken out here instead."""
+        trees that would end up in the middle of the street are taken out here instead.
+
+        The tufts and the flowers go the same way, off the lanes and the plaza only: a
+        settlement cuts the wood back off its whole grounds, but grass is what its grounds
+        are made of, and only what is drawn as trodden earth has to lose it."""
         keep_out = village.grounds_radius + c.Scenery.CLEARANCE_VILLAGE
         footprints = [b.bounds.inflate(c.Scenery.CLEARANCE_BUILDING, c.Scenery.CLEARANCE_BUILDING) for b in buildings]
         kept = []
@@ -133,6 +137,8 @@ class WorldStreaming:
             if item.blocking_radius and village.distance_to_point((item.x, item.y)) < keep_out:
                 continue
             if any(rect.collidepoint(item.x, item.y) for rect in footprints):
+                continue
+            if item.kind in c.Scenery.DECOR_KINDS and village.street_at(item.x, item.y, c.Scenery.STREET_CLEARANCE):
                 continue
             kept.append(item)
         self.scenery = kept

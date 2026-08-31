@@ -29,6 +29,13 @@ the door, the neck of an L), `add` nudges a fixed piece out of one and `try_plac
 over every floor, because a table dropped in the neck walls half a building off and a
 wing nobody can walk into is worse than no wing at all.
 
+`add` steps a piece off the furniture already down as well as off the ways through, and
+for the same reason it is one method: an arrangement places its fixed pieces by
+measurement ("against the back wall", "either side of the door"), a room is measured for
+one piece at a time, and in a narrow one those measurements land on each other. A bed with
+a shelf through it is what a room laid out by measurement gives you unless the one door
+every piece goes through is also the one place they are kept apart.
+
 An interior is the building's own footprint in world space, not a separate coordinate
 space or screen: `Building.interior_rect()` is the footprint inset by
 `Buildings.WALL_THICKNESS`, and `Building.blocks()` collides against a thin wall shell
@@ -90,6 +97,15 @@ the real wall, nearer in. That is also why the lanes are planted after the settl
 registered rather than inside `_build`: until it is on the map the roads are drawn from,
 there are no roads coming to it.
 
+What the village draws as trodden earth is trodden earth, so nothing grows out of it. The
+wilderness already keeps everything solid off a settlement's whole grounds; the tufts and
+the flowers (`Scenery.DECOR_KINDS`) are what the grounds are *made* of, so they keep off
+the lanes and the plaza only, through `Village.street_at`. A chunk generated before the
+village existed is cut back the same way when it arrives (`WorldStreaming._clear_scenery_for`).
+The same rule sends them off the band of a road, since decoration is drawn over the roads
+rather than under them and grass that ignored one grew through it; the verge is left to
+them, because the edge of a road is where grass belongs.
+
 ## Nothing walks the whole building list per frame
 
 Buildings and village wells are bucketed by chunk (`World._index_buildings`), and
@@ -111,7 +127,11 @@ answer is navigation, not demolition.
 ## A locked house is a wall with a window in it
 
 Some houses are locked, rolled off the building's own id (`Buildings.LOCK_CHANCE`), so the same
-one is locked every time and a street is worth learning rather than worth trying. A locked door
+one is locked every time and a street is worth learning rather than worth trying. Which is
+only true if it can be read off the door: `BuildingArt._draw_lock` puts a hasp and padlock
+across the leaf, in pale iron so it survives the night tint on the darkest thing on the
+facade. A street the player has to learn by walking into every door is a street they learn
+once and then resent. A locked door
 is deliberately not a tougher door: no lockpicking, no key, nothing to grind at. The way in is
 the window beside it, which the player already knew how to break and which until now did nothing
 at all.
@@ -239,8 +259,11 @@ Four of those are things the player can see from outside the wall before they ca
 anything: whether there is a wall at all (`WALL_TIER`), how much settlement there is
 (`EXTRA_BUILDINGS_BY_TIER`, worth houses and a second shop), how big the towers are, and
 what is hung and lit on the wall after dark (banners from `BANNER_TIER`, gate and tower
-braziers from `BRAZIER_TIER`, and how many windows are lit through
-`LIT_WINDOW_FRAC_BY_TIER`). The tier is worked out one step before the layout is rolled
+braziers from `BRAZIER_TIER`, and how much of the place is still awake through
+`LIT_WINDOW_FRAC_BY_TIER`). That last one is a share of the settlement's *houses*, not of
+one house's windows: a lit house lights all of its own, so a hamlet reads as a light here
+and there and a town as a constellation. Read per window instead, every house in every
+settlement had a lamp in it and two of the three tiers rounded to the same answer. The tier is worked out one step before the layout is rolled
 (`_composition_for`), because it is worth buildings, and `_worst_case_footprint` takes it
 too: a bound on how much ground a settlement will cover is not a bound at all if a deep
 wilds village is half again as big as a near one of the same name.
