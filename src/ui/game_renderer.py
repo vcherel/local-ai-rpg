@@ -10,6 +10,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.particles import get_particles
+from core.settings import get_settings
 from core.swing_arcs import get_swings
 from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import POTION_EFFECT_LABELS, rarity_color
@@ -74,6 +75,11 @@ class GameRenderer:
 
         # Reused by `_draw_witness_cones` rather than reallocated per frame.
         self._cone_overlay: pygame.Surface | None = None
+        # V, off by default: the cones normally come up only over something worth stealing,
+        # and this holds them up everywhere so the player can read a street before walking
+        # into it. It never takes a cone away, so the theft warning is untouched. A
+        # preference rather than a playthrough, so it outlives New game like the volume does.
+        self.always_show_cones = bool(get_settings().get("cones"))
 
         self.minimap = Minimap(self.screen)
         # Left of the minimap, which owns the top right corner now.
@@ -157,7 +163,11 @@ class GameRenderer:
         # Up whenever the player is standing in somebody else's room, not only over a chest:
         # taking the furniture apart is watched exactly like emptying the chest is, and the
         # rule is only fair if the eyes are on screen before the swing.
-        if interior is not None or (interaction is not None and interaction.kind in ("chest", "bed")):
+        if (
+            self.always_show_cones
+            or interior is not None
+            or (interaction is not None and interaction.kind in ("chest", "bed"))
+        ):
             self._draw_witness_cones(camera, world, player)
 
         # Lying on the ground and under everything that walks over it: a trap is meant to be
@@ -362,7 +372,8 @@ class GameRenderer:
 
         Only up while the player is stood over something that isn't theirs: the cone is the
         question "is anyone looking right now", and a street permanently full of wedges would
-        be wallpaper.
+        be wallpaper. `always_show_cones` (V) is the player asking for that wallpaper anyway,
+        which is a choice they make rather than the state the game hands them.
 
         One rule, and the colour follows the wedge: white is somebody watching, red is the
         player standing in what they are watching. Which is only readable because a villager
@@ -538,7 +549,7 @@ class GameRenderer:
 
         # Last of everything: the arrow to the tracked quest is the one thing on screen that
         # is useless where it cannot be seen, so nothing on the HUD is allowed over it.
-        self.draw_offscreen_indicators(camera, quest_target)
+        self.draw_offscreen_indicators(camera, quest_target, (self.HUD_PANEL_RECT,))
 
     def _quick_slot_rects(self) -> list[pygame.Rect]:
         step = self.QUICK_SLOT_SIZE + self.QUICK_SLOT_GAP
@@ -775,12 +786,28 @@ class GameRenderer:
         name_surface = c.Fonts.button.render(label, True, c.Colors.WHITE)
         self.screen.blit(name_surface, ((c.Screen.WIDTH - name_surface.get_width()) // 2, y - 26))
 
-    def draw_offscreen_indicators(self, camera: Camera, target):
+    @staticmethod
+    def _slide_clear(x: float, y: float, blocked: pygame.Rect) -> tuple[float, float]:
+        """Push a point out of a rect by whichever of the four ways out is the shortest move.
+
+        What keeps the arrow as close as it can be to the direction it is actually pointing:
+        it is nudged aside by the panel covering it rather than sent to a corner."""
+        if not blocked.collidepoint(x, y):
+            return x, y
+        moves = ((blocked.left, y), (blocked.right, y), (x, blocked.top), (x, blocked.bottom))
+        costs = (x - blocked.left, blocked.right - x, y - blocked.top, blocked.bottom - y)
+        return min(zip(costs, moves, strict=True))[1]
+
+    def draw_offscreen_indicators(self, camera: Camera, target, blocked: tuple = ()):
         """One arrow, for the one place the player is being sent: where they died while their
         things are still lying there, and the tracked quest's target otherwise. Pointing at
         every dropped item and every boss on the map turned the screen edge into noise;
         ordinary loot is found by looking at it (Item.draw's ground glow), not by following
-        an arrow."""
+        an arrow.
+
+        `blocked` is what the arrow may not end up under: the HUD panel with the game on
+        screen, the open panel while a menu is up (the arrow is drawn over the menu then, so
+        it slides round the panel instead of going out with the rest of the HUD)."""
         if target is None:
             return
 
@@ -803,16 +830,12 @@ class GameRenderer:
         arrow_x = max(margin, min(center_x + dx * (center_x - margin), c.Screen.WIDTH - margin))
         arrow_y = max(margin, min(center_y + dy * (center_y - margin), c.Screen.HEIGHT - margin))
 
-        # The HUD panel owns the top left corner and is drawn after this, so an arrow
-        # pointing that way would be painted over. The panel is in a corner, so the only
-        # ways out are right and down; take whichever is the shorter move, which keeps the
-        # arrow as close as it can be to the direction it is actually pointing.
-        blocked = self.HUD_PANEL_RECT.inflate(arrow_size * 2, arrow_size * 2)
-        if blocked.collidepoint(arrow_x, arrow_y):
-            if blocked.right - arrow_x <= blocked.bottom - arrow_y:
-                arrow_x = blocked.right
-            else:
-                arrow_y = blocked.bottom
+        # Whatever is drawn over this spot gets out of the way of the arrow rather than the
+        # other way round, and the ring is re-clamped afterwards so nothing slides off screen.
+        for rect in blocked:
+            arrow_x, arrow_y = self._slide_clear(arrow_x, arrow_y, rect.inflate(arrow_size * 2, arrow_size * 2))
+        arrow_x = max(margin, min(arrow_x, c.Screen.WIDTH - margin))
+        arrow_y = max(margin, min(arrow_y, c.Screen.HEIGHT - margin))
 
         angle = math.atan2(dy, dx)
         arrow_points = [(arrow_size, 0), (-arrow_size // 2, -arrow_size // 2), (-arrow_size // 2, arrow_size // 2)]

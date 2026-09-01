@@ -40,6 +40,11 @@ class BaseMenu:
         menu_y = (c.Screen.HEIGHT - self.height) // 2
         return menu_x, menu_y
 
+    def panel_rect(self) -> pygame.Rect:
+        """Where this menu's panel actually sits on screen. What anything drawn over the top
+        of an open menu (the quest arrow) has to keep off."""
+        return pygame.Rect(*self.get_centered_position(), self.width, self.height)
+
     def draw_overlay(self):
         """Dim the world behind the menu every frame.
 

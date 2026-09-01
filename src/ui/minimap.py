@@ -13,6 +13,13 @@ if TYPE_CHECKING:
     from game.world import World
 
 
+def _mix(a: tuple, b: tuple, t: float) -> tuple:
+    """`a` blended toward `b`, `t` clamped to 0..1. The one thing the sky strip is painted
+    through: its colours are all one colour on the way to another."""
+    t = max(0.0, min(1.0, t))
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
 class Minimap:
     """The small map in the top right corner.
 
@@ -284,26 +291,92 @@ class Minimap:
             text = text[:-1]
         return text + "..."
 
+    @staticmethod
+    def _sky_position(daynight) -> tuple[float, bool]:
+        """How far across its own sky the body in it has got, and whether that body is the
+        moon. Two spans, not one: the sun is up from dawn to the end of dusk and the moon
+        holds the stretch between, so each crosses the whole strip over its own length
+        instead of the day being squeezed into half a bar it does not last."""
+        d = c.DayNight
+        p = daynight.progress
+        if d.DUSK_END <= p < d.NIGHT_END:
+            return (p - d.DUSK_END) / (d.NIGHT_END - d.DUSK_END), True
+        # The sun's span runs over the wrap: dawn (from NIGHT_END) through to the end of dusk.
+        return ((p - d.NIGHT_END) % 1.0) / (1.0 - d.NIGHT_END + d.DUSK_END), False
+
     def _draw_clock(self, world: World, top: int):
-        """The time of day, as a dial swept once per cycle plus the name of the phase. The
-        marker is warm while it is light and cold once it is dark, so a glance says whether
-        night is coming without reading the word."""
+        """The time of day as the sky itself: a strip of it with the sun or the moon crossing
+        left to right, rising and setting over a horizon, the sky behind them going from blue
+        through the warm band of dusk to a starred night. The phase is named beside it, but
+        the point is that a glance at the colour and at how low the body is already says how
+        much daylight is left."""
         daynight = world.daynight
         strip = pygame.Rect(self.rect.left, top, self.rect.width, c.Minimap.CLOCK_HEIGHT)
         widgets.draw_panel(self.screen, strip)
 
-        radius = c.Minimap.CLOCK_HEIGHT // 2 - 7
-        center = (strip.left + 8 + radius, strip.centery)
-        night = daynight.is_night
-        color = c.Minimap.CLOCK_NIGHT_COLOR if night else c.Minimap.CLOCK_DAY_COLOR
-        pygame.draw.circle(self.screen, (60, 58, 66), center, radius, 1)
-
-        # Midnight at the bottom of the dial, noon at the top, so the hand rises through
-        # the morning and falls through the evening the way the sun does.
-        angle = daynight.progress * 2 * math.pi - math.pi / 2
-        hand = (center[0] + math.cos(angle) * radius, center[1] + math.sin(angle) * radius)
-        pygame.draw.line(self.screen, color, center, hand, 2)
-        pygame.draw.circle(self.screen, color, (round(hand[0]), round(hand[1])), 5)
-
+        darkness = daynight.darkness
         label = c.Fonts.small.render(daynight.phase, True, c.Colors.WHITE)
-        self.screen.blit(label, label.get_rect(midleft=(center[0] + radius + 10, strip.centery)))
+        band = pygame.Rect(strip.left + 6, strip.top + 6, strip.width - label.get_width() - 20, strip.height - 12)
+        horizon = band.bottom - 7
+
+        # The sky in three bands rather than a gradient: dark at the top, lighter at the
+        # horizon, and the whole thing pulled toward the sunset colour through dusk and dawn,
+        # which is the half of the cycle the two ends of the strip are actually spent in.
+        warmth = 4 * darkness * (1 - darkness)
+        sky = _mix(c.Minimap.CLOCK_SKY_DAY, c.Minimap.CLOCK_SKY_NIGHT, darkness)
+        for i in range(3):
+            low = _mix(sky, c.Minimap.CLOCK_SKY_LOW, warmth * (i + 1) / 3 * 0.8)
+            row = pygame.Rect(band.left, band.top + (horizon - band.top) * i // 3, band.width, 0)
+            row.height = band.top + (horizon - band.top) * (i + 1) // 3 - row.top
+            pygame.draw.rect(self.screen, _mix(sky, low, 0.5 + i * 0.25), row)
+
+        # Fixed stars, faded in with the darkness by being mixed into the sky they stand in:
+        # a colour rather than an alpha, so nothing is allocated per frame for six dots.
+        star = _mix(sky, (236, 238, 255), darkness)
+        for fx, fy in ((0.12, 0.3), (0.28, 0.62), (0.46, 0.2), (0.63, 0.52), (0.78, 0.28), (0.9, 0.66)):
+            x = band.left + band.width * fx
+            y = band.top + (horizon - band.top) * fy
+            pygame.draw.circle(self.screen, star, (x, y), 1)
+
+        pygame.draw.rect(self.screen, c.Minimap.CLOCK_GROUND, (band.left, horizon, band.width, band.bottom - horizon))
+        pygame.draw.line(self.screen, (16, 14, 12), (band.left, horizon), (band.right - 1, horizon), 1)
+
+        travelled, is_moon = self._sky_position(daynight)
+        color = c.Minimap.CLOCK_NIGHT_COLOR if is_moon else c.Minimap.CLOCK_DAY_COLOR
+        left, span = band.left + 8, band.width - 16
+        arc = horizon - band.top - 5
+        x = left + span * travelled
+        y = horizon - math.sin(math.pi * travelled) * arc
+
+        # The track already crossed, so the strip says how much of this sky is behind the
+        # player as well as where in it the body currently is.
+        steps = max(2, int(span * travelled / 6))
+        for i in range(steps):
+            t = travelled * i / steps
+            pygame.draw.circle(
+                self.screen,
+                _mix(sky, color, 0.35),
+                (left + span * t, horizon - math.sin(math.pi * t) * arc),
+                1,
+            )
+
+        radius = 6 if not is_moon else 5
+        if is_moon:
+            # The bite taken out of it is the sky drawn back over the disc, so the crescent
+            # always sits on whatever colour the sky happens to be.
+            pygame.draw.circle(self.screen, color, (x, y), radius)
+            pygame.draw.circle(self.screen, sky, (x + radius * 0.55, y - radius * 0.35), radius * 0.92)
+        else:
+            for i in range(8):
+                angle = i * math.pi / 4 + travelled * math.pi
+                pygame.draw.line(
+                    self.screen,
+                    color,
+                    (x + math.cos(angle) * (radius + 2), y + math.sin(angle) * (radius + 2)),
+                    (x + math.cos(angle) * (radius + 5), y + math.sin(angle) * (radius + 5)),
+                    1,
+                )
+            pygame.draw.circle(self.screen, color, (x, y), radius)
+            pygame.draw.circle(self.screen, (255, 244, 200), (x - radius * 0.3, y - radius * 0.3), radius * 0.4)
+
+        self.screen.blit(label, label.get_rect(midleft=(band.right + 8, strip.centery)))

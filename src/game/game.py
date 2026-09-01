@@ -15,6 +15,7 @@ from core.impact_fx import get_impacts
 from core.music import get_music
 from core.particles import get_particles
 from core.screen_fx import draw_blood_veil, get_banner, get_flash, get_hitstop, get_trap_fx, get_vignette
+from core.settings import get_settings
 from core.swing_arcs import get_swings
 from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.player import Player
@@ -194,6 +195,7 @@ class Game:
             pygame.K_l: self._show_lore,
             pygame.K_h: self.help_menu.toggle,
             pygame.K_m: self.game_renderer.minimap.toggle,
+            pygame.K_v: self._toggle_cones,
             pygame.K_p: self.pause_menu.toggle,
             pygame.K_ESCAPE: self.pause_menu.toggle,
         }
@@ -404,6 +406,24 @@ class Game:
         held = [self.player.hand_weapon(hand) for hand in range(c.Player.HANDS)]
         names = [item.name if item is not None else "bare hands" for item in held]
         self.loot_notification.show(f"Left: {names[0]}  |  Right: {names[1]}", c.Colors.ACCENT)
+
+    def _toggle_cones(self):
+        """V: hold every nearby villager's view up, or drop back to the cone that comes with
+        standing over something worth stealing. A preference, so it is remembered."""
+        showing = get_settings().toggle("cones")
+        self.game_renderer.always_show_cones = showing
+        self.loot_notification.show("Watching eyes shown" if showing else "Watching eyes hidden", c.Colors.CYAN)
+
+    def _offer_cone_hint(self):
+        """Tell the player once that the cones have a key of their own, the first time they
+        are stood in somebody's room, which is the first time who is looking is worth
+        anything. Remembered next to the toggle rather than in the save: what the player has
+        been taught about the controls is not part of a playthrough."""
+        settings = get_settings()
+        if self.interior is None or settings.get("cones_hinted") or self.game_renderer.always_show_cones:
+            return
+        settings.set("cones_hinted", True)
+        self.loot_notification.show("Press V to see who is watching", c.Colors.CYAN)
 
     def _use_bomb(self):
         """Spend one out of the bomb slot: a mine laid underfoot, a grenade thrown at the
@@ -1050,6 +1070,15 @@ class Game:
         self.save_data()
         self.quit_to_menu = True
 
+    def _open_panels(self) -> tuple:
+        """The rects of whatever is open over the world right now: every active menu's panel
+        plus the dialogue box. What the quest arrow is slid out of, so it stays on screen
+        with the bag up instead of being drawn under it."""
+        panels = [menu.panel_rect() for menu in self.menus if menu.active]
+        if self.dialogue_manager.active:
+            panels.append(self.dialogue_manager.ui.panel_rect())
+        return tuple(panels)
+
     def save_data(self):
         # NPC names persist themselves as they're generated/consumed; nothing to do here.
         # Building interiors are just world space now, so the player's and monsters'
@@ -1123,6 +1152,7 @@ class Game:
         self.interior = self.world.building_at(self.player.x, self.player.y)
         self._sweep_loot(gameplay_dt)
         self.interaction = self.current_interaction()
+        self._offer_cone_hint()
         self._lift_gate(gameplay_dt)
         self.update_camera()
         for system in (get_shake(), get_particles(), get_swings(), get_impacts()):
@@ -1222,6 +1252,11 @@ class Game:
         self.help_menu.draw()
         self.pause_menu.draw()
         self.context_window.draw()
+        # The arrow again, over the open panel this time: where the player is being sent is
+        # exactly what they are checking their bag and their quests against, so a menu hides
+        # the HUD and slides the arrow round itself instead of taking it away.
+        if self.active_menu:
+            self.game_renderer.draw_offscreen_indicators(self.camera, quest_target, self._open_panels())
         # The world coming up out of the black the opening lore was written on. Last of all,
         # so it covers the HUD as well: nothing should be readable before the world.
         self.context_window.draw_fade()

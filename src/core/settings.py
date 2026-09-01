@@ -18,6 +18,12 @@ DEFAULTS = {
     "music": True,
     # Every sound effect the game makes, apart from the music, which has its own switch.
     "sound": True,
+    # Hold every nearby villager's vision cone up instead of only showing it over something
+    # worth stealing (V in game).
+    "cones": False,
+    # Whether the player has already been told that key exists. Shown once, the first time
+    # they stand in somebody's room, and never again on this machine.
+    "cones_hinted": False,
 }
 
 

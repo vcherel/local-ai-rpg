@@ -81,6 +81,55 @@ ACCESSORY_COLOR = (230, 200, 60)
 LOOTBOX_COLOR = (150, 100, 50)
 AMMO_COLOR = (180, 140, 90)
 VALUABLE_COLOR = (235, 205, 80)
+# What a valuable is, read off its name: everything the world calls loot worth selling used
+# to be one yellow disc, so a bag of them said nothing about what was in it. First match
+# wins, and anything unrecognised is still a coin.
+VALUABLE_KEYWORDS = (
+    ("goblet", "goblet"),
+    ("chalice", "goblet"),
+    ("cup", "goblet"),
+    ("flagon", "goblet"),
+    ("idol", "idol"),
+    ("statue", "idol"),
+    ("figurine", "idol"),
+    ("carving", "idol"),
+    ("totem", "idol"),
+    ("relic", "idol"),
+    ("ingot", "ingot"),
+    ("bar", "ingot"),
+    ("nugget", "ingot"),
+    ("ore", "ingot"),
+    ("bullion", "ingot"),
+    ("skull", "skull"),
+    ("bone", "skull"),
+    ("fang", "skull"),
+    ("tooth", "skull"),
+    ("horn", "skull"),
+    ("crown", "crown"),
+    ("circlet", "crown"),
+    ("tiara", "crown"),
+    ("diadem", "crown"),
+    ("gem", "gem"),
+    ("jewel", "gem"),
+    ("crystal", "gem"),
+    ("ruby", "gem"),
+    ("emerald", "gem"),
+    ("sapphire", "gem"),
+    ("diamond", "gem"),
+    ("opal", "gem"),
+    ("pearl", "gem"),
+    ("shard", "gem"),
+)
+# The metal or the stone each of them is made of, so a family of shapes is a family of
+# colours too. Anything not named here takes VALUABLE_COLOR.
+VALUABLE_COLORS = {
+    "goblet": (214, 176, 96),
+    "idol": (176, 150, 118),
+    "ingot": (226, 226, 232),
+    "skull": (228, 222, 204),
+    "crown": (244, 214, 108),
+    "gem": (120, 200, 220),
+}
 # A dropped purse, drawn brighter than a valuable so a pile of coins reads as money.
 COIN_COLOR = (255, 215, 60)
 
@@ -141,6 +190,16 @@ def icon_shape(item_type: str, name: str) -> str:
         return "flask"
     if item_type == "bomb":
         return "bomb"
+    return valuable_shape(name)
+
+
+def valuable_shape(name: str) -> str:
+    """Which of the valuables' silhouettes a piece of salvage draws as. Adding one is a row
+    in VALUABLE_KEYWORDS and a row in `_SHAPES`, never a branch."""
+    lower = name.lower()
+    for keyword, shape in VALUABLE_KEYWORDS:
+        if keyword in lower:
+            return shape
     return "coin"
 
 
@@ -437,6 +496,8 @@ class Item:
         self.potion_effect = potion_effect
         # Ammo, potions and bombs stack; every other item keeps quantity 1.
         self.quantity = quantity
+        # Rolled before the colour: a valuable's metal follows the shape its name gave it.
+        self.shape = icon_shape(item_type, name)
         if item_type == "weapon":
             self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
         elif item_type in ("armor", "shield"):
@@ -459,9 +520,8 @@ class Item:
             if self.potion_effect is None:
                 self.potion_effect = potion_effect_from_name(name)
             self.color = c.Potions.COLORS[self.potion_effect]
-        else:  # misc: a valuable to sell, drawn as a coin so it reads clearly
-            self.color = VALUABLE_COLOR
-        self.shape = icon_shape(item_type, name)
+        else:  # misc: something to sell, drawn as whatever its name says it is
+            self.color = VALUABLE_COLORS.get(self.shape, VALUABLE_COLOR)
         # Weapons and armour carry rolled special effects; everything else stays {}.
         self.affixes = roll_affixes(item_type, self.rarity)
         self.picked_up = False

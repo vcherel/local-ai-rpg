@@ -43,6 +43,16 @@ class _Icon:
         return (self.cx + self.size * fx, self.cy + self.size * fy)
 
 
+def _lit(color, amount: int = 46) -> tuple:
+    """The lit face of a colour: what a highlight, a rim or a top face is painted in."""
+    return tuple(min(255, v + amount) for v in color[:3])
+
+
+def _shade(color, amount: int = 52) -> tuple:
+    """The turned-away face of a colour, for the side of a bar or the inside of a bowl."""
+    return tuple(max(0, v - amount) for v in color[:3])
+
+
 def _poly(surface, points, color, border_color, border_width):
     pygame.draw.polygon(surface, color, points)
     pygame.draw.polygon(surface, border_color, points, border_width)
@@ -215,14 +225,26 @@ def _draw_shield(icon: _Icon):
 
 
 def _draw_gem(icon: _Icon):
-    points = [
-        (icon.cx, icon.cy - icon.size),
-        (icon.cx + icon.size * 0.65, icon.cy),
-        (icon.cx, icon.cy + icon.size),
-        (icon.cx - icon.size * 0.65, icon.cy),
-    ]
-    pygame.draw.polygon(icon.surface, icon.color, points)
-    pygame.draw.polygon(icon.surface, icon.border_color, points, icon.border_width)
+    """A cut stone rather than a flat lozenge: a table across the top, the crown facets it is
+    split into, and one facet left lit, which is what makes the outline read as faceted."""
+    top, bottom = icon.cy - icon.size, icon.cy + icon.size
+    girdle = icon.cy - icon.size * 0.25
+    left, right = icon.cx - icon.size * 0.68, icon.cx + icon.size * 0.68
+    table_l, table_r = icon.cx - icon.size * 0.3, icon.cx + icon.size * 0.3
+    body = [(table_l, top), (table_r, top), (right, girdle), (icon.cx, bottom), (left, girdle)]
+    pygame.draw.polygon(icon.surface, icon.color, body)
+    # The table, then the pavilion below it: the stone in three tones, lightest on top.
+    _poly(
+        icon.surface,
+        [(table_l, top), (table_r, top), (right, girdle), (left, girdle)],
+        _lit(icon.color),
+        icon.color,
+        icon.thin,
+    )
+    pygame.draw.polygon(icon.surface, _shade(icon.color, 30), [(left, girdle), (icon.cx, bottom), (icon.cx, girdle)])
+    for x in (table_l, table_r):
+        pygame.draw.line(icon.surface, _shade(icon.color), (x, top), (icon.cx, bottom), icon.thin)
+    pygame.draw.polygon(icon.surface, icon.border_color, body, icon.border_width)
 
 
 def _draw_arrow(icon: _Icon):
@@ -267,18 +289,132 @@ def _draw_flask(icon: _Icon):
 
 
 def _draw_coin(icon: _Icon):
+    """A struck coin: a milled edge, a raised rim, a mark stamped into the face and the light
+    coming off one side of it, so a purse of them reads as money rather than as discs."""
     pygame.draw.circle(icon.surface, icon.border_color, icon.center, icon.size + icon.border_width)
     pygame.draw.circle(icon.surface, icon.color, icon.center, icon.size)
-    # Inner ring plus a small highlight so it reads as a minted coin, not a plain disc.
-    pygame.draw.circle(
-        icon.surface, icon.border_color, icon.center, int(icon.size * 0.62), max(1, icon.border_width - 1)
-    )
-    pygame.draw.circle(
+    # Where the light falls: a bright arc along the top left edge and a dark one opposite,
+    # which is what gives a flat disc a thickness.
+    face = pygame.Rect(0, 0, icon.size * 2, icon.size * 2)
+    face.center = icon.center
+    band = max(2, int(icon.size * 0.22))
+    pygame.draw.arc(icon.surface, _lit(icon.color, 40), face, math.pi * 0.35, math.pi * 1.05, band)
+    pygame.draw.arc(icon.surface, _shade(icon.color, 30), face, math.pi * 1.35, math.pi * 2.05, band)
+    # Milling: short ticks round the edge, which is the detail that says the thing was struck.
+    for i in range(12):
+        angle = i * math.pi / 6
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        pygame.draw.line(
+            icon.surface,
+            _shade(icon.color),
+            (icon.cx + cos_a * icon.size * 0.82, icon.cy + sin_a * icon.size * 0.82),
+            (icon.cx + cos_a * icon.size, icon.cy + sin_a * icon.size),
+            icon.thin,
+        )
+    pygame.draw.circle(icon.surface, _shade(icon.color), icon.center, int(icon.size * 0.66), icon.thin)
+    # The stamped face: a four-pointed mark, engraved rather than raised.
+    mark = [icon.at(0, -0.4), icon.at(0.18, 0), icon.at(0, 0.4), icon.at(-0.18, 0)]
+    _poly(icon.surface, mark, _shade(icon.color, 34), _shade(icon.color, 70), icon.thin)
+
+
+def _draw_goblet(icon: _Icon):
+    """A drinking cup off a rich table: bowl, stem and foot, with the rim caught by the light
+    and the inside of the bowl darker than its outside."""
+    bowl = [icon.at(-0.62, -0.7), icon.at(0.62, -0.7), icon.at(0.34, 0.05), icon.at(-0.34, 0.05)]
+    _poly(icon.surface, bowl, icon.color, icon.border_color, icon.border_width)
+    rim = pygame.Rect(0, 0, icon.size * 1.24, icon.size * 0.3)
+    rim.center = icon.at(0, -0.7)
+    pygame.draw.ellipse(icon.surface, _shade(icon.color, 40), rim)
+    pygame.draw.ellipse(icon.surface, icon.border_color, rim, icon.thin)
+    pygame.draw.line(icon.surface, _lit(icon.color), icon.at(-0.42, -0.5), icon.at(-0.26, -0.02), icon.thin)
+    stem = pygame.Rect(0, 0, max(3, icon.size * 0.22), icon.size * 0.55)
+    stem.midtop = icon.at(0, 0.02)
+    pygame.draw.rect(icon.surface, icon.color, stem)
+    pygame.draw.rect(icon.surface, icon.border_color, stem, icon.thin)
+    foot = [icon.at(-0.55, 0.9), icon.at(0.55, 0.9), icon.at(0.3, 0.56), icon.at(-0.3, 0.56)]
+    _poly(icon.surface, foot, icon.color, icon.border_color, icon.thin)
+
+
+def _draw_idol(icon: _Icon):
+    """A carved figure lifted out of a ruin: a squat body on a plinth with a cut face. Stone,
+    so the tone is flat and the detail is engraved into it rather than shining off it."""
+    plinth = pygame.Rect(0, 0, icon.size * 1.5, icon.size * 0.34)
+    plinth.midbottom = icon.at(0, 1.0)
+    pygame.draw.rect(icon.surface, _shade(icon.color, 34), plinth)
+    pygame.draw.rect(icon.surface, icon.border_color, plinth, icon.thin)
+    body = [icon.at(-0.5, 0.66), icon.at(-0.36, -0.2), icon.at(0.36, -0.2), icon.at(0.5, 0.66)]
+    _poly(icon.surface, body, icon.color, icon.border_color, icon.border_width)
+    head = pygame.Rect(0, 0, icon.size * 0.86, icon.size * 0.8)
+    head.midbottom = icon.at(0, -0.16)
+    pygame.draw.ellipse(icon.surface, icon.color, head)
+    pygame.draw.ellipse(icon.surface, icon.border_color, head, icon.border_width)
+    # The face and the arms folded across the chest, cut in as lines.
+    for side in (-1, 1):
+        pygame.draw.line(
+            icon.surface, icon.border_color, icon.at(side * 0.2, -0.56), icon.at(side * 0.2, -0.44), icon.thin
+        )
+    pygame.draw.line(icon.surface, _shade(icon.color), icon.at(-0.3, 0.2), icon.at(0.3, 0.2), icon.thin)
+    pygame.draw.line(icon.surface, _shade(icon.color), icon.at(-0.24, 0.42), icon.at(0.24, 0.42), icon.thin)
+
+
+def _draw_ingot(icon: _Icon):
+    """A cast bar seen from a corner: a lit top face, a front and a side in two darker tones,
+    which is the whole reason it reads as a solid block of metal."""
+    top = [icon.at(-0.5, -0.5), icon.at(0.62, -0.5), icon.at(0.86, -0.1), icon.at(-0.26, -0.1)]
+    front = [icon.at(-0.26, -0.1), icon.at(0.86, -0.1), icon.at(0.86, 0.44), icon.at(-0.26, 0.44)]
+    side = [icon.at(-0.5, -0.5), icon.at(-0.26, -0.1), icon.at(-0.26, 0.44), icon.at(-0.72, 0.04)]
+    _poly(icon.surface, front, icon.color, icon.border_color, icon.border_width)
+    _poly(icon.surface, side, _shade(icon.color), icon.border_color, icon.border_width)
+    _poly(icon.surface, top, _lit(icon.color), icon.border_color, icon.border_width)
+    pygame.draw.line(icon.surface, _lit(icon.color, 70), icon.at(-0.36, -0.36), icon.at(0.5, -0.36), icon.thin)
+
+
+def _draw_skull(icon: _Icon):
+    """A trophy skull: cranium, sunken sockets and a jaw. Sold rather than worn, so it is
+    drawn small and whole instead of as a fragment."""
+    cranium = pygame.Rect(0, 0, icon.size * 1.5, icon.size * 1.36)
+    cranium.center = icon.at(0, -0.16)
+    pygame.draw.ellipse(icon.surface, icon.color, cranium)
+    pygame.draw.ellipse(icon.surface, icon.border_color, cranium, icon.border_width)
+    jaw = [icon.at(-0.44, 0.34), icon.at(0.44, 0.34), icon.at(0.34, 0.8), icon.at(-0.34, 0.8)]
+    _poly(icon.surface, jaw, _shade(icon.color, 24), icon.border_color, icon.border_width)
+    for side in (-1, 1):
+        socket = pygame.Rect(0, 0, icon.size * 0.44, icon.size * 0.42)
+        socket.center = icon.at(side * 0.34, -0.24)
+        pygame.draw.ellipse(icon.surface, icon.border_color, socket)
+    _poly(
         icon.surface,
-        tuple(min(255, v + 40) for v in icon.color),
-        (int(icon.cx - icon.size * 0.28), int(icon.cy - icon.size * 0.28)),
-        max(2, icon.size // 6),
+        [icon.at(0, 0.02), icon.at(0.13, 0.24), icon.at(-0.13, 0.24)],
+        icon.border_color,
+        icon.border_color,
+        icon.thin,
     )
+    for offset in (-0.2, 0.0, 0.2):
+        pygame.draw.line(icon.surface, icon.border_color, icon.at(offset, 0.4), icon.at(offset, 0.74), icon.thin)
+
+
+def _draw_crown(icon: _Icon):
+    """Somebody's crown, in a bag on its way to a merchant: a banded circlet with three
+    points and a stone set in the middle of the band."""
+    points = [
+        icon.at(-0.8, 0.36),
+        icon.at(-0.8, -0.6),
+        icon.at(-0.4, -0.16),
+        icon.at(0, -0.76),
+        icon.at(0.4, -0.16),
+        icon.at(0.8, -0.6),
+        icon.at(0.8, 0.36),
+    ]
+    _poly(icon.surface, points, icon.color, icon.border_color, icon.border_width)
+    band = pygame.Rect(0, 0, icon.size * 1.6, icon.size * 0.4)
+    band.midtop = icon.at(0, 0.2)
+    pygame.draw.rect(icon.surface, _shade(icon.color, 30), band)
+    pygame.draw.rect(icon.surface, icon.border_color, band, icon.thin)
+    for tip in (icon.at(-0.8, -0.6), icon.at(0, -0.76), icon.at(0.8, -0.6)):
+        pygame.draw.circle(icon.surface, _lit(icon.color, 60), tip, max(2, int(icon.size * 0.13)))
+        pygame.draw.circle(icon.surface, icon.border_color, tip, max(2, int(icon.size * 0.13)), icon.thin)
+    jewel = [icon.at(0, 0.22), icon.at(0.16, 0.4), icon.at(0, 0.58), icon.at(-0.16, 0.4)]
+    _poly(icon.surface, jewel, (196, 62, 72), icon.border_color, icon.thin)
 
 
 def _draw_chest(icon: _Icon):
@@ -328,6 +464,11 @@ _SHAPES = {
     "arrow": _draw_arrow,
     "flask": _draw_flask,
     "coin": _draw_coin,
+    "goblet": _draw_goblet,
+    "idol": _draw_idol,
+    "ingot": _draw_ingot,
+    "skull": _draw_skull,
+    "crown": _draw_crown,
     "chest": _draw_chest,
 }
 
