@@ -68,10 +68,18 @@ class Minimap:
     # from across a field, a purse in the grass has to be stood over.
     DEATH_CLEAR_DISTANCE: int = 320
 
-    # The day/night dial under the map, drawn whether or not the map itself is shown.
+    # The day/night strip under the map, drawn whether or not the map itself is shown: a
+    # patch of sky with the sun or the moon crossing it, so the time reads as a sky rather
+    # than as a dial nobody can tell noon from midnight on.
     CLOCK_HEIGHT: int = 46
     CLOCK_DAY_COLOR: tuple = (238, 206, 120)
-    CLOCK_NIGHT_COLOR: tuple = (150, 170, 220)
+    CLOCK_NIGHT_COLOR: tuple = (216, 224, 244)
+    # The sky behind it, blended on darkness, plus the warm band dusk and dawn pass through
+    # and the earth under the horizon.
+    CLOCK_SKY_DAY: tuple = (96, 156, 214)
+    CLOCK_SKY_NIGHT: tuple = (20, 24, 52)
+    CLOCK_SKY_LOW: tuple = (226, 138, 74)
+    CLOCK_GROUND: tuple = (44, 40, 36)
 
 
 @dataclass(frozen=True)

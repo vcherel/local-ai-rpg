@@ -32,6 +32,7 @@ CONTROLS = [
     ("C", "Character"),
     ("L", "Lore"),
     ("M", "Show/hide the map"),
+    ("V", "Keep every villager's line of sight on screen, not only while you are stealing"),
     ("H", "Help"),
     ("P", "Pause"),
     ("Esc", "Close menu / pause"),

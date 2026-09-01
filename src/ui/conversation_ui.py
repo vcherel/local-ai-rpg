@@ -64,6 +64,11 @@ class ConversationUI:
             total_height += len(lines) * self.line_height
         return total_height
 
+    def panel_rect(self) -> pygame.Rect:
+        """The box itself, for anything drawn over the top of it (the quest arrow) to keep
+        off. Computed the same way `draw` places it."""
+        return pygame.Rect(10, c.Screen.HEIGHT - self.BOX_HEIGHT - 25, c.Screen.WIDTH - 20, self.BOX_HEIGHT)
+
     def close_button_rect(self) -> pygame.Rect:
         """The cross in the box's top right corner. Computed, not stored, so it can be
         hit-tested on a frame the box hasn't drawn yet."""
