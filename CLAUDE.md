@@ -81,7 +81,7 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 - `src/core/swing_arcs.py`: the trail a melee attack leaves, over exactly the wedge or lane the hit test accepts; `SwingArc` is the sweep, `ThrustTrail` the lunge a spear is drawn as
 - `src/core/impact_fx.py`: `ImpactPulse`, the wave of particles an area effect throws out to its own damage radius plus a bolt to each thing it caught, so several damage numbers have something visible behind them
 - `src/core/daynight.py`: `DayNightCycle`, elapsed time in the cycle, `darkness`/`is_night`/`curfew`/`phase`/`time_until`, and the ambient night tint, kept through `screen_fx.Overlay` since the sky holds one colour for minutes
-- `src/core/decals.py`: capped session-only ground blood, each splat a torn shape painted once at spawn: `_SPLAT_STYLES` (one recipe per weapon family) behind `splash`, the directional `spawn_spray` and the long `spawn_arcs` a kill throws, plus `track_walkers`, the prints anything walking through fresh blood leaves behind it
+- `src/core/decals.py`: capped session-only ground blood, each splat a torn shape painted once at spawn: `_SPLAT_STYLES` (one recipe per weapon family) behind `splash`, the directional `spawn_spray` and the long `spawn_arcs` a kill throws, plus `track_walkers`, the prints anything walking through fresh blood leaves behind it, and `scorch`, the burnt ground a blast leaves where it went off
 - `src/core/floating_text.py`: rising damage numbers, bigger and gold on a crit
 - `src/core/utils.py`: `ConversationHistory`, `frames(dt)` (the one definition of a delta in frames), random helpers, and the LLM response parsers
 - `src/core/dialogue_log.py`: `write_conversation`, finished conversations written to `logs/dialogues/`

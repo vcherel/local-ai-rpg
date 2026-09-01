@@ -12,7 +12,9 @@ up, frost settling, sickness sinking off the shoulders), so it is recognised the
 gore and the weapon trails are, and never read.
 
 Cheap on purpose: this runs for everything on screen carrying an effect, every frame, so
-each effect drops one or two particles every `EMIT_INTERVAL_MS` and nothing else. Adding an
+each effect drops a handful of particles every `EMIT_INTERVAL_MS` and nothing else. The
+loud ones (something alight, something freezing) drop more than the quiet ones, since they
+are what has to read from across a fight rather than off the body in front of you. Adding an
 effect means adding a row to `EFFECTS`, not a branch: whatever an entity's `status_effects()`
 returns and this table knows about gets its look.
 """
@@ -27,7 +29,7 @@ from core.particles import Particle, get_particles
 
 # How often one affected body throws its next few motes. Everything on screen with an effect
 # on it pays this, so it is a handful of particles a second and not a plume.
-EMIT_INTERVAL_MS = 150
+EMIT_INTERVAL_MS = 130
 
 # effect key -> what drifts off a body wearing it.
 #   color   the one thing it is recognised by
@@ -37,11 +39,11 @@ EMIT_INTERVAL_MS = 150
 #   count   motes per emission, so a fire crackles and a poison seeps
 EFFECTS = {
     # Embers coming off something alight, thrown up and dying quickly.
-    "burn": {"color": (238, 122, 44), "rise": -2.2, "spread": 0.9, "size": 3, "life": 420, "count": 2},
+    "burn": {"color": (238, 122, 44), "rise": -2.2, "spread": 0.9, "size": 4, "life": 460, "count": 4},
     # Frost settling out of the air around something too cold to move properly.
-    "chill": {"color": (170, 224, 246), "rise": 0.5, "spread": 1.3, "size": 2, "life": 620, "count": 1},
+    "chill": {"color": (170, 224, 246), "rise": 0.5, "spread": 1.3, "size": 3, "life": 620, "count": 2},
     # Earth and root fibre at the feet, low and going nowhere.
-    "root": {"color": (150, 118, 74), "rise": 0.2, "spread": 1.6, "size": 3, "life": 500, "count": 1, "foot": True},
+    "root": {"color": (150, 118, 74), "rise": 0.2, "spread": 1.6, "size": 3, "life": 500, "count": 2, "foot": True},
     # Sickness running off the shoulders.
     "weakened": {"color": (168, 62, 76), "rise": 1.0, "spread": 1.1, "size": 2, "life": 560, "count": 1},
     # Life going back in, rising gently.

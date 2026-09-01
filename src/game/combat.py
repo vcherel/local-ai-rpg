@@ -1155,7 +1155,11 @@ class WorldCombat:
 
         Kept apart from `explode` so that method is the damage it is named for. Only the
         blast that started a chain announces itself; the kegs it sets off are the same event.
+        The scorch is the exception: every blast burns its own ground, so a chain leaves the
+        shape it went off in.
         """
+        # The mark on the ground first, so everything thrown up by the blast is over it.
+        get_decals().scorch(x, y, radius)
         get_shake().add(shake)
         play_sound("crate_break")
         get_flash().trigger(c.Explosion.FLASH_AMOUNT, c.Explosion.FLASH_COLOR)

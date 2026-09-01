@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core.status_fx import emit_status
 from core.utils import frames
 from game.entities.entities import Gait, step_towards
 from game.entities.wander import Wander
@@ -77,6 +78,9 @@ class Critter:
         self.kb_vy = 0.0
         self.chilled_until_ms = 0
         self.chill_factor = 1.0
+        # When the next round of status motes is due, its own copy of the clock every Entity
+        # keeps, so an animal held in a trap or frozen solid looks it like anything else.
+        self._status_next_ms = 0
         # A dog belongs somewhere and strolls around it; wildlife roams from wherever it
         # happens to be standing, so its anchor moves with it.
         self.anchored = home is not None
@@ -149,6 +153,15 @@ class Critter:
     @property
     def chill_mult(self) -> float:
         return self.chill_factor if self.chilled else 1.0
+
+    def status_effects(self) -> list:
+        """What is on this animal right now, the same two an Entity can catch."""
+        effects = []
+        if self.rooted:
+            effects.append("root")
+        if self.chilled:
+            effects.append("chill")
+        return effects
 
     def startle(self):
         """Wounded but alive: run flat out for a while, wherever the player is."""
@@ -297,6 +310,10 @@ class Critter:
         else:
             self._draw_small(screen, at, color, shade, size, sx, sy, walk)
         self._draw_health(screen, sx, sy, size)
+        # A critter is not an Entity, so it asks for its own motes here, from `draw` for the
+        # same reason: this is the pass already culled to what is on screen. World space,
+        # not wherever the lunge above pushed the drawing to.
+        self._status_next_ms = emit_status(self.x, self.y, size, self.status_effects(), self._status_next_ms)
 
     def _draw_small(self, screen, at, color, shade, size, sx, sy, walk: float = 0.0):
         # A rabbit does not walk, it hops: the body lifts with the stride and the head keeps

@@ -626,6 +626,17 @@ class Decals:
     ARC_LENGTH: tuple = (90.0, 250.0)
     BOSS_ARC_LENGTH: tuple = (110.0, 320.0)
 
+    # What a blast burns into the ground it went off on. Nearly as opaque as blood, since
+    # charred earth is charred earth, and far longer lived: the clearing keeps saying a keg
+    # went up there long after the fight has moved on.
+    SCORCH_COLOR: tuple = (26, 22, 20)
+    SCORCH_FRINGE: tuple = (74, 52, 34)
+    SCORCH_ALPHA: int = 196
+    SCORCH_LIFE_MS: float = 54_000.0
+    # How much of the blast's own radius is left burnt. A blast throws further than it
+    # chars, so the mark is well inside the ring the damage was applied over.
+    SCORCH_RADIUS_FRAC: float = 0.62
+
     # Blood is something to stand in: a splat this size or bigger marks the ground it
     # landed on as wet for a few seconds, and anything crossing that ground picks it up.
     WET_MS: float = 7000.0

@@ -268,7 +268,9 @@ class Entity:
                 color,
                 c.Entities.HEALTH_BAR_BORDER,
             )
-            self.emit_status_fx(size)
+        # Outside that branch: what is on a body is worth seeing whether or not its bar is
+        # drawn, and the two say different things.
+        self.emit_status_fx(size)
 
 
 # Bodies drawn from a kept sprite, bounded because a crowd carries one each: the least
