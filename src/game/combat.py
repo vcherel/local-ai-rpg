@@ -22,7 +22,7 @@ from game.entities.boss import Boss
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
-from game.entities.entities import Entity, apply_impulse
+from game.entities.entities import apply_impulse
 from game.entities.items import Item, bomb_kind, rarity_color, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
@@ -83,7 +83,7 @@ class WorldCombat:
 
         # Hand one is the right arm on the sprite and hand two the left, so the arm that
         # comes round is the one actually holding the weapon.
-        player.start_attack_anim("right" if hand == 0 else "left")
+        player.start_attack_anim("right" if hand == 0 else "left", c.Player.SWING_MS)
         play_sound("attack")
 
         reach = c.Player.ATTACK_REACH * arch.reach_mult
@@ -592,7 +592,7 @@ class WorldCombat:
             if not village.gate_between(index, monster.x, monster.y, player.x, player.y):
                 continue
             monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
-            Entity.start_attack_anim(monster)
+            monster.start_attack_anim()
             rect = village.defences()["gates"][index]["rect"]
             angle = math.atan2(rect.centery - monster.y, rect.centerx - monster.x)
             self._hit_gate(village, index, round(monster.kind.damage * damage_mult), angle)
@@ -676,9 +676,9 @@ class WorldCombat:
             if building is None or now < monster.next_bash_ms:
                 continue
             monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
-            # Monster.start_attack_anim resolves a melee hit from a distance; the door wants
-            # the swing only, so it goes to the plain Entity one.
-            Entity.start_attack_anim(monster)
+            # A door is bashed on its own cadence rather than on the monster's swing clock,
+            # so this is the animation only: no wind-up to read and no blow to land.
+            monster.start_attack_anim()
             door = building.door_rect()
             angle = math.atan2(door.centery - monster.y, door.centerx - monster.x)
             self._hit_door(building, round(monster.kind.damage * damage_mult), angle)
@@ -979,7 +979,7 @@ class WorldCombat:
         player.attack_ready_ms = now + c.Bombs.COOLDOWN_MS
         player.attack_swing_mult = 1.0
         player.end_spawn_grace()
-        player.start_attack_anim("right")
+        player.start_attack_anim("right", c.Player.SWING_MS)
 
         if bomb_kind(item.name) == MINE:
             self.bombs.append(Bomb(player.x, player.y, MINE))

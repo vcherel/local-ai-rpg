@@ -42,6 +42,7 @@ def _kind_from_boss(template: c.BossKind) -> c.MonsterKind:
         shape=template.shape,
         weapon=template.weapon,
         eye_color=template.eye_color,
+        attack_cooldown_ms=template.attack_cooldown_ms,
     )
 
 

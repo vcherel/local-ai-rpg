@@ -36,6 +36,16 @@ class Gait:
         return math.sin(self.phase) * self.amount
 
 
+def swing_duration_ms(cooldown_ms: float) -> float:
+    """How long the arm is out for, given how often this attacker may swing.
+
+    A share of its own cadence rather than one number for everything: a hammer winds up
+    visibly longer than a knife because it swings less often. Floored so the quickest
+    attacker still swings rather than twitches, and capped by the cadence itself so a swing
+    is always finished before the next one is allowed."""
+    return min(cooldown_ms, max(c.Entities.SWING_MIN_MS, cooldown_ms * c.Entities.SWING_DURATION_FRAC))
+
+
 class Entity:
     def __init__(self, x, y, color, size, hp, max_hp):
         self.x = x
@@ -47,6 +57,11 @@ class Entity:
         self.max_hp = max_hp
         self.attack_in_progress = False
         self.attack_progress = 0.0
+        # How long the swing under way takes end to end, and whether its blow is still to
+        # come: a swing that lands does so once, halfway through its own arc
+        # (`update_attack_anim`), and one that never lands is marked struck from the start.
+        self.attack_duration_ms = c.Entities.SWING_MS
+        self.attack_struck = True
         self.attack_hand = "left"
         self.last_damage_ms = 0
         # Held where it stands until this tick (a bear trap's jaws, the only thing that
@@ -184,19 +199,39 @@ class Entity:
     def distance_to_point(self, point):
         return math.hypot(self.x - point[0], self.y - point[1])
 
-    def start_attack_anim(self, hand=None):
-        """`hand` forces which arm swings, so a visible weapon animates in the hand holding it."""
+    def start_attack_anim(self, hand=None, duration_ms: float | None = None, lands: bool = False):
+        """Begin a swing. `hand` forces which arm comes round, so a visible weapon animates in
+        the hand holding it, and `duration_ms` is how long the whole arc takes: the wind-up,
+        the blow at full extension and the recovery back to rest.
+
+        `lands` marks a swing aimed at a body, whose blow `update_attack_anim` hands back at
+        the peak of the arc. Everything else here is an arm moving and nothing more: a shout,
+        a door being bashed, an arrow being loosed, the player's own flick (their blow is
+        resolved on the click that asked for it)."""
         if not self.attack_in_progress:
             self.attack_in_progress = True
             self.attack_progress = 0.0
+            self.attack_struck = not lands
+            self.attack_duration_ms = duration_ms or c.Entities.SWING_MS
             self.attack_hand = hand or random.choice(["left", "right"])
 
-    def update_attack_anim(self, dt, speed_mult=1.0):
-        if self.attack_in_progress:
-            self.attack_progress += dt * c.Entities.SWING_SPEED * speed_mult
-            if self.attack_progress >= 1.0:
-                self.attack_progress = 0.0
-                self.attack_in_progress = False
+    def update_attack_anim(self, dt, speed_mult=1.0) -> bool:
+        """Advance the swing, returning True on the one frame the blow lands.
+
+        The arm goes out and comes back over the whole arc and the blow lands at the peak of
+        it, which is what makes an attack something to be read and stepped out of rather than
+        damage arriving on the frame the arm twitched. Whoever swung asks whether their
+        target is still in reach when this comes back True; it never was on the frame before."""
+        if not self.attack_in_progress:
+            return False
+        self.attack_progress += dt * speed_mult / self.attack_duration_ms
+        struck = not self.attack_struck and self.attack_progress >= c.Entities.SWING_STRIKE_FRAC
+        if struck:
+            self.attack_struck = True
+        if self.attack_progress >= 1.0:
+            self.attack_progress = 0.0
+            self.attack_in_progress = False
+        return struck
 
     def draw_health_bar(self, screen, x, y, width, height, color, border_width):
         pygame.draw.rect(screen, c.Colors.MENU_BACKGROUND, (x, y, width, height))
