@@ -232,6 +232,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # Everything else about a POI comes back from its chunk seed, so this is all that
         # needs saving.
         self.poi_state = self.save_system.load("pois", {})
+        # Where the player last died and left their coins and their things, or None once
+        # they have been back for them. Saved, unlike a rumour's mark: the drop itself is in
+        # `items` and outlives the session, so the pin that finds it has to as well.
+        self.death_drop = self.save_system.load("death_drop", None)
         self.trap_state = self.save_system.load("traps", {})
         # Which trees the player has cut down, as "cx:cy:index" keys. The one thing about
         # the wilderness the world remembers: everything else in a chunk is rolled from its
@@ -544,6 +548,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             ),
             "camp_rest": {key: until for key, until in self.rest_cooldowns.items() if until > time.time()},
             "village_strikes": self.village_strikes,
+            "death_drop": self.death_drop,
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
         }
@@ -1369,6 +1374,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # The map is the exception: it remembers the dark too, on its own finer grid, so a
         # cave unfolds on the minimap as it is walked exactly as the countryside does.
         self._reveal_around(player)
+        # Not in the surface branch below: a death underground leaves its drop in the tunnel
+        # it happened in, and walking back down to it is how it is rubbed out.
+        self._clear_reached_death_drop(player)
         if self.underground is None:
             self._sync_chunks(player)
             self.events.update(dt, player, quest_system, npc_name_generator)

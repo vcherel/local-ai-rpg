@@ -144,3 +144,32 @@ Quests pay in loot, through the same lootbox every other windfall in the game op
 tenth errand should be worth something the player can carry. Deaths pay in words: each milestone
 unlocks the next tier of `Death.TAUNT_TIERS`, so the game finds more to say about a player the
 worse they are at staying alive. Dying is not an achievement and never pays in gear.
+
+## Dying moves what it takes, and the weakness after it fades
+
+Death used to subtract: a share of the coins gone into nothing, a flat penalty held for three
+minutes and then switched off. Both were felt as a fine rather than as a loss, and neither gave
+the player anything to do about it.
+
+Now nothing dying takes is destroyed. A rolled share of the purse (`Death.COIN_LOSS_RANGE`) and a
+handful of the things carried (`Death.DROP_ITEMS`, equipped gear included) are laid on the ground
+where the body fell by `Game._scatter_death_drop`, the spot is pinned on the minimap
+(`World.death_drop`), and the one offscreen arrow points at it until the player has walked back.
+The walk is the cost. Everything laid down joins `world.items`, because that list is what an id
+in a save or a quest resolves through and a dropped item the bag no longer holds would otherwise
+not survive a reload. The pin is saved for the same reason the drop is: the things are still
+lying there next session.
+
+Anything carried can fall, the weapon in the player's hand included, so what falls is taken out
+of its slot and off the potion bar before it leaves the bag. That is the whole point: the run's
+best weapon lying in the wilds is what makes the walk worth making.
+
+The weakness is the other half. It is worst on the frame the player stands back up and eases to
+nothing over `Death.DEBUFF_DURATION_S`: `Player.weakness_severity` is how much of it is left, and
+every multiplier it touches goes through `Player.weakness_mult`, which reads the constants below
+as what the penalty costs at its worst rather than as a state. Max HP is recomputed every frame in
+`move` anyway, so the pool grows back as the fade runs instead of snapping whole at the end, and
+the health bar's grey tail shrinks with it. The span is saved beside the deadline because a
+reload has no other way to know how far into the fade the player is. A fire or an inn bed still
+clears it outright.
+

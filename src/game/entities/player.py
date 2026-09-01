@@ -24,6 +24,7 @@ from game.entities.items import (
     rarity_tier,
 )
 from game.entities.stats import Stats
+from game.loot import roll_death_drop
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -182,8 +183,11 @@ class Player(Entity):
             self.hp = saved["hp"]
 
         # Wall-clock timestamp (not a frame counter) so the post-death weakness survives
-        # quitting to the main menu or relaunching, rather than being a free reset.
+        # quitting to the main menu or relaunching, rather than being a free reset. The span
+        # is saved beside it because the weakness fades over its own length: without it a
+        # reload would not know how far into the fade the player is.
         self.death_debuff_until = save_system.load("death_debuff_until", 0.0)
+        self.death_debuff_span = save_system.load("death_debuff_span", c.Death.DEBUFF_DURATION_S)
 
         # Guardian's Ward (legendary armour affix): wall-clock cooldown, persisted for the
         # same reason as the death debuff, so quitting can't reset the proc early.
@@ -900,14 +904,13 @@ class Player(Entity):
 
     def speed_multiplier(self) -> float:
         base = self.stats.speed_multiplier() + self.accessory_bonus("speed") * c.Stats.ACCESSORY_SPEED_PER_BONUS
-        weakness = c.Death.DEBUFF_SPEED_MULT if self.is_weakened() else 1.0
-        return base * weakness * self.buff_magnitude("swiftness", 1.0)
+        return base * self.weakness_mult(c.Death.DEBUFF_SPEED_MULT) * self.buff_magnitude("swiftness", 1.0)
 
     def effective_max_hp(self) -> int:
-        """Max health as it stands right now: what vitality has earned, cut back while the
-        post-death weakness lasts. Dying takes something off you until you shake it off."""
-        base = self.stats.max_hp()
-        return round(base * c.Death.DEBUFF_MAX_HP_MULT) if self.is_weakened() else base
+        """Max health as it stands right now: what vitality has earned, cut back by however
+        much of the post-death weakness is left. Read every frame in `move`, so the pool
+        grows back as the weakness fades rather than snapping whole at the end of it."""
+        return round(self.stats.max_hp() * self.weakness_mult(c.Death.DEBUFF_MAX_HP_MULT))
 
     def passive_regen_rate(self) -> float:
         """Regen from vitality and gear, the part held back by the out-of-combat delay.
@@ -1025,40 +1028,70 @@ class Player(Entity):
         self.add_coins(round(amount * self.coin_find_mult()))
 
     def is_weakened(self) -> bool:
-        """True while the post-death weakness from apply_death_penalty is still active."""
+        """True while the post-death weakness from take_death_toll is still active."""
         return time.time() < self.death_debuff_until
 
     def weakness_remaining(self) -> float:
         """Seconds left on the post-death weakness, for the HUD chip. 0 when not weakened."""
         return max(0.0, self.death_debuff_until - time.time())
 
+    def weakness_severity(self) -> float:
+        """How much of the weakness is still on the player: 1 on the frame they stand back
+        up, 0 once it has run out. Everything the weakness touches is scaled by this rather
+        than switched by it, so the minutes after a death are a climb back rather than a
+        flat state that ends all at once."""
+        if self.death_debuff_span <= 0:
+            return 0.0
+        return max(0.0, min(1.0, self.weakness_remaining() / self.death_debuff_span))
+
+    def weakness_mult(self, worst: float) -> float:
+        """One weakened multiplier as it stands right now, `worst` being what it is at the
+        moment of death and 1.0 what it eases back to."""
+        return 1.0 - (1.0 - worst) * self.weakness_severity()
+
     def apply_weakness(self, duration_s: float):
         """Start (or extend) the weakness the HUD shows as "Weakened". Dying is one source,
-        an angry shrine is the other; both run through this so there is a single timer."""
+        an angry shrine is the other; both run through this so there is a single timer.
+
+        Extending restarts the fade from full: the span is always what is left to run, so a
+        shrine drinking out of an already weakened player hits as hard as a death does."""
         self.death_debuff_until = max(self.death_debuff_until, time.time() + duration_s)
+        self.death_debuff_span = max(0.0, self.death_debuff_until - time.time())
         self.save_system.update("death_debuff_until", self.death_debuff_until)
+        self.save_system.update("death_debuff_span", self.death_debuff_span)
         self.max_hp = self.effective_max_hp()
 
     def clear_death_debuff(self):
         """End the post-death weakness early, the way a night at a fire or an inn would."""
         self.death_debuff_until = 0.0
+        self.death_debuff_span = c.Death.DEBUFF_DURATION_S
         self.save_system.update("death_debuff_until", self.death_debuff_until)
+        self.save_system.update("death_debuff_span", self.death_debuff_span)
 
     def damage_multiplier(self) -> float:
-        weakness = c.Death.DEBUFF_DAMAGE_MULT if self.is_weakened() else 1.0
+        weakness = self.weakness_mult(c.Death.DEBUFF_DAMAGE_MULT)
         return weakness * self.buff_magnitude("strength", 1.0) * self.buff_magnitude("bloodlust", 1.0)
 
-    def apply_death_penalty(self) -> int:
-        """Dock a share of coins and start the post-respawn weakness timer. Returns the
-        number of coins lost, for the game-over screen to report."""
-        loss = int(self.coins * c.Death.COIN_LOSS_PCT)
+    def take_death_toll(self) -> tuple[int, list]:
+        """What dying takes off the player: a share of the purse, a few of the things they
+        were carrying, and the weakness timer started. Returns the coins and the items, both
+        of which the caller lays on the ground where the body fell: nothing here is
+        destroyed, it is only somewhere else now.
+
+        Anything carried can go, equipped included, so what falls is cleared out of its slot
+        and off the potion bar before it leaves the bag."""
+        loss = int(self.coins * random.uniform(*c.Death.COIN_LOSS_RANGE))
         self.add_coins(-loss)
+        dropped = roll_death_drop(self.inventory)
+        for item in dropped:
+            self.unequip_if_equipped(item)
+            self.inventory.remove(item)
         # Whatever was coursing through the player's veins died with them.
         self.clear_buffs()
         self.apply_weakness(c.Death.DEBUFF_DURATION_S)
         self.guard = c.Shield.GUARD_MAX
         self.guard_broken_until_ms = 0
-        return loss
+        return loss, dropped
 
     def gear(self) -> dict:
         """What the equipped items look like on the character, for draw_human: whatever is

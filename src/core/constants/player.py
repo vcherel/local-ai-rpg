@@ -79,13 +79,28 @@ class Magic:
 @dataclass(frozen=True)
 class Death:
     """Dying doesn't reload the save at the same spot with full HP for free: it costs
-    coins and leaves the player weakened for a while after respawning at world spawn.
+    coins and things carried, and leaves the player weakened for a while after respawning
+    at world spawn.
 
-    The weakness is meant to reshape the next few minutes rather than tickle them: a
-    third of the run's coins gone, and three minutes of hitting softer, moving slower
-    and carrying less health. A fire or an inn bed is what shakes it off early."""
+    Nothing dying takes is destroyed: the coins and the items land on the ground where the
+    body fell, and the walk back out to fetch them is the real price. The minimap keeps the
+    spot until the player is standing on it again.
 
-    COIN_LOSS_PCT: float = 0.45
+    The weakness is meant to reshape the next few minutes rather than tickle them: hitting
+    softer, moving slower and carrying less health. It is worst on the frame the player
+    stands back up and eases off to nothing over DEBUFF_DURATION_S, so the multipliers below
+    are what the penalty is at its worst rather than a flat state that snaps off at the end.
+    A fire or an inn bed is what shakes it off early."""
+
+    # The share of the purse left behind, rolled per death so a death is never a sum the
+    # player can do in their head before it happens.
+    COIN_LOSS_RANGE: tuple = (0.3, 0.5)
+    # How many things fall out of the bag with it. Anything carried can go, equipped
+    # included: a weapon left lying in the wilds is what makes the walk back matter.
+    DROP_ITEMS: tuple = (1, 3)
+    # How far the drop scatters around the spot, so it reads as things falling rather than
+    # as one pile.
+    DROP_SCATTER: float = 26.0
     DEBUFF_DURATION_S: float = 180.0
     DEBUFF_DAMAGE_MULT: float = 0.6
     DEBUFF_SPEED_MULT: float = 0.85

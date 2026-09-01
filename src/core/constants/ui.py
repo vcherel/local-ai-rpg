@@ -61,6 +61,13 @@ class Minimap:
     RUMOR_COLOR: tuple = (236, 196, 92)
     RUMOR_CLEAR_DISTANCE: int = 700
 
+    # Where the player died and left their things. Drawn like a rumour and cleared the same
+    # way, by walking back within sight of it, since from there the ground glow takes over.
+    DEATH_COLOR: tuple = (214, 78, 78)
+    # Nearer than a rumour is rubbed out from: a rumour points at a place the player can see
+    # from across a field, a purse in the grass has to be stood over.
+    DEATH_CLEAR_DISTANCE: int = 320
+
     # The day/night dial under the map, drawn whether or not the map itself is shown.
     CLOCK_HEIGHT: int = 46
     CLOCK_DAY_COLOR: tuple = (238, 206, 120)

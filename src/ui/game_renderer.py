@@ -776,9 +776,11 @@ class GameRenderer:
         self.screen.blit(name_surface, ((c.Screen.WIDTH - name_surface.get_width()) // 2, y - 26))
 
     def draw_offscreen_indicators(self, camera: Camera, target):
-        """One arrow, for the tracked quest's target and nothing else. Pointing at every
-        dropped item and every boss on the map turned the screen edge into noise; loot is
-        found by looking at it now (Item.draw's ground glow), not by following an arrow."""
+        """One arrow, for the one place the player is being sent: where they died while their
+        things are still lying there, and the tracked quest's target otherwise. Pointing at
+        every dropped item and every boss on the map turned the screen edge into noise;
+        ordinary loot is found by looking at it (Item.draw's ground glow), not by following
+        an arrow."""
         if target is None:
             return
 
