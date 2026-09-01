@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import random
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from functools import lru_cache
 from typing import NamedTuple
 
@@ -730,41 +730,32 @@ def generate_chunk_scenery(
     return items
 
 
-def water_index(items: Iterable[Scenery]) -> dict:
-    """Bucket the water and the bridges over it on the same fine grid the trunks use.
+def _index_cells(x: float, y: float, reach: float) -> Iterator[tuple[int, int]]:
+    """Every cell of the fine lookup grid something of this size standing here reaches into.
 
-    Separate from `blocking_index` because water is the opposite of a wall: nothing is
-    stopped by it, everything is slowed in it, so it needs a footprint of its own."""
+    Deliberately finer than the chunk grid the buildings use: a forest chunk holds dozens of
+    trunks and the lookups run several times per entity per frame, so they have to land on a
+    handful of pieces rather than on the whole wood."""
     cell = c.Scenery.INDEX_CELL
-    index: dict = {}
-    for item in items:
-        if not item.water_reach:
-            continue
-        reach = item.water_reach + c.Scenery.INDEX_PAD
-        for gx in range(int((item.x - reach) // cell), int((item.x + reach) // cell) + 1):
-            for gy in range(int((item.y - reach) // cell), int((item.y + reach) // cell) + 1):
-                index.setdefault((gx, gy), []).append(item)
-    return index
+    for gx in range(int((x - reach) // cell), int((x + reach) // cell) + 1):
+        for gy in range(int((y - reach) // cell), int((y + reach) // cell) + 1):
+            yield gx, gy
 
 
-def blocking_index(items: Iterable[Scenery]) -> dict:
-    """Bucket the solid scenery on a fine grid for `World.blocked`.
+def blocking_cells(item: Scenery) -> Iterator[tuple[int, int]]:
+    """Where one solid piece is filed for `World.blocked`. Nothing for a piece that stops
+    nobody, which is what a stump and a broken boulder are."""
+    if not item.block_reach:
+        return
+    yield from _index_cells(item.x, item.y, item.block_reach + c.Scenery.INDEX_PAD)
 
-    Deliberately finer than the chunk grid the buildings use: a forest chunk holds dozens
-    of trunks and `blocked` runs several times per entity per frame, so the lookup has to
-    land on a handful of them rather than on the whole wood.
-    """
-    cell = c.Scenery.INDEX_CELL
-    pad = c.Scenery.INDEX_PAD
-    index: dict = {}
-    for item in items:
-        if not item.block_reach:
-            continue
-        reach = item.block_reach + pad
-        for gx in range(int((item.x - reach) // cell), int((item.x + reach) // cell) + 1):
-            for gy in range(int((item.y - reach) // cell), int((item.y + reach) // cell) + 1):
-                index.setdefault((gx, gy), []).append(item)
-    return index
+
+def water_cells(item: Scenery) -> Iterator[tuple[int, int]]:
+    """The same for water and the bridges over it. A grid of its own because water is the
+    opposite of a wall: nothing is stopped by it, everything is slowed in it."""
+    if not item.water_reach:
+        return
+    yield from _index_cells(item.x, item.y, item.water_reach + c.Scenery.INDEX_PAD)
 
 
 # Everything in here is laid out from the village sites, so all of it has to be forgotten

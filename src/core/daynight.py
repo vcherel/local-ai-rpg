@@ -3,6 +3,7 @@ from __future__ import annotations
 import pygame
 
 import core.constants as c
+from core.screen_fx import Overlay
 
 
 class DayNightCycle:
@@ -12,6 +13,7 @@ class DayNightCycle:
 
     def __init__(self, elapsed_ms: float = 0.0):
         self.elapsed_ms = elapsed_ms % c.DayNight.CYCLE_LENGTH_MS
+        self._tint = Overlay(255)
 
     def update(self, dt):
         self.elapsed_ms = (self.elapsed_ms + dt) % c.DayNight.CYCLE_LENGTH_MS
@@ -77,6 +79,9 @@ class DayNightCycle:
         alpha = int(alpha)
         if alpha <= 0:
             return
-        overlay = pygame.Surface((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SRCALPHA)
-        overlay.fill((*color, alpha))
-        surface.blit(overlay, (0, 0))
+        # Kept rather than filled afresh every frame: the sky is one flat colour that holds
+        # still for minutes at a time, and a whole screen of it was 2 ms of every night frame.
+        # A step per level of alpha, so nothing about the dusk is any coarser than it was.
+        overlay = self._tint.surface(alpha / 255, lambda tint, amount: tint.fill((*color, round(amount * 255))), color)
+        if overlay is not None:
+            surface.blit(overlay, (0, 0))

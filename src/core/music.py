@@ -1,17 +1,18 @@
 """Background music, synthesised in memory like the sound effects.
 
-No asset files and no new dependency: the score is a set of slow chord pads, and which one
-is playing is the game's own business. A pad per context (day, night, a village street, a
-fight, a boss, a blood night) and several progressions inside each of them, picked at
-random, so the music answers what is happening rather than being one track playing over
-the top of everything.
+No asset files: the score is a set of slow chord pads, and which one is playing is the
+game's own business. A pad per context (day, night, a village street, a fight, a boss, a
+blood night) and several progressions inside each of them, picked at random, so the music
+answers what is happening rather than being one track playing over the top of everything.
 
-Rendering a pad in pure Python is slow enough to be felt, so it happens on a daemon thread
-and each one simply starts once it is ready: asking for a context that has not been
-rendered yet leaves whatever is playing where it is until it has been. Two reserved
-channels are held so a change of context is a crossfade rather than a cut, and the same
-context comes back to a different progression after a while, since a pad that never
-changes stops being heard at all.
+Every pad is rendered up front, on a daemon thread, while the model is still loading. It
+has to be that way round: a pad rendered on demand is rendered *under* the frames that
+asked for it, and a background thread doing arithmetic holds the GIL in slices, which
+every pygame call on the main thread then waits for. Rendering one pad the moment the
+player walked out of a village took the frame from 16 ms to 85 ms for a second and a half.
+Two reserved channels are held so a change of context is a crossfade rather than a cut,
+and the same context comes back to a different progression after a while, since a pad that
+never changes stops being heard at all.
 
 Whether it plays at all is a preference (`core.settings`), read once here and toggled from
 the pause menu.
@@ -19,21 +20,20 @@ the pause menu.
 
 from __future__ import annotations
 
-import array
-import math
 import queue
 import random
 import threading
 
+import numpy as np
 import pygame
 
 from core.audio import SAMPLE_RATE
 from core.settings import get_settings
 
-# One cycle of a sine, looked up rather than recomputed: a pad is a few million samples
-# and math.sin per partial per sample is what made the first version take half a minute.
+# One cycle of a sine, looked up rather than recomputed: a pad is a few million samples,
+# and a sine per partial per sample is what made the first version take half a minute.
 _TABLE_SIZE = 2048
-_SINE = [math.sin(2 * math.pi * i / _TABLE_SIZE) for i in range(_TABLE_SIZE)]
+_SINE = np.sin(2 * np.pi * np.arange(_TABLE_SIZE) / _TABLE_SIZE)
 
 # One row per context, and several progressions in each: semitone offsets from the root,
 # one tuple per chord. Every progression resolves back to where it started, since the loop
@@ -130,46 +130,42 @@ VARIANT_MS = 62_000.0
 _MUSIC_CHANNELS = 2
 
 
-def _render_pad(chords, root_hz: float, brightness: float, breath_hz: float, chord_seconds: float) -> array.array:
+def _render_pad(chords, root_hz: float, brightness: float, breath_hz: float, chord_seconds: float) -> np.ndarray:
     """One looping pad: each chord swelling in and out, its partials thinned by `brightness`.
 
-    The whole progression is written in a single pass over the samples, with every partial
-    advanced by its own phase step, which keeps the cost to a handful of float operations
-    per sample rather than one pass per note.
+    A chord is written as whole arrays rather than sample by sample: every voice is one
+    walk along the sine table at its own step, and the chord is their sum shaped by the
+    swell and the tremolo. The same arithmetic either way, but a pad costs milliseconds
+    instead of a second and a half, which is what it has to cost to be rendered at all
+    while the game is running.
     """
     chord_samples = int(SAMPLE_RATE * chord_seconds)
-    total = chord_samples * len(chords)
-    out = array.array("h", bytes(2 * total))
+    out = np.empty(chord_samples * len(chords), dtype=np.int16)
 
     partials = ((1.0, 1.0), (2.0, 0.30 * brightness), (3.0, 0.12 * brightness))
     breath_step = breath_hz * _TABLE_SIZE / SAMPLE_RATE
+    steps = np.arange(chord_samples, dtype=np.float64)
+    # Swell in over the first third, hold, and fall away: the seam between two chords lands
+    # where both are near silent, so nothing clicks.
+    envelope = np.sin(np.pi * steps / chord_samples) ** 0.6
+    mask = _TABLE_SIZE - 1
 
     for chord_index, chord in enumerate(chords):
-        voices = []
+        value = np.zeros(chord_samples)
+        weights = 0.0
         for semitone in chord:
             freq = root_hz * (2.0 ** (semitone / 12.0))
             for ratio, weight in partials:
                 # A random start phase per partial stops every voice from beginning on the
                 # same peak, which is what a chord sounding like one buzzing sawtooth is.
-                voices.append([random.uniform(0, _TABLE_SIZE), freq * ratio * _TABLE_SIZE / SAMPLE_RATE, weight])
-        norm = 1.0 / sum(weight for _, _, weight in voices)
-
-        breath = random.uniform(0, _TABLE_SIZE)
+                phase = random.uniform(0, _TABLE_SIZE) + steps * (freq * ratio * _TABLE_SIZE / SAMPLE_RATE)
+                value += _SINE[phase.astype(np.int64) & mask] * weight
+                weights += weight
+        breath = random.uniform(0, _TABLE_SIZE) + steps * breath_step
+        tremolo = 0.88 + 0.12 * _SINE[breath.astype(np.int64) & mask]
+        samples = value * (envelope * tremolo * (0.85 * 32767 / weights))
         base = chord_index * chord_samples
-        for i in range(chord_samples):
-            t = i / chord_samples
-            # Swell in over the first third, hold, and fall away: the seam between two
-            # chords lands where both are near silent, so nothing clicks.
-            envelope = math.sin(math.pi * t) ** 0.6
-            value = 0.0
-            for voice in voices:
-                phase = voice[0]
-                value += _SINE[int(phase) & (_TABLE_SIZE - 1)] * voice[2]
-                voice[0] = phase + voice[1]
-            breath = breath + breath_step
-            tremolo = 0.88 + 0.12 * _SINE[int(breath) & (_TABLE_SIZE - 1)]
-            sample = int(value * norm * envelope * tremolo * 0.85 * 32767)
-            out[base + i] = max(-32768, min(32767, sample))
+        out[base : base + chord_samples] = np.clip(samples, -32768, 32767).astype(np.int16)
 
     return out
 
@@ -205,9 +201,13 @@ class MusicPlayer:
             print(f"Music init failed, music disabled: {e}")
             return
         threading.Thread(target=self._worker, daemon=True).start()
-        # The two the game opens on, so something is ready by the time the player is walking.
-        for context in ("day", "night"):
-            self._request(context, 0)
+        # Every pad the game can ask for, in the order it is likely to want them, so none of
+        # them is ever rendered under a frame the player is watching. The whole set is a few
+        # hundred milliseconds of work on the loading screen, where there is nothing on
+        # screen to stutter and the model is taking seconds in any case.
+        for context, row in CONTEXTS.items():
+            for variant in range(len(row["sets"])):
+                self._request(context, variant)
 
     # ------------------------------------------------------------------ rendering
 
@@ -281,7 +281,11 @@ class MusicPlayer:
         # own, so standing still for an hour is not four bars on repeat.
         if self._playing is None or self._playing[0] != context or self._variant_age >= VARIANT_MS:
             choices = [v for v in range(len(CONTEXTS[context]["sets"])) if (context, v) != self._playing]
-            variant = random.choice(choices) if choices else 0
+            # A progression that is already rendered, whenever there is one: they all are a
+            # moment after launch, and picking blind is how a context change used to land on
+            # the one pad that still had to be built.
+            ready = [variant for variant in choices if (context, variant) in self._pads]
+            variant = random.choice(ready or choices) if choices else 0
             key = (context, variant)
             if key in self._pads:
                 self._play(key)

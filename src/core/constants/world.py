@@ -88,15 +88,21 @@ class World:
     CHUNK_LOAD_RADIUS: int = 2
     # ...and stay loaded until this much farther away, to avoid load/unload thrashing at the edge.
     CHUNK_KEEP_RADIUS: int = 3
-    # How many chunks a single frame is allowed to build. Crossing a chunk border brings a
-    # whole edge of the load square into range at once, and building all of it on the frame
-    # the border was crossed is a visible stutter every thousand paces. The rest is built
-    # over the frames that follow, nearest first: they are two chunks away, and the player
-    # walks at a few hundred paces a second.
+    # How many steps of chunk building a single frame is allowed. Crossing a chunk border
+    # brings a whole edge of the load square into range at once, and building all of it on
+    # the frame the border was crossed is a visible stutter every thousand paces. The rest is
+    # built over the frames that follow, nearest first: they are two chunks away, and the
+    # player walks at a few hundred paces a second. A chunk is two steps, its ground and then
+    # what grows on it (`WorldStreaming._load_chunk`, `_grow_chunk`).
     CHUNK_LOADS_PER_FRAME: int = 1
     # ...except within this many chunks of the player, which is ground they could walk onto
     # before the queue reaches it. That is built on the spot whatever the budget says.
     CHUNK_URGENT_RADIUS: int = 1
+    # And however many steps are allowed, a frame stops starting them once it has spent this
+    # long building. A step is a handful of milliseconds where the ground is grass and a
+    # hundred where it turns out to hold a settlement, so counting steps alone still let
+    # three cheap ones and an expensive one land on the same frame.
+    CHUNK_BUILD_BUDGET_MS: float = 6.0
 
     # How many times the world's lore is asked for before the world gives up on having any.
     CONTEXT_ATTEMPTS: int = 2

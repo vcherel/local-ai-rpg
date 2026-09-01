@@ -112,18 +112,22 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # per chunk and the renderer wants the handful of chunks it can see, not all of them.
         self.floor_details: dict[tuple[int, int], list] = {}
         # The wilderness: trees, rocks, grass, ponds and roads, streamed with the chunks
-        # and never saved. Indexed by `_reindex_scenery` into what is drawn under the
-        # entities, what is drawn with the props, and a fine grid of the solid ones for
-        # `blocked`.
+        # and never saved. Filed by `_index_scenery` as each chunk arrives into what is drawn
+        # under the entities, what is drawn with the props, and a fine grid of the solid ones
+        # for `blocked` and another of the wet ones for `water_at`.
         self.scenery: list[Scenery] = []
         self._ground_by_chunk: dict = {}
         self._props_by_chunk: dict = {}
         self._scenery_by_cell: dict = {}
         self._water_by_cell: dict = {}
         self._loaded_chunks = set()
-        # Chunks in range and not built yet, nearest first, a few per frame; see
-        # `WorldStreaming._build_pending_chunks`.
+        # Chunks in range and not built yet, nearest first, a step or two per frame; see
+        # `WorldStreaming._build_pending_chunks`. A chunk is built in two: its ground here,
+        # and then its wilderness from `_pending_wild`, on a later frame.
         self._pending_chunks: list[tuple[int, int]] = []
+        self._pending_wild: list[tuple[int, int]] = []
+        # What each of those rolled, waiting for its own wilderness to be kept off it.
+        self._chunk_pois: dict[tuple[int, int], list] = {}
         self._current_chunk = None
         self._last_reveal_cell = None
 

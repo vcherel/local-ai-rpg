@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import threading
+import time
 from typing import TYPE_CHECKING
 
 import core.constants as c
@@ -9,7 +10,7 @@ from core.audio import play_sound
 from core.utils import parse_world_context
 from game.entities.breakables import generate_breakables
 from game.entities.poi import pois_for_chunk
-from game.entities.terrain import blocking_index, generate_chunk_scenery, water_index
+from game.entities.terrain import blocking_cells, generate_chunk_scenery, water_cells
 from game.entities.traps import traps_for_chunk
 from game.entities.village import generate_village, village_site
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
@@ -19,6 +20,12 @@ if TYPE_CHECKING:
     from game.entities.player import Player
     from game.entities.village import Village
     from llm.name_generator import NPCNameGenerator
+
+
+def _drop(bucket, item):
+    """Take one piece out of one bucket of an index, if it is still standing in it."""
+    if bucket is not None and item in bucket:
+        bucket.remove(item)
 
 
 class WorldStreaming:
@@ -37,9 +44,15 @@ class WorldStreaming:
         return int(x // size), int(y // size)
 
     def _load_chunk(self, chunk: tuple[int, int]):
-        """Deterministically generate a chunk's floor details and points of interest, so
-        revisiting it looks the same and walking outward never runs out of things to find.
-        A chunk that holds a village site builds the settlement too, the first time only."""
+        """The ground of one chunk: its floor details, the settlement it holds if it holds
+        one, and its landmark. Deterministic, so revisiting it looks the same and walking
+        outward never runs out of things to find; a village site builds the settlement too,
+        the first time only.
+
+        What grows on top of that ground is left to `_grow_chunk` on a frame of its own. A
+        settlement, a landmark, a wood and a band of traps in one update is what a border
+        crossing used to be felt as, and the wilderness is the half that can wait: a tree
+        two chunks away arriving a frame later is nothing anyone can see."""
         cx, cy = chunk
         size = c.World.CHUNK_SIZE
         rng = random.Random(f"{cx},{cy}")
@@ -59,15 +72,29 @@ class WorldStreaming:
             self.pois.append(poi)
             self._populate_camp(poi)
 
-        # The wilderness itself, laid down last so it can be kept off everything already
-        # standing here: the settlement, its buildings and this chunk's landmark.
+        # Handed to the other half rather than looked for again there: what a chunk rolled is
+        # not the same question as what happens to stand in it, since a landmark rolled at the
+        # edge of one chunk can end up over the border in the next.
+        self._chunk_pois[chunk] = chunk_pois
+        self._pending_wild.append(chunk)
+
+    def _grow_chunk(self, chunk: tuple[int, int]):
+        """The wilderness of a chunk whose ground is already down, and the traps laid in it.
+
+        Laid last so it can be kept off everything already standing here: the settlement,
+        its buildings and this chunk's landmark."""
+        cx, cy = chunk
+        size = c.World.CHUNK_SIZE
         center = ((cx + 0.5) * size, (cy + 0.5) * size)
+        nearby = self.buildings_in_range(center[0], center[1], size)
+        chunk_pois = self._chunk_pois.pop(chunk, [])
         villages = [v for v in self.villages if v.distance_to_point(center) < v.grounds_radius + size * 2]
         chunk_scenery = generate_chunk_scenery(cx, cy, nearby, villages, chunk_pois)
         # A tree the player already cut down comes back as its own stump, and a boulder they
         # broke open as its own rubble. The chunk itself is still a pure function of its
         # seed: what the player did to it is the one thing laid over the top, by position in
         # the generated list, the same way a POI's state is laid over a regenerated POI.
+        # Done before any of it is indexed, since what a piece blocks is what files it.
         for index, item in enumerate(chunk_scenery):
             if not (item.choppable or item.smashable):
                 continue
@@ -78,6 +105,7 @@ class WorldStreaming:
             elif item.key in self.smashed:
                 item.smash()
         self.scenery.extend(chunk_scenery)
+        self._index_scenery(chunk_scenery)
 
         # The hunters' traps, laid last: they need the wilderness this chunk just grew and
         # the settlement standing in it, so none of them ends up under a trunk, in the
@@ -132,16 +160,23 @@ class WorldStreaming:
         are made of, and only what is drawn as trodden earth has to lose it."""
         keep_out = village.grounds_radius + c.Scenery.CLEARANCE_VILLAGE
         footprints = [b.bounds.inflate(c.Scenery.CLEARANCE_BUILDING, c.Scenery.CLEARANCE_BUILDING) for b in buildings]
-        kept = []
-        for item in self.scenery:
+
+        def in_the_way(item) -> bool:
             if item.blocking_radius and village.distance_to_point((item.x, item.y)) < keep_out:
-                continue
+                return True
             if any(rect.collidepoint(item.x, item.y) for rect in footprints):
-                continue
-            if item.kind in c.Scenery.DECOR_KINDS and village.street_at(item.x, item.y, c.Scenery.STREET_CLEARANCE):
-                continue
-            kept.append(item)
-        self.scenery = kept
+                return True
+            return item.kind in c.Scenery.DECOR_KINDS and village.street_at(item.x, item.y, c.Scenery.STREET_CLEARANCE)
+
+        # Asked of the chunks the settlement can actually reach into rather than of the whole
+        # wilderness: what is held at any moment is ten thousand pieces, and all but a
+        # handful of them are chunks away from a town being built here.
+        window = self._chunk_window(village.x, village.y, keep_out + c.Scenery.CLEARANCE_BUILDING)
+        cut = [item for chunk in window for item in self._scenery_in_chunk(chunk) if in_the_way(item)]
+        if cut:
+            self._deindex_scenery(cut)
+            gone = {id(item) for item in cut}
+            self.scenery = [item for item in self.scenery if id(item) not in gone]
 
     def _unload_chunks(self, chunks: set):
         """Drop everything the given chunks brought with them, in one pass over each list.
@@ -155,9 +190,18 @@ class WorldStreaming:
             return
         for chunk in chunks:
             self.floor_details.pop(chunk, None)
+        # A chunk whose ground is down but whose wilderness was still queued leaves before it
+        # ever grew: it is queued again from scratch if the player turns round.
+        self._pending_wild = [chunk for chunk in self._pending_wild if chunk not in chunks]
+        for chunk in chunks:
+            self._chunk_pois.pop(chunk, None)
         # Filtered on the chunk that generated it rather than the one it stands in: a copse
         # rolled at a chunk's edge spills over the border, and it leaves with its own chunk.
-        self.scenery = [s for s in self.scenery if s.chunk not in chunks]
+        kept, leaving = [], []
+        for item in self.scenery:
+            (leaving if item.chunk in chunks else kept).append(item)
+        self.scenery = kept
+        self._deindex_scenery(leaving)
         # A trap is rebuilt from its chunk seed like everything else here; only the fact
         # that one has already shut is worth carrying away with it.
         self.traps = [t for t in self.traps if t.chunk not in chunks]
@@ -192,11 +236,12 @@ class WorldStreaming:
             cx, cy = chunk
             load_r = c.World.CHUNK_LOAD_RADIUS
             keep_r = c.World.CHUNK_KEEP_RADIUS
+            begun = set(self._pending_wild)
             pending = [
                 (cx + dx, cy + dy)
                 for dx in range(-load_r, load_r + 1)
                 for dy in range(-load_r, load_r + 1)
-                if (cx + dx, cy + dy) not in self._loaded_chunks
+                if (cx + dx, cy + dy) not in self._loaded_chunks and (cx + dx, cy + dy) not in begun
             ]
             # Nearest first: the ground the player is walking onto is built before the
             # corners of the square they may never turn towards.
@@ -208,23 +253,34 @@ class WorldStreaming:
         self._build_pending_chunks(player)
 
     def _build_pending_chunks(self, player: Player, budget: int | None = None):
-        """Build up to `budget` queued chunks, plus any queued chunk near enough that the
-        player could walk into it before the queue got there anyway."""
-        if not self._pending_chunks:
-            return
+        """Do up to `budget` steps of the queued building, plus any step for ground near
+        enough that the player could walk onto it before the queue got there anyway.
+
+        Two ceilings rather than one when the caller names no budget: the count is what
+        spreads an edge of the map over the frames after a border crossing, and the clock is
+        what keeps three steps over grass and one over a settlement off the same frame. A
+        named budget is the opening ring (`prepare`), which has no frame to spoil.
+        """
+        timed = budget is None
+        budget = c.World.CHUNK_LOADS_PER_FRAME if timed else budget
+        deadline = time.perf_counter() + c.World.CHUNK_BUILD_BUDGET_MS / 1000.0
         cx, cy = self._current_chunk
-        budget = c.World.CHUNK_LOADS_PER_FRAME if budget is None else budget
         built = 0
-        while self._pending_chunks:
-            candidate = self._pending_chunks[0]
+        while self._pending_wild or self._pending_chunks:
+            # What has been begun is finished first: a chunk with its settlement standing on
+            # bare ground is the one state nothing else in the world expects to find.
+            queue = self._pending_wild or self._pending_chunks
+            candidate = queue[0]
             urgent = max(abs(candidate[0] - cx), abs(candidate[1] - cy)) <= c.World.CHUNK_URGENT_RADIUS
-            if built >= budget and not urgent:
+            if not urgent and (built >= budget or (timed and time.perf_counter() >= deadline)):
                 break
-            self._load_chunk(self._pending_chunks.pop(0))
+            if queue is self._pending_wild:
+                self._grow_chunk(self._pending_wild.pop(0))
+            else:
+                self._load_chunk(self._pending_chunks.pop(0))
             built += 1
         if not built:
             return
-        self._reindex_scenery()
         # A trunk generated by the chunk the player just walked into can land on top of
         # them (nothing knows where they stand at generation time), so they step out to
         # the nearest clear ground rather than being stuck inside a tree. The same pass
@@ -247,26 +303,60 @@ class WorldStreaming:
         if self.underground is not None:
             return
         self._sync_chunks(player)
-        self._build_pending_chunks(player, budget=len(self._pending_chunks))
+        while self._pending_chunks or self._pending_wild:
+            self._build_pending_chunks(player, budget=len(self._pending_chunks) + len(self._pending_wild))
         self._reveal_around(player)
 
-    def _reindex_scenery(self):
-        """Rebuild what the renderer and `World.blocked` read the wilderness through.
+    def _index_scenery(self, items):
+        """File new wilderness under everything that reads it: the two draw buckets, keyed by
+        chunk (and, on the ground, by kind, which is its draw order), and the two fine grids
+        `World.blocked` and `World.water_at` are answered from.
 
-        Done once per chunk sync, not once per chunk: a sync loads several at a time. The
-        drawing side is bucketed by chunk (and, on the ground, by kind, which is its draw
-        order) because a wood holds thousands of pieces and only the few chunks on screen
-        are worth walking every frame."""
-        self._ground_by_chunk = {}
-        self._props_by_chunk = {}
-        for item in self.scenery:
+        Piece by piece as a chunk arrives, rather than by rebuilding the four indexes from
+        the whole held wilderness: that is ten thousand pieces walked on every frame that
+        built anything, which was most of what a border crossing cost."""
+        for item in items:
             chunk = self._chunk_of(item.x, item.y)
             if item.ground:
                 self._ground_by_chunk.setdefault(chunk, {}).setdefault(item.kind, []).append(item)
             else:
                 self._props_by_chunk.setdefault(chunk, []).append(item)
-        self._scenery_by_cell = blocking_index(self.scenery)
-        self._water_by_cell = water_index(self.scenery)
+            for cell in blocking_cells(item):
+                self._scenery_by_cell.setdefault(cell, []).append(item)
+            for cell in water_cells(item):
+                self._water_by_cell.setdefault(cell, []).append(item)
+
+    def _deindex_scenery(self, items):
+        """Take these pieces back out of all four indexes. The inverse of `_index_scenery`
+        and read off the same reaches, so a piece is looked for exactly where it was filed:
+        anything that changes what it blocks has to go through `rework_scenery` instead."""
+        for item in items:
+            chunk = self._chunk_of(item.x, item.y)
+            if item.ground:
+                _drop(self._ground_by_chunk.get(chunk, {}).get(item.kind), item)
+            else:
+                _drop(self._props_by_chunk.get(chunk), item)
+            for cell in blocking_cells(item):
+                _drop(self._scenery_by_cell.get(cell), item)
+            for cell in water_cells(item):
+                _drop(self._water_by_cell.get(cell), item)
+
+    def _scenery_in_chunk(self, chunk: tuple[int, int]):
+        """Everything the wilderness holds in one chunk, the ground and what stands on it."""
+        for bucket in self._ground_by_chunk.get(chunk, {}).values():
+            yield from bucket
+        yield from self._props_by_chunk.get(chunk, ())
+
+    def rework_scenery(self, item, change):
+        """Change a piece of wilderness already standing on the map and file it again.
+
+        What a piece blocks is what decides where it is looked for, so a tree felled or a
+        boulder broken open has to leave the cells the trunk reached into as it stops being
+        something to walk around. Otherwise the stump goes on stopping the player until the
+        chunk itself leaves, which is what a felled tree used to do until the next border."""
+        self._deindex_scenery((item,))
+        change()
+        self._index_scenery((item,))
 
     def _generate_context(self):
         system_prompt = (
