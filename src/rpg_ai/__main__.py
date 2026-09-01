@@ -51,6 +51,12 @@ def run_loading_screen(screen, clock):
 
 
 def main():
+    # Every pygame call on this thread lets go of the GIL and has to take it back again, and
+    # a background thread doing arithmetic holds it for a whole switch interval at a time. At
+    # the default 5 ms that is one sprite rotation costing 5 ms instead of 0.08, which is a
+    # frame rate the model, the naming threads and the music can all halve between them. A
+    # shorter slice costs those threads a little throughput and gives the frame back.
+    sys.setswitchinterval(0.001)
     # Request a mono 16-bit mixer to match the procedurally generated sound buffers.
     pygame.mixer.pre_init(44100, -16, 1, 512)
     pygame.init()

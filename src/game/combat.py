@@ -291,7 +291,10 @@ class WorldCombat:
         if tree.hp > 0:
             return
 
-        tree.fell()
+        # Through the world rather than on the tree itself: what a piece of wilderness
+        # blocks is what files it, so a trunk becoming a stump has to be filed again or the
+        # player goes on walking round a tree lying on the ground.
+        self.rework_scenery(tree, tree.fell)
         if tree.key:
             self.felled.add(tree.key)
         play_sound("gate_break")
@@ -317,7 +320,7 @@ class WorldCombat:
         if boulder.hp > 0:
             return
 
-        boulder.smash()
+        self.rework_scenery(boulder, boulder.smash)
         if boulder.key:
             self.smashed.add(boulder.key)
         play_sound("crate_break")
