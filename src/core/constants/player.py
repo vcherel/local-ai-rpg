@@ -38,6 +38,12 @@ class Player:
     MAGNET_CATCH: int = 16  # close enough to count as collected
     ATTACK_REACH: int = 17
     ATTACK_DAMAGE: int = 5
+    # How long the player's arm is out for. Theirs is a flick rather than a wind-up: the
+    # blow is resolved on the click that asked for it (`WorldCombat.handle_attack`) and the
+    # cooldown of whatever they are holding is what paces them, so the animation only has to
+    # keep up with the fastest weapon in the game. What an enemy swings is the other thing
+    # entirely (`Entities.SWING_MS` and the cadence each of them carries).
+    SWING_MS: float = 145.0
 
     # The player has two weapon hands, one weapon in each: hand one is the left mouse
     # button, hand two the right. Key 1 swaps the two over, so a fight is fought out of the

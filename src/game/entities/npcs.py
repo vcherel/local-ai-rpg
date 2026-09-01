@@ -10,7 +10,7 @@ import pygame
 import core.constants as c
 from core.text_fx import draw_outlined_text
 from core.utils import frames, random_color
-from game.entities.entities import Entity, push_apart, step_towards
+from game.entities.entities import Entity, push_apart, step_towards, swing_duration_ms
 from game.entities.items import AMMO_BUNDLE, Item, item_type_from_name, rarity_tier, roll_bonus, roll_rarity
 from game.entities.wander import Wander
 from game.quest import Quest
@@ -248,6 +248,18 @@ class NPC(Entity):
     @property
     def weapon(self):
         return c.weapon_archetype(self.weapon_name)
+
+    @property
+    def swing_cooldown_ms(self) -> float:
+        """How long this one takes between swings with what they are holding.
+
+        The archetype's own cadence is what the player gets out of that weapon, and a
+        villager is not a duellist: theirs is a multiple of it, clamped at both ends so a
+        kitchen knife is a knife rather than a sewing machine and a hammer is still swung."""
+        return min(
+            c.Entities.NPC_SWING_MAX_MS,
+            max(c.Entities.NPC_SWING_MIN_MS, self.weapon.cooldown_ms * c.Entities.NPC_SWING_COOLDOWN_MULT),
+        )
 
     def gear(self) -> dict:
         """What is drawn in this one's hands, in the shape `draw_human` wants. A villager
@@ -586,7 +598,6 @@ class NPC(Entity):
             # Standing on its spot: look at what it is fighting rather than at the ground.
             self.orientation = math.atan2(target.y - self.y, target.x - self.x) + math.pi / 2
 
-        damage = 0
         now = pygame.time.get_ticks()
         weapon = self.weapon
         reach = c.Entities.NPC_ATTACK_RANGE * weapon.reach_mult
@@ -595,11 +606,15 @@ class NPC(Entity):
             # Cadence, reach and damage all come off whatever they are holding: the woman
             # with the pitchfork keeps the player at arm's length and the one with the
             # kitchen knife has to get close and hit twice.
-            self.attack_ready_ms = now + weapon.cooldown_ms
-            self.start_attack_anim("right")
-            damage = max(1, round(c.Entities.NPC_DAMAGE * weapon.damage_mult))
+            cooldown = self.swing_cooldown_ms
+            self.attack_ready_ms = now + cooldown
+            self.start_attack_anim("right", swing_duration_ms(cooldown), lands=True)
 
-        self.update_attack_anim(dt)
+        # The blow lands at the peak of the arc, on whatever is still in reach when it gets
+        # there: the wind-up is the warning, and stepping back out of it is the answer.
+        damage = 0
+        if self.update_attack_anim(dt) and in_reach:
+            damage = max(1, round(c.Entities.NPC_DAMAGE * weapon.damage_mult))
         return damage
 
     @property

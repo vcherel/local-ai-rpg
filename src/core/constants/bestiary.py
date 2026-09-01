@@ -58,7 +58,14 @@ class Entities:
     NPC_HP: int = 70
     NPC_HOSTILE_SPEED: float = 3.4
     NPC_ATTACK_RANGE: int = 34
-    NPC_DAMAGE: int = 9
+    NPC_DAMAGE: int = 13
+    # A villager swings on the cadence of whatever they picked up, but slower than the
+    # player would with the same thing: they are farmers holding a tool, not duellists, and
+    # the archetype cooldowns are tuned for a hand on a mouse button. Clamped at both ends
+    # so a kitchen knife is not a sewing machine and a hammer is not a statue.
+    NPC_SWING_COOLDOWN_MULT: float = 2.4
+    NPC_SWING_MIN_MS: float = 750.0
+    NPC_SWING_MAX_MS: float = 1500.0
     # What a villager actually has in their hands, rolled once off their home so the same
     # house always sends the same person out with the same thing. It is a name, resolved
     # through `weapon_archetype` like anything the player picks up, so a halberd reaches
@@ -144,12 +151,24 @@ class Entities:
     RETREAT_SPEED_MULT: float = 0.55
     CORNERED_FRAC: float = 0.4
     RANGED_MELEE_RANGE: int = 8
-    SWING_SPEED: float = 0.007
-    # How far out a monster starts winding a swing up, as a multiple of its own reach. The
-    # animation is deliberately begun long before the blow could land, so it connects on the
-    # frame the monster arrives rather than starting from nothing once it is already there;
-    # whether the swing actually hits is Monster.start_attack_anim's call, on the real reach.
-    SWING_WINDUP_REACH_MULT: float = 10.0
+    # A swing is a wind-up, a blow and a recovery rather than a single frame. The arm goes
+    # out and comes back over the whole animation and the blow lands at full extension
+    # (SWING_STRIKE_FRAC, the peak of the arc `draw_weapon` already draws), so an attack is
+    # something the player watches coming and can walk out of, and a target that left is
+    # missed. How long the arm is out for is a share of the attacker's own cadence
+    # (SWING_DURATION_FRAC), floored so a quick weapon still reads as a swing rather than a
+    # twitch; SWING_MS is what a swing with no cadence behind it lasts, which is a shout or
+    # a door being bashed rather than a blow aimed at a body.
+    SWING_MS: float = 260.0
+    SWING_STRIKE_FRAC: float = 0.5
+    SWING_DURATION_FRAC: float = 0.7
+    SWING_MIN_MS: float = 260.0
+    # How far out a monster starts winding a swing up, as a multiple of its own reach. A
+    # little outside it, so the blow lands as the monster closes the last step rather than
+    # after a wait once it is already there, and not so far out that it swings at air all
+    # the way in: whether the swing actually connects is settled at the peak of the arc, on
+    # the real reach, by whoever is holding it (`Monster.move`).
+    SWING_WINDUP_REACH_MULT: float = 1.8
     # The walk cycle (game/entities/entities.py `Gait`), shared by the player, the villagers,
     # the monsters and the animals. Advanced by the ground actually covered rather than by
     # the clock, so a slowed, rooted or dead-stopped thing never moonwalks: one full cycle
@@ -201,6 +220,11 @@ class MonsterKind:
     ranged: bool = False
     keep_distance: int = 0
     shot_cooldown_ms: int = 0
+    # How long between the start of one swing and the next. A monster used to swing as fast
+    # as its animation ran, which was seven blows a second and read as a sewing machine
+    # rather than as a fight; a heavy kind is slow and hits hard, a light one is quick and
+    # hits for little, and the wind-up is the warning either way.
+    attack_cooldown_ms: int = 1000
     # How many spawn together when this kind is rolled. A pack kind is picked once and then
     # stood up as a group, which is what makes wolves and goblins read differently from
     # everything else without any new AI.
@@ -288,7 +312,18 @@ class Creeper:
 # their distance and shoot, so closing on them is the only answer.
 MONSTER_KINDS: tuple[MonsterKind, ...] = (
     MonsterKind(
-        "Slime", (90, 190, 90), 22, 16, 3, 10, 8, min_distance=0, weight=10, shape="blob", eye_color=(240, 255, 180)
+        "Slime",
+        (90, 190, 90),
+        22,
+        16,
+        3,
+        10,
+        14,
+        min_distance=0,
+        weight=10,
+        attack_cooldown_ms=1300,
+        shape="blob",
+        eye_color=(240, 255, 180),
     ),
     MonsterKind(
         "Goblin",
@@ -297,9 +332,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         14,
         5,
         9,
-        7,
+        12,
         min_distance=1000,
         weight=7,
+        attack_cooldown_ms=900,
         group=(2, 4),
         shape="goblin",
         weapon="axe",
@@ -312,9 +348,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         32,
         5,
         10,
-        13,
+        17,
         min_distance=2000,
         weight=6,
+        attack_cooldown_ms=800,
         group=(2, 3),
         shape="beast",
         eye_color=(255, 235, 130),
@@ -326,9 +363,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         26,
         4,
         420,
-        11,
+        15,
         min_distance=2800,
         weight=4,
+        attack_cooldown_ms=1100,
         ranged=True,
         keep_distance=260,
         shot_cooldown_ms=1900,
@@ -343,9 +381,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         42,
         3,
         11,
-        16,
+        22,
         min_distance=3600,
         weight=4,
+        attack_cooldown_ms=1000,
         shape="skeleton",
         weapon="sword",
         eye_color=(120, 220, 255),
@@ -357,9 +396,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         55,
         4,
         12,
-        19,
+        24,
         min_distance=4500,
         weight=4,
+        attack_cooldown_ms=850,
         shape="humanoid",
         weapon="dagger",
         eye_color=(255, 150, 90),
@@ -371,15 +411,27 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         34,
         6,
         10,
-        15,
+        20,
         min_distance=5400,
         weight=3,
+        attack_cooldown_ms=950,
         flank_deg=55,
         shape="wraith",
         eye_color=(200, 160, 255),
     ),
     MonsterKind(
-        "Troll", (60, 90, 55), 34, 95, 3, 14, 29, min_distance=7200, weight=2, shape="hulk", eye_color=(255, 240, 120)
+        "Troll",
+        (60, 90, 55),
+        34,
+        95,
+        3,
+        14,
+        38,
+        min_distance=7200,
+        weight=2,
+        attack_cooldown_ms=1500,
+        shape="hulk",
+        eye_color=(255, 240, 120),
     ),
     MonsterKind(
         "Ogre",
@@ -388,9 +440,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         150,
         2,
         16,
-        34,
+        46,
         min_distance=8400,
         weight=2,
+        attack_cooldown_ms=1700,
         charge=True,
         shape="hulk",
         weapon="hammer",
@@ -403,9 +456,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         48,
         3,
         480,
-        17,
+        22,
         min_distance=6400,
         weight=2,
+        attack_cooldown_ms=1200,
         ranged=True,
         keep_distance=320,
         shot_cooldown_ms=2400,
@@ -420,9 +474,10 @@ MONSTER_KINDS: tuple[MonsterKind, ...] = (
         50,
         4,
         13,
-        24,
+        30,
         min_distance=4000,
         weight=3,
+        attack_cooldown_ms=1000,
         disguise=True,
         shape="husk",
         eye_color=(255, 150, 90),
@@ -494,6 +549,8 @@ class BossKind:
     shape: str = "hulk"
     weapon: str = ""
     eye_color: tuple = (255, 120, 60)
+    # As MonsterKind's: the gap between swings, the wind-up being a share of it.
+    attack_cooldown_ms: int = 1400
     # A shrinking boss loses body with its health, stepping down through `Boss.SHRINK_BANDS`
     # instead of holding one silhouette all fight: huge and slow, then quick, then small and
     # frantic. The only place a boss's own stat block moves for a reason other than enrage.
@@ -511,9 +568,10 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         320,
         3.2,
         22,
-        26,
+        32,
         abilities=("slam", "summon"),
         summon_kind="Bandit",
+        attack_cooldown_ms=1400,
         flavor="a towering brute that crushes any who come near",
         shape="hulk",
         weapon="hammer",
@@ -527,9 +585,10 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         240,
         3.6,
         22,
-        18,
+        24,
         abilities=("volley", "summon"),
         summon_kind="Wolf",
+        attack_cooldown_ms=1200,
         flavor="a dark sorcerer that hurls bolts of ruinous energy",
         shape="robed",
         weapon="staff",
@@ -543,9 +602,10 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         460,
         2.4,
         26,
-        34,
+        44,
         abilities=("slam",),
         summon_kind="Troll",
+        attack_cooldown_ms=1800,
         flavor="an ancient stone colossus, slow but earth-shattering",
         shape="hulk",
         eye_color=(160, 255, 170),
@@ -558,9 +618,10 @@ BOSS_KINDS: tuple[BossKind, ...] = (
         520,
         2.0,
         30,
-        30,
+        38,
         abilities=("slam", "summon"),
         summon_kind="Slime",
+        attack_cooldown_ms=1500,
         flavor="a vast devouring mass that sheds itself as it is wounded",
         shape="blob",
         eye_color=(255, 210, 120),

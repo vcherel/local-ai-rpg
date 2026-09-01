@@ -10,7 +10,7 @@ import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
 from core.utils import frames
-from game.entities.entities import Entity, push_apart, step_towards
+from game.entities.entities import Entity, push_apart, step_towards, swing_duration_ms
 from game.entities.monster_art import draw_monster, weapon_hand
 from game.entities.wander import Wander
 
@@ -73,6 +73,9 @@ class Monster(Entity):
         # Ranged kinds only: the earliest tick this one may loose its next shot. World
         # fires it (WorldCombat.fire_monster_shots), since the arrow belongs to the world.
         self.next_shot_ms = 0
+        # The earliest tick it may start its next swing (`kind.attack_cooldown_ms`), which is
+        # what stops a monster standing in reach from hitting once per animation frame.
+        self.attack_ready_ms = 0
         # Earliest tick this one may swing at a closed door again (World.bash_door).
         self.next_bash_ms = 0
         # Charger state (kind.charge): when the current windup/rush ends, the heading it
@@ -215,13 +218,18 @@ class Monster(Entity):
             self.fuse_started_ms = pygame.time.get_ticks()
             play_sound("fuse")
 
-    def start_attack_anim(self, dist):
-        """Return True in case of hit to the player"""
-        was_attacking = self.attack_in_progress
+    def begin_swing(self):
+        """Commit to a swing: the wind-up starts now, the blow lands halfway through the arc
+        (`Entity.update_attack_anim` hands it back) and the next one is on the clock from
+        this moment rather than from where the arm happens to be."""
+        self.attack_ready_ms = pygame.time.get_ticks() + self.kind.attack_cooldown_ms
         # The armed hand is the one that swings: an axe hanging off the still arm while the
         # empty one flails reads as a bug rather than as an attack.
-        super().start_attack_anim(weapon_hand(self.kind.weapon) if self.kind.weapon else None)
-        return not was_attacking and dist < self.melee_reach + c.Player.SIZE // 2
+        self.start_attack_anim(
+            weapon_hand(self.kind.weapon) if self.kind.weapon else None,
+            swing_duration_ms(self.kind.attack_cooldown_ms),
+            lands=True,
+        )
 
     # Deflection angles tried when the straight line to the player is blocked, smallest
     # first; each is tried to both sides, the committed one leading.
@@ -464,17 +472,21 @@ class Monster(Entity):
 
         self._separate(crowd, blocked, radius)
 
-        damage = 0
         # A detonator never swings: its whole attack is the blast the world sets off for it.
         swings = not self.kind.detonate and (not self.kind.ranged or cornered)
         in_windup = swings and self.attack_token and dist < self.melee_reach * c.Entities.SWING_WINDUP_REACH_MULT
-        if in_windup and self.start_attack_anim(dist):
-            damage = round(self.kind.damage * damage_mult)
+        if in_windup and pygame.time.get_ticks() >= self.attack_ready_ms:
+            self.begin_swing()
 
         # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
         self.orientation += math.pi / 2
 
-        self.update_attack_anim(dt)
+        # The blow lands at the peak of the arc rather than on the frame it began, and only
+        # on what is still in reach when it gets there: a swing wound up on the approach is
+        # a swing the target has the whole wind-up to walk out of.
+        damage = 0
+        if self.update_attack_anim(dt) and dist < self.melee_reach + target.size / 2:
+            damage = round(self.kind.damage * damage_mult)
         return damage
 
     def draw(self, screen, camera: Camera):

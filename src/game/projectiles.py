@@ -11,7 +11,6 @@ from core.camera import get_shake
 from core.floating_text import get_floating_text
 from core.particles import get_particles
 from game.blow import Blow
-from game.entities.entities import Entity
 from game.entities.items import rarity_tier
 from game.entities.projectile import ARROW_COLOR, BOLT_COLOR, Projectile
 
@@ -68,7 +67,7 @@ class WorldProjectiles:
         player.attack_swing_mult = arch.swing_mult
         # Hand one is the right arm on the sprite, hand two the left: the arm that comes up
         # is the one the weapon is actually in.
-        player.start_attack_anim("right" if hand == 0 else "left")
+        player.start_attack_anim("right" if hand == 0 else "left", c.Player.SWING_MS)
         play_sound("shoot")
 
         # A bolt is worth what the caster is worth: magic where a bow reads strength, so
@@ -146,9 +145,9 @@ class WorldProjectiles:
             if not self.line_of_sight(monster.x, monster.y, player.x, player.y):
                 continue
             monster.next_shot_ms = now + monster.kind.shot_cooldown_ms
-            # Monster.start_attack_anim takes a distance and resolves a melee hit from it;
-            # a shot wants the animation only, so it goes to the plain Entity one.
-            Entity.start_attack_anim(monster)
+            # A shot is paced by `shot_cooldown_ms` rather than by the swing clock, so this
+            # is the animation only: the arrow is what lands, not the arm.
+            monster.start_attack_anim()
             play_sound("shoot")
             style, color = ("bolt", BOLT_COLOR) if monster.kind.name == "Hexer" else ("arrow", ARROW_COLOR)
             shot = Projectile(

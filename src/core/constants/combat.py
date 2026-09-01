@@ -318,7 +318,8 @@ class WeaponArchetype:
     """Feel profile for a weapon family, resolved from the weapon name's keyword.
 
     Multipliers apply to the base melee values (`Player.ATTACK_REACH/ATTACK_DAMAGE`,
-    `Entities.SWING_SPEED`). `shake` and `knockback` are in world pixels.
+    `Player.SWING_MS`). `shake` and `knockback` are in world pixels. A villager holding one
+    of these swings on their own slower cadence (`NPC.swing_cooldown_ms`).
     """
 
     name: str
