@@ -23,7 +23,9 @@ class Minimap:
     walked stays black.
 
     The one exception is a rumour's mark (World.rumor_marks): somewhere the player has been
-    told about but never seen, which is the whole point of hearing a rumour. Under the panel
+    told about but never seen, which is the whole point of hearing a rumour. Where the
+    player last died (World.death_drop) is drawn on the same terms and for the same reason:
+    their coins and their gear are lying there and respawn is half a world away. Under the panel
     sit the name of the village being stood in and the day/night clock, and the clock is
     drawn even when the map is toggled off.
     """
@@ -72,6 +74,9 @@ class Minimap:
             self._draw_buildings(world, player, scale, to_map)
             self._draw_pois(world, to_map)
             self._draw_rumors(world, inner, to_map)
+        # Drawn in both branches, unlike everything else here: a death underground leaves
+        # its drop in the tunnel, and the way back to it is the one pin that map wants.
+        self._draw_death_drop(world, inner, to_map)
         self._draw_player(player, inner)
 
         self.screen.set_clip(previous_clip)
@@ -169,6 +174,19 @@ class Minimap:
             radius = round(4 + 2 * pulse)
             pygame.draw.circle(self.screen, c.Minimap.RUMOR_COLOR, (round(x), round(y)), radius)
             pygame.draw.circle(self.screen, (40, 32, 12), (round(x), round(y)), radius, 1)
+
+    def _draw_death_drop(self, world: World, inner: pygame.Rect, to_map):
+        """Where the player died and what they left there. Drawn as a cross rather than a
+        dot so it never reads as another rumour, clamped to the panel edge the same way, and
+        rubbed out by World once they are standing over it again."""
+        if world.death_drop is None:
+            return
+        x, y = to_map(world.death_drop["x"], world.death_drop["y"])
+        x = round(min(max(x, inner.left + 6), inner.right - 6))
+        y = round(min(max(y, inner.top + 6), inner.bottom - 6))
+        arm = 5
+        for dx, dy in ((arm, arm), (arm, -arm)):
+            pygame.draw.line(self.screen, c.Minimap.DEATH_COLOR, (x - dx, y - dy), (x + dx, y + dy), 3)
 
     def _draw_strips(self, world: World, player: Player, top: int):
         """The panels stacked under the map: the village standing on it, how that village

@@ -38,6 +38,12 @@ class SaveSystem:
         - smashed: Boulders the player has broken open, keyed like `felled` (list[str])
         - bombs: Mines the player laid and has not set off, position and kind. A grenade is
           in the air for a second and is never saved (list[dict])
+        - death_debuff_until: When the post-death weakness runs out (wall clock seconds), and
+          death_debuff_span: how long it was given, since the weakness fades over its own
+          length and a reload has to know how far into that fade the player is (float)
+        - death_drop: Where the player last died and left their coins and their things,
+          {"x": float, "y": float}, or None once they have walked back for it. The drop
+          itself is in `items` like any other loot on the ground (dict | None)
         - deaths: How many times the player has died this playthrough (int)
         - quests_done: How many quests the player has handed in this playthrough (int)
         - milestones: Which death and quest milestones have already paid out, so a reward is

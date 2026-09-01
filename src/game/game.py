@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 from typing import TYPE_CHECKING, NamedTuple
 
 import pygame
@@ -15,7 +16,7 @@ from core.music import get_music
 from core.particles import get_particles
 from core.screen_fx import draw_blood_veil, get_banner, get_flash, get_hitstop, get_trap_fx, get_vignette
 from core.swing_arcs import get_swings
-from game.entities.items import rarity_color, roll_rarity
+from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.player import Player
 from game.loot import open_lootbox
 from game.record import Record
@@ -37,7 +38,6 @@ from ui.notification import ToastNotification
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
-    from game.entities.items import Item
 
 
 # The keys a player mashes to work a leg out of a bear trap: the same ones they walk with,
@@ -970,13 +970,19 @@ class Game:
         self.save_data()
 
     def _respawn(self):
-        """Death has a real cost, not just a free full-heal at the same spot: dock coins,
-        weaken the player for a while, and put them back at world spawn so they can't keep
-        swinging at what killed them. The run carries on from there."""
+        """Death has a real cost, not just a free full-heal at the same spot: a share of the
+        purse and a few of the things carried are left on the ground where the body fell, the
+        player is weakened for a while, and they wake at world spawn rather than back where
+        whatever killed them is still standing. The run carries on from there.
+
+        Nothing is destroyed by dying. What it takes is lying where it fell with the spot
+        pinned on the minimap, and the walk back out for it is what a death actually costs."""
         # Read before the player is moved: whichever settlement they fell in front of is the
         # one that lets its anger go, since dying to a town is the town getting its own back.
         self.world.pacify_village(self.player.x, self.player.y)
-        coins_lost = self.player.apply_death_penalty()
+        died_at = (self.player.x, self.player.y)
+        coins_lost, dropped = self.player.take_death_toll()
+        self._scatter_death_drop(*died_at, coins_lost, dropped)
         # Counted before the taunt is drawn, so the line the player is about to read can be
         # one this very death just unlocked.
         milestone_deaths = self.record.add_death()
@@ -1003,18 +1009,45 @@ class Game:
         self.update_camera()
         self.save_data()
 
-        run_game_over(self.screen, self.clock, coins_lost, c.Death.DEBUFF_DURATION_S, taunt, killer)
+        run_game_over(self.screen, self.clock, coins_lost, len(dropped), c.Death.DEBUFF_DURATION_S, taunt, killer)
         # Granted after the death screen, not before: it holds for seconds of wall-clock time
         # and would otherwise be spent staring at it.
         self.player.grant_spawn_grace()
-        self.loot_notification.show(f"You died. -{coins_lost} coins", c.Colors.RED)
+        lost = f"-{coins_lost} coins" + (f" and {len(dropped)} items" if dropped else "")
+        self.loot_notification.show(f"You died. {lost} left where you fell", c.Colors.RED)
         if milestone_deaths is not None:
             # Dying enough times is not an achievement, so it does not pay in loot. It pays
             # in the game having more to say about it.
             self.loot_notification.show(f"{milestone_deaths} deaths: death has found new words", c.Colors.MUTED)
 
+    def _scatter_death_drop(self, x: float, y: float, coins: int, items: list):
+        """Lay what dying took on the ground where it happened: one purse for the coins and
+        whatever fell out of the bag, scattered a little so it reads as a body's worth of
+        things rather than a pile, and the spot pinned for the walk back.
+
+        Everything laid down joins `world.items` if it is not already there: that list is
+        what an id in a save or a quest resolves through, and an item the bag no longer
+        holds would otherwise be lost on the next reload."""
+        for item in items:
+            item.x = x + random.uniform(-c.Death.DROP_SCATTER, c.Death.DROP_SCATTER)
+            item.y = y + random.uniform(-c.Death.DROP_SCATTER, c.Death.DROP_SCATTER)
+            item.picked_up = False
+            item.magnet_speed = 0.0
+            item.start_pop_anim(x, y - c.Player.SIZE)
+            if item not in self.world.items:
+                self.world.items.append(item)
+        if coins > 0:
+            purse = Item(x, y, "Purse", "coins", rarity="common", quantity=coins)
+            purse.start_pop_anim(x, y - c.Player.SIZE)
+            self.world.items.append(purse)
+        if coins > 0 or items:
+            self.world.mark_death_drop(x, y)
+
     def _quit_to_menu(self):
-        """Leave the game and return to the main menu; run() saves as it exits."""
+        """Leave the game and return to the main menu. Saved here rather than left to the
+        save run() does on its way out, so quitting is a save the player asked for at the
+        moment they asked for it."""
+        self.save_data()
         self.quit_to_menu = True
 
     def save_data(self):
@@ -1138,7 +1171,14 @@ class Game:
     def _draw_frame(self):
         """The world, then the sky over it, then the HUD, then whatever menu is open. Drawn
         every frame whether or not the world moved, so a menu never sits over a stale view."""
-        quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
+        # What the one offscreen arrow points at. The spot the player died on comes first
+        # while the pin is still up: their coins and their gear are lying there and that walk
+        # is what the death actually cost. Once they have been back for it, the tracked quest
+        # has the arrow again.
+        if self.world.death_drop is not None:
+            quest_target = (self.world.death_drop["x"], self.world.death_drop["y"])
+        else:
+            quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
         self.game_renderer.draw_world(
             self.camera, self.world, self.player, self.interior, None if self.active_menu else self.interaction
         )

@@ -93,6 +93,17 @@ SHOP_BASE_PRICES = {
 }
 
 
+def roll_death_drop(inventory: list[Item]) -> list[Item]:
+    """Which of what the player was carrying falls off the body when they die.
+
+    A handful drawn from the whole bag, equipped gear included: dying is meant to cost
+    things and not only coins, and the one weapon that made the run is exactly what is worth
+    walking back for. An empty bag drops nothing, which is the one death that costs coins
+    alone."""
+    count = random.randint(*c.Death.DROP_ITEMS)
+    return random.sample(inventory, min(count, len(inventory)))
+
+
 def roll_shop_stock(count: int, luck: float = 0.0) -> list[dict]:
     """Roll a merchant's stock locally, used when the LLM's list for that shop is unusable
     and every time a shelf is refilled.

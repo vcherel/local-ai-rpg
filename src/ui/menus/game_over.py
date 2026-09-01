@@ -7,15 +7,27 @@ import pygame
 import core.constants as c
 
 
-def run_game_over(screen, clock, coins_lost: int, debuff_duration_s: float, taunt: str = "", killer: str = ""):
+def run_game_over(
+    screen,
+    clock,
+    coins_lost: int,
+    items_lost: int,
+    debuff_duration_s: float,
+    taunt: str = "",
+    killer: str = "",
+):
     """Blocking death screen. Holds for a beat, mocks the player, reports the penalty, then
     returns so the game can put them back at world spawn; the run continues, no main menu
     detour. `taunt` is written by the LLM ahead of time (llm/death_taunts.py) and never names
     the killer, so who did it goes on its own line above it."""
-    penalty_text = f"-{coins_lost} coins  ·  Weakened for {int(debuff_duration_s)}s"
+    lost = f"-{coins_lost} coins" + (f"  ·  -{items_lost} items" if items_lost else "")
+    penalty_text = f"{lost}  ·  left where you fell"
     # The one place with room to say what the weakness actually costs, so the HUD chip
-    # that follows the player around is read as a reminder rather than a mystery.
+    # that follows the player around is read as a reminder rather than a mystery. The
+    # numbers are what it costs at its worst: it eases off over the duration rather than
+    # holding and then ending.
     weakness_text = (
+        f"Weakened {int(debuff_duration_s)}s, fading:  "
         f"-{round((1 - c.Death.DEBUFF_DAMAGE_MULT) * 100)}% damage  ·  "
         f"-{round((1 - c.Death.DEBUFF_SPEED_MULT) * 100)}% speed  ·  "
         f"-{round((1 - c.Death.DEBUFF_MAX_HP_MULT) * 100)}% max HP"

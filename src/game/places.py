@@ -593,6 +593,22 @@ class WorldPlaces:
         soon as the player has walked close enough to see the place themselves."""
         self.rumor_marks.append({"x": x, "y": y, "label": label})
 
+    def mark_death_drop(self, x: float, y: float):
+        """Pin where the player died, so the coins and the gear on the ground there can be
+        walked back to from world spawn. One pin at a time: dying on the way to your last
+        death's things moves it, since what was there is now here."""
+        self.death_drop = {"x": x, "y": y}
+
+    def _clear_reached_death_drop(self, player: Player):
+        """Rub the pin out once the player is standing where they fell. Close enough to see
+        it is close enough: from there the loot's own ground glow and the magnet take over,
+        whether or not anything is actually left to pick up."""
+        if self.death_drop is None:
+            return
+        distance = math.hypot(self.death_drop["x"] - player.x, self.death_drop["y"] - player.y)
+        if distance <= c.Minimap.DEATH_CLEAR_DISTANCE:
+            self.death_drop = None
+
     def _clear_reached_rumors(self, player: Player):
         self.rumor_marks = [
             mark
