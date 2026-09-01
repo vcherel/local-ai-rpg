@@ -1,5 +1,5 @@
-"""Ground decals: blood splats left behind by hits and kills, and the prints tracked out
-of them.
+"""Ground decals: blood splats left behind by hits and kills, the prints tracked out of
+them, and the ground a blast burnt.
 
 One global, session-only system, the same pattern as ParticleSystem: it draws during
 both outdoor and interior rendering, so a splat left mid-fight in a room is still
@@ -14,6 +14,10 @@ circles, and the difference between a splat and a sticker is the edge.
 What a wound looks like is the weapon's business, so the recipes live in `_SPLAT_STYLES`
 below, one row per weapon family: a dagger leaves specks, a sword a wide smear, a spear a
 narrow throw, a hammer a burst. A kill takes the same row and doubles down on it.
+
+A scorch is the same machinery pointed at something that is not a wound: fainter, far
+longer lived, and burnt where the blast went off rather than where a body was standing, so
+the earth still says a keg went up there once the fight has moved on.
 
 Blood on the ground is also something to stand in: every splat marks its cell as wet for
 a few seconds (`_wet`), and anything walking through a wet cell picks it up and prints it
@@ -71,20 +75,38 @@ def style_for_weapon(arch) -> str:
     return _STYLE_BY_WEAPON.get(getattr(arch, "name", ""), "generic")
 
 
-class Decal:
-    __slots__ = ("alpha", "angle", "life", "max_life", "surface", "x", "y")
+# What paints each shape. A new kind of mark on the ground is a row here and a name at the
+# call site, not a branch in `Decal`.
+_PAINTERS = {}
 
-    def __init__(self, x, y, radius, color, life, stretch: float = 1.0, angle: float = 0.0, shape: str = "splat"):
+
+class Decal:
+    __slots__ = ("alpha", "angle", "life", "max_life", "peak_alpha", "surface", "x", "y")
+
+    def __init__(
+        self,
+        x,
+        y,
+        radius,
+        color,
+        life,
+        stretch: float = 1.0,
+        angle: float = 0.0,
+        shape: str = "splat",
+        peak_alpha: int = c.Decals.ALPHA,
+    ):
         self.x = x
         self.y = y
         self.life = life
         self.max_life = life
         self.angle = angle
+        # How opaque this mark is before it starts fading. Blood is the loudest thing on the
+        # ground; a scorch sits under it rather than over it.
+        self.peak_alpha = peak_alpha
         # What `set_alpha` was last given. Setting it costs as much as the blit does and a
         # splat only changes opacity while it is drying out, so it is set when it moves.
         self.alpha = -1
-        painter = _print_surface if shape == "print" else _splat_surface
-        self.surface = painter(radius, color, stretch, angle)
+        self.surface = _PAINTERS.get(shape, _splat_surface)(radius, color, stretch, angle)
 
 
 def _torn_blob(surface, cx, cy, rx, ry, color):
@@ -152,6 +174,61 @@ def _print_surface(radius, color, _stretch, angle) -> pygame.Surface:
     return surface
 
 
+def _scorch_surface(radius, color, _stretch, angle) -> pygame.Surface:
+    """The ground a blast burnt: a charred body, a browner fringe torn out around it, and a
+    few streaks running off where the fire went. Drawn with the same lobes as a splat, since
+    what makes both read as a mark and not a sticker is the edge.
+
+    Laid outward in: the streaks first, then the fringe over their inner ends, then the char
+    over the middle of that, so the mark darkens toward where the blast stood instead of
+    coming out as a ring with the grass still showing through it.
+    """
+    radius = max(2.0, radius)
+    pad = round(radius * 0.7) + 6
+    size = (round(radius * 2 + pad * 2), round(radius * 2 + pad * 2))
+    surface = pygame.Surface(size, pygame.SRCALPHA)
+    cx, cy = size[0] / 2, size[1] / 2
+
+    fringe = c.Decals.SCORCH_FRINGE
+    for _ in range(random.randint(6, 9)):
+        a = random.uniform(0, 2 * math.pi)
+        reach = radius * random.uniform(0.95, 1.3)
+        drop = radius * random.uniform(0.12, 0.26)
+        _torn_blob(surface, cx + math.cos(a) * reach, cy + math.sin(a) * reach, drop, drop, fringe)
+
+    _torn_blob(surface, cx, cy, radius, radius * random.uniform(0.88, 1.0), fringe)
+    for _ in range(random.randint(2, 4)):
+        r = radius * random.uniform(0.6, 0.9)
+        _torn_blob(
+            surface,
+            cx + random.uniform(-radius * 0.25, radius * 0.25),
+            cy + random.uniform(-radius * 0.25, radius * 0.25),
+            r,
+            r * random.uniform(0.85, 1.0),
+            fringe,
+        )
+
+    _torn_blob(surface, cx, cy, radius * 0.72, radius * random.uniform(0.62, 0.72), color)
+    for _ in range(random.randint(2, 4)):
+        r = radius * random.uniform(0.35, 0.6)
+        tint = tuple(max(0, min(255, v + random.randint(-6, 12))) for v in color)
+        _torn_blob(
+            surface,
+            cx + random.uniform(-radius * 0.22, radius * 0.22),
+            cy + random.uniform(-radius * 0.22, radius * 0.22),
+            r,
+            r * random.uniform(0.85, 1.0),
+            tint,
+        )
+
+    if angle:
+        surface = pygame.transform.rotate(surface, -math.degrees(angle))
+    return surface
+
+
+_PAINTERS.update({"splat": _splat_surface, "print": _print_surface, "scorch": _scorch_surface})
+
+
 class DecalSystem:
     def __init__(self):
         self.decals: list[Decal] = []
@@ -166,12 +243,54 @@ class DecalSystem:
 
     # ------------------------------------------------------------------ splats
 
-    def spawn(self, x, y, radius=10, color=(130, 18, 18), life=None, stretch=1.0, angle=0.0, shape="splat"):
-        self.decals.append(Decal(x, y, radius, color, life or c.Decals.LIFE_MS, stretch, angle, shape))
+    def spawn(
+        self,
+        x,
+        y,
+        radius=10,
+        color=(130, 18, 18),
+        life=None,
+        stretch=1.0,
+        angle=0.0,
+        shape="splat",
+        peak_alpha=c.Decals.ALPHA,
+    ):
+        self.decals.append(Decal(x, y, radius, color, life or c.Decals.LIFE_MS, stretch, angle, shape, peak_alpha))
         if len(self.decals) > c.Decals.MAX_COUNT:
             self.decals.pop(0)
         if shape == "splat" and radius >= c.Decals.WET_MIN_RADIUS:
             self._wet[self._cell(x, y)] = pygame.time.get_ticks() + c.Decals.WET_MS
+
+    def scorch(self, x, y, radius):
+        """Where a blast went off, burnt into the ground it went off on.
+
+        A patch rather than one stamp: the main mark plus a few smaller ones thrown off it,
+        so the shape of a chain of kegs is the shape of the ground it burnt. `radius` is the
+        blast's own, scaled down here because a blast throws further than it chars.
+
+        Soot is not something to stand in, so unlike a splat this marks nothing wet: nothing
+        walks a scorch out of the clearing on its soles.
+        """
+        radius = max(2.0, radius * c.Decals.SCORCH_RADIUS_FRAC)
+        for i in range(random.randint(3, 4)):
+            if i == 0:
+                ox = oy = 0.0
+                r = radius
+            else:
+                a = random.uniform(0, 2 * math.pi)
+                reach = radius * random.uniform(0.6, 1.0)
+                ox, oy = math.cos(a) * reach, math.sin(a) * reach
+                r = radius * random.uniform(0.25, 0.45)
+            self.spawn(
+                x + ox,
+                y + oy,
+                radius=r,
+                color=c.Decals.SCORCH_COLOR,
+                life=c.Decals.SCORCH_LIFE_MS,
+                angle=random.uniform(0, 2 * math.pi),
+                shape="scorch",
+                peak_alpha=c.Decals.SCORCH_ALPHA,
+            )
 
     def splash(self, x, y, style="generic", direction=None, fatal=False, boss=False, color=None):
         """The whole picture of one wound: the pool where it landed, the fan thrown along the
@@ -344,7 +463,7 @@ class DecalSystem:
                 continue
             fade_start = d.max_life * 0.25
             fade = min(1.0, d.life / fade_start) if d.life < fade_start else 1.0
-            alpha = int(c.Decals.ALPHA * fade)
+            alpha = int(d.peak_alpha * fade)
             if alpha != d.alpha:
                 d.alpha = alpha
                 d.surface.set_alpha(alpha)
