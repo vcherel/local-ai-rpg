@@ -1010,3 +1010,50 @@ class PointsOfInterest:
     # How far a camper's directions look for something the player hasn't walked to yet.
     HINT_CHUNK_RADIUS: int = 4
     HINT_MIN_DISTANCE: int = 700
+
+
+@dataclass(frozen=True)
+class Weather:
+    """Rain and fog, the second thing that happens to the whole world at once.
+
+    Night is already a state of the world rather than a filter over it: it changes what
+    spawns, what a monster notices and how far a villager sees. Weather is the same idea on
+    a shorter clock and with no schedule, so a walk across open country is not the same walk
+    twice. It is session only, like the wildlife and the particles: what the sky is doing is
+    not a fact a save has any business restoring.
+    """
+
+    # How often the sky is asked to change its mind, and how long a spell of weather holds
+    # once it has. Rolled on the same kind of cadence an event is, so weather is something
+    # the player walks into rather than something that flickers.
+    CHECK_INTERVAL_MS: tuple = (90_000, 180_000)
+    RAIN_DURATION_MS: tuple = (60_000, 150_000)
+    FOG_DURATION_MS: tuple = (60_000, 120_000)
+    # The chance a change is to rain and to fog; the rest of the roll is the sky clearing.
+    RAIN_CHANCE: float = 0.35
+    FOG_CHANCE: float = 0.2
+    # How long a spell takes to come on and to bleed out again, at each end of its duration,
+    # exactly as a blood night does: everything weather changes reads the ramp, so the
+    # world thickens and thins instead of switching.
+    FADE_MS: int = 9_000
+
+    # What it costs to see through, at full strength. Both are multipliers on a distance
+    # that already exists: what a villager catches the player at (`World.witness_radius`)
+    # and what a monster notices them from (`World._update_monsters`). Rain is a nuisance,
+    # fog is the reason to stay in.
+    RAIN_SIGHT_MULT: float = 0.75
+    FOG_SIGHT_MULT: float = 0.45
+
+    # Rain is drawn as a fixed set of streaks falling down the screen on their own loop,
+    # placed off one seeded shuffle rather than a live particle system: it is weather, it
+    # never interacts with anything, and a thousand particles a frame for that is a frame
+    # spent on nothing.
+    RAIN_DROPS: int = 260
+    RAIN_COLOR: tuple = (168, 190, 214)
+    RAIN_LENGTH: tuple = (14, 26)
+    RAIN_SPEED: tuple = (900.0, 1400.0)
+    RAIN_SLANT: float = 0.22
+    RAIN_ALPHA: int = 120
+    # And fog as a flat wash kept by `screen_fx.Overlay`, in steps no finer than it reads.
+    FOG_COLOR: tuple = (176, 180, 186)
+    FOG_MAX_ALPHA: int = 155

@@ -644,6 +644,24 @@ class NPC(Entity):
         return None
 
     @staticmethod
+    def _draw_heart(screen: pygame.Surface, center: tuple, color: tuple):
+        """The mark beside a name that says how this one feels about the player, in their
+        affinity tier's colour (`AFFINITY_TIERS`).
+
+        A heart rather than a dot because the colour is doing all the work either way, and a
+        shape that already means "how somebody feels" is read without being learned. Two
+        lobes and a point, drawn small enough that the tier colour is what carries at a
+        glance and the outline only keeps it off a pale wall behind it."""
+        cx, cy = center
+        lobe = 3
+        top = cy - 2
+        bottom = cy + 6
+        pygame.draw.circle(screen, color, (round(cx - lobe + 1), round(top)), lobe)
+        pygame.draw.circle(screen, color, (round(cx + lobe - 1), round(top)), lobe)
+        point = ((cx - lobe * 2 + 1, top), (cx + lobe * 2 - 1, top), (cx, bottom))
+        pygame.draw.polygon(screen, color, point)
+
+    @staticmethod
     def _draw_white_flag(screen: pygame.Surface, x: float, y: float):
         """The one cue that says this one has yielded, and the reason it is not a badge: an
         exclamation mark in another colour is a thing to read, a rag on a stick is a thing to
@@ -696,4 +714,4 @@ class NPC(Entity):
             # Only shown once the player's actions have actually moved the relationship,
             # so untouched NPCs don't clutter the world with a neutral marker.
             if self.affinity != c.Affinity.START:
-                pygame.draw.circle(screen, self.affinity_tier_color(), (name_rect.left - 13, name_rect.centery), 5)
+                self._draw_heart(screen, (name_rect.left - 14, name_rect.centery), self.affinity_tier_color())

@@ -12,6 +12,7 @@ import core.constants as c
 from core.daynight import DayNightCycle
 from core.decals import get_decals
 from core.utils import parse_world_context
+from core.weather import WeatherSystem
 from game.blow import Blow
 from game.combat import WorldCombat
 from game.entities.bomb import MINE, Bomb
@@ -80,6 +81,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             self.save_system.update("context", None)
         self.events = EventSystem(self, notify)
         self.daynight = DayNightCycle(self.save_system.load("daynight_elapsed_ms", 0.0))
+        # What the sky is doing, on its own clock and never saved: rain and fog are a state
+        # of the world exactly as night is, and one nobody has to be able to plan around.
+        self.weather = WeatherSystem()
         self._load_persisted_state()
 
         saved_npcs = self.save_system.load("npcs", None)
@@ -191,6 +195,11 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # Places a rumour pointed at, drawn on the minimap until the player gets there.
         # Session-only: a rumour is a lead to follow now, not a pin to keep forever.
         self.rumor_marks: list[dict] = []
+        # The blood night's raid on a settlement, or None: which village it is on, where it
+        # stands, how many of it the player has put down and when it is called off
+        # (`WorldPlaces.raid_village`). Session-only, like the night that started it: what
+        # is left of a raid is monsters standing on a map, and those are saved already.
+        self.raid: dict | None = None
         self.respawn_timer = 0.0
         self.critter_respawn_timer = 0.0
         self.boss_roam_timer = 0.0
@@ -257,6 +266,12 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # or quitting would be a way of starting over on a clean slate. Strikes older than
         # the window are dropped rather than loaded.
         self.village_strikes = self._load_strikes(self.save_system.load("village_strikes", {}))
+        # What the player has done that people repeat, as points on the map with a weight and
+        # a time (`WorldPlaces.record_deed`). A grudge belongs to the settlement holding it;
+        # this is what the settlement over the hill has heard, so it is kept by where it
+        # happened rather than by whose it was. Saved for the same reason the strikes are:
+        # quitting is not a way of starting again with a clean name.
+        self.deeds = self.save_system.load("notoriety", [])
         self.tunnel_state = self.save_system.load("tunnels", {})
         # Grid cells the player has walked through (Fog.CELL wide), the memory the minimap
         # draws; everything outside it stays black.
@@ -548,6 +563,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
             ),
             "camp_rest": {key: until for key, until in self.rest_cooldowns.items() if until > time.time()},
             "village_strikes": self.village_strikes,
+            "notoriety": self.deeds,
             "death_drop": self.death_drop,
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
@@ -1367,6 +1383,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # Particles/floating text/screen fx update once per frame in Game.run() instead of
         # here, so they keep animating even while a menu pauses the rest of this update.
         self.daynight.update(dt)
+        # The sky over the surface only: a tunnel has no weather, and the rain that was
+        # falling when the player climbed down is still falling when they come back up.
+        if self.underground is None:
+            self.weather.update(dt)
         # None of this happens underground, and that absence is most of what makes a tunnel
         # somewhere else: no ground streams in around the player, nothing is discovered, no
         # event finds them, and the map remembers nothing of a place with no landmarks.
@@ -1406,6 +1426,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # filtered wherever it is read, so the HUD, the ladder and the save all see the same
         # ledger.
         self.forget_stale_strikes()
+        # And every deed nobody repeats any more, on the same frame and for the same reason:
+        # the HUD, a shop's prices and the save all read one list.
+        self.forget_stale_deeds()
         # Checked once everything has taken its step, so a trap shuts on where things
         # actually ended up this frame rather than on where they set off from.
         self.snap_traps(player, quest_system)
@@ -1416,6 +1439,9 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         # player climbed down, and nothing wanders in after them.
         if self.underground is None:
             self._restock_surface(player, dt)
+            # A raid is over when there is nothing left of it or its time has run out, and
+            # that is when the village pays for it (`WorldPlaces.update_raid`).
+            self.update_raid()
 
     def _track_bloody_feet(self, player: Player):
         """Anything walking through fresh blood picks it up and prints it out again for the
@@ -1440,6 +1466,10 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         and whatever a monster does that is not a step: shooting, bashing a door, exploding."""
         player_pos = player.get_pos()
         detection = c.World.DETECTION_RANGE * (c.DayNight.NIGHT_DETECTION_MULT if self.daynight.is_night else 1.0)
+        # And what the weather takes back off it: nothing sees as far through rain, and
+        # almost nothing sees through fog, which is the whole of what makes a fogbank
+        # somewhere to hide rather than a filter over the screen.
+        detection *= self.weather.sight_mult()
 
         # Monsters far beyond their detection range can't react to the player, so skip
         # their per-frame work entirely (cheap bounding-box test, no sqrt). Never tighter
@@ -1543,7 +1573,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
 
         # Camp guards don't count: they never despawn, so counting them would slowly choke
         # off the roaming population as the player finds more camps.
-        roaming = sum(1 for m in self.monsters if not m.camp_id)
+        roaming = sum(1 for m in self.monsters if not m.camp_id and not m.raid_key)
         if roaming < self.roaming_cap(player):
             self.respawn_timer += dt
             respawn_interval = c.World.RESPAWN_INTERVAL_MS

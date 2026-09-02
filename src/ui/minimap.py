@@ -218,6 +218,17 @@ class Minimap:
                 # Short enough to fit the panel with the countdown still on it: the number
                 # is the half of this that the player is actually reading.
                 y = self._draw_text_strip(self._fit(f"{label} {int(seconds) + 1}s"), c.Colors.ORANGE, y)
+            # What it would take to be let back in, while there is anything to pay for. Its
+            # own strip and not a prompt, because the key that pays it (K) is answered from
+            # anywhere on the village's ground: a settlement chasing the player across its
+            # own plaza is exactly when they need to be able to read the price.
+            y = self._draw_amends_strip(world, player, y)
+        # What the country round here has heard, wherever the player is standing. Not inside
+        # the village branch above: word of mouth is the one thing about the player that is
+        # true out on the road as well (`WorldPlaces.notoriety_at`).
+        heard = world.notoriety_label(player.x, player.y)
+        if heard:
+            y = self._draw_text_strip(heard, c.Colors.ORANGE, y)
         # How far out the player has walked. Difficulty in this world is distance from the
         # centre and nothing else, so this strip is the one number that says how dangerous
         # the ground under the player's feet is, and it belongs with the map that says where
@@ -225,6 +236,17 @@ class Minimap:
         y = self._draw_text_strip(self._distance_label(world, player), c.Colors.MUTED, y)
         self._draw_clock(world, y)
         self.content_bottom = y + c.Minimap.CLOCK_HEIGHT
+
+    def _draw_amends_strip(self, world: World, player: Player, y: int) -> int:
+        """The blood price this settlement wants, and whether the player can pay it right
+        now: gold when the coins are in the purse, muted when they are not, so the strip
+        says both what it costs and whether pressing the key would do anything."""
+        found = world.amends_at(player.x, player.y)
+        if found is None:
+            return y
+        _village, price = found
+        color = c.Colors.ACCENT if player.coins >= price else c.Colors.MUTED
+        return self._draw_text_strip(self._fit(f"Blood price {price}  (K)"), color, y)
 
     @staticmethod
     def _distance_label(world: World, player: Player) -> str:
@@ -315,7 +337,12 @@ class Minimap:
         widgets.draw_panel(self.screen, strip)
 
         darkness = daynight.darkness
-        label = c.Fonts.small.render(daynight.phase, True, c.Colors.WHITE)
+        # The phase, and what the sky is doing over it when that is anything: rain and fog
+        # are read off the screen first, and this is where the player checks what they are
+        # looking at (`core.weather.WeatherSystem.label`).
+        weather = world.weather.label
+        phase = f"{daynight.phase}, {weather}" if weather else daynight.phase
+        label = c.Fonts.small.render(phase, True, c.Colors.WHITE)
         band = pygame.Rect(strip.left + 6, strip.top + 6, strip.width - label.get_width() - 20, strip.height - 12)
         horizon = band.bottom - 7
 

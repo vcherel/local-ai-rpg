@@ -27,6 +27,7 @@ from llm.dialogue_manager import DialogueManager
 from llm.llm_request_queue import get_llm_tasks, llm_busy
 from llm.name_generator import NPCNameGenerator
 from ui.game_renderer import GameRenderer
+from ui.menus.board_menu import BoardMenu
 from ui.menus.context_menu import ContextMenu
 from ui.menus.game_over import run_game_over
 from ui.menus.help_menu import HelpMenu
@@ -87,6 +88,7 @@ class Game:
         self.stats_menu = StatsMenu(self.screen)
         self.help_menu = HelpMenu(self.screen)
         self.pause_menu = PauseMenu(self.screen)
+        self.board_menu = BoardMenu(self.screen)
         # Every full-screen menu, for the one question asked of all of them at once: is any
         # open, and therefore is the world paused. Their input and draw calls stay written
         # out one by one below, since each takes its own arguments and the order matters.
@@ -98,6 +100,7 @@ class Game:
             self.stats_menu,
             self.help_menu,
             self.pause_menu,
+            self.board_menu,
         )
         self.loot_notification = ToastNotification(self.screen)
         # id of the last picked-up item flagged as a gear upgrade; F equips it.
@@ -188,6 +191,7 @@ class Game:
             pygame.K_g: self._use_bomb,
             pygame.K_e: self._interact,
             pygame.K_b: self._trade_nearby,
+            pygame.K_k: self._pay_blood_price,
             pygame.K_f: self._equip_pending_upgrade,
             pygame.K_i: self.inventory_menu.toggle,
             pygame.K_j: self.quest_menu.toggle,
@@ -218,6 +222,7 @@ class Game:
             "camp": lambda camp: self.world.rest_at_camp(self.player, camp),
             "shrine": lambda shrine: self.world.pray_at_shrine(self.player, shrine),
             "trap": lambda trap: self.world.rearm_trap(trap),
+            "board": self._read_board,
         }
 
     def _restore_player_state(self):
@@ -270,6 +275,9 @@ class Game:
             if self.pause_menu.handle_event(event, self._save_from_menu, self._quit_to_menu):
                 continue
 
+            if self.board_menu.handle_event(event):
+                continue
+
             if not self.active_menu:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
@@ -284,7 +292,7 @@ class Game:
         if self.dialogue_manager.shop_requested and not self.dialogue_manager.active:
             npc = self.dialogue_manager.current_npc
             if npc is not None and npc.is_merchant:
-                self.shop_menu.open(npc, self.player, self.world.items)
+                self.shop_menu.open(npc, self.player, self.world.items, self.world)
             self.dialogue_manager.shop_requested = False
 
         return True
@@ -579,8 +587,8 @@ class Game:
                 )
 
     def _offer_places(self, offer, reach_of):
-        """A campfire to rest at, a shrine to pray at and a shut trap to set again: the
-        things standing in the open that answer a press."""
+        """A campfire to rest at, a shrine to pray at, a notice board to read and a shut trap
+        to set again: the things standing in the open that answer a press."""
         camp = self.world.camp_in_reach(self.player)
         if camp is not None:
             cooling = self.world.rest_ready_in(camp.id)
@@ -593,6 +601,11 @@ class Game:
                 Interaction("shrine", shrine, "E: pray at the shrine", shrine.x, shrine.y - 40),
                 reach_of(shrine.x, shrine.y),
             )
+
+        village = self.world.board_in_reach(self.player)
+        if village is not None:
+            bx, by = village.board_pos()
+            offer(Interaction("board", village, "E: read the notice board", bx, by - 60), reach_of(bx, by))
 
         trap = self.world.sprung_trap_in_reach(self.player)
         if trap is not None:
@@ -662,12 +675,64 @@ class Game:
         self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
         self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
 
+    def _read_board(self, village):
+        """Open what is pinned to this settlement's board.
+
+        The notices are the village's rather than the menu's (`World.board_offers`), so the
+        same three are there on the way back through town, and taking one is what empties
+        it."""
+        self.board_menu.open(village, self.world.board_offers(village), lambda offer: self._take_notice(village, offer))
+
+    def _take_notice(self, village, offer: dict):
+        """Turn a notice into an ordinary quest given by somebody who lives here.
+
+        A board hands out no quest of its own: it finds whoever posted it
+        (`World.board_poster`) and puts the task on them, so the tracker, the map arrow, the
+        hand in and the reward are the ones every other quest in the game uses. With nobody
+        in the village free to have written it, the notice stays on the board rather than
+        becoming a task with no one to answer for it."""
+        poster = self.world.board_poster(village)
+        if poster is None:
+            self.loot_notification.show("Nobody here is free to answer for it", c.Colors.MUTED)
+            return
+        if poster.name is None:
+            poster.assign_name(self.npc_name_generator)
+        quest_system = self.dialogue_manager.quest_system
+        quest_system.create_quest_from_analysis(poster, offer["info"], self.npc_name_generator)
+        if not poster.has_active_quest:
+            self.loot_notification.show("That notice is out of date", c.Colors.MUTED)
+            return
+        if offer in village.notices:
+            village.notices.remove(offer)
+        self.loot_notification.show(f"{poster.name} posted it: see them when it is done", c.Colors.YELLOW)
+        play_sound("quest_complete")
+
+    def _pay_blood_price(self):
+        """K: buy back a settlement the player has turned, with coins.
+
+        A key of its own rather than a prompt, because it is answered from anywhere on the
+        village's ground: the player is being chased across it while they decide, and a
+        prompt they would have to stand still in front of is one they cannot reach. What it
+        costs and whether there is anything to pay for at all are on the strip under the
+        minimap the whole time (`Minimap._draw_strips`), so the key is never a guess."""
+        found = self.world.amends_at(self.player.x, self.player.y)
+        if found is None:
+            return
+        village, price = found
+        name = village.name or "The village"
+        if self.player.coins < price:
+            self.loot_notification.show(f"{name} wants {price} coins to let it go", c.Colors.MUTED)
+            return
+        self.world.pay_blood_price(self.player)
+        self.loot_notification.show(f"You pay {name} {price} coins in blood price", c.Colors.GREEN)
+        self.save_data()
+
     def _trade_nearby(self):
         """Open a merchant's shop straight from the world, skipping the conversation."""
         npc = self.world.npc_in_reach(self.player)
         if npc is None or not npc.is_merchant or not npc.shop_ready or not npc.can_talk:
             return
-        self.shop_menu.open(npc, self.player, self.world.items)
+        self.shop_menu.open(npc, self.player, self.world.items, self.world)
 
     def _sweep_loot(self, dt):
         """The whole of picking things up. Anything lying within the magnet's reach flies at
@@ -1215,6 +1280,11 @@ class Game:
         # No sky underground: the tunnel draws its own darkness around the player instead.
         if self.world.underground is None:
             self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
+            # Rain and fog go over the sky and under everything that is read: the weather is
+            # the world, not a readout. Never while the player is standing in somebody's
+            # room, where the roof is what they are under.
+            if self.interior is None:
+                self.world.weather.draw(self.screen)
         # Underground or not: a blood night is on the world, and the tunnel is world space.
         draw_blood_veil(self.screen, self.world.events.blood_intensity)
         get_vignette().draw(self.screen)
@@ -1251,6 +1321,7 @@ class Game:
         self.stats_menu.draw(self.player, self.record)
         self.help_menu.draw()
         self.pause_menu.draw()
+        self.board_menu.draw()
         self.context_window.draw()
         # The arrow again, over the open panel this time: where the player is being sent is
         # exactly what they are checking their bag and their quests against, so a menu hides

@@ -439,3 +439,139 @@ class Villages:
     # inventing a second one: the walk out is what buys the better stock, exactly as it buys
     # the worse monsters.
     SHOP_LUCK_PER_TIER: float = 0.55
+
+
+@dataclass(frozen=True)
+class Amends:
+    """Buying a settlement's forgiveness back.
+
+    Dying to a village is the only thing that ever made one forget (`World.pacify_village`),
+    which left a grudge as a place struck off the map for the rest of the save. A blood
+    price is the second exit and the only one the player can decide to take: coins, paid on
+    the settlement's own ground while its people are still coming for you, and the whole of
+    what it buys is being let back in.
+    """
+
+    # What a settlement asks for. A brawl it would have forgotten on its own is cheap; a
+    # killing, which no clock ever clears, is not, and a deep wilds town knows what it is
+    # owed better than a border hamlet does.
+    BASE: int = 120
+    PER_TIER: int = 90
+    GRUDGE_MULT: float = 3.5
+    # Rounded to this before it is asked for and before it is taken: a price is a figure
+    # somebody says out loud, not a sum worked out to the coin.
+    ROUNDING: int = 10
+
+
+@dataclass(frozen=True)
+class Notoriety:
+    """What the next village along has heard about the player.
+
+    A grudge stops at the settlement that holds it, so the player could empty a street and
+    be greeted as a stranger in the town an hour's walk away. A deed is remembered by the
+    ground it was done on instead: it fades with time and with distance, and every
+    settlement inside earshot reads the same sum (`WorldPlaces.notoriety_at`). Nothing here
+    turns anybody hostile on its own. What it costs is patience, prices and the benefit of
+    the doubt, which is exactly what word of mouth costs.
+    """
+
+    # What each kind of deed is worth, before it fades. One killing is most of a reputation.
+    WEIGHT_KILL: float = 0.6
+    WEIGHT_BRAWL: float = 0.15
+    WEIGHT_THEFT: float = 0.12
+    # The sum that counts as fully notorious: everything reading this clamps to it, so the
+    # effects have a top rather than climbing forever with the body count.
+    FULL: float = 1.0
+    # How far word travels, and how long it is repeated for. A deed is at full weight where
+    # it happened and worth nothing past TRAVEL_DISTANCE, on a straight falloff, and fades
+    # to nothing over FADE_S of wall clock the same way a village's anger does.
+    TRAVEL_DISTANCE: float = 9000.0
+    FADE_S: float = 2400.0
+    # Where each effect starts. Patience first: a place that has heard about you spends its
+    # warning before you arrive, so the ladder is one rung shorter (`strike_village`).
+    NO_WARNING_LEVEL: float = 0.5
+    # And the shelf: a merchant who has heard about you asks more and offers less, on top of
+    # whatever they personally think (`Affinity.MAX_PRICE_SWING`). This is the swing at FULL.
+    MAX_PRICE_SWING: float = 0.3
+    # The word the minimap strip uses for each level, worst last.
+    LABELS: tuple = ((0.25, "Talked about"), (0.5, "Ill spoken of"), (1.1, "Notorious"))
+
+
+@dataclass(frozen=True)
+class Raid:
+    """A blood night turning on a settlement rather than only on the player.
+
+    The wall, the militia split, the gates and the tower archers already exist and are only
+    ever answered by whatever wandered in on its own. A raid points a wave at a village on
+    purpose: the monsters are stood up outside its grounds and left to walk in, so every
+    order the settlement gives itself (`WorldPlaces.militia_orders`) is the one it always
+    gave. What is new is the reason to stand in the street and fight for a place that is not
+    yours, which is the only thing in the game that raises a whole village's opinion at once.
+    """
+
+    # Only a settlement the player is near enough to defend is ever raided: a village
+    # sacked out of sight is a notification, not an event.
+    MAX_DISTANCE: float = 2600.0
+    # How many come, by the settlement's tier. A deep wilds town is worth more to raid and
+    # can take it; a hamlet with no wall is not swarmed for the crime of being a hamlet.
+    SIZE_BY_TIER: tuple = (4, 6, 9)
+    # Where they are stood up: outside the grounds, spread round the place rather than
+    # arriving as one clump at one gate.
+    SPAWN_MARGIN: float = 420.0
+    # Rolled as if the ground were this much deeper into the wilds, the same bonus a camp
+    # leader takes: a raid is the night at its worst, not the ordinary wilds walking in.
+    DANGER_BONUS: int = 900
+    # How long the raid stands before whatever is left of it is called off, and how far
+    # past the settlement's own grounds a raider may stray before it is no longer part of
+    # the raid. Past the grounds rather than from the middle, because a walled town is
+    # itself most of a thousand paces across.
+    DURATION_S: float = 180.0
+    LEASH: float = 1400.0
+    # What defending it is worth: affinity for everyone still standing, and the kills the
+    # player has to have taken for any of it (a raid they watched pays nothing).
+    THANKS_AFFINITY: float = 18.0
+    THANKS_MIN_KILLS: int = 2
+
+
+@dataclass(frozen=True)
+class Board:
+    """The notice board in a settlement's plaza.
+
+    Every quest in the game is written by the model out of a conversation, which makes the
+    supply of them wait on one busy model and on the player deciding to talk. A board is the
+    same quest types rolled locally (`WorldPlaces.board_offers`), posted by somebody who
+    actually lives here: taking one puts the quest on that villager, so the tracker, the
+    arrow, the hand in and the reward are the ones that already exist.
+    """
+
+    # Where the post stands, as a fraction of the plaza's radius out from the middle, and
+    # how big it is drawn.
+    PLAZA_FRACTION: float = 0.72
+    POST_HEIGHT: int = 54
+    BOARD_W: int = 62
+    BOARD_H: int = 44
+    # How far away the prompt is offered from.
+    INTERACT_DISTANCE: float = 110.0
+    # How many notices are pinned to one, and how long before a board that has been emptied
+    # (or read early) is worth walking back to.
+    OFFERS: int = 3
+    REFRESH_S: float = 900.0
+    # How many of a kind a kill notice asks for.
+    KILL_COUNT_RANGE: tuple = (3, 6)
+    # What a fetch notice asks for. Plain things a village would actually be short of: the
+    # name is what the item becomes (`items.icon_shape` reads it), so nothing here needs a
+    # row anywhere else to exist.
+    WANTED_ITEMS: tuple = (
+        "Healing Herbs",
+        "Wolf Pelt",
+        "Iron Ore",
+        "Lantern Oil",
+        "Salt",
+        "Bear Fat",
+        "Timber",
+        "Rope",
+    )
+
+    POST_COLOR: tuple = (92, 68, 44)
+    BOARD_COLOR: tuple = (138, 106, 66)
+    NOTICE_COLOR: tuple = (232, 226, 208)

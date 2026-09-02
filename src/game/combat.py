@@ -1375,6 +1375,10 @@ class WorldCombat:
         # only thing that lowers the garrison it stands back up from on the next chunk load.
         if monster.camp_id:
             self.on_guard_killed(monster, quest_system)
+        # And a raider's is the village's: what the settlement thanks the player for is the
+        # raid being over, so the kills are counted and paid once (`WorldPlaces.update_raid`).
+        if by_player and monster.raid_key:
+            self.credit_raid_kill(monster)
         monster_list.remove(monster)
 
     def _apply_on_hit_effects(self, monster, monster_list, damage, player, quest_system, died, hand: int = 0):
