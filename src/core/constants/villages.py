@@ -97,6 +97,11 @@ class Villages:
     # How far inside the gate a lane takes to narrow from the width of the road arriving
     # outside it down to its own (`Village.plan_streets`). A road is twice a lane wide, so
     # the two met as a step until the lane was worn out to it.
+    # How far out from a doorstep a lane may start looking for ground the plaza can be
+    # reached from. Six cells of the street grid: a door stands against its own wall, so
+    # the first cell or two is always blocked, and anything past this is a door walled in
+    # rather than a door set back.
+    STREET_SEARCH_RINGS: int = 6
     STREET_TAPER: int = 260
     # A lane is routed on a grid of this size rather than run straight at the door: a
     # straight line from the plaza was laid over whatever house stood between the two.
@@ -470,7 +475,7 @@ class Notoriety:
     A grudge stops at the settlement that holds it, so the player could empty a street and
     be greeted as a stranger in the town an hour's walk away. A deed is remembered by the
     ground it was done on instead: it fades with time and with distance, and every
-    settlement inside earshot reads the same sum (`WorldPlaces.notoriety_at`). Nothing here
+    settlement inside earshot reads the same sum (`WorldSocial.notoriety_at`). Nothing here
     turns anybody hostile on its own. What it costs is patience, prices and the benefit of
     the doubt, which is exactly what word of mouth costs.
     """
@@ -504,7 +509,7 @@ class Raid:
     The wall, the militia split, the gates and the tower archers already exist and are only
     ever answered by whatever wandered in on its own. A raid points a wave at a village on
     purpose: the monsters are stood up outside its grounds and left to walk in, so every
-    order the settlement gives itself (`WorldPlaces.militia_orders`) is the one it always
+    order the settlement gives itself (`WorldSocial.militia_orders`) is the one it always
     gave. What is new is the reason to stand in the street and fight for a place that is not
     yours, which is the only thing in the game that raises a whole village's opinion at once.
     """
@@ -539,7 +544,7 @@ class Board:
 
     Every quest in the game is written by the model out of a conversation, which makes the
     supply of them wait on one busy model and on the player deciding to talk. A board is the
-    same quest types rolled locally (`WorldPlaces.board_offers`), posted by somebody who
+    same quest types rolled locally (`WorldSocial.board_offers`), posted by somebody who
     actually lives here: taking one puts the quest on that villager, so the tracker, the
     arrow, the hand in and the reward are the ones that already exist.
     """

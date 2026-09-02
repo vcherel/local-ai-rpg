@@ -605,11 +605,9 @@ class GameRenderer:
     # The player's health bar is drawn by the entity itself (Player.draw, under the body at
     # `Player.HEALTH_BAR_OFFSET`); the mana bar hangs directly under it and the guard bar
     # under that, so the whole stack follows the one offset.
-    MANA_BAR_HEIGHT = 14
-
     def _mana_bar_bottom(self) -> int:
         health_bottom = c.Screen.ORIGIN_Y + c.Player.SIZE // 2 + c.Player.HEALTH_BAR_OFFSET + c.Player.HEALTH_BAR_HEIGHT
-        return health_bottom + 4 + self.MANA_BAR_HEIGHT
+        return health_bottom + 4 + c.Magic.BAR_HEIGHT
 
     def _draw_mana_bar(self, player: Player):
         """The mana pool, drawn as a second bar under the health bar and always shown.
@@ -618,8 +616,8 @@ class GameRenderer:
         that does not come out because the pool is empty must be something the player saw
         coming. It dims while the pool is held short of regenerating, so the pause after a
         volley is visible too."""
-        width = 800
-        rect = pygame.Rect(0, 0, width, self.MANA_BAR_HEIGHT)
+        width = c.Magic.BAR_WIDTH
+        rect = pygame.Rect(0, 0, width, c.Magic.BAR_HEIGHT)
         rect.bottomleft = (c.Screen.ORIGIN_X - width // 2, self._mana_bar_bottom())
 
         holding = pygame.time.get_ticks() - player.last_cast_ms < c.Magic.REGEN_DELAY_MS
@@ -638,19 +636,21 @@ class GameRenderer:
         so the player can see what holding block is costing them."""
         if not player.has_shield():
             return
-        width, height = 400, 10
-        rect = pygame.Rect(0, 0, width, height)
+        rect = pygame.Rect(0, 0, c.Shield.GUARD_BAR_WIDTH, c.Shield.GUARD_BAR_HEIGHT)
         rect.midtop = (c.Screen.ORIGIN_X, self._mana_bar_bottom() + 6)
 
         broken = player.guard_broken()
-        fill = (200, 70, 60) if broken else ((150, 210, 255) if player.blocking else (90, 130, 175))
+        if broken:
+            fill = c.Shield.GUARD_BAR_BROKEN_COLOR
+        else:
+            fill = c.Shield.GUARD_BAR_BLOCKING_COLOR if player.blocking else c.Shield.GUARD_BAR_COLOR
         pygame.draw.rect(self.screen, c.Colors.SLOT_BG, rect)
         ratio = max(0.0, player.guard / c.Shield.GUARD_MAX)
         pygame.draw.rect(self.screen, fill, (rect.x, rect.y, round(rect.width * ratio), rect.height))
         pygame.draw.rect(self.screen, c.Colors.SLOT_BORDER, rect, 2)
 
         if broken:
-            label = c.Fonts.small.render("Guard broken", True, (255, 150, 140))
+            label = c.Fonts.small.render("Guard broken", True, c.Shield.GUARD_BROKEN_TEXT_COLOR)
             self.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 2))
 
     def _draw_buff_chips(self, player: Player, bottom: int):

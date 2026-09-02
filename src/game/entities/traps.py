@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from game.entities.village import sites_near_chunk
+from game.entities.village_sites import sites_near_chunk
 
 if TYPE_CHECKING:
     from core.camera import Camera

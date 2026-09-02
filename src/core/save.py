@@ -70,7 +70,7 @@ class SaveSystem:
           [{"x": float, "y": float, "weight": float, "at": wall-clock seconds}]. A grudge
           belongs to the settlement holding it; this is what the settlement over the hill has
           heard, so it is kept by where a deed was done rather than by whose it was, and it
-          fades with distance and time (`WorldPlaces.notoriety_at`). Saved for the reason the
+          fades with distance and time (`WorldSocial.notoriety_at`). Saved for the reason the
           strikes are: quitting is not a way of starting again under a clean name (list[dict])
         - camp_rest: When each place the player rested will serve them again, by POI id for a
           campfire and by building id for a villager's bed (wall-clock seconds)

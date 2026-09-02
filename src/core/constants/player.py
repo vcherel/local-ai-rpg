@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from core.constants.ui import Screen
+
 
 @dataclass(frozen=True)
 class Player:
@@ -74,6 +76,11 @@ class Magic:
     REGEN_DELAY_MS: int = 1400
     BAR_COLOR: tuple = (120, 150, 255)
     EMPTY_COLOR: tuple = (150, 120, 220)
+    # The pool drawn as a second bar under the health bar, always shown: a bolt that does
+    # not come out because the pool is empty must be something the player saw coming. Sized
+    # off the screen rather than in bare pixels, since it is centred on it.
+    BAR_WIDTH: int = Screen.WIDTH * 4 // 9
+    BAR_HEIGHT: int = 14
 
 
 @dataclass(frozen=True)

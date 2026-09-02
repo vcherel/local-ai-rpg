@@ -14,16 +14,15 @@ from core.decals import get_decals, style_for_weapon
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.particles import get_particles
-from core.screen_fx import get_flash, get_hitstop, get_trap_fx
+from core.screen_fx import get_hitstop, get_trap_fx
 from core.swing_arcs import get_swings
 from game.blow import PLAIN_BLOW, Blow
-from game.entities.bomb import GRENADE, MINE, Bomb
 from game.entities.boss import Boss
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
 from game.entities.entities import apply_impulse
-from game.entities.items import Item, bomb_kind, rarity_color, roll_rarity
+from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.monsters import Monster
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
@@ -783,56 +782,56 @@ class WorldCombat:
                 gravity=0.25,
             )
 
+    def _player_blow(self, target, base_damage, arch, player, blocked, hand=0, rampage=False) -> tuple[int, Blow]:
+        """One blow of the player's own: the damage rolled, and how it landed.
+
+        The three strike sites below share all of this and differ only in what they do
+        around it, which is the point of pulling it out: a monster is open to on-hit effects
+        and to chainstrike, a villager to lifesteal, an animal to neither.
+        """
+        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(hand), rampage=rampage)
+        shake = arch.shake
+        shake += c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
+        shake += c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
+        blow = Blow(
+            crit=crit,
+            shake=shake,
+            knockback=arch.knockback,
+            kb_dir=self._dir_from(player.x, player.y, target.x, target.y),
+            blocked=blocked,
+        )
+        return damage, blow
+
     def _strike_monster(self, monster, monster_list, base_damage, arch, player, quest_system, blocked, hand=0):
         rampage = player.rampage_trigger(hand)
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(hand), rampage=rampage)
-        crit_shake = c.Combat.CRIT_SHAKE_BONUS if crit else 0.0
-        rampage_shake = c.Combat.CRIT_SHAKE_BONUS if rampage else 0.0
-        shake = arch.shake + crit_shake + rampage_shake
-        kb_dir = self._dir_from(player.x, player.y, monster.x, monster.y)
-        died = self._resolve_monster_hit(
-            monster,
-            monster_list,
-            damage,
-            player,
-            quest_system,
-            Blow(crit=crit, shake=shake, knockback=arch.knockback, kb_dir=kb_dir, blocked=blocked),
-        )
+        damage, blow = self._player_blow(monster, base_damage, arch, player, blocked, hand, rampage=rampage)
+        died = self._resolve_monster_hit(monster, monster_list, damage, player, quest_system, blow)
         self._apply_on_hit_effects(monster, monster_list, damage, player, quest_system, died, hand)
         self._apply_chainstrike(monster, monster_list, damage, player, quest_system, blocked, hand)
 
     def _strike_npc(self, npc, base_damage, arch, player, quest_system, blocked, hand=0):
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus(hand))
+        damage, blow = self._player_blow(npc, base_damage, arch, player, blocked, hand)
         # Lifesteal works on any struck target, NPCs included.
         frac = player.lifesteal_frac(hand)
         if frac > 0:
             player.heal(damage * frac)
-        shake = arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0)
-        kb_dir = self._dir_from(player.x, player.y, npc.x, npc.y)
-        self._resolve_npc_hit(
-            npc,
-            damage,
-            player,
-            quest_system,
-            Blow(crit=crit, shake=shake, knockback=arch.knockback, kb_dir=kb_dir, blocked=blocked),
-        )
+        self._resolve_npc_hit(npc, damage, player, quest_system, blow)
 
     def _strike_critter(self, critter: Critter, base_damage, arch, player: Player):
         """Wildlife takes hits like anything else. What a survivor does about it is its own
         temperament's business: a rabbit bolts, a boar turns round, a pack all turns round
         at once (`World.aggro_pack`). No quest system involvement, no loot table, nothing to
-        burn or chain into."""
+        burn or chain into, so this is the one strike that resolves the blow itself."""
         if critter.dead:
             return
-        damage, crit = self._roll_hit(base_damage, arch, player.crit_bonus())
-        get_shake().add(arch.shake + (c.Combat.CRIT_SHAKE_BONUS if crit else 0.0))
-        self._pop_damage(critter.x, critter.y - critter.size / 2, damage, crit)
-        kb_dir = self._dir_from(player.x, player.y, critter.x, critter.y)
+        damage, blow = self._player_blow(critter, base_damage, arch, player, self.blocked)
+        get_shake().add(blow.shake)
+        self._pop_damage(critter.x, critter.y - critter.size / 2, damage, blow.crit)
         if critter.receive_damage(damage):
-            self._kill_critter(critter, player, kb_dir)
+            self._kill_critter(critter, player, blow.kb_dir)
             return
-        self._hit_feedback(critter.x, critter.y, crit, kb_dir)
-        self._knockback(critter, critter.size / 2, kb_dir, arch.knockback, self.blocked)
+        self._hit_feedback(critter.x, critter.y, blow.crit, blow.kb_dir)
+        self._knockback(critter, critter.size / 2, blow.kb_dir, blow.knockback, self.blocked)
         critter.startle()
         self.aggro_pack(critter)
 
@@ -966,252 +965,6 @@ class WorldCombat:
         self._break_effects(breakable.x, breakable.y, (150, 110, 70), 18)
         coins, loot_item = break_crate()
         self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
-
-    def use_bomb(self, player: Player, item):
-        """Spend one out of the bomb slot: a mine laid where the player stands, a grenade
-        thrown at what the player is aiming at.
-
-        Neither is a weapon that hits something. Both are a piece of ground the player has
-        decided to fight over, exactly like a powder keg, and both end in the same `explode`
-        the keg does. The one thing decided here is where it ends up."""
-        now = pygame.time.get_ticks()
-        if now < player.attack_ready_ms:
-            return
-        if not player.spend_one(item):
-            return
-        player.attack_ready_ms = now + c.Bombs.COOLDOWN_MS
-        player.attack_swing_mult = 1.0
-        player.end_spawn_grace()
-        player.start_attack_anim("right", c.Player.SWING_MS)
-
-        if bomb_kind(item.name) == MINE:
-            self.bombs.append(Bomb(player.x, player.y, MINE))
-        else:
-            # Thrown where the player is looking rather than as far as the arm goes: the
-            # cursor is the aim for every other weapon, and a grenade lands short of it
-            # only when a wall is in the way.
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-            reach = math.hypot(mouse_x - c.Screen.ORIGIN_X, mouse_y - c.Screen.ORIGIN_Y)
-            self.bombs.append(Bomb(player.x, player.y, GRENADE, player.orientation, reach))
-        play_sound("fuse")
-
-    def update_bombs(self, player: Player, quest_system: QuestSystem, dt):
-        """Burn every fuse down and set off whatever has run out or been stepped on.
-
-        A mine answers to anything that would fight the player and never to the player
-        themselves: laying one under your own feet and backing away is the whole point of
-        it, and a blast that went off as you stepped off it would make it unusable."""
-        for bomb in list(self.bombs):
-            fired = bomb.update(dt, self.blocked)
-            if bomb.dead:
-                self.bombs.remove(bomb)
-                continue
-            if not fired and bomb.kind == MINE:
-                hostile = [
-                    body
-                    for group in (self.monsters, self.bosses, self.npcs, self.critters)
-                    for body in group
-                    if getattr(body, "hostile", True)
-                ]
-                fired = bomb.triggered_by(hostile)
-            if not fired:
-                continue
-            self.bombs.remove(bomb)
-            self.explode(
-                bomb.x,
-                bomb.y,
-                player,
-                quest_system,
-                radius=c.Bombs.RADIUS,
-                damage=c.Bombs.DAMAGE,
-                knockback=c.Bombs.KNOCKBACK,
-                shake=c.Bombs.SHAKE,
-                player_mult=c.Bombs.PLAYER_DAMAGE_MULT,
-                message="",
-            )
-
-    def explode(
-        self,
-        x,
-        y,
-        player: Player,
-        quest_system: QuestSystem,
-        depth: int = 0,
-        *,
-        radius: float = c.Explosion.RADIUS,
-        damage: int = c.Explosion.DAMAGE,
-        edge_frac: float = c.Explosion.EDGE_DAMAGE_FRAC,
-        knockback: float = c.Explosion.KNOCKBACK,
-        shake: float = c.Explosion.SHAKE,
-        player_mult: float = c.Explosion.PLAYER_DAMAGE_MULT,
-        by_player: bool = True,
-        message: str = "The powder keg goes off!",
-    ):
-        """A powder keg going off: the one thing in the world that kills a crowd without a
-        swing.
-
-        Everything alive inside `radius` takes damage falling off toward the rim, the player
-        included, and any keg caught in it goes off in turn. That is the whole design: a keg
-        is not loot, it is a piece of ground the player can decide to fight over, and shooting
-        one from across a clearing is a plan rather than a lucky swing. Kills count as the
-        player's, since setting it off is what killed them.
-
-        The keyword arguments are the same blast pointed at something else: a creeper's fuse
-        burning out (`detonate_creeper`) is this call with its own numbers and `by_player`
-        off, since the player did not light it. Nothing here knows which it is.
-
-        `depth` caps a chain so a shipment of kegs cannot recurse without end.
-        """
-        self._blast_fx(x, y, radius, shake, message if depth == 0 else "")
-
-        def blast_damage(distance: float) -> int:
-            frac = max(0.0, 1.0 - distance / radius)
-            scale = edge_frac + (1.0 - edge_frac) * frac
-            return max(1, round(damage * scale))
-
-        def caught(entities, radius_of):
-            found = []
-            for entity in list(entities):
-                distance = math.hypot(entity.x - x, entity.y - y)
-                if distance < radius + radius_of(entity):
-                    found.append((entity, distance))
-            return found
-
-        for group in (self.bosses, self.monsters):
-            for monster, distance in caught(group, lambda m: m.kind.size / 2):
-                self._resolve_monster_hit(
-                    monster,
-                    group,
-                    blast_damage(distance),
-                    player,
-                    quest_system,
-                    Blow(
-                        knockback=knockback,
-                        kb_dir=self._dir_from(x, y, monster.x, monster.y),
-                        blocked=self.blocked,
-                        by_player=by_player,
-                    ),
-                )
-
-        for critter, distance in caught(self.critters, lambda cr: cr.hit_radius):
-            if critter.dead:
-                continue
-            hurt = blast_damage(distance)
-            kb_dir = self._dir_from(x, y, critter.x, critter.y)
-            self._pop_damage(critter.x, critter.y - critter.size / 2, hurt, False)
-            if critter.receive_damage(hurt):
-                self._kill_critter(critter, player, kb_dir, by_player=by_player)
-            else:
-                self._knockback(critter, critter.size / 2, kb_dir, knockback, self.blocked)
-                critter.startle()
-                if by_player:
-                    self.aggro_pack(critter)
-
-        for npc, distance in caught(self.npcs, lambda _n: c.Entities.NPC_SIZE / 2):
-            self._resolve_npc_hit(
-                npc,
-                blast_damage(distance),
-                player,
-                quest_system,
-                Blow(
-                    knockback=knockback,
-                    kb_dir=self._dir_from(x, y, npc.x, npc.y),
-                    blocked=self.blocked,
-                    by_player=by_player,
-                ),
-            )
-
-        player_distance = math.hypot(player.x - x, player.y - y)
-        if player_distance < radius:
-            # What the death screen names: the keg is the player's own doing, the creeper
-            # somebody else's.
-            killer = "a powder keg" if by_player else "a creeper"
-            player.receive_damage(round(blast_damage(player_distance) * player_mult), source=killer)
-            # The blast is not choosy about who it throws either: standing next to a keg
-            # costs the player the ground it puts between them and wherever they meant to be.
-            self._knockback(
-                player, c.Player.SIZE / 2, self._dir_from(x, y, player.x, player.y), knockback, self.blocked
-            )
-
-        if depth >= c.Explosion.MAX_CHAIN_DEPTH:
-            return
-        for keg in [
-            b
-            for b in list(self.breakables)
-            if b.kind == "powder" and math.hypot(b.x - x, b.y - y) < c.Explosion.CHAIN_RADIUS
-        ]:
-            # Re-checked rather than trusted: the list was taken before the chain started,
-            # and a recursive blast below may already have taken this keg off.
-            if keg in self.breakables:
-                self.breakables.remove(keg)
-                # A keg is still a keg whatever lit it, but the credit follows the hand that
-                # started the chain: nothing a creeper set off pays the player.
-                self.explode(keg.x, keg.y, player, quest_system, depth + 1, by_player=by_player)
-
-    def _blast_fx(self, x, y, radius: float, shake: float, message: str):
-        """How a blast looks and sounds, which is all of what makes it read as the loudest
-        thing in the game: the wash, the freeze, the shockwave going out past what it hurt,
-        the fire, the smoke that hangs, and the debris that arcs and lands.
-
-        Kept apart from `explode` so that method is the damage it is named for. Only the
-        blast that started a chain announces itself; the kegs it sets off are the same event.
-        The scorch is the exception: every blast burns its own ground, so a chain leaves the
-        shape it went off in.
-        """
-        # The mark on the ground first, so everything thrown up by the blast is over it.
-        get_decals().scorch(x, y, radius)
-        get_shake().add(shake)
-        play_sound("crate_break")
-        get_flash().trigger(c.Explosion.FLASH_AMOUNT, c.Explosion.FLASH_COLOR)
-        get_hitstop().trigger(c.Explosion.HITSTOP_MS)
-        get_particles().spawn_burst(
-            x, y, (255, 170, 60), count=c.Explosion.FIRE_PARTICLES, speed=13, life=650, size=8, gravity=0.2
-        )
-        get_particles().spawn_burst(
-            x, y, (90, 80, 75), count=c.Explosion.SMOKE_PARTICLES, speed=6, life=1100, size=10, gravity=0.03
-        )
-        get_particles().spawn_burst(
-            x,
-            y,
-            (150, 110, 70),
-            count=c.Explosion.DEBRIS_PARTICLES,
-            speed=15,
-            life=900,
-            size=6,
-            gravity=0.55,
-            shape="shard",
-        )
-        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS, strict=True):
-            get_impacts().pulse(x, y, radius * frac, ring_color)
-        if self.notify and message:
-            self.notify(message, (255, 170, 60))
-
-    def detonate_creeper(self, monster: Monster, player: Player, quest_system: QuestSystem):
-        """A creeper's fuse burning out: it comes off the map and the blast goes off where it
-        stood.
-
-        It is taken out of the list first, so it is not caught in its own explosion and its
-        death is never credited to anyone. Nothing the blast kills pays the player either
-        (`by_player=False`, the bear trap's rule): the reward for a creeper is killing it
-        before the fuse runs out, not standing next to one when it does.
-        """
-        if monster in self.monsters:
-            self.monsters.remove(monster)
-        self._spill_blood(monster.x, monster.y, monster.kind.color)
-        self.explode(
-            monster.x,
-            monster.y,
-            player,
-            quest_system,
-            radius=c.Creeper.RADIUS,
-            damage=c.Creeper.DAMAGE,
-            edge_frac=c.Creeper.EDGE_DAMAGE_FRAC,
-            knockback=c.Creeper.KNOCKBACK,
-            shake=c.Creeper.SHAKE,
-            player_mult=1.0,
-            by_player=False,
-            message="The creeper bursts!",
-        )
 
     def snap_traps(self, player: Player, quest_system: QuestSystem):
         """Whatever has just put a foot in a set bear trap, and what it costs them.
@@ -1376,7 +1129,7 @@ class WorldCombat:
         if monster.camp_id:
             self.on_guard_killed(monster, quest_system)
         # And a raider's is the village's: what the settlement thanks the player for is the
-        # raid being over, so the kills are counted and paid once (`WorldPlaces.update_raid`).
+        # raid being over, so the kills are counted and paid once (`WorldSocial.update_raid`).
         if by_player and monster.raid_key:
             self.credit_raid_kill(monster)
         monster_list.remove(monster)
@@ -1512,12 +1265,12 @@ class WorldCombat:
         which is the one thing no clock ever runs out on."""
         if npc.dead:
             return True
-        # Whatever bit them is what they turn round and swing at (`WorldPlaces.militia_orders`).
+        # Whatever bit them is what they turn round and swing at (`WorldSocial.militia_orders`).
         # Only ever something the player did not do: the player's own blows are answered by
         # the village as a whole, on the ladder below, and not by one farmer taking a swing.
         if not blow.by_player and blow.source is not None:
             npc.threaten(blow.source)
-        # A settlement warns before it turns (`WorldPlaces.strike_village`): the first blow
+        # A settlement warns before it turns (`WorldSocial.strike_village`): the first blow
         # the player lands there is answered with a shout and nothing else, so snapping at
         # somebody in the street is a thing the player is told they are about to do rather
         # than something they discover a moment too late. A killing skips the ladder below.

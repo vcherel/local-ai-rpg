@@ -14,6 +14,7 @@ from core.decals import get_decals
 from core.utils import parse_world_context
 from core.weather import WeatherSystem
 from game.blow import Blow
+from game.bosses import WorldBosses
 from game.combat import WorldCombat
 from game.entities.bomb import MINE, Bomb
 from game.entities.boss import Boss
@@ -21,23 +22,25 @@ from game.entities.breakables import Breakable, generate_breakables
 from game.entities.buildings import Building, set_active_buildings
 from game.entities.critter import Critter, pick_critter_kind
 from game.entities.entities import advance_impulse
-from game.entities.items import AMMO_BUNDLE, Item
+from game.entities.items import Item
 from game.entities.monsters import Monster, pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest
 from game.entities.projectile import Projectile
 from game.entities.scenery import Scenery
 from game.entities.traps import BearTrap
-from game.entities.village import Village, generate_starting_world, register_world_sites, settlements_near_chunk
+from game.entities.village import Village
+from game.entities.village_generation import generate_starting_world
+from game.entities.village_sites import register_world_sites
 from game.events import EventSystem
-from game.loot import roll_shop_stock
+from game.explosives import WorldExplosives
 from game.navigation import WorldNavigation
 from game.places import WorldPlaces
 from game.projectiles import WorldProjectiles
+from game.shops import WorldShops
+from game.social import WorldSocial
 from game.streaming import WorldStreaming
 from game.villagers import WorldVillagers
-from llm.llm_request_queue import generate_response_queued
-from llm.merchant_system import generate_shop_inventories
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -47,15 +50,31 @@ if TYPE_CHECKING:
     from ui.menus.context_menu import ContextMenu
 
 
-class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNavigation, WorldVillagers):
+class World(
+    WorldBosses,
+    WorldCombat,
+    WorldExplosives,
+    WorldProjectiles,
+    WorldStreaming,
+    WorldPlaces,
+    WorldShops,
+    WorldSocial,
+    WorldNavigation,
+    WorldVillagers,
+):
     """The living world and everything standing in it.
 
-    Four parts live in their own modules and are mixed in here: `WorldCombat`
-    (game/combat.py) resolves every blow and its aftermath, `WorldStreaming`
+    The jobs live in their own modules and are mixed in here: `WorldCombat`
+    (game/combat.py) resolves every blow and its aftermath, `WorldExplosives`
+    (game/explosives.py) is every blast and what it caught, `WorldStreaming`
     (game/streaming.py) generates the endless map around the player and names what it
     finds, `WorldPlaces` (game/places.py) is what the player can do at a place once they
-    reach it (camps, fires, shrines, directions, theft), and `WorldNavigation`
-    (game/navigation.py) is how anything gets from where it is to where it wants to be.
+    reach it (camps, fires, shrines, tunnels, directions), `WorldSocial` (game/social.py)
+    is what a settlement thinks of them and does about it (witnesses, warnings, anger,
+    amends, notoriety, raids, the notice board), `WorldNavigation`
+    (game/navigation.py) is how anything gets from where it is to where it wants to be,
+    `WorldBosses` (game/bosses.py) stands the bosses up, and `WorldShops`
+    (game/shops.py) fills the shelves.
     All of them work on the entity lists this class owns; keeping them as one class is
     what lets `self.monsters` and friends stay the single source of truth, and what
     decides which file a new method belongs in is the job it does, not which object holds
@@ -197,7 +216,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.rumor_marks: list[dict] = []
         # The blood night's raid on a settlement, or None: which village it is on, where it
         # stands, how many of it the player has put down and when it is called off
-        # (`WorldPlaces.raid_village`). Session-only, like the night that started it: what
+        # (`WorldSocial.raid_village`). Session-only, like the night that started it: what
         # is left of a raid is monsters standing on a map, and those are saved already.
         self.raid: dict | None = None
         self.respawn_timer = 0.0
@@ -261,13 +280,13 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         self.bombs = [Bomb.from_dict(d) for d in self.save_system.load("bombs", [])]
         # How much patience each settlement has left with the player, by village key and by
         # what the player did: {"cx:cy": {"assault": {"count": int, "at": seconds}}}. A
-        # village warns before it turns (`WorldPlaces.strike_village`), once per kind of
+        # village warns before it turns (`WorldSocial.strike_village`), once per kind of
         # offence, and the warning has to survive a save the way the anger it leads to does,
         # or quitting would be a way of starting over on a clean slate. Strikes older than
         # the window are dropped rather than loaded.
         self.village_strikes = self._load_strikes(self.save_system.load("village_strikes", {}))
         # What the player has done that people repeat, as points on the map with a weight and
-        # a time (`WorldPlaces.record_deed`). A grudge belongs to the settlement holding it;
+        # a time (`WorldSocial.record_deed`). A grudge belongs to the settlement holding it;
         # this is what the settlement over the hill has heard, so it is kept by where it
         # happened rather than by whose it was. Saved for the same reason the strikes are:
         # quitting is not a way of starting again with a clean name.
@@ -899,239 +918,6 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         it: the player takes another one or comes back in the morning."""
         return next((npc for npc in self.npcs if npc.asleep and npc.bed == bed), None)
 
-    # ------------------------------------------------------------------ bosses
-
-    def spawn_boss(
-        self,
-        x,
-        y,
-        template: c.BossKind = None,
-        quest_tag: str | None = None,
-        announce: str | None = None,
-        name: str = "",
-    ) -> Boss:
-        """Create a boss, register it, and kick off LLM naming. `announce`, if given, is a
-        message template shown once the name is ready (use '{name}' for the boss's name).
-
-        `name` is one that has already been generated: a cave's warden is stood back up
-        every time anybody walks down to its vault, and asking the model to rename the same
-        creature on every visit would be a call a session for a name nobody wanted changed."""
-        boss = Boss(x, y, template or random.choice(c.BOSS_KINDS), quest_tag=quest_tag)
-        self.bosses.append(boss)
-        if name:
-            boss.set_identity(name)
-        elif self.context:
-            threading.Thread(target=self._generate_boss_identity, args=(boss, announce), daemon=True).start()
-        return boss
-
-    def boss_spawn_ok(self, x, y) -> bool:
-        """Whether a boss may be stood up here. Every way one is spawned asks this: a boss
-        never despawns, so anywhere it lands is somewhere it stays.
-
-        A settlement is not one of those places, and neither is the ground the player starts
-        on. A monster wandering into a village is a fight the militia can have; a boss
-        standing in the plaza of the first town is the run over before it started.
-
-        Distance from a settlement is measured off its grounds and against the site registry
-        rather than the villages built so far, because a village a chunk away has not been
-        generated yet and a boss put down next to where one is going to stand is the same
-        mistake made a minute later. The world's own spawn margin is what keeps a wolf out
-        of the fields; a boss is held the far side of them (`Boss.MIN_DIST_FROM_VILLAGE`)."""
-        center = c.World.WORLD_SIZE // 2
-        if math.hypot(x - center, y - center) < c.Boss.MIN_DIST_FROM_START:
-            return False
-        if self.settlement_distance(x, y) < c.Boss.MIN_DIST_FROM_VILLAGE:
-            return False
-        if self.building_at(x, y) is not None:
-            return False
-        return not self.blocked(x, y, c.MONSTER_MAX_SIZE)
-
-    @staticmethod
-    def settlement_distance(x, y) -> float:
-        """How far (x, y) lies past the grounds of the nearest settlement, asked of the sites
-        rather than of the villages built so far: a town three chunks out has not been
-        generated yet and is no less somewhere people live. Infinite where there is nothing
-        within reach at all."""
-        size = c.World.CHUNK_SIZE
-        chunk = (int(x // size), int(y // size))
-        # The clearance in chunks, plus two for the largest grounds a town can have.
-        reach = math.ceil(c.Boss.MIN_DIST_FROM_VILLAGE / size) + 2
-        nearest = float("inf")
-        for site_x, site_y, _, _, radius in settlements_near_chunk(*chunk, reach):
-            nearest = min(nearest, math.hypot(x - site_x, y - site_y) - radius)
-        return nearest
-
-    def wild_bosses(self) -> int:
-        """How many of the bosses standing in the world count towards the cap: the ones that
-        are the wilds' own population rather than fixtures put somewhere for a reason
-        (`Boss.counts_against_cap`)."""
-        return sum(1 for boss in self.bosses if boss.counts_against_cap)
-
-    def boss_cap(self, player: Player) -> int:
-        """How many bosses the world holds at once around the player: one on the settled
-        ring, up to `Boss.MAX_ACTIVE_FAR` out in the deep wilds. The same shape as the
-        roaming monster cap and for the same reason. Difficulty is how many there are and
-        which kinds they are, never what one of them is made of."""
-        near, far = c.Boss.MAX_ACTIVE_NEAR, c.Boss.MAX_ACTIVE_FAR
-        return round(near + (far - near) * self._danger_ratio(player))
-
-    @staticmethod
-    def _danger_ratio(player: Player) -> float:
-        """Where the player stands between the settled ring and the deep wilds, 0 to 1."""
-        center = c.World.WORLD_SIZE // 2
-        distance = math.hypot(player.x - center, player.y - center)
-        span = max(c.Boss.DENSITY_FAR_DISTANCE - c.Boss.ROAM_MIN_DISTANCE, 1)
-        return min(max((distance - c.Boss.ROAM_MIN_DISTANCE) / span, 0.0), 1.0)
-
-    def _spawn_landmark_boss(self):
-        """A guardian waits at the ruined landmark from the very first world. It's named
-        later, once the world context has finished generating.
-
-        It goes through `boss_spawn_ok` like every other boss: the ruin is placed clear of
-        the starting town, but "clear" for a building is a few hundred paces and "clear" for
-        a boss is the far side of the fields, and this one is standing there from the first
-        frame of the save."""
-        landmark = next((b for b in self.buildings if b.kind == "landmark"), None)
-        if landmark is None:
-            return
-        # In front of the ruin if that is allowed, and otherwise as near to it as a boss may
-        # legally stand: the guardian belongs to the landmark, and the clearance it is held
-        # to is measured from a settlement rather than from the stone it guards.
-        spot = self._guardian_spot(landmark)
-        if spot is not None:
-            # It belongs to the ruin and it never leaves it, so it is not one of the bosses
-            # the wilds are counted to hold around the player.
-            self.spawn_boss(*spot).fixture = True
-
-    def _guardian_spot(self, landmark: Building) -> tuple[float, float] | None:
-        front = (landmark.x, landmark.y + landmark.h / 2 + 90)
-        if self.boss_spawn_ok(*front):
-            return front
-        step = max(landmark.w, landmark.h) / 2 + 90
-        return self.ring_search(landmark.x, landmark.y, step, c.Boss.GUARDIAN_SEARCH_RINGS, self.boss_spawn_ok)
-
-    def spawn_boss_for_quest(self) -> Boss:
-        """Spawn a boss out in the dangerous outer wilds as a quest hunt target.
-
-        The band starts at `Boss.QUEST_SPAWN_MIN_DISTANCE`, well past where roaming ones
-        begin, and runs outward from there. The world has no edge, so it is deliberately not
-        clamped to the settled ring: hunting one is meant to be a walk past everything the
-        player already knows.
-        """
-        center = c.World.WORLD_SIZE // 2
-        x = y = center
-        for _ in range(20):
-            angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(
-                c.Boss.QUEST_SPAWN_MIN_DISTANCE, c.Boss.QUEST_SPAWN_MIN_DISTANCE + c.Boss.QUEST_SPAWN_BAND
-            )
-            x = center + math.cos(angle) * dist
-            y = center + math.sin(angle) * dist
-            if self.boss_spawn_ok(x, y):
-                break
-        # A boss never despawns, so unlike a monster it can't be left standing in a wall
-        # if every roll was blocked: whatever came out of the loop is stepped clear first.
-        x, y = self.free_spot_near(x, y, c.MONSTER_MAX_SIZE)
-        tag = f"quest_boss_{random.randint(1000, 9999)}"
-        return self.spawn_boss(x, y, quest_tag=tag)
-
-    def _generate_boss_identity(self, boss: Boss, announce: str | None = None):
-        system_prompt = (
-            "You name bosses for a dark fantasy RPG. Reply with only the name, optionally as "
-            "'Name, the Epithet'. No quotes, no other text."
-        )
-        prompt = f"World: {self.context}\nName {boss.template.flavor}. 2 to 5 words."
-        text = generate_response_queued(prompt, system_prompt, "Boss naming") or ""
-        boss.set_identity(text)
-        self.sync_quest_boss_names()
-        self.persist_world()
-        if announce and self.notify:
-            self.notify(announce.format(name=boss.name), c.Colors.BOSS_BAR)
-
-    def sync_quest_boss_names(self):
-        """Copy each boss's display name onto the slay_boss quest hunting it.
-
-        The quest links to its boss by `target_monster_kind` holding the internal spawn
-        tag ("quest_boss_1234"), which is never fit to show; naming happens later on a
-        background thread, so the quest picks the real name up from here.
-        """
-        by_tag = {boss.quest_tag: boss for boss in self.bosses if boss.quest_tag}
-        for npc in self.npcs:
-            quest = npc.quest
-            if quest is None or quest.quest_type != "slay_boss":
-                continue
-            boss = by_tag.get(quest.target_monster_kind)
-            if boss is not None:
-                quest.boss_name = boss.display_name
-
-    def _maybe_spawn_roaming_boss(self, player: Player):
-        if self.wild_bosses() >= self.boss_cap(player):
-            return
-        center = c.World.WORLD_SIZE // 2
-        if math.hypot(player.x - center, player.y - center) < c.Boss.ROAM_MIN_DISTANCE:
-            return
-        ratio = self._danger_ratio(player)
-        chance = c.Boss.ROAM_CHANCE_NEAR + (c.Boss.ROAM_CHANCE_FAR - c.Boss.ROAM_CHANCE_NEAR) * ratio
-        chance *= c.DayNight.NIGHT_BOSS_ROAM_MULT if self.daynight.is_night else 1.0
-        if random.random() > chance:
-            return
-        for _ in range(10):
-            angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(c.Boss.ROAM_SPAWN_MIN_DIST, c.Boss.ROAM_SPAWN_MAX_DIST)
-            x = player.x + math.cos(angle) * dist
-            y = player.y + math.sin(angle) * dist
-            if self.boss_spawn_ok(x, y):
-                self.spawn_boss(x, y, announce="A roaming terror, {name}, prowls the wilds")
-                return
-
-    def _restock_merchants(self):
-        """Put a delivery on the shelf of any merchant whose clock has run out.
-
-        Rolled locally rather than asked of the model: the batched generation exists because
-        one call per shop was the queue's biggest cost, and a shop that refills every ten
-        minutes would put that cost straight back. What is already out is left alone, so a
-        restock tops the stock back up instead of replacing what the player was saving up
-        for."""
-        for npc in self.npcs:
-            if not npc.is_merchant or not npc.shop_ready or npc.restock_in() > 0:
-                continue
-            missing = c.Villages.SHOP_STOCK_TARGET - len(npc.shop_items)
-            npc.add_stock(roll_shop_stock(missing, luck=npc.stock_luck) if missing > 0 else [])
-
-    def start_shop_generation(self, merchants: list | None = None):
-        """Stock the given merchants, in a single background call.
-
-        `merchants` is the shortlist the caller wants filled: the shops of a settlement the
-        player is walking up to (`_prepare_settlements_near`) or the one merchant an event
-        has just put on the road. Passing nothing stocks every merchant still waiting, which
-        is a whole world's worth of calls and is only what a caller standing in front of all
-        of them would want."""
-        if merchants is None:
-            merchants = [npc for npc in self.npcs if npc.is_merchant and not npc.shop_ready]
-        merchants = [npc for npc in merchants if npc.is_merchant and not npc.shop_ready]
-        if not merchants or not self.context or self._shops_generating:
-            return
-        self._shops_generating = True
-        threading.Thread(target=self._generate_merchant_shops, args=(merchants,), daemon=True).start()
-
-    def _generate_merchant_shops(self, merchants: list):
-        try:
-            stocks = generate_shop_inventories(self.context, len(merchants))
-            for merchant, stock in zip(merchants, stocks, strict=False):
-                merchant.set_shop(stock + self._shop_staples())
-        finally:
-            self._shops_generating = False
-        self.persist_world()
-
-    @staticmethod
-    def _shop_staples() -> list:
-        """Stocked in every shop regardless of what the LLM comes up with, so ranged combat
-        doesn't depend entirely on loot RNG for its ammo, nor healing on finding a flask."""
-        return [
-            {"name": "Arrows", "item_type": "ammo", "rarity": "common", "price": 30, "quantity": AMMO_BUNDLE}
-            for _ in range(2)
-        ] + [{"name": "Healing Potion", "item_type": "potion", "rarity": "common", "price": 18} for _ in range(2)]
-
     def quest_target(self, quest, player: Player):
         """Where the tracked quest points right now, as (x, y), or None when it has no fixed
         place to go (killing any wolf, looting a drop). Once the objective is in hand it
@@ -1440,7 +1226,7 @@ class World(WorldCombat, WorldProjectiles, WorldStreaming, WorldPlaces, WorldNav
         if self.underground is None:
             self._restock_surface(player, dt)
             # A raid is over when there is nothing left of it or its time has run out, and
-            # that is when the village pays for it (`WorldPlaces.update_raid`).
+            # that is when the village pays for it (`WorldSocial.update_raid`).
             self.update_raid()
 
     def _track_bloody_feet(self, player: Player):

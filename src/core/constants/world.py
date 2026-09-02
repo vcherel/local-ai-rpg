@@ -267,7 +267,7 @@ class Crime:
     THEFT_ANGER_S: float = 180.0
     # Sleeping in a bed is not an instant somebody either saw or missed: it is a night, and
     # a settlement's people come and go through one. So the bed is answered by who is near
-    # it by morning rather than by who was looking at it (`WorldPlaces.squatter_witness`),
+    # it by morning rather than by who was looking at it (`WorldSocial.squatter_witness`),
     # which is what makes a tavern room something taken rather than something free.
     SQUAT_WITNESS_RADIUS: float = 620.0
 
@@ -480,7 +480,8 @@ class Tunnels:
     # The hoard is rolled with this much luck per thousand paces the way in stands from the
     # world centre, so the dark under a far-flung cave is worth the walk to it and the one
     # under the starting town is not. The same lean-the-ladder-up trick the shops use.
-    HOARD_LUCK_PER_1000: float = 0.16
+    HOARD_LUCK_PACES: float = 1000.0
+    HOARD_LUCK_PER_PACES: float = 0.16
     # The last room of a cave is a vault: a dead-end holding one guaranteed legendary box,
     # the one reward in the world that is not rolled for. Wells have none; a cellar under a
     # village is not an expedition.

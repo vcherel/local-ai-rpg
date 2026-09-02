@@ -71,7 +71,7 @@ class Monster(Entity):
         self.camp_id = ""
         self.camp_leader = False
         # The settlement this one was sent at, empty for everything else
-        # (`WorldPlaces.raid_village`). Like a camp's id it keeps the monster out of the
+        # (`WorldSocial.raid_village`). Like a camp's id it keeps the monster out of the
         # roaming population cap, and unlike one it is never saved: a raid is a night, and
         # what is left of it on a reload is monsters standing in a field.
         self.raid_key = ""
@@ -371,6 +371,72 @@ class Monster(Entity):
             return True
         return False
 
+    def _pace_factor(self, dt, terrain_mult: float) -> float:
+        """How much ground this monster covers this frame, before any of its own choices.
+
+        Chilled by a frost bolt it still turns, still swings and still shoots, it just
+        covers less ground doing it, exactly like the water and unlike a trap. Caught in a
+        bear trap or still travelling under a shove it cannot cross the ground at all under
+        its own power, so every step below is scaled to nothing."""
+        if self.rooted or self.staggered:
+            return 0.0
+        return frames(dt) * terrain_mult * self.chill_mult
+
+    def _approach(self, target, dist, aware, move_factor, radius, blocked, waypoint, dt) -> bool:
+        """Walk (or charge, or back off, or roam) one frame\'s worth, and face the result.
+
+        A ranged kind never closes: it holds `keep_distance` and backs off, slower than it
+        advances, when the player gets inside it, until the player is right on top of it and
+        it has to fight. A charger crosses the gap in one telegraphed rush instead of
+        walking, and a flanker bends its approach to one side so a group of them comes in
+        from several angles at once. Having seen nobody at all it roams its own patch.
+
+        Returns whether it is cornered, which is also what decides whether it may swing.
+        """
+        cornered = self.cornered(dist)
+        retreating = self.kind.ranged and not cornered and dist < self.kind.keep_distance
+
+        goal = waypoint if waypoint is not None else self._aim_point(target, blocked, radius, cornered)
+        gdx, gdy = goal[0] - self.x, goal[1] - self.y
+        goal_dist = math.hypot(gdx, gdy)
+        # Standing still is only allowed once the monster can act from where it is: a shooter
+        # holding its distance, or a melee kind close enough to land its swing. Otherwise a
+        # slot a few pixels short of reach would have it wait politely out of range forever.
+        settled = (self.kind.ranged and not cornered) or dist < self.melee_reach + target.size / 2
+        arrived = waypoint is None and goal_dist <= c.Entities.CHASE_ARRIVE and settled
+        # Facing follows the walk, except once it has taken its place: the angle to a spot
+        # it is already standing on is noise, and what it wants to face then is its target.
+        target_angle = math.atan2(gdy, gdx)
+        self.orientation = math.atan2(target.y - self.y, target.x - self.x) if arrived else target_angle
+
+        if self.kind.charge and self._charge(dist, aware, move_factor, radius, blocked):
+            self.orientation = self.charge_angle
+        elif aware and not arrived:
+            speed = self.pace * move_factor
+            if retreating:
+                speed *= c.Entities.RETREAT_SPEED_MULT
+            move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
+            step_towards(self, self._steer(move_angle, blocked, radius, speed, goal_dist), speed, blocked, radius)
+        elif not aware and move_factor:
+            # Nobody seen: it roams its own patch (`post_at` for anything with a post to
+            # hold) rather than standing exactly where it was put. A monster that only ever
+            # moves once the player is inside its detection ring reads as a trigger, and a
+            # cave mouth with three of them stood outside it reads as an ambush laid for
+            # somebody who has not arrived yet.
+            roamed = self.wander.step(self, dt, self.home, radius, blocked)
+            if roamed is not None:
+                self.orientation = roamed
+        return cornered
+
+    def _maybe_swing(self, dist, cornered: bool):
+        """Commit to a swing if this kind swings at all and the target is inside the reach
+        the wind-up is started from. A detonator never swings: its whole attack is the blast
+        the world sets off for it."""
+        swings = not self.kind.detonate and (not self.kind.ranged or cornered)
+        in_windup = swings and self.attack_token and dist < self.melee_reach * c.Entities.SWING_WINDUP_REACH_MULT
+        if in_windup and pygame.time.get_ticks() >= self.attack_ready_ms:
+            self.begin_swing()
+
     def move(
         self,
         target,
@@ -410,17 +476,9 @@ class Monster(Entity):
         the water, which is what makes crossing one a real answer to being chased."""
         dist = math.hypot(target.x - self.x, target.y - self.y)
         senses = c.World.DETECTION_RANGE if detection is None else detection
-        # Chilled by a frost bolt: it still turns, still swings and still shoots, it just
-        # covers less ground doing it, exactly like the water and unlike a trap.
-        move_factor = frames(dt) * terrain_mult * self.chill_mult
-        # Caught in a bear trap, or still travelling under a shove: every step below is
-        # scaled by this, so it turns, swings and shoots from where it stands and simply
-        # cannot cross the ground to the player under its own power.
-        if self.rooted or self.staggered:
-            move_factor = 0.0
+        aware = dist < senses + target.size // 2
         radius = self.kind.size / 2
 
-        aware = dist < senses + target.size // 2
         # Still wearing its villager: it does not walk, does not swing and does not notice
         # anything, because a disguise that flinched would not be one. Coming close enough
         # to see what it is is what opens it, and that is the whole fight.
@@ -429,7 +487,9 @@ class Monster(Entity):
                 self.reveal()
             self.update_attack_anim(dt)
             return 0
+
         self.aggro = aware
+        move_factor = self._pace_factor(dt, terrain_mult)
         # A detonator plants itself the moment its fuse is lit: what happens next is a timer,
         # and a bomb that kept walking would be unavoidable rather than dodgeable.
         if self.kind.detonate:
@@ -440,55 +500,14 @@ class Monster(Entity):
         # stand. Its own bearing is what it walks to, so turning that turns the whole ring.
         if not self.attack_token and not self.kind.ranged and dist < self.melee_reach + target.size:
             self.slot_angle += math.radians(c.Entities.CIRCLE_SPEED_DEG) * self.circle_side * move_factor
-        cornered = self.cornered(dist)
-        retreating = self.kind.ranged and not cornered and dist < self.kind.keep_distance
 
-        goal = waypoint if waypoint is not None else self._aim_point(target, blocked, radius, cornered)
-        gdx, gdy = goal[0] - self.x, goal[1] - self.y
-        goal_dist = math.hypot(gdx, gdy)
-        # Standing still is only allowed once the monster can act from where it is: a shooter
-        # holding its distance, or a melee kind close enough to land its swing. Otherwise a
-        # slot a few pixels short of reach would have it wait politely out of range forever.
-        settled = (self.kind.ranged and not cornered) or dist < self.melee_reach + target.size / 2
-        arrived = waypoint is None and goal_dist <= c.Entities.CHASE_ARRIVE and settled
-        # Facing follows the walk, except once it has taken its place: the angle to a spot
-        # it is already standing on is noise, and what it wants to face then is its target.
-        target_angle = math.atan2(gdy, gdx)
-        self.orientation = math.atan2(target.y - self.y, target.x - self.x) if arrived else target_angle
-
-        charging = self.kind.charge and self._charge(dist, aware, move_factor, radius, blocked)
-        if charging:
-            self.orientation = self.charge_angle
-        elif aware and not arrived:
-            speed = self.pace * move_factor
-            if retreating:
-                speed *= c.Entities.RETREAT_SPEED_MULT
-            move_angle = target_angle if waypoint is not None else self._flank(target_angle, dist)
-            step_towards(self, self._steer(move_angle, blocked, radius, speed, goal_dist), speed, blocked, radius)
-        elif not aware and move_factor:
-            # Nobody seen: it roams its own patch (`post_at` for anything with a post to
-            # hold) rather than standing exactly where it was put. A monster that only ever
-            # moves once the player is inside its detection ring reads as a trigger, and a
-            # cave mouth with three of them stood outside it reads as an ambush laid for
-            # somebody who has not arrived yet.
-            roamed = self.wander.step(self, dt, self.home, radius, blocked)
-            if roamed is not None:
-                self.orientation = roamed
-
+        cornered = self._approach(target, dist, aware, move_factor, radius, blocked, waypoint, dt)
         self._separate(crowd, blocked, radius)
-
-        # A detonator never swings: its whole attack is the blast the world sets off for it.
-        swings = not self.kind.detonate and (not self.kind.ranged or cornered)
-        in_windup = swings and self.attack_token and dist < self.melee_reach * c.Entities.SWING_WINDUP_REACH_MULT
-        if in_windup and pygame.time.get_ticks() >= self.attack_ready_ms:
-            self.begin_swing()
+        self._maybe_swing(dist, cornered)
 
         # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
         self.orientation += math.pi / 2
 
-        # The blow lands at the peak of the arc rather than on the frame it began, and only
-        # on what is still in reach when it gets there: a swing wound up on the approach is
-        # a swing the target has the whole wind-up to walk out of.
         damage = 0
         if self.update_attack_anim(dt) and dist < self.melee_reach + target.size / 2:
             damage = round(self.kind.damage * damage_mult)

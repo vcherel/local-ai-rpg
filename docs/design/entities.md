@@ -149,7 +149,7 @@ it stands, so one that rose on its own would spend the loudest moment in the gam
 empty screen, whether it was a quest target stood up thousands of paces out or a boss on the
 surface while the player was down a tunnel. It waits, and it arrives when they walk up.
 
-*A settlement answers it.* `WorldPlaces.militia_orders` counts bosses among the intruders,
+*A settlement answers it.* `WorldSocial.militia_orders` counts bosses among the intruders,
 at their own wider `Villages.BOSS_DEFEND_RADIUS` / `BOSS_PANIC_RADIUS`, and a slam catches
 the villagers standing in it. None of it is the player's doing, so every one of those blows
 goes through `by_player=False`: the village is never provoked by it and nothing it costs

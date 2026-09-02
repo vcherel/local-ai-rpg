@@ -11,7 +11,8 @@ from core.daynight import DayNightCycle
 from game.entities.critter import Critter
 from game.entities.npcs import NPC
 from game.entities.terrain import generate_chunk_scenery
-from game.entities.village import clear_registered_sites, generate_village, register_settlement
+from game.entities.village_generation import generate_village
+from game.entities.village_sites import clear_registered_sites, register_settlement
 
 
 class _Nobody:

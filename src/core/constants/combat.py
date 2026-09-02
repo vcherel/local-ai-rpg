@@ -1,6 +1,7 @@
 from dataclasses import dataclass, replace
 
 from core.constants.player import Magic
+from core.constants.ui import Screen
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,16 @@ class Shield:
     # so an archer can still wear a shield down.
     DEFLECT_GUARD_COST: float = 8.0
     SPEED_MULT: float = 0.55  # movement while the shield is up
+
+    # The guard meter drawn just under the mana bar and only while a shield is carried. It
+    # brightens while the block is up and turns red once the guard breaks, so the player can
+    # see what holding block is costing them.
+    GUARD_BAR_WIDTH: int = Screen.WIDTH * 2 // 9
+    GUARD_BAR_HEIGHT: int = 10
+    GUARD_BAR_COLOR: tuple = (90, 130, 175)
+    GUARD_BAR_BLOCKING_COLOR: tuple = (150, 210, 255)
+    GUARD_BAR_BROKEN_COLOR: tuple = (200, 70, 60)
+    GUARD_BROKEN_TEXT_COLOR: tuple = (255, 150, 140)
 
     GUARD_MAX: float = 60.0
     GUARD_REGEN_PER_S: float = 12.0

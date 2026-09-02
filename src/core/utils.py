@@ -131,54 +131,60 @@ def parse_shop_inventories(response: str, shop_count: int) -> list:
     return stocks
 
 
-def parse_response_quest_analysis(response):
+def _repaired_json(response) -> dict | None:
+    """The JSON object out of one reply, with the repairs a quantized model needs.
+
+    None for a reply with nothing usable in it, which is the only failure this can have:
+    the model can fail this in any number of ways, and a bad quest analysis has to end as
+    "no quest" rather than as a crash mid-conversation. Narrow on purpose, so a mistake in
+    what is built out of the result below still raises instead of quietly reading as a
+    villager who never offers a quest.
+    """
     try:
-        response = response.strip()
-        match = re.search(r"\{.*\}", response, re.DOTALL)
+        match = re.search(r"\{.*\}", response.strip(), re.DOTALL)
         if not match:
-            return _empty_quest_analysis()
+            return None
         json_str = match.group(0)
-
         json_str = re.sub(r"([{,]\s*)(\w+)(?=\s*:)", r'\1"\2"', json_str)
-
         json_str = re.sub(r":\s*True", ": true", json_str)
         json_str = re.sub(r":\s*False", ": false", json_str)
-
         json_str = re.sub(r':\s*([^"{},\s][^,}]*)', lambda m: f': "{m.group(1).strip()}"', json_str)
-
         json_str = re.sub(r":\s*([,}])", r': ""\1', json_str)
-
         result = json.loads(json_str)
-
-        fields = [
-            "quest_description",
-            "item_name",
-            "reward_item",
-            "quest_type",
-            "monster_hint",
-            "kill_count",
-        ]
-        result_dict = {field: result.get(field, "") for field in fields}
-        # A quest is only handed over if the NPC offered one *and* the player took it.
-        # `player_accepted` defaults to True so an older or sloppier reply that omits it
-        # behaves as it always did rather than silently dropping every quest.
-        result_dict["has_quest"] = _as_bool(result.get("has_quest"), default=False) and _as_bool(
-            result.get("player_accepted"), default=True
-        )
-
-        if result_dict["has_quest"] and not (
-            result_dict["quest_description"] or result_dict["item_name"] or result_dict["monster_hint"]
-        ):
-            return _empty_quest_analysis()
-
-        return result_dict
-
+        return result if isinstance(result, dict) else None
     except Exception as e:
-        # Deliberately broad: the model can fail this in any number of ways, and a bad
-        # quest analysis has to end as "no quest", never as a crash mid-conversation.
         llm_log.log_parse_failure("Conversation analyze", response, f"{type(e).__name__}: {e}")
+        return None
 
-    return _empty_quest_analysis()
+
+def parse_response_quest_analysis(response):
+    result = _repaired_json(response)
+    if result is None:
+        return _empty_quest_analysis()
+
+    fields = [
+        "quest_description",
+        "item_name",
+        "reward_item",
+        "quest_type",
+        "monster_hint",
+        "kill_count",
+    ]
+    result_dict = {field: result.get(field, "") for field in fields}
+    # A quest is only handed over if the NPC offered one *and* the player took it. A
+    # quantized model drops the field it was asked for often enough that treating a missing
+    # `player_accepted` as a refusal would throw away most of the quests actually offered,
+    # so the flag only ever takes a quest away.
+    result_dict["has_quest"] = _as_bool(result.get("has_quest"), default=False) and _as_bool(
+        result.get("player_accepted"), default=True
+    )
+
+    if result_dict["has_quest"] and not (
+        result_dict["quest_description"] or result_dict["item_name"] or result_dict["monster_hint"]
+    ):
+        return _empty_quest_analysis()
+
+    return result_dict
 
 
 def _as_bool(value, default: bool) -> bool:

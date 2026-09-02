@@ -30,7 +30,7 @@ class WorldVillagers:
     from `_update_npcs` once a frame, and the rest of the class is world state and lookups.
 
     A settlement acts as a settlement rather than as a crowd of individuals, so the orders
-    are worked out for everyone at once (`_mob_orders`, `WorldPlaces.militia_orders`) and
+    are worked out for everyone at once (`_mob_orders`, `WorldSocial.militia_orders`) and
     each villager is then walked through the one they were given.
     """
 
@@ -154,7 +154,7 @@ class WorldVillagers:
         simply spent running.
 
         `shelter` is a building when there is one to get behind and a bare point when there
-        is not (`WorldPlaces._refuge_for`): a rout in a field is still a rout, and it ends
+        is not (`WorldSocial._refuge_for`): a rout in a field is still a rout, and it ends
         in open ground rather than in a doorway.
 
         The way round a wall is handed in as a waypoint and not as the destination: a corner
