@@ -21,6 +21,7 @@ CONTROLS = [
     ("E", "Interact: talk, open a door, a chest, a bed, rest at a camp"),
     ("Loot", "Picked up by walking over it, no key needed"),
     ("B", "Trade with a merchant you are next to"),
+    ("K", "Pay a village you have turned its blood price, so it lets you back in"),
     ("F", "Equip the last picked-up upgrade"),
     ("G", "Throw or lay the bomb in the bomb slot"),
     ("1", "Swap your two weapons over, hand one to hand two"),

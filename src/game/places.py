@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING
 import core.constants as c
 from core.audio import play_sound
 from core.particles import get_particles
+from core.screen_fx import get_banner
 from game.entities.boss import Boss
 from game.entities.critter import Critter
 from game.entities.items import Item, roll_rarity
+from game.entities.monsters import pick_monster_kind
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest, pois_for_chunk
 from game.entities.tunnel import Tunnel, has_tunnel
@@ -658,6 +660,11 @@ class WorldPlaces:
         record = ledger.get(offence)
         fresh = record is not None and now - record["at"] < c.Villages.STRIKE_WINDOW_S
         count = (record["count"] if fresh else 0) + 1
+        # A place that has already heard about the player does not spend a warning on them:
+        # the ladder arrives one rung short, which is the whole of what a reputation costs
+        # before anybody has drawn anything (`Notoriety.NO_WARNING_LEVEL`).
+        if self.notoriety_at(npc.x, npc.y) >= c.Notoriety.NO_WARNING_LEVEL:
+            count += 1
         if count >= c.Villages.STRIKES_BEFORE_ANGER:
             ledger.pop(offence, None)
             if not ledger:
@@ -786,6 +793,8 @@ class WorldPlaces:
             for dog in self.critters:
                 if dog.village_key == key:
                     dog.aggro()
+        if newly_hostile:
+            self.record_deed(npc.x, npc.y, c.Notoriety.WEIGHT_BRAWL)
         if newly_hostile and self.notify:
             name = village.name if village is not None and village.name else "The locals"
             self.notify(f"{name} turns on you!", c.Colors.RED)
@@ -802,6 +811,10 @@ class WorldPlaces:
         for other in crowd:
             if other is not npc:
                 other.anger(c.Villages.ANGER_S, permanent=True)
+        # The rest of the world hears about it too. A grudge stops at the settlement that
+        # holds it; what the neighbours know is the deed, and a killing is most of a
+        # reputation on its own (`notoriety_at`).
+        self.record_deed(npc.x, npc.y, c.Notoriety.WEIGHT_KILL)
         if self.notify:
             name = village.name if village is not None and village.name else "The locals"
             self.notify(f"{name} will never forgive you", c.Colors.RED)
@@ -847,6 +860,338 @@ class WorldPlaces:
         # inside is angry, so the player can walk back into the place they died in.
         return village
 
+    # ------------------------------------------------------------------ word of mouth
+
+    def record_deed(self, x: float, y: float, weight: float):
+        """Remember that the player did something here that people talk about.
+
+        A grudge belongs to the settlement holding it, which left the town an hour's walk
+        away greeting a murderer as a stranger. A deed belongs to the ground instead: it is
+        kept as a point, a weight and the moment it happened, and every settlement inside
+        `Notoriety.TRAVEL_DISTANCE` reads the same sum. Nothing here turns anybody hostile;
+        what it spends is patience and goodwill, which is what word of mouth spends."""
+        self.deeds.append({"x": x, "y": y, "weight": weight, "at": time.time()})
+        self.forget_stale_deeds()
+
+    def forget_stale_deeds(self):
+        """Drop everything nobody repeats any more. Called wherever a deed is recorded and
+        once a frame with the strikes, so what the HUD reads, what a shop charges and what
+        the save carries are all the same short list."""
+        cutoff = time.time() - c.Notoriety.FADE_S
+        self.deeds = [deed for deed in self.deeds if deed["at"] > cutoff]
+
+    def notoriety_at(self, x: float, y: float) -> float:
+        """How much the people standing here have heard about the player, 0 to 1.
+
+        Each deed fades two ways at once, with the distance from where it was done and with
+        the time since. Both are straight lines rather than curves: what matters is that a
+        killing two valleys over is worth something and a killing on the next street is
+        worth most of a reputation, and a straight line says that as well as anything the
+        player could not see anyway. Clamped at `Notoriety.FULL`, so the effects have a top."""
+        now = time.time()
+        total = 0.0
+        for deed in self.deeds:
+            distance = math.hypot(deed["x"] - x, deed["y"] - y)
+            if distance >= c.Notoriety.TRAVEL_DISTANCE:
+                continue
+            age = now - deed["at"]
+            if age >= c.Notoriety.FADE_S:
+                continue
+            reach = 1.0 - distance / c.Notoriety.TRAVEL_DISTANCE
+            freshness = 1.0 - age / c.Notoriety.FADE_S
+            total += deed["weight"] * reach * freshness
+        return min(total, c.Notoriety.FULL)
+
+    def notoriety_label(self, x: float, y: float) -> str | None:
+        """What to call the player's standing here, or None while nobody has heard anything
+        worth a word. The one place the level is turned into language, so the strip under the
+        minimap and anything else that ever says it cannot drift apart."""
+        level = self.notoriety_at(x, y)
+        if level < c.Notoriety.LABELS[0][0]:
+            return None
+        return next(label for threshold, label in c.Notoriety.LABELS if level < threshold)
+
+    # ------------------------------------------------------------------ the blood price
+
+    def blood_price(self, village: Village) -> int:
+        """What this settlement wants to let the player back in.
+
+        Priced off what was done and off what the place is: a brawl it would have forgotten
+        on its own is cheap, a killing it never forgets is not, and a deep wilds town asks
+        more than a border hamlet. Rounded (`Amends.ROUNDING`), because a price is a figure
+        somebody says out loud."""
+        price = c.Amends.BASE + c.Amends.PER_TIER * village.tier
+        if any(npc.grudge for npc in self.npcs if village.contains_point(npc.x, npc.y)):
+            price *= c.Amends.GRUDGE_MULT
+        step = c.Amends.ROUNDING
+        return int(round(price / step) * step)
+
+    def amends_at(self, x: float, y: float) -> tuple | None:
+        """The settlement standing here that wants the player dead and what it would take to
+        stop, as (village, price), or None where there is nothing to pay for.
+
+        Read by the strip under the minimap and by the key that pays, so what the player is
+        quoted is exactly what they are charged. The margin is the one a village defends
+        itself out to: standing at the gate of a town that has barred itself is the ordinary
+        way this comes up, and that spot is outside the wall."""
+        village = self.village_at(x, y, c.Villages.DEFEND_MARGIN)
+        if village is None:
+            return None
+        if not any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y)):
+            return None
+        return village, self.blood_price(village)
+
+    def pay_blood_price(self, player: Player) -> tuple | None:
+        """Buy this settlement's forgiveness with coins, or answer why it cannot be bought.
+
+        Returns (village, price) once it is paid and None when there is nobody here to pay,
+        so the caller says the one thing that is true. Everything it undoes is what dying
+        here would have undone (`pacify_village`), plus the deeds done on this ground: the
+        village that was paid stops repeating them, which is the only thing that ever takes
+        notoriety back."""
+        found = self.amends_at(player.x, player.y)
+        if found is None:
+            return None
+        village, price = found
+        if player.coins < price:
+            return None
+        player.add_coins(-price)
+        self.pacify_village(village.x, village.y)
+        self.settle_deeds(village)
+        play_sound("quest_complete")
+        return village, price
+
+    def settle_deeds(self, village: Village):
+        """Rub out what was done on one settlement's ground. Paid for, so nobody there
+        brings it up again, and the neighbours stop hearing about it with them: a deed is
+        remembered by where it happened, and this is where it happened."""
+        reach = village.grounds_radius + c.Villages.DEFEND_MARGIN
+        self.deeds = [deed for deed in self.deeds if math.hypot(deed["x"] - village.x, deed["y"] - village.y) > reach]
+
+    # ------------------------------------------------------------------ a night raid
+
+    def raid_village(self, village: Village, player: Player) -> bool:
+        """Point a blood night at a settlement: a wave stood up outside its grounds and left
+        to walk in, and whether one actually started.
+
+        Nothing about the fight itself is new. The raiders are ordinary monsters posted on
+        the settlement (`Monster.post_at`), so they roam toward it while they have seen
+        nobody and take whoever they meet; the militia split, the panic, the gates and the
+        tower archers all answer them as they answer anything else that walked in. What is
+        new is the reason for the player to stand in somebody else's street: a village that
+        was defended is the one thing in the game that raises a whole settlement's opinion
+        at once (`end_raid`).
+
+        Only a settlement the player is near enough to reach is ever raided, and never one
+        already fighting them: a town that wants the player dead is not a town they can save.
+        """
+        if self.raid is not None or not village.discovered:
+            return False
+        if village.distance_to_point((player.x, player.y)) > c.Raid.MAX_DISTANCE:
+            return False
+        if any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y)):
+            return False
+
+        key = f"{village.chunk[0]}:{village.chunk[1]}"
+        count = c.Raid.SIZE_BY_TIER[min(village.tier, len(c.Raid.SIZE_BY_TIER) - 1)]
+        stood_up = 0
+        for index in range(count):
+            angle = 2 * math.pi * (index + random.random()) / count
+            reach = village.grounds_radius + c.Raid.SPAWN_MARGIN
+            x = village.x + math.cos(angle) * reach
+            y = village.y + math.sin(angle) * reach
+            monster = self._new_monster(x, y, c.Raid.DANGER_BONUS)
+            spot = self.free_spot_near(x, y, monster.kind.size / 2)
+            if self.blocked(*spot, monster.kind.size / 2):
+                continue
+            monster.x, monster.y = spot
+            monster.raid_key = key
+            # Posted on the settlement rather than on where it was stood up: it roams
+            # toward the place while it has seen nobody, which is a raid arriving instead
+            # of a ring of monsters waiting to be walked into.
+            monster.post_at(village.x, village.y, village.grounds_radius)
+            self.monsters.append(monster)
+            stood_up += 1
+        if not stood_up:
+            return False
+
+        self.raid = {
+            "key": key,
+            "x": village.x,
+            "y": village.y,
+            # Measured past this settlement's own grounds rather than from its middle: a
+            # walled town is a thousand paces across, and a leash drawn from the plaza would
+            # have written half of its own raiders off before they reached the wall.
+            "leash": village.grounds_radius + c.Raid.LEASH,
+            "kills": 0,
+            "until": time.time() + c.Raid.DURATION_S,
+        }
+        name = village.name or "A settlement"
+        get_banner().trigger("RAID", f"{name} is under attack", c.Colors.RED)
+        play_sound("shout")
+        return True
+
+    def raiders(self) -> list:
+        """Whatever is left of the raid, wherever it has got to. Its leash reaches past the
+        settlement's grounds rather than stopping at them: a monster chasing a militiaman
+        into the fields is still part of the raid, and one that has wandered `Raid.LEASH`
+        beyond the place it was sent at is a monster again."""
+        if self.raid is None:
+            return []
+        return [
+            monster
+            for monster in self.monsters
+            if monster.raid_key == self.raid["key"]
+            and math.hypot(monster.x - self.raid["x"], monster.y - self.raid["y"]) <= self.raid["leash"]
+        ]
+
+    def credit_raid_kill(self, monster: Monster):
+        """One raider down by the player's hand. Counted rather than paid on the spot: what
+        the village is grateful for is the raid being over, not each body."""
+        if self.raid is not None and monster.raid_key == self.raid["key"]:
+            self.raid["kills"] += 1
+
+    def update_raid(self):
+        """End the raid once there is nothing left of it or its time has run out, and pay
+        for it. Called once a frame with everything else the surface does.
+
+        The thanks are the whole point and they are deliberately not a reward the player can
+        farm: a raid they took no real part in (`Raid.THANKS_MIN_KILLS`) pays nothing at all,
+        and what it pays is affinity with everyone still standing, which is the mirror of
+        `provoke_village` turning all of them at once."""
+        if self.raid is None:
+            return
+        if self.raiders() and time.time() < self.raid["until"]:
+            return
+        kills = self.raid["kills"]
+        village = self.village_at(self.raid["x"], self.raid["y"])
+        self.raid = None
+        if kills < c.Raid.THANKS_MIN_KILLS or village is None:
+            return
+        for npc in self.npcs:
+            if village.contains_point(npc.x, npc.y) and not npc.hostile:
+                npc.affinity = min(c.Affinity.MAX, npc.affinity + c.Raid.THANKS_AFFINITY)
+        if self.notify:
+            name = village.name or "The village"
+            self.notify(f"{name} owes you for the night", c.Colors.GREEN)
+
+    # ------------------------------------------------------------------ the notice board
+
+    def board_in_reach(self, player: Player) -> Village | None:
+        """The notice board the player is standing at, or None. One per settlement, on the
+        rim of its plaza (`Village.board_pos`)."""
+        for village in self.villages:
+            if village.distance_to_point((player.x, player.y)) > village.grounds_radius:
+                continue
+            bx, by = village.board_pos()
+            if math.hypot(player.x - bx, player.y - by) <= c.Board.INTERACT_DISTANCE:
+                return village
+        return None
+
+    def board_offers(self, village: Village) -> list[dict]:
+        """What is pinned to this settlement's board right now, rolled here and kept on the
+        village until the board is worth walking back to (`Board.REFRESH_S`).
+
+        Every one of them is an ordinary quest written the way the model would have written
+        it: the same `{has_quest, quest_type, ...}` reading `QuestSystem` builds from, so a
+        notice taken off a board and a task agreed to in a conversation are the same object
+        by the time anything else in the game sees it. Rolled locally because a board is
+        what the game has to offer when the one model in it is busy.
+
+        Session only, like the lanes between the houses: a notice nobody took is not
+        something a save has to carry, and a board is re-read on the next visit anyway."""
+        now = time.time()
+        if village.notices and now < village.notices_rolled_at + c.Board.REFRESH_S:
+            return village.notices
+        village.notices_rolled_at = now
+        # By title, so a board never pins the same hunt up twice: two notices asking for six
+        # slimes are one notice and an empty peg.
+        rolled: dict[str, dict] = {}
+        for _ in range(c.Board.OFFERS * 3):
+            if len(rolled) >= c.Board.OFFERS:
+                break
+            offer = self._roll_notice(village)
+            if offer is not None:
+                rolled.setdefault(offer["title"], offer)
+        village.notices = list(rolled.values())
+        return village.notices
+
+    def _roll_notice(self, village: Village) -> dict | None:
+        """One notice: a hunt, a camp to empty or a thing to bring back, whichever the world
+        around this settlement can actually supply. Each is a title the board shows and the
+        quest reading the quest system builds from."""
+        kinds = ["kill_mob", "fetch"]
+        camp = self.find_bandit_camp(village.x, village.y, c.Quests.MIN_TARGET_DISTANCE)
+        if camp is not None:
+            kinds.append("clear_camp")
+        kind = random.choice(kinds)
+        if kind == "clear_camp":
+            return {
+                "title": "Bandits in the wilds",
+                "info": {
+                    "has_quest": True,
+                    "quest_type": "clear_camp",
+                    "quest_description": "A camp of bandits is preying on the road. Empty it.",
+                    "item_name": "",
+                    "monster_hint": "",
+                    "kill_count": "",
+                    "reward_item": "",
+                },
+            }
+        if kind == "kill_mob":
+            center = c.World.WORLD_SIZE // 2
+            monster = pick_monster_kind(math.hypot(village.x - center, village.y - center))
+            count = random.randint(*c.Board.KILL_COUNT_RANGE)
+            return {
+                "title": f"Wanted: {count} {monster.name}",
+                "info": {
+                    "has_quest": True,
+                    "quest_type": "kill_mob",
+                    "quest_description": f"{monster.name}s have been seen too close to the houses. Thin them out.",
+                    "item_name": "",
+                    "monster_hint": monster.name,
+                    "kill_count": str(count),
+                    "reward_item": "",
+                },
+            }
+        item = random.choice(c.Board.WANTED_ITEMS)
+        return {
+            "title": f"Wanted: {item}",
+            "info": {
+                "has_quest": True,
+                "quest_type": "fetch",
+                "quest_description": f"Somebody here needs {item.lower()} and has no way of fetching it themselves.",
+                "item_name": item,
+                "monster_hint": "",
+                "kill_count": "",
+                "reward_item": "",
+            },
+        }
+
+    def board_poster(self, village: Village) -> NPC | None:
+        """Who a notice off this board turns out to have been posted by: somebody who lives
+        here, is still speaking to the player and is not already waiting on a task.
+
+        A board quest is given by a person rather than by a plank, so handing it in is the
+        conversation every other quest is handed in through and nothing about the tracker,
+        the arrow or the reward had to learn that boards exist."""
+        candidates = [
+            npc
+            for npc in self.npcs
+            if village.contains_point(npc.x, npc.y)
+            and not npc.hostile
+            and not npc.has_active_quest
+            and not npc.is_merchant
+        ]
+        if not candidates:
+            return None
+        # Somebody who already has a name first. A name is generated on a worker and waited
+        # for when it is not ready (`NPCNameGenerator.get_name`), and a board is read in the
+        # middle of a street rather than at the start of a conversation: nothing here is
+        # worth holding a frame for when the village is full of people already named.
+        named = [npc for npc in candidates if npc.name]
+        return random.choice(named or candidates)
+
     def barred_gate_in_reach(self, player: Player) -> tuple | None:
         """The barred gate the player is standing at, as (village, index), or None.
 
@@ -885,7 +1230,11 @@ class WorldPlaces:
         """How far a villager notices a theft right now. Night cuts it, which is what makes
         robbing a house something you do after dark. Shared by the check and the cones the
         renderer draws, so what the player is shown is exactly what is tested."""
-        return c.Crime.WITNESS_RADIUS * (c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0)
+        night = c.Crime.NIGHT_WITNESS_MULT if self.daynight.is_night else 1.0
+        # Weather is the second thing that shortens it, and it stacks with the dark: a house
+        # robbed in fog at night is barely watched at all, which is what makes a fogbank
+        # worth waiting for rather than walking through.
+        return c.Crime.WITNESS_RADIUS * night * self.weather.sight_mult()
 
     def watchers_near(self, x: float, y: float) -> list[NPC]:
         """Everyone close enough to (x, y) that their field of view is worth drawing, whether
@@ -1046,6 +1395,7 @@ class WorldPlaces:
         if not self.strike_village(npc, player, offence):
             return None
         npc.anger(c.Crime.THEFT_ANGER_S)
+        self.record_deed(npc.x, npc.y, c.Notoriety.WEIGHT_THEFT)
         if self.notify:
             name = npc.name or "A villager"
             caught = {

@@ -70,6 +70,11 @@ class Monster(Entity):
         # roaming population cap, and its death is recorded on the camp itself.
         self.camp_id = ""
         self.camp_leader = False
+        # The settlement this one was sent at, empty for everything else
+        # (`WorldPlaces.raid_village`). Like a camp's id it keeps the monster out of the
+        # roaming population cap, and unlike one it is never saved: a raid is a night, and
+        # what is left of it on a reload is monsters standing in a field.
+        self.raid_key = ""
         # Ranged kinds only: the earliest tick this one may loose its next shot. World
         # fires it (WorldCombat.fire_monster_shots), since the arrow belongs to the world.
         self.next_shot_ms = 0

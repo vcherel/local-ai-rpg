@@ -110,9 +110,9 @@ class EventSystem:
                 self._spawn_treasure(player)
         elif kind == "blood_night":
             if random.random() < c.Events.PRESAGE_CHANCE:
-                threading.Thread(target=self._blood_night_with_presage, daemon=True).start()
+                threading.Thread(target=self._blood_night_with_presage, args=(player,), daemon=True).start()
             else:
-                self._start_blood_night()
+                self._start_blood_night(player)
         elif kind == "boss":
             if random.random() < c.Events.PRESAGE_CHANCE:
                 threading.Thread(target=self._boss_event_with_presage, args=(player,), daemon=True).start()
@@ -260,8 +260,20 @@ class EventSystem:
 
     # ------------------------------------------------------------------ blood night
 
-    def _start_blood_night(self):
+    def _start_blood_night(self, player: Player | None = None):
         self.blood_night_timer = c.Events.BLOOD_NIGHT_DURATION_MS
+        # And what the night does to somebody other than the player: the settlement nearest
+        # them, if they are near enough to fight for it, is raided (`World.raid_village`).
+        # A blood night that only thickened the wilds was a night the player could spend
+        # indoors; a night the village itself is losing is one they have to spend outside.
+        if player is not None and not self.world.closed:
+            village = min(
+                (v for v in self.world.villages if v.distance_to_point(player.get_pos()) <= c.Raid.MAX_DISTANCE),
+                key=lambda v: v.distance_to_point(player.get_pos()),
+                default=None,
+            )
+            if village is not None:
+                self.world.raid_village(village, player)
         # The banner and nothing else. The toast would say the same thing over the top of the
         # red the whole night is seen through (`core.screen_fx.draw_blood_veil`), and the
         # veil is the announcement: a panel sitting in front of it is the one thing that
@@ -269,11 +281,11 @@ class EventSystem:
         if not self.world.closed:
             get_banner().trigger("BLOOD NIGHT", "Monsters grow bolder, and the dead pay better", c.Colors.RED)
 
-    def _blood_night_with_presage(self):
+    def _blood_night_with_presage(self, player: Player):
         text = self._generate_lore_line("In one short ominous sentence, warn that a night of blood is coming soon.")
         self.notify(text or "Something dark is coming with the night...", c.Colors.RED)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
-        self._start_blood_night()
+        self._start_blood_night(player)
 
     # ------------------------------------------------------------------ boss
 

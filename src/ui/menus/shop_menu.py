@@ -49,11 +49,16 @@ class ShopMenu(BaseMenu):
         # is otherwise drawn past its bottom edge with no way to reach it.
         self.buy_scroll = 0
         self.sell_scroll = 0
+        self.notoriety = 0.0
 
-    def open(self, merchant: NPC, player: Player, world_items: list[Item]):
+    def open(self, merchant: NPC, player: Player, world_items: list[Item], world=None):
         self.merchant = merchant
         self.player = player
         self.world_items = world_items
+        # What this shop has heard about the player, read once as the shop opens rather than
+        # per row per frame: word of mouth does not change while somebody is standing at the
+        # counter (`WorldPlaces.notoriety_at`).
+        self.notoriety = world.notoriety_at(merchant.x, merchant.y) if world is not None else 0.0
         self.active = True
         self.hovered_buy = None
         self.hovered_sell = None
@@ -65,6 +70,7 @@ class ShopMenu(BaseMenu):
         self.merchant = None
         self.player = None
         self.world_items = None
+        self.notoriety = 0.0
 
     def _panel_width(self) -> int:
         return (self.width - self.padding * 3 - PANEL_GAP) // 2
@@ -89,12 +95,21 @@ class ShopMenu(BaseMenu):
     def _max_scroll(self, count: int) -> int:
         return max(0, count - self._visible_rows())
 
+    def _swing(self) -> float:
+        """What this merchant's opinion is worth on a price, as one number.
+
+        Two opinions, and they are not the same thing: what they personally think of the
+        player (`_affinity_swing`, earned at this counter) less what the country around them
+        has heard (`Notoriety.MAX_PRICE_SWING`). A trader who likes you and has heard about
+        you charges you what a stranger pays, which is exactly what the two should do."""
+        return _affinity_swing(self.merchant) - self.notoriety * c.Notoriety.MAX_PRICE_SWING
+
     def _buy_price(self, item: Item) -> int:
-        swing = _affinity_swing(self.merchant)
+        swing = self._swing()
         return max(1, round(self.merchant.shop_prices[item.id] * self.player.buy_multiplier() * (1.0 - swing)))
 
     def _sell_price(self, item: Item) -> int:
-        swing = _affinity_swing(self.merchant)
+        swing = self._swing()
         return max(1, round(base_value(item) * self.player.sell_multiplier() * (1.0 + swing)))
 
     # --- bulk selling ---------------------------------------------------------

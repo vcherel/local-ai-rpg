@@ -117,6 +117,11 @@ class Village:
         self._defences = None
         # The worn patches round the plaza, rolled on first draw (`_trodden_earth`).
         self._earth: tuple | None = None
+        # What is pinned to the board on the plaza rim, and when it was last pinned there
+        # (`WorldPlaces.board_offers`). Session-only, like the lanes: a notice nobody took
+        # is not something a save has to carry, and the board is re-read on the next visit.
+        self.notices: list = []
+        self.notices_rolled_at: float = 0.0
 
     @staticmethod
     def _tier_for(x, y, size: str) -> int:
@@ -145,6 +150,15 @@ class Village:
     @property
     def tower_radius(self) -> int:
         return c.Villages.TOWER_RADIUS_BY_TIER[self.tier]
+
+    def board_pos(self) -> tuple[float, float]:
+        """Where this settlement's notice board stands: on the rim of its own plaza, in a
+        direction rolled off the village so the same town always has it in the same corner
+        and a street is worth learning. Never in the middle, which is the well's."""
+        rng = random.Random(f"board:{self.chunk[0]},{self.chunk[1]}")
+        angle = rng.uniform(0, 2 * math.pi)
+        reach = c.Villages.PLAZA_RADIUS * c.Board.PLAZA_FRACTION
+        return self.x + math.cos(angle) * reach, self.y + math.sin(angle) * reach * 0.75
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -735,6 +749,7 @@ class Village:
             pygame.draw.circle(screen, darker, (round(cx + dx), round(cy + dy)), radius)
 
         self._draw_well(screen, (round(cx), round(cy)))
+        self._draw_board(screen, camera)
         self._draw_defences(screen, camera, darkness)
 
     def _draw_defences(self, screen: pygame.Surface, camera: Camera, darkness: float = 0.0):
@@ -979,6 +994,28 @@ class Village:
         pygame.draw.polygon(screen, tuple(round(v * shade) for v in (46, 34, 22)), corners, 3)
         for offset in range(20, max(21, int(length)), 22):
             pygame.draw.line(screen, (66, 48, 30), point(offset, -edge), point(offset, edge), 2)
+
+    def _draw_board(self, screen: pygame.Surface, camera: Camera):
+        """The notice board on the plaza rim: two posts, a plank face and the notices pinned
+        to it. Drawn as a thing standing up rather than as a mark on the ground, since it is
+        the one piece of village furniture the player walks up to and reads."""
+        bx, by = camera.world_to_screen(*self.board_pos())
+        width, height = c.Board.BOARD_W, c.Board.BOARD_H
+        for side in (-1, 1):
+            post = pygame.Rect(0, 0, 6, c.Board.POST_HEIGHT)
+            post.midtop = (round(bx + side * (width // 2 - 4)), round(by - c.Board.POST_HEIGHT + 10))
+            pygame.draw.rect(screen, c.Board.POST_COLOR, post)
+        face = pygame.Rect(0, 0, width, height)
+        face.midbottom = (round(bx), round(by - c.Board.POST_HEIGHT + 34))
+        pygame.draw.rect(screen, c.Board.BOARD_COLOR, face)
+        pygame.draw.rect(screen, (74, 54, 34), face, 2)
+        # A scrap of paper per notice actually pinned to it, so a board somebody has cleared
+        # out reads as bare boards from across the plaza.
+        for index, _notice in enumerate(self.notices[:3]):
+            note = pygame.Rect(0, 0, 14, 16)
+            note.topleft = (face.left + 6 + index * 18, face.top + 8 + (index % 2) * 4)
+            pygame.draw.rect(screen, c.Board.NOTICE_COLOR, note)
+            pygame.draw.rect(screen, (150, 142, 124), note, 1)
 
     @staticmethod
     def _draw_well(screen: pygame.Surface, center):

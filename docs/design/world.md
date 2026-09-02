@@ -298,3 +298,29 @@ The one landmark that comes down the same way is the signpost (`PointsOfInterest
 is a prop standing on a post rather than a place: a graveyard's rows and a stone circle are
 places, and levelling one would be levelling the landmark itself. Breaking a signpost pays
 nothing and costs whatever was written on it, which is the whole of its consequence.
+
+## Weather is a state of the world, on a shorter clock than night
+
+Night already works this way rather than as a filter over the screen: it changes what
+spawns, how hard things hit, how far they notice and how far a villager sees. Weather
+(`core/weather.py`) is the same idea with no schedule at all, so a walk across open country
+is not the same walk twice.
+
+It is deliberately allowed to touch exactly one thing: sight. `WeatherSystem.sight_mult` is
+read by `World.witness_radius` (what a villager catches a thief at, on top of the night
+multiplier) and by the detection range handed to every monster's `move`. Rain is a nuisance
+and fog is the reason to stay in. It never touches damage or spawning, because a sky that
+decides how hard a wolf hits is a difficulty setting the player has no way of reading.
+
+Everything about it hangs off one ramped `intensity`, exactly as a blood night does, so a
+spell comes on and bleeds out instead of switching; the drawing follows the same number, so
+a shower thickens into a downpour. The rain is a fixed set of streaks falling on the clock
+in screen space rather than a particle system: it interacts with nothing, and a thousand
+live particles a frame for something that cannot be walked into is a frame spent on nothing.
+Fog is one flat wash through `screen_fx.Overlay`, painted once per step of the ramp like the
+sky it sits under.
+
+It is session-only, like the wildlife and the decals. What the sky was doing is not a fact a
+save has any business restoring, and a spell that survived a reload would be weather the
+player could plan around. It is not drawn over a room the player is standing in, because
+that is what a roof is, and there is none of it underground.
