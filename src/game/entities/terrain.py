@@ -23,7 +23,7 @@ import pygame
 
 import core.constants as c
 from game.entities.scenery import Scenery
-from game.entities.village import register_site_cache, registered_keepouts, settlements_near_chunk
+from game.entities.village_sites import register_site_cache, registered_keepouts, settlements_near_chunk
 
 
 class RoadBlob(NamedTuple):
@@ -584,71 +584,30 @@ def _bridge_gap(one: Deck, other: Deck) -> float:
     return max(c.Scenery.BRIDGE_MIN_GAP, one.length, other.length)
 
 
-def generate_chunk_scenery(
-    cx: int,
-    cy: int,
-    buildings: Iterable,
-    villages: Iterable,
-    pois: Iterable,
-) -> list[Scenery]:
-    """Everything growing or lying in one chunk, rolled from its coordinates alone.
+def _keep_off_zones(buildings, villages, pois) -> tuple[list, list]:
+    """The circles nothing solid may stand in, and the circles nothing at all may.
 
-    The chunk picks a single biome first, which is what makes a wood a wood: scattering
-    every kind evenly over every chunk gives texture, not places. Villages, buildings and
-    landmarks push cover away so nothing grows through a wall or over a campfire, and the
-    roads and rivers through the chunk are laid first so nothing solid ever stands on one
-    and nothing at all grows out of the water.
+    Reaching past the doorstep as well as past the walls: the clear ground in front of a
+    door is the one piece of a building nothing at all may stand on, and it sticks out
+    further than the wall clearance does. A landmark keeps the wood off everything it
+    covers, not off its centre point: trees grew up between a graveyard's stones when the
+    clearance was one number for every kind.
     """
-    # Imported here for the same reason `_path_from_poi` does it: poi.py asks this module
-    # where the roads and the rivers run.
     from game.entities.poi import poi_footprint
 
-    rng = random.Random(f"scenery:{cx},{cy}")
-    size = c.World.CHUNK_SIZE
-    chunk = (cx, cy)
-
-    biome = _pick(c.Scenery.BIOME_WEIGHTS, rng)
-    roads, river, bridges = _chunk_terrain(cx, cy)
-    # Every deck within reach of this chunk, its own and its neighbours', as ground no
-    # trunk or boulder may stand on: a crossing walled in at the end of it is worse than
-    # no crossing at all, because the player walked over to use it.
-    decks = [
-        Scenery(deck.x, deck.y, "bridge", chunk, size=deck.length, biome=biome, angle=deck.angle)
-        for ox in (-1, 0, 1)
-        for oy in (-1, 0, 1)
-        for deck in _chunk_terrain(cx + ox, cy + oy)[2]
-    ]
-    bridge_zones = [(deck.x, deck.y, deck.block_reach + c.Scenery.BRIDGE_CLEARANCE) for deck in decks]
-
-    # Circles nothing at all may stand in, and circles only solid things are kept out of.
-    # Reaching past the doorstep as well as past the walls: the clear ground in front of a
-    # door is the one piece of a building nothing at all may stand on, and it sticks out
-    # further than the wall clearance does.
     keep_off = max(c.Scenery.CLEARANCE_BUILDING, c.Villages.DOORSTEP_CLEAR)
     solid_zones = [(b.x, b.y, max(b.w, b.h) / 2 + keep_off) for b in buildings]
-    # A landmark keeps the wood off everything it covers, not off its centre point: trees
-    # grew up between a graveyard's stones when the clearance was one number for every kind.
     solid_zones += [(p.x, p.y, max(c.Scenery.CLEARANCE_POI, poi_footprint(p.kind))) for p in pois]
     open_zones = [(v.x, v.y, v.grounds_radius + c.Scenery.CLEARANCE_VILLAGE) for v in villages]
+    return solid_zones, open_zones
 
-    def on_road(x: float, y: float) -> bool:
-        """Whether (x, y) is on the band of a road or a footpath. The tufts are drawn over
-        the roads rather than under them, so grass that ignored one grew through it; the
-        verge is left to them, since the edge of a road is where grass belongs."""
-        return any(math.hypot(x - blob.x, y - blob.y) < blob.width for blob in roads)
 
-    def on_street(x: float, y: float) -> bool:
-        """Whether (x, y) stands on a settlement's lanes or its plaza. What the village
-        draws as trodden earth is trodden earth: a tuft growing out of the middle of it is
-        the one thing about a street the player reads as a mistake."""
-        return any(v.street_at(x, y, c.Scenery.STREET_CLEARANCE) for v in villages)
-
-    def clear_of_places(x: float, y: float) -> bool:
-        return not any(math.hypot(x - zx, y - zy) < radius for zx, zy, radius in solid_zones + open_zones)
-
-    # Standing water is placed before anything else so nothing is planted in it. A pond and
-    # a lake are the same thing at two scales, and both are crossed the way a river is.
+def _still_water(cx, cy, rng, biome: str, chunk: tuple[int, int], roads, zones) -> list[Scenery]:
+    """The ponds and the lake of one chunk, placed before anything else so nothing is
+    planted in them. A pond and a lake are the same thing at two scales, and both are
+    crossed the way a river is, so neither is laid where a road already runs."""
     still = []
+    size = c.World.CHUNK_SIZE
     for kind, count in (
         ("pond", rng.randint(0, 2) if biome == "wetland" else 0),
         ("lake", 1 if rng.random() < c.Scenery.LAKE_CHANCE[biome] else 0),
@@ -658,23 +617,25 @@ def generate_chunk_scenery(
             y = cy * size + rng.uniform(0, size)
             piece = Scenery(x, y, kind, chunk, biome=biome)
             crossed = any(math.hypot(x - blob.x, y - blob.y) < piece.water_reach for blob in roads)
-            if clear_of_places(x, y) and not crossed:
+            clear = not any(math.hypot(x - zx, y - zy) < radius for zx, zy, radius in zones)
+            if clear and not crossed:
                 still.append(piece)
+    return still
 
-    water = list(river) + [(p.x, p.y, p.water_reach) for p in still]
 
-    def in_water(x: float, y: float, margin: float = 0.0) -> bool:
-        return any(math.hypot(x - wx, y - wy) < radius + margin for wx, wy, radius in water)
+def _lay_ways(chunk: tuple[int, int], biome: str, roads, river, still, decks, bridges, in_water) -> list[Scenery]:
+    """Everything drawn as ground: the roads, the water, and the crossings over it.
 
-    # A road between two settlements and a footpath out to a landmark are the same blobs
-    # at two scales and in two colours: the road is what the player is meant to see from
-    # across a field and follow, the path is a line worn in the grass.
-    # A road stands twice, as its verge and as its band, so each is laid down in a pass of
-    # its own over the whole chunk: a blob that drew both painted its verge over the band
-    # of the blob before it (see Scenery._draw_path).
-    # The earth is laid right up to a crossing and under its planks: a road that stopped at
-    # the bank left the deck's two landings standing on nothing, since a deck reaches past
-    # the water it spans. Nothing shows for it, a deck being wider than the widest road.
+    A road between two settlements and a footpath out to a landmark are the same blobs at
+    two scales and in two colours: the road is what the player is meant to see from across
+    a field and follow, the path is a line worn in the grass. A road stands twice, as its
+    verge and as its band, so each is laid down in a pass of its own over the whole chunk:
+    a blob that drew both painted its verge over the band of the blob before it (see
+    `Scenery._draw_path`). The earth is laid right up to a crossing and under its planks: a
+    road that stopped at the bank left the deck's two landings standing on nothing, since a
+    deck reaches past the water it spans. Nothing shows for it, a deck being wider than the
+    widest road.
+    """
     items = [
         Scenery(blob.x, blob.y, kind, chunk, size=blob.width, biome=biome, angle=blob.heading)
         for blob in roads
@@ -697,25 +658,19 @@ def generate_chunk_scenery(
     # were only ever borrowed to keep this chunk's ground clear at the end of one.
     own = {(deck.x, deck.y) for deck in bridges}
     items += [deck for deck in decks if (deck.x, deck.y) in own]
+    return items
 
-    def free(x: float, y: float, solid: bool) -> bool:
-        for zx, zy, radius in solid_zones:
-            if math.hypot(x - zx, y - zy) < radius:
-                return False
-        # Nothing grows out of open water, and a trunk keeps off the bank as well: what
-        # blocks must never stand where it would wall a crossing in.
-        if in_water(x, y, c.Scenery.RIVER_BANK_CLEARANCE if solid else 0.0):
-            return False
-        if not solid:
-            return True
-        for zx, zy, radius in bridge_zones:
-            if math.hypot(x - zx, y - zy) < radius:
-                return False
-        for zx, zy, radius in open_zones:
-            if math.hypot(x - zx, y - zy) < radius:
-                return False
-        return all(math.hypot(x - blob.x, y - blob.y) >= blob.width + c.Scenery.ROAD_CLEARANCE for blob in roads)
 
+def _grow_cover(cx, cy, rng, biome: str, chunk: tuple[int, int], roads, villages, is_free) -> list[Scenery]:
+    """The biome's own clumps grown over the chunk once the ground is settled.
+
+    In clusters rather than scattered evenly, which is what makes a wood a wood. Decoration
+    keeps off a road's band and off a settlement's lanes and plaza, and off nothing else:
+    the tufts are drawn over the roads rather than under them, so grass that ignored one
+    grew through it, and what a village draws as trodden earth is trodden earth.
+    """
+    items = []
+    size = c.World.CHUNK_SIZE
     for kind, clusters, members, spread in c.Scenery.BIOMES[biome]:
         solid = kind in c.Scenery.BLOCK_RADIUS
         decor = kind in c.Scenery.DECOR_KINDS
@@ -725,9 +680,74 @@ def generate_chunk_scenery(
             for _ in range(rng.randint(*members)):
                 x = gx + rng.uniform(-spread, spread)
                 y = gy + rng.uniform(-spread, spread)
-                if free(x, y, solid) and not (decor and (on_street(x, y) or on_road(x, y))):
-                    items.append(Scenery(x, y, kind, chunk, biome=biome))
+                if not is_free(x, y, solid):
+                    continue
+                if decor and any(v.street_at(x, y, c.Scenery.STREET_CLEARANCE) for v in villages):
+                    continue
+                if decor and any(math.hypot(x - blob.x, y - blob.y) < blob.width for blob in roads):
+                    continue
+                items.append(Scenery(x, y, kind, chunk, biome=biome))
     return items
+
+
+def generate_chunk_scenery(
+    cx: int,
+    cy: int,
+    buildings: Iterable,
+    villages: Iterable,
+    pois: Iterable,
+) -> list[Scenery]:
+    """Everything growing or lying in one chunk, rolled from its coordinates alone.
+
+    The chunk picks a single biome first, which is what makes a wood a wood: scattering
+    every kind evenly over every chunk gives texture, not places. Villages, buildings and
+    landmarks push cover away so nothing grows through a wall or over a campfire, and the
+    roads and rivers through the chunk are laid first so nothing solid ever stands on one
+    and nothing at all grows out of the water.
+
+    Four passes in order, each of which the next one has to be able to see: what is kept
+    off, the standing water, the ways over the ground, and the cover grown on what is left.
+    """
+    rng = random.Random(f"scenery:{cx},{cy}")
+    chunk = (cx, cy)
+
+    biome = _pick(c.Scenery.BIOME_WEIGHTS, rng)
+    roads, river, bridges = _chunk_terrain(cx, cy)
+    # Every deck within reach of this chunk, its own and its neighbours', as ground no
+    # trunk or boulder may stand on: a crossing walled in at the end of it is worse than
+    # no crossing at all, because the player walked over to use it.
+    decks = [
+        Scenery(deck.x, deck.y, "bridge", chunk, size=deck.length, biome=biome, angle=deck.angle)
+        for ox in (-1, 0, 1)
+        for oy in (-1, 0, 1)
+        for deck in _chunk_terrain(cx + ox, cy + oy)[2]
+    ]
+    bridge_zones = [(deck.x, deck.y, deck.block_reach + c.Scenery.BRIDGE_CLEARANCE) for deck in decks]
+    solid_zones, open_zones = _keep_off_zones(buildings, villages, pois)
+
+    still = _still_water(cx, cy, rng, biome, chunk, roads, solid_zones + open_zones)
+    water = list(river) + [(p.x, p.y, p.water_reach) for p in still]
+
+    def in_water(x: float, y: float, margin: float = 0.0) -> bool:
+        return any(math.hypot(x - wx, y - wy) < radius + margin for wx, wy, radius in water)
+
+    def is_free(x: float, y: float, solid: bool) -> bool:
+        for zx, zy, radius in solid_zones:
+            if math.hypot(x - zx, y - zy) < radius:
+                return False
+        # Nothing grows out of open water, and a trunk keeps off the bank as well: what
+        # blocks must never stand where it would wall a crossing in.
+        if in_water(x, y, c.Scenery.RIVER_BANK_CLEARANCE if solid else 0.0):
+            return False
+        if not solid:
+            return True
+        for zx, zy, radius in bridge_zones + open_zones:
+            if math.hypot(x - zx, y - zy) < radius:
+                return False
+        return all(math.hypot(x - blob.x, y - blob.y) >= blob.width + c.Scenery.ROAD_CLEARANCE for blob in roads)
+
+    items = _lay_ways(chunk, biome, roads, river, still, decks, bridges, in_water)
+    return items + _grow_cover(cx, cy, rng, biome, chunk, roads, villages, is_free)
 
 
 def _index_cells(x: float, y: float, reach: float) -> Iterator[tuple[int, int]]:
@@ -759,7 +779,7 @@ def water_cells(item: Scenery) -> Iterator[tuple[int, int]]:
 
 
 # Everything in here is laid out from the village sites, so all of it has to be forgotten
-# when a world registers a settlement the region grid never offered (`village.py`).
+# when a world registers a settlement the region grid never offered (`village_sites.py`).
 for _clear in (
     _roads_from_site.cache_clear,
     _path_from_poi.cache_clear,

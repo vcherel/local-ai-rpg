@@ -225,7 +225,7 @@ class Minimap:
             y = self._draw_amends_strip(world, player, y)
         # What the country round here has heard, wherever the player is standing. Not inside
         # the village branch above: word of mouth is the one thing about the player that is
-        # true out on the road as well (`WorldPlaces.notoriety_at`).
+        # true out on the road as well (`WorldSocial.notoriety_at`).
         heard = world.notoriety_label(player.x, player.y)
         if heard:
             y = self._draw_text_strip(heard, c.Colors.ORANGE, y)

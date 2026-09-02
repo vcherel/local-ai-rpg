@@ -102,3 +102,21 @@ new save trigger belongs on that list rather than in a new write path.
 
 `Game._handle_key` is the whole in-world key map as one table, and `HelpMenu.CONTROLS` is the only
 written record of it. A rebinding that misses the second leaves the game lying to the player.
+
+## A tunable is a constant, a shade of paint is not
+
+Every number that changes how the game plays or reads at a glance lives in
+`core/constants/`, filed by what it tunes: a bar's width, a bar's colour, a wall's stone,
+a minimap's ground. That is what makes a tuning pass a diff in one folder rather than a
+search through the draw calls.
+
+The vector art is the deliberate exception. `entities/building_art.py`, `entities/poi.py`,
+`entities/scenery.py` and `entities/breakables.py` carry their shades inline, a couple of
+hundred of them between the four, because they are not tunables: they are the drawing. A
+roof's third highlight, the two greys a gravestone is lit and shaded with, the browns of a
+plank, are read as part of the shape they paint and mean nothing away from it. Naming each
+one and filing it elsewhere would put a lookup between every draw call and its colour, and
+would fill the constants namespace with names nothing else could ever want.
+
+The line: a colour something else reads, or that a person would go and turn a dial on, is a
+constant. A colour that exists only inside one silhouette stays inside it.

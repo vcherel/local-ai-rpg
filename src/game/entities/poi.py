@@ -10,7 +10,7 @@ import pygame
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx
 from game.entities.terrain import river_points_for_chunk, road_blobs_for_chunk
-from game.entities.village import register_site_cache, site_grounds_radius, village_site
+from game.entities.village_sites import register_site_cache, site_grounds_radius, village_site
 
 if TYPE_CHECKING:
     from core.camera import Camera

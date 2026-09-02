@@ -12,7 +12,8 @@ from game.entities.breakables import generate_breakables
 from game.entities.poi import pois_for_chunk
 from game.entities.terrain import blocking_cells, generate_chunk_scenery, water_cells
 from game.entities.traps import traps_for_chunk
-from game.entities.village import generate_village, village_site
+from game.entities.village_generation import generate_village
+from game.entities.village_sites import village_site
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:

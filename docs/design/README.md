@@ -5,7 +5,8 @@ it needs them. `CLAUDE.md` holds the one-line rule; the reasoning and the worked
 examples live here.
 
 - `world.md`: streaming, chunks, wilderness, water, the underground, spawning, difficulty and weather
-- `villages.md`: settlements, buildings, villagers, defences, crime, anger, amends, notoriety, raids and the notice board
+- `settlements.md`: settlements, buildings, lanes, walls and gates, villagers, beds, defences and the merchant's clock
+- `social.md`: crime and witnesses, the warning ladder, anger, amends, notoriety, raids and the notice board
 - `combat.md`: blows, weapons, projectiles, breakables, explosions, traps, magic
 - `entities.md`: monsters, wildlife, crowds, art and gait
 - `progression.md`: healing, economy, quests, loot, inventory and the quick bars

@@ -20,7 +20,7 @@ TAKE_BUTTON_H = 34
 class BoardMenu(BaseMenu):
     """The notices pinned to a settlement's board, and the one button that takes one.
 
-    The board itself owns nothing: what it shows is `WorldPlaces.board_offers` and what
+    The board itself owns nothing: what it shows is `WorldSocial.board_offers` and what
     taking one does is `Game._take_notice`, which puts the quest on a villager who actually
     lives here. So this is a list with buttons on it, and every quest it hands out is the
     same object a conversation would have produced.

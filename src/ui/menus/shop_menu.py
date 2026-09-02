@@ -51,13 +51,22 @@ class ShopMenu(BaseMenu):
         self.sell_scroll = 0
         self.notoriety = 0.0
 
+        # The two columns' geometry. Worked out once here rather than per row per frame:
+        # nothing it is built from (the panel size, the padding, the header) changes for the
+        # life of the menu.
+        self.panel_width = (self.width - self.padding * 3 - PANEL_GAP) // 2
+        self.buy_panel_x = self.padding
+        self.sell_panel_x = self.padding * 2 + self.panel_width + PANEL_GAP
+        self.list_top = self.content_top + LABEL_GAP
+        self.visible_rows = max(1, (self.height - self.list_top - FOOTER_HEIGHT) // ROW_HEIGHT)
+
     def open(self, merchant: NPC, player: Player, world_items: list[Item], world=None):
         self.merchant = merchant
         self.player = player
         self.world_items = world_items
         # What this shop has heard about the player, read once as the shop opens rather than
         # per row per frame: word of mouth does not change while somebody is standing at the
-        # counter (`WorldPlaces.notoriety_at`).
+        # counter (`WorldSocial.notoriety_at`).
         self.notoriety = world.notoriety_at(merchant.x, merchant.y) if world is not None else 0.0
         self.active = True
         self.hovered_buy = None
@@ -72,28 +81,13 @@ class ShopMenu(BaseMenu):
         self.world_items = None
         self.notoriety = 0.0
 
-    def _panel_width(self) -> int:
-        return (self.width - self.padding * 3 - PANEL_GAP) // 2
-
-    def _buy_panel_x(self) -> int:
-        return self.padding
-
-    def _sell_panel_x(self) -> int:
-        return self.padding * 2 + self._panel_width() + PANEL_GAP
-
-    def _list_top(self) -> int:
-        return self.content_top + LABEL_GAP
-
     def _row_rect(self, panel_x: int, visible_index: int) -> pygame.Rect:
         """Rect of the nth row currently on screen, not of the nth item in the list."""
-        y = self._list_top() + visible_index * ROW_HEIGHT
-        return pygame.Rect(panel_x, y, self._panel_width(), ROW_HEIGHT - 6)
-
-    def _visible_rows(self) -> int:
-        return max(1, (self.height - self._list_top() - FOOTER_HEIGHT) // ROW_HEIGHT)
+        y = self.list_top + visible_index * ROW_HEIGHT
+        return pygame.Rect(panel_x, y, self.panel_width, ROW_HEIGHT - 6)
 
     def _max_scroll(self, count: int) -> int:
-        return max(0, count - self._visible_rows())
+        return max(0, count - self.visible_rows)
 
     def _swing(self) -> float:
         """What this merchant's opinion is worth on a price, as one number.
@@ -124,9 +118,9 @@ class ShopMenu(BaseMenu):
         return [item for item in self.player.inventory if item.item_type in GEAR_TYPES and item.id not in spoken_for]
 
     def _bulk_button_rects(self) -> tuple[pygame.Rect, pygame.Rect]:
-        width = (self._panel_width() - 10) // 2
+        width = (self.panel_width - 10) // 2
         y = self.height - FOOTER_HEIGHT + 6
-        left = self._sell_panel_x()
+        left = self.sell_panel_x
         return (
             pygame.Rect(left, y, width, BULK_BUTTON_HEIGHT),
             pygame.Rect(left + width + 10, y, width, BULK_BUTTON_HEIGHT),
@@ -136,7 +130,7 @@ class ShopMenu(BaseMenu):
         """The Equip best button, under the buy column: what you just bought is worn on the
         spot rather than after a trip to the inventory."""
         y = self.height - FOOTER_HEIGHT + 6
-        return pygame.Rect(self._buy_panel_x(), y, (self._panel_width() - 10) // 2, BULK_BUTTON_HEIGHT)
+        return pygame.Rect(self.buy_panel_x, y, (self.panel_width - 10) // 2, BULK_BUTTON_HEIGHT)
 
     def _sell_all(self, items: list[Item]):
         """Sell a whole batch through the normal per-item path, so each one still trains
@@ -147,16 +141,16 @@ class ShopMenu(BaseMenu):
 
     def _slot_at(self, panel_x: int, count: int, scroll: int, rel_x: int, rel_y: int) -> int | None:
         """Index in the full list of the row under (rel_x, rel_y), or None."""
-        for i in range(max(0, min(self._visible_rows(), count - scroll))):
+        for i in range(max(0, min(self.visible_rows, count - scroll))):
             if self._row_rect(panel_x, i).collidepoint(rel_x, rel_y):
                 return scroll + i
         return None
 
     def _buy_slot_at(self, rel_x: int, rel_y: int) -> int | None:
-        return self._slot_at(self._buy_panel_x(), len(self.merchant.shop_items), self.buy_scroll, rel_x, rel_y)
+        return self._slot_at(self.buy_panel_x, len(self.merchant.shop_items), self.buy_scroll, rel_x, rel_y)
 
     def _sell_slot_at(self, rel_x: int, rel_y: int) -> int | None:
-        return self._slot_at(self._sell_panel_x(), len(self.player.inventory), self.sell_scroll, rel_x, rel_y)
+        return self._slot_at(self.sell_panel_x, len(self.player.inventory), self.sell_scroll, rel_x, rel_y)
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -215,7 +209,7 @@ class ShopMenu(BaseMenu):
     def _scroll(self, rows: int, mouse_x: int, _mouse_y: int):
         """Scroll whichever column the cursor sits over, the sell one by default."""
         menu_x, _ = self.get_centered_position()
-        if mouse_x - menu_x < self._sell_panel_x():
+        if mouse_x - menu_x < self.sell_panel_x:
             limit = self._max_scroll(len(self.merchant.shop_items))
             self.buy_scroll = max(0, min(limit, self.buy_scroll + rows))
         else:
@@ -279,10 +273,10 @@ class ShopMenu(BaseMenu):
             (self.width - self.padding - coins_text.get_width(), (HEADER_HEIGHT - coins_text.get_height()) // 2),
         )
 
-        pw = self._panel_width()
-        bx = self._buy_panel_x()
-        sx = self._sell_panel_x()
-        label_y = self._list_top() - 28
+        pw = self.panel_width
+        bx = self.buy_panel_x
+        sx = self.sell_panel_x
+        label_y = self.list_top - 28
 
         buy_label = c.Fonts.heading.render("Buy", True, (120, 220, 120))
         surface.blit(buy_label, (bx, label_y))
@@ -301,14 +295,14 @@ class ShopMenu(BaseMenu):
         sell_items = list(self.player.inventory)
         self.buy_scroll = min(self.buy_scroll, self._max_scroll(len(buy_items)))
         self.sell_scroll = min(self.sell_scroll, self._max_scroll(len(sell_items)))
-        visible = self._visible_rows()
+        visible = self.visible_rows
 
         if not self.merchant.shop_ready:
             msg = c.Fonts.text.render("Preparing wares...", True, c.Colors.MUTED)
-            surface.blit(msg, (bx + 10, self._list_top() + 10))
+            surface.blit(msg, (bx + 10, self.list_top + 10))
         elif not buy_items:
             msg = c.Fonts.text.render("Nothing for sale right now.", True, c.Colors.MUTED)
-            surface.blit(msg, (bx + 10, self._list_top() + 10))
+            surface.blit(msg, (bx + 10, self.list_top + 10))
         else:
             for row, item in enumerate(buy_items[self.buy_scroll : self.buy_scroll + visible]):
                 index = self.buy_scroll + row
@@ -383,11 +377,11 @@ class ShopMenu(BaseMenu):
         max_scroll = self._max_scroll(count)
         if max_scroll <= 0:
             return
-        visible = self._visible_rows()
+        visible = self.visible_rows
         widgets.draw_scrollbar(
             surface,
             x,
-            self._list_top(),
+            self.list_top,
             visible * ROW_HEIGHT - 6,
             visible=visible,
             total=count,
