@@ -20,6 +20,16 @@ One line per file, saying what it owns. Update this when adding, removing or sub
 
 `saves/save.json`: persisted game state (gitignored). `models/`: GGUF model files (gitignored).
 
+### scripts/verify
+How a change here is checked, all headless and none of them loading the model. `scripts/verify/README.md` says what is reproducible and what is not.
+- `scripts/verify/harness.py`: `boot()`, a real `Game` on SDL's dummy drivers with the LLM stubbed, the music player replaced, the generation threads run inline, the chunk build budget frozen and a virtual clock; `step()` is one frame of `Game.run` without input or display
+- `scripts/verify/refs.py`: every module parses (a truncated file does not) and every `self.x()` names something defined somewhere in `src` (a deleted method's callers do not)
+- `scripts/verify/smoke.py`: N frames, then what the world is left as: non-finite coordinates, hp out of range, a carried item that is not in `world.items`
+- `scripts/verify/render.py`: the fixed shots, drawn offscreen to PNG
+- `scripts/verify/render_diff.py`: those shots on this tree against a git ref, pixel by pixel, with a diff image per shot that moved
+- `scripts/verify/frame_profile.py`: the update/draw split and the percentiles across a run, then a cProfile table
+- `scripts/verify/spawn_rates.py`: what `pick_monster_kind` rolls per distance band, as a table to put beside the one from before the change
+
 ### rpg_ai
 - `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session
 
@@ -135,14 +145,14 @@ The short version. `docs/design/` explains each of these.
 - What the wilderness is looked up through is kept up as it arrives, never rebuilt: a chunk files its own pieces (`WorldStreaming._index_scenery`) and takes them away again with itself, and anything that changes what a piece blocks goes back through `rework_scenery`. Walking the whole held wilderness to rebuild four indexes was most of what a border crossing cost.
 - Nothing heavy runs in Python on a background thread while the world is being drawn. Every pygame call on the main thread lets go of the GIL and has to take it back, so a worker doing arithmetic costs the frame a switch interval per call: rendering one music pad on demand took the frame from 16 ms to 85 ms. Work that has to be done in the background is done before the player has control (the pads, on the loading screen) or not at all; the model's own threads are waiting on C, which is the case this is not about.
 - `src/` is the package root; all imports are relative to it (e.g. `import core.constants as c`).
-- No tests exist; skip the pre-push hook accordingly.
+- Verify before committing, always through `scripts/verify/`: `refs.py` and `smoke.py` after any multi-file change, `render_diff.py` after anything that draws, `frame_profile.py` on both sides of a performance claim. Report what they printed rather than that they passed. No pytest suite exists; skip the pre-push hook accordingly.
 - Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it. To self-check a rendering change, a throwaway script that renders to an offscreen `Surface` is fine, with `SDL_VIDEODRIVER=dummy` set before `pygame.init()`.
 - `World` is one class split across files by mixin (`world.py` state, `combat.py` blows, `explosives.py` blasts, `projectiles.py` what is in flight, `streaming.py` the map, `places.py` what happens at a place, `social.py` what a settlement thinks of the player, `bosses.py` standing one up, `shops.py` the shelves, `navigation.py` getting there, `villagers.py` what a villager does with their frame). They share the same entity lists; pick the file by what you are changing, not by defaulting to `world.py`.
 - A settlement's lanes and the roads outside it are one network: `plan_streets` routes every lane round the building footprints off one flood fill from the plaza, and lays one out to each point a road from a neighbour stops at (`terrain.road_ends_at`). A lane is never laid over a footprint, and never out of a gate no road came to. A lane is the corners it turns and the width it has at each, drawn as one surface in two passes (edge, then earth); the one out of a gate starts at the arriving road's width and narrows on the way in, and its colour and its verge follow that width (`Village._lane_look`).
 - Ground that overlaps itself is drawn in passes over the chunk, never layer by layer per piece: a road's verge and the three colours of every body of water (`Scenery.WATER_LAYERS`, still and running alike, so a river joins the lake it runs into rather than striping it) are kinds of their own in `Scenery.GROUND_KINDS`.
 - Nothing grows out of what is drawn as a way through: the decoration (`Scenery.DECOR_KINDS`) keeps off a road's band and off a settlement's lanes and plaza (`Village.street_at`), and off nothing else, because grass is what the grounds either side are made of.
 - A landmark covers what it draws (`poi_footprint`), not the point it stands on: a footpath stops at that edge, and where a road would cross it the landmark stands down rather than the road bending.
-- The map is endless and deterministic, what stands on it is generated on demand and kept. Anything regenerated from a chunk seed must stay a pure function of `(cx, cy)`, with player changes in `World.poi_state`. Villages are the exception and go through `World._ensure_village`.
+- The map is endless and deterministic, what stands on it is generated on demand and kept. Anything regenerated from a chunk seed must stay a pure function of `(cx, cy)`, with player changes in `World.poi_state`. Villages are the exception and go through `World._ensure_village`. A building is named off its settlement's chunk and its slot, never off a fresh uuid, since its wing and its roof are rolled from that name and its wing is what its neighbour is shoved off: a random name is what used to lay the same seed's houses down in different places in each process.
 - Difficulty is distance from the world centre, pulled by four levers (which kinds, how many, what has a name, and what a town sells through `NPC.stock_luck`). Nothing scales a monster's own stat block.
 - The spawn point is protected three ways at once: nothing hostile spawned near it, the player placed by `safe_spot_near`, and `Death.SPAWN_GRACE_S` of grace.
 - Healing is scarce and each source has one job (potion, campfire, bed, slow passive trickle). New healing goes through one of the four, not beside them.

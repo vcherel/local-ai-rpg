@@ -133,8 +133,18 @@ def _build(x, y, chunk, size: str, composition: dict, rng: random.Random) -> tup
     kinds = building_kinds(composition, rng)
     slots = plaza_slots(len(kinds), rng)
     buildings = []
-    for kind, (ox, oy) in assign_slots(kinds, slots):
-        building = Building(round(x + ox), round(y + oy), kind, facing=_facing_towards_plaza(ox, oy))
+    # Named off the settlement's own chunk and the slot it was dealt, which is the one thing
+    # about a building that never moves: the separation passes below shove it about, but it
+    # is still the nth house of that village. A settlement is the only thing in its chunk
+    # (`village_sites`), so no two of these can meet.
+    for index, (kind, (ox, oy)) in enumerate(assign_slots(kinds, slots)):
+        building = Building(
+            round(x + ox),
+            round(y + oy),
+            kind,
+            facing=_facing_towards_plaza(ox, oy),
+            building_id=f"{chunk[0]},{chunk[1]}:{index}",
+        )
         buildings.append(building)
     _separate(buildings, (x, y))
 
@@ -193,7 +203,12 @@ def generate_starting_world() -> tuple[Village, list[Building]]:
             continue
         break
     chunk = (int(x // c.World.CHUNK_SIZE), int(y // c.World.CHUNK_SIZE))
-    village, buildings = _build(x, y, chunk, "town", c.Villages.START_COMPOSITION, random.Random())
+    # Drawn off the global stream rather than seeded from the clock: a new game reseeds
+    # nothing, so this is still a different town every playthrough, and a run that *has*
+    # seeded `random` (the verify harness) gets the same one back.
+    village, buildings = _build(
+        x, y, chunk, "town", c.Villages.START_COMPOSITION, random.Random(random.getrandbits(64))
+    )
 
     landmark = _place_landmark(village, buildings)
     if landmark is not None:
@@ -232,7 +247,7 @@ def _place_landmark(village: Village, buildings: list[Building]) -> Building | N
             for sx, sy, _, _, radius in settlements_near_chunk(*chunk, reach)
         ):
             continue
-        candidate = Building(x, y, "landmark")
+        candidate = Building(x, y, "landmark", building_id=f"{chunk[0]},{chunk[1]}:landmark")
         gap = c.Buildings.MIN_GAP
         if any(candidate.bounds.inflate(gap * 2, gap * 2).colliderect(other.bounds) for other in buildings):
             continue

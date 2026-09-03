@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import random
-import uuid
 from typing import TYPE_CHECKING
 
 import pygame
@@ -174,9 +173,15 @@ def _subtract(seg: pygame.Rect, hole: pygame.Rect) -> list[pygame.Rect]:
 
 
 class Building(BuildingArt):
-    def __init__(self, x, y, kind: str, w=None, h=None, facing: str = "S"):
+    def __init__(self, x, y, kind: str, w=None, h=None, facing: str = "S", *, building_id: str):
+        """`building_id` names this building for good: the wing it grows, the beam on its
+        door, the roof it is built of and the shell kept for it are all rolled off it, so it
+        is what makes the same seed lay the same house down in every process. It has no
+        default on purpose. A random one (which is what it used to be) is a fact about the
+        process, and a village whose footprints are pushed apart off wings rolled that way
+        comes out a different town each run."""
         w_range, h_range = c.Buildings.SIZES[kind]
-        self.id = uuid.uuid4().hex
+        self.id = building_id
         self.kind = kind
         self.x = x
         self.y = y
@@ -679,8 +684,9 @@ class Building(BuildingArt):
 
     @classmethod
     def from_dict(cls, data: dict) -> Building:
-        building = cls(data["x"], data["y"], data["kind"], data["w"], data["h"], data.get("facing", "S"))
-        building.id = data["id"]
+        building = cls(
+            data["x"], data["y"], data["kind"], data["w"], data["h"], data.get("facing", "S"), building_id=data["id"]
+        )
         building.name = data["name"]
         building.looted = data["looted"]
         building.broken_props = set(data.get("broken_props", []))

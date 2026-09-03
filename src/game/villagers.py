@@ -359,7 +359,10 @@ class WorldVillagers:
         everybody used to do."""
         if not npc.bed_dealt:
             npc.bed_dealt = True
-            residents = sorted((one for one in self.npcs if self._home_for(one) is home), key=id)
+            # Ordered by the doorstep each of them was stood up on rather than by anything
+            # about the objects: it is a coordinate the settlement's own layout decided, so
+            # the same person gets the same bed in every process as well as every night.
+            residents = sorted((one for one in self.npcs if self._home_for(one) is home), key=lambda one: one.home)
             beds = home.interior_layout()["beds"]
             index = residents.index(npc)
             npc.bed = beds[index] if index < len(beds) else None
