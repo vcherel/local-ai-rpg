@@ -7,6 +7,7 @@ import pygame
 
 import core.constants as c
 from core.utils import frames
+from game.entities.gear import boomerang_polygon, weapon_length
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -185,16 +186,13 @@ class Projectile:
             return
 
         if self.style == "boomerang":
-            # A flat curved blade spinning about its own middle: the spin is what tells it
-            # from an arrow at a glance, and it is drawn off the distance flown so it never
-            # needs a clock of its own.
-            spin = self.traveled / 26.0
-            arm = 9
-            for offset in (0.0, 2.1):
-                a = spin + offset
-                tip = (x + math.sin(a) * arm, y - math.cos(a) * arm)
-                pygame.draw.line(screen, (70, 50, 25), (x, y), tip, 5)
-                pygame.draw.line(screen, self.color, (x, y), tip, 3)
+            # The same silhouette the hand was holding, at the same size (`gear`), spinning
+            # about its own middle: the spin is what tells it from an arrow at a glance, and
+            # it is taken off the distance flown so it never needs a clock of its own.
+            length = weapon_length("boomerang", c.Player.SIZE)
+            points = boomerang_polygon(length, self.traveled / 26.0, (x, y))
+            pygame.draw.polygon(screen, self.color, points)
+            pygame.draw.polygon(screen, (70, 50, 25), points, 2)
             return
 
         if self.style == "bolt":

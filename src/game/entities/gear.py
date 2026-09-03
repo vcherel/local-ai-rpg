@@ -277,6 +277,22 @@ def _weapon_parts(kind: str, length: float) -> list:
     return _WEAPON_PARTS.get(kind, _WEAPON_PARTS["sword"])(length)
 
 
+def boomerang_polygon(length: float, angle: float, center) -> list:
+    """The boomerang's own silhouette, spun about its middle and put down at `center`.
+
+    Shared with the thrown one (`Projectile.draw`), because what leaves the hand is the
+    thing that was in it: one shape at one size, whether it is being held or is in the air.
+    """
+    points = _weapon_parts("boomerang", length)[0][1]
+    mid_x = sum(x for x, _ in points) / len(points)
+    mid_y = sum(y for _, y in points) / len(points)
+    cos, sin = math.cos(angle), math.sin(angle)
+    return [
+        (center[0] + (x - mid_x) * cos - (y - mid_y) * sin, center[1] + (x - mid_x) * sin + (y - mid_y) * cos)
+        for x, y in points
+    ]
+
+
 def draw_weapon(surface, hand_pos, spec: dict, size: int, hand: str, attack_progress: float):
     """Draw a held weapon anchored at the hand, swept inward by the swing animation."""
     length = weapon_length(spec["kind"], size)

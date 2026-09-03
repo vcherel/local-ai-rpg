@@ -136,9 +136,12 @@ class Player(Entity):
         self.inventory = []
         self.coins = coins
 
-        # Earliest tick at which the next swing is allowed, and the current weapon's
-        # animation speed. Both are set by World.handle_attack.
-        self.attack_ready_ms = 0
+        # Earliest tick at which each hand may act again, and the current weapon's
+        # animation speed. One clock per hand rather than one for the body: the player has
+        # two hands and what is in each paces itself, so a bow in one and a staff in the
+        # other are two weapons rather than one that alternates. Set through
+        # `hand_ready`/`spend_hand` by everything that attacks.
+        self.hands_ready_ms = [0, 0]
         self.attack_swing_mult = 1.0
 
         self.stats = Stats(save_system.load("stats", None))
@@ -156,10 +159,11 @@ class Player(Entity):
         saved_equipped = save_system.load("equipped", {})
         self.equipped = {slot: saved_equipped.get(slot) for slot in EQUIP_SLOT_NAMES}
 
-        # The weapon whose projectile is in the air right now, so a boomerang is not drawn
-        # still sitting in the hand that threw it. Session-only; `WorldProjectiles` keeps it
-        # in step with what is actually flying.
-        self.thrown_id = None
+        # The weapons whose projectiles are in the air right now, so a boomerang is not
+        # drawn still sitting in the hand that threw it. A set because both hands can have
+        # one out at once. Session-only; `WorldProjectiles` keeps it in step with what is
+        # actually flying.
+        self.thrown_ids: set = set()
 
         # The potions the HUD quick keys drink: a list of ids rather than whatever happens
         # to sit first in the bag, so a healing potion does not slide off the bar the moment
@@ -611,6 +615,16 @@ class Player(Entity):
     def hand_weapon(self, hand: int):
         """What that hand is holding, or None for bare hands."""
         return self.equipped_item(HAND_SLOTS[hand])
+
+    def hand_ready(self, hand: int, now: int) -> bool:
+        """Whether that hand has finished what it last did. Each hand keeps its own clock,
+        so a slow axe never holds up the bow in the other one."""
+        return now >= self.hands_ready_ms[hand]
+
+    def spend_hand(self, hand: int, now: int, cooldown_ms: float, swing_mult: float = 1.0):
+        """Put that hand on its weapon's own cooldown, and set how fast the arm moves."""
+        self.hands_ready_ms[hand] = now + cooldown_ms
+        self.attack_swing_mult = swing_mult
 
     def select_weapon(self, hand: int, item):
         """Put a weapon in that hand, or None to put the hand on bare hands. A weapon taken
@@ -1102,7 +1116,7 @@ class Player(Entity):
         # than still in the fist that threw it, and a bomb is carried rather than wielded.
         for key, hand in (("hand1", 0), ("hand2", 1)):
             item = self.hand_weapon(hand)
-            if item is None or item.id == self.thrown_id:
+            if item is None or item.id in self.thrown_ids:
                 continue
             gear[key] = {
                 "kind": c.weapon_look(item.name),

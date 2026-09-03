@@ -119,25 +119,44 @@ class Breakable:
 
     def _draw_flowerbed(self, screen: pygame.Surface, center, rng: random.Random, hp_frac: float, flash: float):
         """A tilled bed with a few blooms in it, the thing most likely to be growing by a
-        village door. Blooms are trampled off it one by one as it takes hits."""
+        village door. Blooms are trampled off it one by one as it takes hits.
+
+        The bed is what somebody turned over and the plants are what grew out of it, so the
+        soil sits low and small under the leaves rather than framing them: a broad slab with
+        four dots on it read as a plank with studs in it rather than as a garden.
+        """
         cx, cy = center
         size = c.Breakables.SIZE
-        soil = pygame.Rect(0, 0, round(size * 1.2), round(size * 0.55))
-        soil.center = (cx, cy + size // 5)
-        pygame.draw.ellipse(screen, tint((98, 72, 48), flash), soil)
-        pygame.draw.ellipse(screen, (68, 50, 34), soil, 2)
+        soil = pygame.Rect(0, 0, round(size * 0.9), round(size * 0.34))
+        soil.center = (cx, cy + size // 4)
+        pygame.draw.ellipse(screen, tint((92, 68, 46), flash), soil)
+        pygame.draw.ellipse(screen, (66, 48, 33), soil, 1)
+        # A clump of leaves out of the soil first, so what is planted has a body and the
+        # blooms sit on top of something.
+        for _ in range(3):
+            lx = round(cx + rng.uniform(-size * 0.34, size * 0.34))
+            ly = round(cy + rng.uniform(size * 0.02, size * 0.2))
+            leaf = (62 + rng.randint(-8, 10), 108 + rng.randint(-10, 16), 56 + rng.randint(-8, 8))
+            pygame.draw.ellipse(screen, tint(leaf, flash), pygame.Rect(lx - 7, ly - 4, 14, 8))
         palette = ((228, 96, 112), (236, 202, 92), (170, 128, 220), (240, 240, 232))
         color = rng.choice(palette)
         # The count is rolled in full and then trimmed, so damage takes blooms away
-        # instead of rearranging the ones that are left.
-        for _ in range(max(1, round(rng.randint(4, 6) * hp_frac))):
-            ox = rng.uniform(-size * 0.45, size * 0.45)
-            oy = rng.uniform(-size * 0.18, size * 0.12)
-            stem_bottom = (round(cx + ox), round(cy + oy + 8))
-            head = (round(cx + ox), round(cy + oy - 4))
-            pygame.draw.line(screen, (66, 108, 52), stem_bottom, head, 2)
-            pygame.draw.circle(screen, color, head, rng.randint(3, 5))
-            pygame.draw.circle(screen, (250, 236, 160), head, 1)
+        # instead of rearranging the ones that are left. Each one is a stem of its own
+        # height with a head of its own size: a row of identical dots is a domino, and the
+        # heads are petals rather than discs.
+        for _ in range(max(1, round(rng.randint(5, 7) * hp_frac))):
+            ox = rng.uniform(-size * 0.4, size * 0.4)
+            base = (round(cx + ox), round(cy + size * 0.2))
+            stem = rng.randint(11, 20)
+            lean = rng.uniform(-4, 4)
+            head = (round(base[0] + lean), base[1] - stem)
+            pygame.draw.line(screen, (64, 104, 50), base, head, 2)
+            petal = rng.randint(2, 3)
+            for angle in (0.0, 1.26, 2.51, 3.77, 5.03):
+                px = round(head[0] + math.cos(angle) * petal)
+                py = round(head[1] + math.sin(angle) * petal)
+                pygame.draw.circle(screen, color, (px, py), petal)
+            pygame.draw.circle(screen, (250, 236, 160), head, 2)
 
     def _draw_herbs(self, screen: pygame.Surface, center, rng: random.Random, hp_frac: float, flash: float):
         """A kitchen patch: low, ragged, no flowers to speak of."""
