@@ -41,12 +41,13 @@ class WorldExplosives:
         decided to fight over, exactly like a powder keg, and both end in the same `explode`
         the keg does. The one thing decided here is where it ends up."""
         now = pygame.time.get_ticks()
-        if now < player.attack_ready_ms:
+        # Thrown with the first hand, so it is that hand's clock a bomb spends: the other
+        # one is free to keep firing, exactly as it is while this one swings.
+        if not player.hand_ready(0, now):
             return
         if not player.spend_one(item):
             return
-        player.attack_ready_ms = now + c.Bombs.COOLDOWN_MS
-        player.attack_swing_mult = 1.0
+        player.spend_hand(0, now, c.Bombs.COOLDOWN_MS)
         player.end_spawn_grace()
         player.start_attack_anim("right", c.Player.SWING_MS)
 

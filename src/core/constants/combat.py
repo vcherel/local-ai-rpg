@@ -265,20 +265,22 @@ class Explosion:
     # The blast is not choosy: it takes this much of its damage off the player too.
     PLAYER_DAMAGE_MULT: float = 0.7
     KNOCKBACK: float = 90.0
-    SHAKE: float = 30.0
-    # A blast is the loudest thing that happens in this game and it should look it: the
-    # shockwave goes out as three rings of its own, a white flash washes the screen, the
-    # debris arcs and settles, and the freeze-frame is longer than any swing earns.
-    HITSTOP_MS: float = 170.0
-    # Ring radii as a share of the blast, drawn outward: the damage ring, then a wider
-    # shockwave that carries past what it hurt.
-    RING_FRACS: tuple = (1.0, 1.35, 1.7)
-    RING_COLORS: tuple = ((255, 220, 150), (255, 150, 50), (120, 100, 95))
-    FLASH_AMOUNT: float = 0.85
+    SHAKE: float = 20.0
+    # A blast is the loudest thing that happens in this game, and it says so where it went
+    # off rather than over the whole screen: the fire, the smoke and the debris are at the
+    # blast, the shockwave carries a little past what it hurt, and the wash and the freeze
+    # are a beat rather than a whiteout. It used to take the screen away from the player at
+    # the exact moment they had a fight to read.
+    HITSTOP_MS: float = 90.0
+    # Ring radii as a share of the blast, drawn outward: the damage ring, then the
+    # shockwave carrying past what it hurt.
+    RING_FRACS: tuple = (1.0, 1.35)
+    RING_COLORS: tuple = ((255, 220, 150), (200, 130, 60))
+    FLASH_AMOUNT: float = 0.22
     FLASH_COLOR: tuple = (255, 225, 180)
-    FIRE_PARTICLES: int = 70
-    SMOKE_PARTICLES: int = 40
-    DEBRIS_PARTICLES: int = 26
+    FIRE_PARTICLES: int = 45
+    SMOKE_PARTICLES: int = 28
+    DEBRIS_PARTICLES: int = 20
     # A keg inside the blast of another one goes off as well, which is what makes a
     # cluster of them worth lining up.
     CHAIN_RADIUS: float = 150.0

@@ -402,7 +402,9 @@ class Villages:
     # real reason to break the gate instead. Once lifted it stands open long enough to walk
     # through and then falls back into place.
     GATE_LIFT_S: float = 4.0
-    GATE_LIFT_HOLD_MS: float = 2500.0
+    # Long enough to walk through, since the player walks through it: it holds while the
+    # leaf swings (`GATE_SWING_MS`) and then while somebody crosses the gateway.
+    GATE_LIFT_HOLD_MS: float = 4000.0
     # Being hit while heaving at it loses this much of the lift: a gate is not opened in the
     # middle of a fight.
     GATE_LIFT_HIT_LOSS: float = 0.4

@@ -72,10 +72,9 @@ class WorldCombat:
             return
 
         now = pygame.time.get_ticks()
-        if now < player.attack_ready_ms:  # still on cooldown from the previous swing
+        if not player.hand_ready(hand, now):  # this hand is still on its own cooldown
             return
-        player.attack_ready_ms = now + arch.cooldown_ms
-        player.attack_swing_mult = arch.swing_mult
+        player.spend_hand(hand, now, arch.cooldown_ms, arch.swing_mult)
         # Swinging spends whatever is left of the spawn grace: it is there to get the player
         # out of what killed them, not to let them open a fight untouchable.
         player.end_spawn_grace()

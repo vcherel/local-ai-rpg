@@ -507,11 +507,15 @@ class Game:
             dist = reach_of(door.centerx, door.centery)
             if dist > c.Buildings.INTERACT_DISTANCE:
                 continue
-            if building.locked:
-                # Locked from the outside is a wall, and the prompt says so rather than
-                # offering a key that does nothing; from the inside it is a bar to lift.
-                inside = building.contains_point(self.player.x, self.player.y)
-                label = "E: unbar the door" if inside else "The door is locked"
+            inside = building.contains_point(self.player.x, self.player.y)
+            if building.locked and not inside:
+                # Barred from the outside is a wall, and the prompt says so rather than
+                # offering a key that does nothing. The window beside it is the way in.
+                label = "The door is barred"
+            elif building.house_locked:
+                # Inside a house with its own beam across: this is the one that comes off for
+                # good, thrown by whoever climbed in through the window.
+                label = "E: lift the beam"
             elif building.door_overlaps(self.player.x, self.player.y, c.Player.SIZE / 2):
                 # Standing in the doorway: the only thing E may do here is open it. Offering
                 # to close a door around oneself is how one used to end up sealed in it.
@@ -550,14 +554,16 @@ class Game:
         )
 
     def _push_gate(self, target):
-        """Shoulder a night gate open and step through it, the way the settlement's own
-        people do. It leans shut again behind them."""
+        """Shoulder a night gate open. The leaf swings and stays open long enough to walk
+        through (`Villages.GATE_LIFT_HOLD_MS`), then leans shut again.
+
+        The player walks through it themselves: being put down on the far side was quicker
+        and read as the world moving the player about, which is the one thing a gate should
+        never do. Its own people are still stepped across (`World.pass_gate_for`), because
+        for them the leaf never opens at all."""
         village, index = target
         village.push_open(index)
         play_sound("door")
-        radius = c.Player.SIZE / 2
-        self.player.x, self.player.y = village.gate_side_point(index, self.player.x, self.player.y, radius, across=True)
-        self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, radius)
 
     def _offer_underground(self, offer, reach_of):
         """The two ends of the dark: the way back up when down there, the two ways down when
@@ -876,12 +882,15 @@ class Game:
         and whatever is chasing them, which is the point: a monster can beat a door down, but
         it takes it several swings and they are audible.
 
-        A locked one answers to nobody from the street. From the near side of it, though,
-        this is the player throwing the bar off, and the house is open from then on."""
+        A barred one answers to nobody from the street, whether the beam is the house's own
+        or the hour's. From the near side of it a house with its own beam is thrown open for
+        good; one the settlement has barred for the night is simply opened, and it is barred
+        again as soon as it is shut."""
         radius = c.Player.SIZE / 2
-        if building.locked:
-            if not building.contains_point(self.player.x, self.player.y):
-                return
+        inside = building.contains_point(self.player.x, self.player.y)
+        if building.locked and not inside:
+            return
+        if building.house_locked:
             building.unlock()
         in_doorway = building.door_overlaps(self.player.x, self.player.y, radius)
         if in_doorway and building.door_open:
@@ -961,10 +970,7 @@ class Game:
         village, index = self.interaction.target
         village.lift_bar(index)
         play_sound("door")
-        radius = c.Player.SIZE / 2
-        self.player.x, self.player.y = village.gate_side_point(index, self.player.x, self.player.y, radius, across=True)
-        self.player.x, self.player.y = self.world.free_spot_near(self.player.x, self.player.y, radius)
-        self.loot_notification.show("You heave the bar up and slip through", c.Colors.GREEN)
+        self.loot_notification.show("The bar is up: the gate swings open", c.Colors.GREEN)
 
     def _sleep_threat(self) -> bool:
         """Whether anything hostile is close enough to make lying down absurd. Shared by the

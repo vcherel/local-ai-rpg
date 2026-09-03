@@ -561,14 +561,33 @@ class BuildingArt:
 
     @staticmethod
     def _draw_lock(screen: pygame.Surface, leaf: pygame.Rect):
-        """The hasp and padlock across a locked leaf. A house the player cannot walk into
-        says so on its own door rather than on the prompt they get for trying it, and says
-        it after dark as well, which is what the pale iron is for: the shape alone is lost
-        under the night tint on a door that is already the darkest thing on the facade.
+        """The beam, hasp and padlock across a barred leaf. A house the player cannot walk
+        into says so on its own door rather than on the prompt they get for trying it, and
+        says it after dark as well, which is what the pale iron is for: the shape alone is
+        lost under the night tint on a door that is already the darkest thing on the facade.
+
+        The beam is the half of it that reads from across the street, and it is drawn
+        whatever barred this one: the hour, the settlement's temper or the house's own roll
+        are one picture, because a door the player cannot open must never look like one they
+        have not tried yet.
 
         Laid across the leaf's short axis, so it reads the same on all four facings."""
         iron, edge, shine = (176, 182, 192), (44, 40, 38), (232, 236, 242)
         along_x = leaf.width > leaf.height
+        # The timber first: right across the leaf, since that is what a beam does, with the
+        # iron over the middle of it.
+        beam = pygame.Rect(0, 0, leaf.width, 11) if along_x else pygame.Rect(0, 0, 11, leaf.height)
+        beam.center = leaf.center
+        pygame.draw.rect(screen, (118, 84, 48), beam)
+        pygame.draw.rect(screen, (58, 40, 24), beam, 1)
+        # The two brackets it sits in, one at each end.
+        for frac in (0.16, 0.84):
+            if along_x:
+                bracket = pygame.Rect(round(leaf.left + leaf.width * frac) - 3, beam.top - 2, 6, beam.height + 4)
+            else:
+                bracket = pygame.Rect(beam.left - 2, round(leaf.top + leaf.height * frac) - 3, beam.width + 4, 6)
+            pygame.draw.rect(screen, iron, bracket)
+            pygame.draw.rect(screen, edge, bracket, 1)
         # Over the middle of the leaf only: the planks and the handle are what a door looks
         # like, and a band across the whole of it hid the door to say something about it.
         band = (

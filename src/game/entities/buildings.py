@@ -214,6 +214,10 @@ class Building(BuildingArt):
         # the inside, which is persisted because a house broken into stays broken into.
         self._locked: bool | None = None
         self.door_unlocked = False
+        # Whether the settlement this one stands in has it barred right now: after curfew,
+        # and while the place is angry at the player (`WorldVillagers._bar_doors`). Session
+        # only, like everything else about a night, and never true out in the wilderness.
+        self.barred_now = False
         # Loot dropped on the floor by smashed crates, waiting to be picked up. Not
         # persisted: it lives only for the current play session, same as indoor monsters.
         self.dropped_items: list[Item] = []
@@ -423,14 +427,13 @@ class Building(BuildingArt):
         return self.has_door and not self.door_open and not self.door_broken
 
     @property
-    def locked(self) -> bool:
-        """True while the front door will not open for the player at all.
+    def house_locked(self) -> bool:
+        """True while this house's own beam is across: the one rolled from its id.
 
-        Rolled from the building's own id, so the same house is locked every time and a
-        street is worth learning rather than worth trying. A locked door is not a tougher
-        door: it is a wall with a window beside it, and the window is the way in
-        (`window_gaps`). Once the player is inside, they unbar it themselves and it is a
-        door like any other from then on."""
+        Told apart from the settlement's (`barred_now`) because they come off differently.
+        This one comes off once and for good, from the inside, by somebody who climbed in
+        through the window; the settlement's is the hour and the temper, and comes back with
+        them."""
         if not self.has_door or self.door_broken or self.door_unlocked:
             return False
         if self._locked is None:
@@ -439,6 +442,24 @@ class Building(BuildingArt):
                 and random.Random(f"lock:{self.id}").random() < c.Buildings.LOCK_CHANCE
             )
         return self._locked
+
+    @property
+    def locked(self) -> bool:
+        """True while the front door will not open for the player at all.
+
+        Three things bar a door and they all look the same from the street (`_draw_lock`,
+        the beam across the leaf): the hour, the settlement's temper, and the roll.
+
+        The hour and the temper are `barred_now`, set by the settlement: a village that has
+        gone to bed or has turned on the player is a street of shut houses, which is what
+        makes walking into one after dark something to do rather than something to try. The
+        roll is the house itself, taken from its own id so the same one is locked every time
+        and a street is worth learning rather than worth trying.
+
+        A barred door is not a tougher door: it is a wall with a window beside it, and the
+        window is the way in (`window_gaps`). Once the player is inside, they lift the beam
+        themselves and it is a door like any other from then on."""
+        return self.barred_now or self.house_locked
 
     def unlock(self):
         """Unbar the door from the inside, for good. What somebody who climbed in through
@@ -486,9 +507,14 @@ class Building(BuildingArt):
 
     def toggle_door(self) -> bool:
         """Open a shut door or shut an open one. Returns the new open state; a door that has
-        been beaten down is past opening or closing and stays as it is, and a locked one
-        does not answer at all until somebody inside has unbarred it."""
-        if not self.has_door or self.door_broken or self.locked:
+        been beaten down is past opening or closing and stays as it is, and a house with its
+        own beam across does not answer at all until somebody inside has lifted it.
+
+        A door the settlement has barred (`barred_now`) still answers here: from inside, a
+        shut house is a room somebody can walk out of. What keeps the player out of it from
+        the street is the prompt (`Game._offer_doors`), which is the one place the side of
+        the door somebody is standing on is known."""
+        if not self.has_door or self.door_broken or self.house_locked:
             return self.door_open
         self.door_open = not self.door_open
         return self.door_open
@@ -774,11 +800,17 @@ class Building(BuildingArt):
         floor = space.floor
         bed_left = space.crowded_side > 0 if space.crowded_side else space.rng.random() < 0.5
         bed_x = floor.left + 20 if bed_left else floor.right - 90
-        # The household's own bed, which the player can sleep in for nothing at all,
+        # The household's own beds, which the player can sleep in for nothing at all,
         # provided nobody outside sees them do it (Game._sleep_in_bed).
-        house_bed = space.add(pygame.Rect(bed_x, floor.top + 15, 70, 100), "bed")
-        if house_bed:
-            space.beds.append(house_bed)
+        #
+        # Two of them, one against each end of the back wall: a house holds more than one
+        # person and a house with one bed in it was a household standing about on the floor
+        # all night (`World._bed_for` deals what there is). The second is fitted if there is
+        # room for it and skipped if there is not, like every other stick of furniture.
+        for x in (bed_x, floor.right - 90 if bed_left else floor.left + 20):
+            house_bed = space.add(pygame.Rect(x, floor.top + 15, 70, 100), "bed")
+            if house_bed:
+                space.beds.append(house_bed)
         space.add(pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf")
         chest_x = floor.right - 55 if bed_left else floor.left + 20
         space.chest = space.add(pygame.Rect(chest_x, floor.bottom - 70, 40, 32), "chest")

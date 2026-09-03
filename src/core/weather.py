@@ -14,6 +14,7 @@ any business restoring.
 
 from __future__ import annotations
 
+import math
 import random
 
 import pygame
@@ -56,6 +57,24 @@ class WeatherSystem:
             for _ in range(c.Weather.RAIN_DROPS)
         )
         self._fog = Overlay(24)
+        # The banks of fog that drift over the wash, as (y fraction, width fraction, how
+        # long it takes to cross, phase, bob phase). Rolled once for the same reason the
+        # drops are: a bank that reshuffled itself every frame is static, and static is what
+        # made the old fog read as a frame round the screen rather than as air.
+        self._banks = tuple(
+            (
+                random.uniform(-0.05, 1.05),
+                random.uniform(*c.Weather.FOG_BANK_WIDTH),
+                random.uniform(*c.Weather.FOG_BANK_CROSS_S),
+                random.random(),
+                random.uniform(0, 2 * math.pi),
+            )
+            for _ in range(c.Weather.FOG_BANKS)
+        )
+        # One soft blob per bank, painted the first time fog is drawn and kept: a bank is
+        # the same shape wherever it has drifted to, so painting or scaling one per frame is
+        # a gradient a frame for nothing.
+        self._bank_art: tuple | None = None
 
     @property
     def intensity(self) -> float:
@@ -155,20 +174,78 @@ class WeatherSystem:
         screen.blit(layer, (0, 0))
 
     def _draw_fog(self, screen: pygame.Surface, amount: float):
-        """A flat pale wash, thickest at the edges of the view: what fog does to a screen is
-        take the distance away, and the distance on this one is everything but the middle."""
+        """A pale wash that closes in from every side at once, with banks of it drifting
+        across.
+
+        What fog does to a view is take the distance away, and distance is a ring rather
+        than a border: the wash is painted as rings from the rim inwards, so it thickens
+        smoothly out of what the player is standing in. It used to be three nested
+        rectangles, which reads as a frame laid over the screen and not as weather at all.
+
+        The rings are kept (`Overlay`), since they only move when the ramp steps. The banks
+        are drawn live, because the whole point of them is that they are moving: one soft
+        blob painted once and blitted a few times at whatever it has drifted to.
+        """
         alpha = c.Weather.FOG_MAX_ALPHA * amount
-
-        def paint(surface: pygame.Surface, level: float):
-            surface.fill((*c.Weather.FOG_COLOR, round(c.Weather.FOG_MAX_ALPHA * level * 0.7)))
-            # A second, denser band round the rim, drawn as a few nested rectangles rather
-            # than a gradient: it is a wash, and a wash nobody looks straight at.
-            for step in range(1, 4):
-                inset = step * min(c.Screen.WIDTH, c.Screen.HEIGHT) // 12
-                rim = pygame.Rect(0, 0, c.Screen.WIDTH, c.Screen.HEIGHT).inflate(-inset * 2, -inset * 2)
-                shade = round(c.Weather.FOG_MAX_ALPHA * level * 0.12)
-                pygame.draw.rect(surface, (*c.Weather.FOG_COLOR, shade), rim, inset)
-
-        overlay = self._fog.surface(alpha / 255, paint, self.kind)
+        overlay = self._fog.surface(alpha / 255, self._paint_fog, self.kind)
         if overlay is not None:
             screen.blit(overlay, (0, 0))
+        self._draw_banks(screen, amount)
+
+    @staticmethod
+    def _paint_fog(surface: pygame.Surface, level: float):
+        """The wash itself: rings from the rim in, thickest at the edge of the view and
+        thinnest in the middle. Drawn largest first, since `pygame.draw` writes its pixels
+        rather than blending them, so each ring lightens the middle of the one before it."""
+        full = c.Weather.FOG_MAX_ALPHA * level
+        centre = full * c.Weather.FOG_CENTRE_FRAC
+        surface.fill((*c.Weather.FOG_COLOR, round(full)))
+        # Wide enough to cover the corners, so the first ring is the whole screen and no
+        # square edge of it is ever left standing.
+        span = pygame.Rect(0, 0, round(c.Screen.WIDTH * 1.5), round(c.Screen.HEIGHT * 1.5))
+        span.center = (c.Screen.WIDTH // 2, c.Screen.HEIGHT // 2)
+        rings = c.Weather.FOG_RINGS
+        for i in range(rings + 1):
+            t = i / rings  # 0 at the rim, 1 in the middle
+            shade = round(full + (centre - full) * (t**c.Weather.FOG_FALLOFF))
+            ring = span.inflate(-round(span.width * t), -round(span.height * t))
+            pygame.draw.ellipse(surface, (*c.Weather.FOG_COLOR, max(0, shade)), ring)
+
+    def _bank_surfaces(self) -> tuple:
+        """One soft blob per bank, at that bank's own width. Painted the first time fog is
+        drawn and kept: a bank is the same shape wherever it has drifted to, so scaling one
+        per frame would be a gradient a frame for nothing."""
+        if self._bank_art is None:
+            size = round(c.Screen.WIDTH * c.Weather.FOG_BANK_WIDTH[1])
+            art = pygame.Surface((size, round(size * 0.55)), pygame.SRCALPHA)
+            rect = art.get_rect()
+            # Widest and faintest first, thickening inwards: the rim of a bank has to fade
+            # to nothing or it is a drawn ellipse drifting across the screen.
+            rings = 26
+            for i in range(rings):
+                t = i / rings
+                shade = round(255 * t**1.7)
+                pygame.draw.ellipse(art, (*c.Weather.FOG_COLOR, shade), rect.inflate(-rect.width * t, -rect.height * t))
+            self._bank_art = tuple(
+                pygame.transform.smoothscale(
+                    art, (round(c.Screen.WIDTH * width_frac), round(c.Screen.WIDTH * width_frac * 0.55))
+                )
+                for _, width_frac, _, _, _ in self._banks
+            )
+        return self._bank_art
+
+    def _draw_banks(self, screen: pygame.Surface, amount: float):
+        """The banks drifting across the view, each on its own clock like a raindrop: where
+        one is is worked out from the time rather than stepped, so nothing has to be updated
+        and a paused game still has air that moves."""
+        now = pygame.time.get_ticks() / 1000.0
+        alpha = round(c.Weather.FOG_BANK_ALPHA * amount)
+        if alpha <= 0:
+            return
+        for bank, (y_frac, _, cross_s, phase, bob) in zip(self._bank_surfaces(), self._banks, strict=True):
+            width, height = bank.get_size()
+            travel = (phase + now / cross_s) % 1.0
+            x = travel * (c.Screen.WIDTH + width) - width
+            y = y_frac * c.Screen.HEIGHT + math.sin(bob + now * 0.08) * c.Screen.HEIGHT * 0.05
+            bank.set_alpha(alpha)
+            screen.blit(bank, (round(x), round(y - height / 2)))

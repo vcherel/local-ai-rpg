@@ -790,10 +790,22 @@ class Scenery:
     ROAD_EDGE_NOISE: float = 0.06
     ROAD_EDGE_PERIOD: int = 90
     # A road runs thousands of pixels between two settlements, so the bend has to be worth
-    # that length: one long wave that grows with the distance, plus a shorter one over it.
-    ROAD_WOBBLE: int = 260
+    # that length. It is layered noise rather than waves: a sine is a bow, and a bow pinned
+    # at both ends is a drawn arc, which is what every road in the world used to be. Three
+    # octaves of it read as ground somebody picked their way across.
+    ROAD_WOBBLE: int = 380
     ROAD_WOBBLE_FULL: int = 4000  # the length at which a road wanders by the full wobble
-    ROAD_DETAIL: float = 0.22  # amplitude of the shorter wave, as a fraction of the wobble
+    # What is left of the wobble on the shortest route there is: a road between two
+    # neighbours has less room to wander, but a ruler between them is worse than a wiggle.
+    ROAD_WOBBLE_FLOOR: float = 0.4
+    # And the ceiling on it, as a share of how far the route is going, so a short one bends
+    # rather than doubling back on itself.
+    ROAD_WOBBLE_MAX_FRAC: float = 0.22
+    ROAD_OCTAVES: int = 3  # how many layers of the bend, each twice as fine and half as wide
+    ROAD_BEND_POINTS: int = 3  # bends in the widest layer, over the whole route
+    # How much of each end is straightened back into what it joins: a road has to meet the
+    # gate square, and nothing else about it should be straight.
+    ROAD_END_TAPER: float = 0.14
     ROAD_CLEARANCE: int = 55
     # The small things lying on the ground rather than making it: what a chunk scatters
     # over its floor once the broad patches are down. They are the only kinds kept off a
@@ -1055,6 +1067,24 @@ class Weather:
     RAIN_SPEED: tuple = (900.0, 1400.0)
     RAIN_SLANT: float = 0.22
     RAIN_ALPHA: int = 120
-    # And fog as a flat wash kept by `screen_fx.Overlay`, in steps no finer than it reads.
+    # And fog as a wash that closes in from the edges, kept by `screen_fx.Overlay`, with a
+    # few banks of it drifting across the top. The wash used to be nested rectangles, which
+    # is a window frame rather than weather: the distance going is round, and what is left
+    # of it moves.
     FOG_COLOR: tuple = (176, 180, 186)
     FOG_MAX_ALPHA: int = 155
+    # What is left in the middle of the view, as a share of the full wash: fog takes the
+    # distance away and leaves what the player is standing in.
+    FOG_CENTRE_FRAC: float = 0.34
+    # How steeply it thickens from the middle out. Above 1 the middle stays clear longer and
+    # the rim does the work.
+    FOG_FALLOFF: float = 1.6
+    # How many rings the gradient is painted in. Only ever redrawn when the ramp steps, so
+    # this is a one-off cost rather than a per-frame one.
+    FOG_RINGS: int = 40
+    # The banks drifting over it: how many, how much each adds at full strength, how wide
+    # one is as a share of the screen, and how long one takes to cross the view.
+    FOG_BANKS: int = 7
+    FOG_BANK_ALPHA: int = 46
+    FOG_BANK_WIDTH: tuple = (0.45, 0.95)
+    FOG_BANK_CROSS_S: tuple = (55.0, 130.0)

@@ -242,14 +242,14 @@ def _route_line(route: Route) -> tuple[RoadBlob, ...]:
     sites = _dodge_circles(int(mid[0] // size), int(mid[1] // size))
 
     rng = random.Random(f"{kind}:{start}:{end}")
-    phase = rng.uniform(0, 2 * math.pi)
-    waves = rng.uniform(0.8, 1.8)
     # How far a road may wander follows how far it is going: two sites a chunk apart have
     # no room to bend, and a road crossing several has to earn its length or it reads as a
-    # ruler laid between two villages.
-    amplitude = rng.uniform(0.55, 1.0) * c.Scenery.ROAD_WOBBLE * min(1.0, length / c.Scenery.ROAD_WOBBLE_FULL)
-    detail_phase = rng.uniform(0, 2 * math.pi)
-    detail_waves = rng.uniform(4.0, 7.0)
+    # ruler laid between two villages. Never nothing, though, and never more than a share of
+    # the distance: the first left every short road perfectly straight and the second would
+    # have a long one wandering back the way it came.
+    ramp = max(c.Scenery.ROAD_WOBBLE_FLOOR, min(1.0, length / c.Scenery.ROAD_WOBBLE_FULL))
+    amplitude = min(rng.uniform(0.55, 1.0) * c.Scenery.ROAD_WOBBLE * ramp, length * c.Scenery.ROAD_WOBBLE_MAX_FRAC)
+    bend_layers = _bend_layers(rng)
     width_lo, width_hi = c.Scenery.PATH_WIDTH if kind == "path" else c.Scenery.ROAD_WIDTH
     base = rng.uniform(width_lo, width_hi)
     swell_phase, edge_phase = rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi)
@@ -258,10 +258,9 @@ def _route_line(route: Route) -> tuple[RoadBlob, ...]:
     places: list[tuple[float, float, float]] = []
     for step in range(0, int(length), c.Scenery.ROAD_STEP):
         t = step / length
-        # One long wave for where the road goes, a shorter one over it for how it got there.
-        bend = math.sin(phase + t * waves * 2 * math.pi) * amplitude
-        bend += math.sin(detail_phase + t * detail_waves * 2 * math.pi) * amplitude * c.Scenery.ROAD_DETAIL
-        bend *= math.sin(math.pi * t)
+        # Where the road goes: layered noise across the straight line, tapered back into it
+        # at each end so it still meets the gate square.
+        bend = _bend_at(bend_layers, t) * amplitude * _taper(t)
         x = start[0] + dx * step - dy * bend
         y = start[1] + dy * step + dx * bend
         x, y = _dodge_grounds(x, y, -dy, dx, sites, route)
@@ -273,6 +272,50 @@ def _route_line(route: Route) -> tuple[RoadBlob, ...]:
         places.append((x, y, width))
 
     return tuple(RoadBlob(x, y, width, _line_heading(places, i), kind) for i, (x, y, width) in enumerate(places))
+
+
+def _bend_layers(rng: random.Random) -> tuple:
+    """The layers a route's wander is made of: a handful of offsets per layer, each layer
+    twice as fine and half as wide as the one before it.
+
+    A road bent by a sine is a bow, and a bow held at both ends is an arc laid between two
+    villages, which is what the map used to be full of. Noise has no shape of its own, so
+    what comes out is a track that leans one way, comes back, and hesitates on the way,
+    which is what a line worn by feet looks like from above.
+    """
+    layers = []
+    for octave in range(c.Scenery.ROAD_OCTAVES):
+        count = c.Scenery.ROAD_BEND_POINTS * 2**octave
+        layers.append((tuple(rng.uniform(-1.0, 1.0) for _ in range(count + 1)), 0.5**octave))
+    # Normalised, so the amplitude asked for is the amplitude that comes out whatever the
+    # layers add up to.
+    total = sum(weight for _, weight in layers)
+    return tuple((values, weight / total) for values, weight in layers)
+
+
+def _bend_at(layers: tuple, t: float) -> float:
+    """How far off the straight line the route is at `t`, 0 to 1 along it. Each layer is read
+    between its two nearest offsets on a smoothstep, so what comes out is a curve rather than
+    a set of corners."""
+    total = 0.0
+    for values, weight in layers:
+        span = len(values) - 1
+        place = t * span
+        i = min(int(place), span - 1)
+        f = place - i
+        f = f * f * (3 - 2 * f)
+        total += (values[i] * (1 - f) + values[i + 1] * f) * weight
+    return total
+
+
+def _taper(t: float) -> float:
+    """How much of the bend survives at `t`: all of it down the middle, none of it at either
+    end. A road meets a gate square and a landmark head on; everything between those is free
+    to wander, which is the opposite of the old pinch that straightened the whole route in
+    order to fix its two ends."""
+    edge = c.Scenery.ROAD_END_TAPER
+    near = min(t, 1.0 - t) / edge
+    return min(1.0, max(0.0, near))
 
 
 def _line_heading(places: Sequence[tuple[float, float, float]], i: int) -> float:

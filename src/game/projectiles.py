@@ -36,12 +36,13 @@ class WorldProjectiles:
 
     def _fire_ranged(self, player: Player, arch: c.WeaponArchetype, hand: int = 0):
         now = pygame.time.get_ticks()
-        if now < player.attack_ready_ms:
+        if not player.hand_ready(hand, now):
             return
-        # A boomerang is thrown, not fired: there is only ever one of them in the air, and
-        # waiting for it to come home is what it costs instead of ammo.
+        # A boomerang is thrown, not fired: waiting for it to come home is what it costs
+        # instead of ammo. One per hand, not one per player: two of them is two weapons,
+        # and each hand waits for its own to come back.
         if arch.projectile_style == "boomerang" and any(
-            proj.style == "boomerang" and proj.owner_id == id(player) for proj in self.projectiles
+            proj.style == "boomerang" and proj.owner_id == id(player) and proj.hand == hand for proj in self.projectiles
         ):
             return
         # Magic is paid for out of the pool, ammo out of the quiver, and a staff that cannot
@@ -49,7 +50,7 @@ class WorldProjectiles:
         # animation never starts, so an empty pool reads as a weapon that has run dry.
         if arch.mana_cost and not player.spend_mana(arch.mana_cost):
             get_floating_text().spawn(player.x, player.y - c.Player.SIZE, "No mana", c.Magic.EMPTY_COLOR)
-            player.attack_ready_ms = now + arch.cooldown_ms
+            player.spend_hand(hand, now, arch.cooldown_ms)
             return
         if arch.uses_ammo:
             # `Player.ready_ammo` is the quiver in the ammo slot, or the cheapest carried
@@ -63,8 +64,7 @@ class WorldProjectiles:
                 player.unequip_if_equipped(ammo)
                 player.inventory.remove(ammo)
 
-        player.attack_ready_ms = now + arch.cooldown_ms
-        player.attack_swing_mult = arch.swing_mult
+        player.spend_hand(hand, now, arch.cooldown_ms, arch.swing_mult)
         # Hand one is the right arm on the sprite, hand two the left: the arm that comes up
         # is the one the weapon is actually in.
         player.start_attack_anim("right" if hand == 0 else "left", c.Player.SWING_MS)
@@ -215,9 +215,7 @@ class WorldProjectiles:
         # not in the hand that threw it, and `Player.gear` draws that hand empty until it
         # comes home. Read off what is actually flying, so a catch, a wall or a death all
         # put the weapon back without any of them having to remember to.
-        player.thrown_id = next(
-            (proj.weapon_id for proj in self.projectiles if proj.owner is player and proj.weapon_id), None
-        )
+        player.thrown_ids = {proj.weapon_id for proj in self.projectiles if proj.owner is player and proj.weapon_id}
 
     def _deflect(self, proj: Projectile, player: Player):
         """A shot met by the face of a raised shield: it glances off and is gone, in a spray

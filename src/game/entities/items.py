@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import random
 import uuid
+import zlib
 from typing import TYPE_CHECKING
 
 import pygame
@@ -83,7 +84,9 @@ AMMO_COLOR = (180, 140, 90)
 VALUABLE_COLOR = (235, 205, 80)
 # What a valuable is, read off its name: everything the world calls loot worth selling used
 # to be one yellow disc, so a bag of them said nothing about what was in it. First match
-# wins, and anything unrecognised is still a coin.
+# wins; a name that matches nothing is dealt a silhouette off its own letters rather than
+# falling back to the disc (`valuable_shape`), because the model names loot the list has
+# never heard of and a candlestick drawn as money is a lie about what is in the bag.
 VALUABLE_KEYWORDS = (
     ("goblet", "goblet"),
     ("chalice", "goblet"),
@@ -119,7 +122,39 @@ VALUABLE_KEYWORDS = (
     ("opal", "gem"),
     ("pearl", "gem"),
     ("shard", "gem"),
+    ("ring", "gem"),
+    ("amulet", "gem"),
+    ("pendant", "gem"),
+    ("necklace", "gem"),
+    ("brooch", "gem"),
+    ("locket", "gem"),
+    ("torc", "gem"),
+    ("plate", "goblet"),
+    ("platter", "goblet"),
+    ("bowl", "goblet"),
+    ("urn", "goblet"),
+    ("vase", "goblet"),
+    ("censer", "goblet"),
+    ("mask", "idol"),
+    ("effigy", "idol"),
+    ("bust", "idol"),
+    ("chain", "ingot"),
+    ("candlestick", "ingot"),
+    ("claw", "skull"),
+    ("talon", "skull"),
+    ("antler", "skull"),
+    # The things that really are money, so the disc is something a name earns rather than
+    # what is left when nothing else matched.
+    ("coin", "coin"),
+    ("purse", "coin"),
+    ("penny", "coin"),
+    ("sovereign", "coin"),
+    ("ducat", "coin"),
+    ("florin", "coin"),
 )
+# What an unrecognised valuable is dealt, in a fixed order so the deal is stable: every
+# silhouette there is except the coin.
+VALUABLE_SHAPES = ("goblet", "idol", "ingot", "skull", "crown", "gem")
 # The metal or the stone each of them is made of, so a family of shapes is a family of
 # colours too. Anything not named here takes VALUABLE_COLOR.
 VALUABLE_COLORS = {
@@ -195,12 +230,17 @@ def icon_shape(item_type: str, name: str) -> str:
 
 def valuable_shape(name: str) -> str:
     """Which of the valuables' silhouettes a piece of salvage draws as. Adding one is a row
-    in VALUABLE_KEYWORDS and a row in `_SHAPES`, never a branch."""
+    in VALUABLE_KEYWORDS and a row in `_SHAPES`, never a branch.
+
+    A name the list has never heard of is dealt one of the shapes off its own letters
+    instead of the coin: the model invents loot faster than the keywords cover it, and a
+    coin is what money looks like, so anything that is not money must not look like it. The
+    deal is a hash of the name, so the same salvage draws the same way every time."""
     lower = name.lower()
     for keyword, shape in VALUABLE_KEYWORDS:
         if keyword in lower:
             return shape
-    return "coin"
+    return VALUABLE_SHAPES[zlib.crc32(lower.encode()) % len(VALUABLE_SHAPES)]
 
 
 def bomb_kind(name: str) -> str:

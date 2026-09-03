@@ -301,7 +301,9 @@ class WorldVillagers:
 
         Arriving is getting into bed (`_turn_in`), not stopping in the middle of the floor: a
         settlement after dark should be bodies in beds behind lit windows. Whoever the house
-        has no bed for stands in the room as they always did."""
+        has no bed for lies down on its floor instead (`_bed_down`), which is what somebody
+        who has walked home to sleep does: standing in the room until dawn was a household
+        that had come home and then decided against the night."""
         radius = c.Entities.NPC_SIZE / 2
         inside = (home.x, home.interior_rect().centery)
         door = home.door_rect()
@@ -316,6 +318,10 @@ class WorldVillagers:
                 # the bed answers, where the foot of it is not somewhere anybody can stand.
                 if npc.distance_to_point(goal) <= radius + 8 or self._rect_reach(npc, bed) <= radius + 8:
                     self._turn_in(npc, home, bed)
+            elif npc.distance_to_point(goal) <= radius + 12:
+                # No bed dealt to them: they lie down on the floor of the room they walked
+                # home to, rather than standing in it all night.
+                self._bed_down(npc)
         else:
             self.open_door_for(npc)
             # Their own door opens for them from further off than a stranger's does: they
@@ -405,15 +411,34 @@ class WorldVillagers:
             heading = math.pi if bed.centerx <= room.centerx else 0.0
         npc.orientation = heading + math.pi / 2
 
+    @staticmethod
+    def _bed_down(npc: NPC):
+        """Lie down on the floor: what somebody the house has no bed for does with the night.
+
+        The floor is not a solid, so unlike a sleeper in a bed this one needs nothing
+        exempting them from anything. What it buys is the same thing the bed buys, which is a
+        settlement after dark that is asleep rather than milling about indoors."""
+        npc.asleep = True
+        npc.wander.interrupt()
+
     def _npc_walks(self, npc: NPC, player: Player, dt, mob: dict, crowd: list, indoors: bool):
         """One villager's frame spent hunting the player, or spent on their own street."""
         # Only an angry villager actually closing on the player needs a route round the
         # houses; everyone else is wandering and steers for itself.
         chasing = id(npc) in mob
+        radius = c.Entities.NPC_SIZE / 2
         if chasing:
             self.open_door_for(npc)
-            self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, player)
-        waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2) if chasing else None
+            self.pass_gate_for(npc, radius, player)
+        waypoint = self.chase_waypoint(npc, player, radius) if chasing else None
+        # A doorway is a gap one body wide, so somebody walking through one is neither
+        # holding a standoff nor part of a ring: the stone-throwers' distance is what had a
+        # mob hovering on the doorstep of the house the player had gone into, and the ring's
+        # own shoulders are what pushed whoever did commit to the gap back into the jamb.
+        # Both are lifted for exactly as long as the doorway is what they are walking through
+        # (`door_commit`), which is the same commit the route itself is held by.
+        through_door = chasing and npc.door_commit is not None
+        standoff = 0.0 if through_door or (chasing and indoors) else mob.get(id(npc), 0.0)
         # A villager turns to greet the player in the street, but not through the wall of a
         # house they are standing in: a vision cone that always points at the player is not a
         # cone, and the whole of stealing is choosing a moment nobody is looking.
@@ -425,8 +450,8 @@ class WorldVillagers:
             target=player if chasing else None,
             face_player=not indoors,
             terrain_mult=self.terrain_speed(npc.x, npc.y),
-            standoff=mob.get(id(npc), 0.0),
-            crowd=crowd if chasing else None,
+            standoff=standoff,
+            crowd=None if through_door else (crowd if chasing else None),
         )
         if damage:
             player.receive_damage(damage, source=npc)
@@ -504,15 +529,32 @@ class WorldVillagers:
         are after the player at once, so a caught thief costs the player a fight and not the
         way out of town."""
         for village in self.villages:
+            angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
+            # The houses first, since every settlement has doors and only some have gates.
+            self._bar_doors(village, self.daynight.curfew or bool(angry))
             if not village.defended:
                 continue
-            angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
             village.barred = any(npc.grudge for npc in angry) or len(angry) >= c.Villages.BAR_GATES_MOB
             village.shut_for_night = c.Villages.NIGHT_GATES and self.daynight.curfew
             village.advance_gates(dt, (player.x, player.y))
             if village.barred or village.shut_for_night:
                 # Whichever of the two shut it, nothing is ever sealed inside a leaf.
                 self.clear_gateways(village, player)
+
+    def _bar_doors(self, village, barred: bool):
+        """Whether this settlement's houses have their beams across right now.
+
+        Two things put them there: the hour and the temper. A village that has gone to bed
+        shuts up as well as shutting its gates, and one that has turned on the player is not
+        a row of rooms to walk into while its people are outside looking for them. Either way
+        the door says so on the leaf (`BuildingArt._draw_lock`) rather than only in the
+        prompt, and the window beside it is still the way in.
+
+        Set rather than rolled, so it is one flag a building reads and nothing has to ask the
+        clock or count the angry from inside a draw call."""
+        for building in self.buildings_in_range(village.x, village.y, village.grounds_radius):
+            if village.contains_point(building.x, building.y):
+                building.barred_now = barred
 
     def _loose_arrows(self, fight: dict, mob: dict, player: Player):
         """The archers posted in the towers, shooting over their own wall.
