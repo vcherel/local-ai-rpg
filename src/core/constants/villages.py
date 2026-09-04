@@ -122,6 +122,15 @@ class Villages:
     # straight-line distance: past that the settlement is walled in on itself and the
     # straight lane it used to have is the better answer.
     STREET_DETOUR: float = 3.0
+    # How far sideways a lane looks for one already worn, and how much longer it will
+    # accept its walk becoming to join it. One cost fill only ever merges two routes that
+    # land on the very same cell, so two doors a couple of paces apart came back as two
+    # lanes running side by side the whole way in with untrodden grass between them. A lane
+    # that finds another within reach snaps onto it instead, as far from the plaza as it
+    # can, and from there the two are the same earth.
+    STREET_MERGE_CELLS: int = 4
+    STREET_MERGE_SLACK: float = 1.35
+    STREET_MERGE_GIVE: int = 60
     START_DISTANCE_FROM_CENTER: int = 900
 
     # How many people live in one home. A bigger settlement is a busier one: numbers are

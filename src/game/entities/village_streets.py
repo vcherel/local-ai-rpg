@@ -172,7 +172,9 @@ class StreetGrid:
                         heapq.heappush(queue, (through, step))
         return parent
 
-    def trace(self, ends: list[tuple[float, float]]) -> dict[int, list[list[tuple[float, float]]]]:
+    def trace(
+        self, ends: list[tuple[float, float]], fixed: frozenset[int] = frozenset()
+    ) -> dict[int, list[list[tuple[float, float]]]]:
         """Every lane the settlement needs at once, each as the stretches it is made of,
         keyed by which end it was asked for. Missing for an end the plaza cannot be walked
         to at all, which the caller reads as "no lane here" rather than as a straight one
@@ -183,7 +185,7 @@ class StreetGrid:
         stretches are cut where that sharing starts and stops, and each is straightened on
         its own. Two lanes that share a trunk are then the same points along it rather than
         two lines a few paces apart, and the ones that come off it read as branches."""
-        chains = {i: chain for i, end in enumerate(ends) if (chain := self._chain(end)) is not None}
+        chains = self._merge({i: chain for i, end in enumerate(ends) if (chain := self._chain(end)) is not None}, fixed)
         shared = Counter(cell for chain in chains.values() for cell in chain)
         return {i: self._stretches(ends[i], chain, shared) for i, chain in chains.items()}
 
@@ -201,6 +203,63 @@ class StreetGrid:
         # A lane that has to go three times round the houses is not a lane anybody wore:
         # something is walled in, and the straight one it used to have says more.
         return cells if walked <= math.dist(end, points[-1]) * c.Villages.STREET_DETOUR else None
+
+    def _merge(self, chains: dict[int, list[tuple[int, int]]], fixed: frozenset[int]) -> dict:
+        """The same routes with the ones running side by side snapped together.
+
+        One cost fill answers every route off the same tree, but two routes only become one
+        stretch of earth where they land on the very same cell: two doors a few paces apart
+        walk back down their own column of cells the whole way in, and what the player sees
+        is three lanes laid next to each other with untrodden grass between them. So the
+        longest route is worn first and every later one joins it as soon as it comes within
+        `STREET_MERGE_CELLS` of it, which is as far from the plaza as it can, and from the
+        junction on the two are the same cells.
+
+        `fixed` is the ends whose own route is the answer whatever else has been worn, which
+        is the gateways: a lane out of a gate is the road outside carrying on, so it is the
+        one every other lane joins rather than one that goes round by a house to join
+        somebody else. They are worn first, so they are what the doors find.
+
+        What is worn is the way in from every cell of it as it was actually laid, not as the
+        fill first answered it: a route that joins a lane which itself joined another has to
+        follow the earth that is there rather than the tree it came off.
+        """
+        worn: dict[tuple[int, int], tuple[list[tuple[int, int]], int]] = {}
+        merged = {}
+        for i in sorted(chains, key=lambda i: (i not in fixed, -len(chains[i]))):
+            merged[i] = chain = chains[i] if i in fixed or not worn else self._join(chains[i], worn)
+            for at, cell in enumerate(chain):
+                worn[cell] = (chain, at)
+        return merged
+
+    def _join(self, chain: list[tuple[int, int]], worn: dict) -> list[tuple[int, int]]:
+        """One route diverted onto a lane already worn, at the first cell of it that has one
+        within reach and can be laid straight to it. From the junction on the route is the
+        cells of the lane it joined, so the two are one stretch of earth rather than two a
+        few paces apart. Left as it was where joining would make the walk more than
+        `STREET_MERGE_SLACK` longer than it was: a lane nobody would take to save the grass.
+        """
+        reach = c.Villages.STREET_MERGE_CELLS
+        walked = self._length(chain)
+        for cut, (gx, gy) in enumerate(chain):
+            here = self._point((gx, gy))
+            near = [
+                cell
+                for dx in range(-reach, reach + 1)
+                for dy in range(-reach, reach + 1)
+                if (cell := (gx + dx, gy + dy)) in worn
+            ]
+            for cell in sorted(near, key=lambda cell: math.dist(here, self._point(cell))):
+                lane, at = worn[cell]
+                if not self._clear(here, self._point(cell)):
+                    continue
+                joined = [*chain[: cut + 1], *lane[at:]]
+                if self._length(joined) <= walked * c.Villages.STREET_MERGE_SLACK + c.Villages.STREET_MERGE_GIVE:
+                    return joined
+        return chain
+
+    def _length(self, chain: list[tuple[int, int]]) -> float:
+        return sum(math.dist(a, b) for a, b in pairwise(self._point(cell) for cell in chain))
 
     def _stretches(self, end, chain, shared) -> list[list[tuple[float, float]]]:
         """One route cut into the stretches it shares with its neighbours and the ones it

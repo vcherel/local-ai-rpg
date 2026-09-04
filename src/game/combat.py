@@ -201,6 +201,11 @@ class WorldCombat:
         blow = player.orientation
 
         for building in self.buildings_in_range(*pos, c.World.CHUNK_SIZE):
+            # Only the floor the swing actually lands on: furniture is reached by standing
+            # in the room with it, never through the wall. A bed against the front wall used
+            # to take the blow aimed at the window beside it, swung from the street.
+            if not any(floor.collidepoint(*pos) for floor in building.interior_rects()):
+                continue
             hit = building.damage_prop_at(pos, hit_radius, prop_damage)
             if hit is not None:
                 index, rect, kind, destroyed = hit
@@ -462,14 +467,23 @@ class WorldCombat:
 
     def _find_window_in_reach(self, pos, hit_radius):
         """Nearest unbroken window (on any non-landmark building) a swing reaches, as
-        (building, index, rect), or None."""
+        (building, index, rect), or None.
+
+        Measured to the pane rather than to the middle of it. A window is three times as
+        wide as it is deep and sits a wall's depth back from the face the player is stood
+        against, so a reach taken from its centre covered a circle narrower than the pane
+        itself: standing plainly in front of one and swinging at it missed unless the player
+        happened to be lined up with the middle. What the reach is for is how far short of
+        the glass a blow may land, which is what a distance to the rectangle answers."""
         px, py = pos
         best = None
         for building in self.buildings_in_range(px, py, c.World.CHUNK_SIZE):
             for idx, window in enumerate(building.window_rects()):
                 if idx in building.broken_windows:
                     continue
-                dist = math.hypot(px - window.centerx, py - window.centery)
+                near_x = min(max(px, window.left), window.right)
+                near_y = min(max(py, window.top), window.bottom)
+                dist = math.hypot(px - near_x, py - near_y)
                 if dist < hit_radius + c.Buildings.WINDOW_HIT_RADIUS and (best is None or dist < best[0]):
                     best = (dist, building, idx, window)
         return None if best is None else (best[1], best[2], best[3])

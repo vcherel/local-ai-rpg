@@ -600,7 +600,12 @@ class Village:
         grid = StreetGrid(self, buildings)
         doors = [b.door_front() for b in buildings if b.has_door]
         gates = self.gateways()
-        routes = grid.trace([*doors, *[(gx, gy) for gx, gy, _ in gates]])
+        # The gateways are laid first and are never diverted: a lane out of a gate is the
+        # road outside carrying on in, so it is the one the doors' lanes join.
+        routes = grid.trace(
+            [*doors, *[(gx, gy) for gx, gy, _ in gates]],
+            frozenset(range(len(doors), len(doors) + len(gates))),
+        )
         # A stretch two lanes share is one stretch of earth: laid once, whichever of them
         # was asked for it first.
         laid = set()
