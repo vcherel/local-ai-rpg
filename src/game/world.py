@@ -175,6 +175,11 @@ class World(
         # and towers of a walled town.
         self._village_solids_by_chunk: dict = {}
         self.breakables: list[Breakable] = []
+        # The solid ones filed on the same fine grid the trunks and boulders use, kept up as
+        # they are scattered and taken away with the one that is smashed. A world holds a
+        # few hundred once the player has found a handful of towns, and `blocked` runs
+        # several times per body per frame, so this is never a walk of the list.
+        self._breakables_by_cell: dict = {}
         # Bombs the player has thrown or laid. A grenade in the air and a mine waiting in
         # the grass are the same object at different points of its life (`game/entities/bomb.py`).
         self.bombs: list[Bomb] = []
@@ -337,8 +342,11 @@ class World(
         self.buildings = buildings
         self._index_buildings()
         set_active_buildings(self.buildings)
-        self.breakables = generate_breakables(self.buildings)
+        # Lanes first: a prop is kept off the trodden earth, so the earth has to be worn
+        # before there is anything to keep off.
         self._plan_streets()
+        self.breakables = generate_breakables(self.buildings, village)
+        self._index_breakables()
         self._populate_npcs(self.buildings, village)
         self._post_guards(village)
         # A new world is stocked to the *near* cap, not the far one. Everything placed
@@ -484,6 +492,7 @@ class World(
         self.buildings = [Building.from_dict(d) for d in self.save_system.load("buildings", [])]
         self.villages = [Village.from_dict(d) for d in self.save_system.load("villages", [])]
         self.breakables = [Breakable.from_dict(d) for d in self.save_system.load("breakables", [])]
+        self._index_breakables()
         self.items = [Item.from_dict(d) for d in self.save_system.load("items", [])]
         items_by_id = {item.id: item for item in self.items}
         self.npcs = [NPC.from_dict(d, items_by_id) for d in saved_npcs]
@@ -618,6 +627,32 @@ class World(
             footprint.center = (round(village.x), round(village.y))
             bucket(self._village_solids_by_chunk, footprint, village)
 
+    def _index_breakables(self):
+        """File every outdoor prop the world holds. Only for the two moments the whole list
+        arrives at once (a new world, a loaded save); everything after that goes piece by
+        piece through `add_breakables` and `drop_breakable`."""
+        self._breakables_by_cell = {}
+        for breakable in self.breakables:
+            for cell in breakable.block_cells():
+                self._breakables_by_cell.setdefault(cell, []).append(breakable)
+
+    def add_breakables(self, breakables: list[Breakable]):
+        """Scatter a newly generated settlement's props, filing the solid ones as they land."""
+        self.breakables.extend(breakables)
+        for breakable in breakables:
+            for cell in breakable.block_cells():
+                self._breakables_by_cell.setdefault(cell, []).append(breakable)
+
+    def drop_breakable(self, breakable: Breakable):
+        """Take one off the world for good, out of the lookup as well as out of the list. The
+        one path a smashed prop leaves by, so nothing is ever left blocking ground it is no
+        longer standing on."""
+        self.breakables.remove(breakable)
+        for cell in breakable.block_cells():
+            here = self._breakables_by_cell.get(cell)
+            if here and breakable in here:
+                here.remove(breakable)
+
     def _register_buildings(self, buildings: list[Building]):
         """Add a newly generated village's buildings to the world and the lookup index."""
         self.buildings.extend(buildings)
@@ -671,6 +706,14 @@ class World(
         if self.underground is not None:
             return self.underground.blocks(x, y, radius)
         if any(building.blocks(x, y, radius) for building in self.buildings_near(x, y)):
+            return True
+        # The cell is read straight rather than through `breakables_near`, and a cell nothing
+        # solid stands in holds no bucket at all: this runs several times per body per frame
+        # and most of the world has no barrel in it, so the common answer costs one dict miss
+        # and never builds a generator over an empty list.
+        cell = c.Scenery.INDEX_CELL
+        props = self._breakables_by_cell.get((int(x // cell), int(y // cell)))
+        if props is not None and any(prop.blocks(x, y, radius) for prop in props):
             return True
         return any(item.blocks(x, y, radius) for item in self.scenery_near(x, y))
 

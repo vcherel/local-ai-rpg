@@ -133,7 +133,7 @@ class WorldStreaming:
         self._register_buildings(buildings)
         village.plan_streets(buildings)
         self._clear_scenery_for(village, buildings)
-        self.breakables.extend(generate_breakables(buildings))
+        self.add_breakables(generate_breakables(buildings, village))
         self._populate_npcs(buildings, village)
         self._post_guards(village)
 

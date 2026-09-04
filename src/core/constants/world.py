@@ -411,6 +411,12 @@ class Breakables:
     PER_BUILDING_MAX: int = 4
     SIZE: int = 30
     HIT_RADIUS: int = 20
+    # Which of them stand in the way. A barrel, a keg and a young tree are things you walk
+    # around or break through; a bush, a flower bed and a herb patch are ankle height, so
+    # walking over them is the right answer and stopping dead at one is not. A prop that
+    # looks solid and is not is what made the whole set read as paint on the grass.
+    SOLID_KINDS: tuple = ("barrel", "powder", "sapling")
+    BLOCK_RADIUS: float = 13.0
     # Relative pick weight among kinds scattered near a building. What grows by a door
     # says more about the people living behind it than a row of clay pots did, so the
     # decorative half of the list is planted rather than potted.

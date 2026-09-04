@@ -8,10 +8,12 @@ import pygame
 
 import core.constants as c
 from core.damage_fx import draw_cracks, get_damage_fx, tint
+from game.entities.terrain import index_cells
 
 if TYPE_CHECKING:
     from core.camera import Camera
     from game.entities.buildings import Building
+    from game.entities.village import Village
 
 
 class Breakable:
@@ -33,6 +35,21 @@ class Breakable:
     @property
     def loot(self) -> bool:
         return self.kind == "barrel"
+
+    @property
+    def solid(self) -> bool:
+        """Whether anything walking has to go round this one (`Breakables.SOLID_KINDS`)."""
+        return self.kind in c.Breakables.SOLID_KINDS
+
+    def blocks(self, x, y, radius) -> bool:
+        return math.hypot(self.x - x, self.y - y) < c.Breakables.BLOCK_RADIUS + radius
+
+    def block_cells(self):
+        """Where this one is filed in `World._breakables_by_cell`, or nothing at all if it
+        stops nobody. The same fine grid the trunks and boulders are looked up on."""
+        if not self.solid:
+            return
+        yield from index_cells(self.x, self.y, c.Breakables.BLOCK_RADIUS + c.Scenery.INDEX_PAD)
 
     @property
     def damage_key(self) -> str:
@@ -201,9 +218,14 @@ def _pick_kind(rng: random.Random) -> str:
     return rng.choices(kinds, weights=weights)[0]
 
 
-def generate_breakables(buildings: list[Building]) -> list[Breakable]:
+def generate_breakables(buildings: list[Building], village: Village | None = None) -> list[Breakable]:
     """Scatter a few barrels and plantings just outside each house/shop/tavern (never the
-    landmark), deterministic per building so they stay put across a save/reload."""
+    landmark), deterministic per building so they stay put across a save/reload.
+
+    Never on the lanes or the plaza: what a settlement is walked on is a way through, and the
+    same rule the wilderness keeps to (`Scenery.DECOR_KINDS` off `Village.street_at`) is what
+    keeps a barrel out of the middle of the street. The village is optional because the
+    starting town's props are rolled from the same call before it has walked its lanes."""
     result: list[Breakable] = []
     # Every doorstep in the settlement, not only this building's own: a barrel dropped in
     # front of the neighbour's door is as much in the way as one in front of your own.
@@ -220,6 +242,8 @@ def generate_breakables(buildings: list[Building]) -> list[Breakable]:
                 x = building.x + math.cos(angle) * dist
                 y = building.y + math.sin(angle) * dist
                 if any(step.collidepoint(x, y) for step in doorsteps):
+                    continue
+                if village is not None and village.street_at(x, y, c.Breakables.SIZE / 2):
                     continue
                 # `covers` rather than `blocks`: the floor of a room is not solid, and a
                 # wing sticks out further than the ring this is rolled in, which is how a

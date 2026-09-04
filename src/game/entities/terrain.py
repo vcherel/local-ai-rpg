@@ -793,7 +793,7 @@ def generate_chunk_scenery(
     return items + _grow_cover(cx, cy, rng, biome, chunk, roads, villages, is_free)
 
 
-def _index_cells(x: float, y: float, reach: float) -> Iterator[tuple[int, int]]:
+def index_cells(x: float, y: float, reach: float) -> Iterator[tuple[int, int]]:
     """Every cell of the fine lookup grid something of this size standing here reaches into.
 
     Deliberately finer than the chunk grid the buildings use: a forest chunk holds dozens of
@@ -810,7 +810,7 @@ def blocking_cells(item: Scenery) -> Iterator[tuple[int, int]]:
     nobody, which is what a stump and a broken boulder are."""
     if not item.block_reach:
         return
-    yield from _index_cells(item.x, item.y, item.block_reach + c.Scenery.INDEX_PAD)
+    yield from index_cells(item.x, item.y, item.block_reach + c.Scenery.INDEX_PAD)
 
 
 def water_cells(item: Scenery) -> Iterator[tuple[int, int]]:
@@ -818,7 +818,7 @@ def water_cells(item: Scenery) -> Iterator[tuple[int, int]]:
     opposite of a wall: nothing is stopped by it, everything is slowed in it."""
     if not item.water_reach:
         return
-    yield from _index_cells(item.x, item.y, item.water_reach + c.Scenery.INDEX_PAD)
+    yield from index_cells(item.x, item.y, item.water_reach + c.Scenery.INDEX_PAD)
 
 
 # Everything in here is laid out from the village sites, so all of it has to be forgotten

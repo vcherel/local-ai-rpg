@@ -947,7 +947,7 @@ class WorldCombat:
         keg pays nothing and goes off instead. Anything planted is pure decoration: a
         satisfying puff and nothing else, so the world has more to smash without inflating
         the loot economy. Either way the prop is gone for good, no debris left behind."""
-        self.breakables.remove(breakable)
+        self.drop_breakable(breakable)
 
         if breakable.kind == "powder":
             self.explode(breakable.x, breakable.y, player, quest_system)
