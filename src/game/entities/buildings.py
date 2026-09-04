@@ -246,6 +246,11 @@ class Building(BuildingArt):
         # the building's own id on first draw, so a street is a row of different houses
         # and each of them keeps its look for good.
         self._style = None
+        # Where the woodpile stands, if this one rolled one: worked out once from `_style`
+        # and kept, since `blocks` asks for it on every mover's frame the building is near.
+        # False rather than None marks "asked and there is none" so a plain house isn't
+        # re-checked against its style every frame either.
+        self._woodpile: pygame.Rect | bool | None = None
         # The house painted onto its own surface (`BuildingArt._shell`), and where in the
         # world its top left corner sits. Everything that holds still is in there and is
         # blitted from then on; the door, the windows and the smoke are drawn over it.
@@ -334,6 +339,7 @@ class Building(BuildingArt):
         self._segments = None
         self._shell_surface = None
         self._lamps = None
+        self._woodpile = None
 
     def _canon_rect(self) -> pygame.Rect:
         """This building's own footprint seen with its door in the bottom wall: the frame
@@ -629,7 +635,8 @@ class Building(BuildingArt):
 
     def blocks(self, x, y, radius) -> bool:
         """True if a point (with this radius) overlaps the wall shell (the door gap is
-        always walkable) or a piece of furniture inside the room."""
+        always walkable), a piece of furniture inside the room, or a stack of firewood
+        standing against the outside wall (`woodpile_rect`)."""
         for seg in self._wall_segments():
             nearest_x = min(max(x, seg.left), seg.right)
             nearest_y = min(max(y, seg.top), seg.bottom)
@@ -641,7 +648,34 @@ class Building(BuildingArt):
                 nearest_y = min(max(y, rect.top), rect.bottom)
                 if math.hypot(x - nearest_x, y - nearest_y) < radius:
                     return True
+        pile = self.woodpile_rect()
+        if pile is not None:
+            nearest_x = min(max(x, pile.left), pile.right)
+            nearest_y = min(max(y, pile.top), pile.bottom)
+            if math.hypot(x - nearest_x, y - nearest_y) < radius:
+                return True
         return False
+
+    def woodpile_rect(self) -> pygame.Rect | None:
+        """Where the stacked firewood stands against this wall, in world space, or None if
+        this house rolled no woodpile (`BuildingArt._draw_extras`). A prop drawn standing up
+        against the wall is the one exterior extra away from the wall itself, so it is the
+        one that needs its own collision: shutters and a flower box are painted flush to the
+        wall the player already can't cross, a chimney is out of reach on the roof.
+
+        Worked out once and kept (`_woodpile`): `blocks` asks every mover's frame near this
+        building, and a plain house without one is the common case, not worth a style lookup
+        and a Rect built fresh each time."""
+        if self._woodpile is None:
+            self._woodpile = False
+            if self.kind != "landmark":
+                style = self.style()
+                if "woodpile" in style["extras"]:
+                    r = self.rect
+                    pile = pygame.Rect(0, 0, 16, 46)
+                    pile.midtop = (r.centerx + style["side"] * (r.width // 2 - 12), r.bottom + 4)
+                    self._woodpile = pile
+        return self._woodpile or None
 
     def covers(self, x, y, radius: float = 0.0) -> bool:
         """Whether a body of `radius` standing here is on any part of this building, wing,

@@ -112,7 +112,7 @@ class BuildingArt:
                 self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
                 lit=darkness if idx in lamps else 0.0,
             )
-        self._draw_extras(screen, camera, srect, srect.inflate(-16, -16), windows, style)
+        self._draw_extras(screen, camera, srect.inflate(-16, -16), windows, style)
 
         if self.kind == "shop":
             self._draw_awning(screen, camera)
@@ -263,7 +263,7 @@ class BuildingArt:
             for y in range(roof.top + 12, roof.bottom - 4, 14):
                 pygame.draw.line(screen, line, (roof.left + 3, y), (roof.right - 4, y), 2)
 
-    def _draw_extras(self, screen, camera: Camera, srect: pygame.Rect, roof: pygame.Rect, windows, style: dict):
+    def _draw_extras(self, screen, camera: Camera, roof: pygame.Rect, windows, style: dict):
         """The one or two things that make this house somebody's: a smoking chimney, a
         porch over the door, shutters, a flower box, a stack of firewood."""
         side = style["side"]
@@ -317,8 +317,12 @@ class BuildingArt:
                     petal = (box.left + 7 + i * 11, box.centery) if nx == 0 else (box.centerx, box.top + 7 + i * 11)
                     pygame.draw.circle(screen, (216, 96, 120), petal, 4)
             elif extra == "woodpile":
-                pile = pygame.Rect(0, 0, 16, 46)
-                pile.midtop = (srect.centerx + side * (srect.width // 2 - 12), srect.bottom + 4)
+                # The one exterior extra with its own collision (`Building.woodpile_rect`):
+                # drawn from the same rect rather than a second copy of the geometry, so the
+                # solid ground and the stack painted over it never drift apart.
+                world_pile = self.woodpile_rect()
+                px, py = camera.world_to_screen(world_pile.left, world_pile.top)
+                pile = pygame.Rect(round(px), round(py), world_pile.width, world_pile.height)
                 pygame.draw.rect(screen, (104, 78, 50), pile, border_radius=3)
                 for y in range(pile.top + 6, pile.bottom - 2, 10):
                     pygame.draw.circle(screen, (146, 116, 76), (pile.centerx, y), 5)
