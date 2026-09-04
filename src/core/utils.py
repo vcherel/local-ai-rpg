@@ -80,9 +80,23 @@ def parse_world_context(response: str | None) -> str | None:
     text = (response or "").strip().strip('"').strip()
     # A leading label the model sometimes prefixes its own answer with.
     text = re.sub(r"^(world|context|setting|lore)\s*:\s*", "", text, flags=re.IGNORECASE).strip()
+    text = _last_full_sentence(text)
     if len(text) < _CONTEXT_MIN_CHARS or len(text.split()) < _CONTEXT_MIN_WORDS:
         return None
     return text
+
+
+def _last_full_sentence(text: str) -> str:
+    """Cut a run of prose back to the last sentence it actually finished.
+
+    The other way the lore comes back unreadable: the answer stops in the middle of a
+    clause ("...where the shadows move before sunset, and every"), either because the
+    model's own stream ended there or because it was still writing when the token budget
+    ran out. Half a sentence is not lore, so whatever follows the last full stop is
+    dropped; if the answer never finished one, nothing is left and the caller asks again.
+    """
+    ends = [match.end() for match in re.finditer(r"[.!?](?=[\s\"\')\]]|$)", text)]
+    return text[: ends[-1]].strip() if ends else ""
 
 
 def parse_shop_inventories(response: str, shop_count: int) -> list:
