@@ -129,24 +129,31 @@ def _routes_near_chunk(cx: int, cy: int) -> list[Route]:
     return [routes[key] for key in sorted(routes)]
 
 
-def road_ends_at(x: float, y: float, cx: int, cy: int) -> tuple[tuple[float, float, float], ...]:
+def road_ends_at(x: float, y: float, cx: int, cy: int) -> tuple[tuple[float, float, float, float], ...]:
     """Where every road leaving this settlement stops, which is the outside of one of its
-    gateways (`_approach`), and how wide the road is where it stops.
+    gateways (`_approach`), how wide the road is where it stops and which way it runs off
+    from there.
 
     A settlement lays its own lanes out to these (`Village.gateways`): the road stops at
     the grounds the site *could* have reached, since it is drawn from the map rather than
     from a village that may not have been built yet, and only the village itself knows
     where its wall actually stands. The width goes with the point because the lane is worn
     out to it at the road's own width and narrows on the way in: a road is twice a lane
-    wide and a track that changed width at the gate read as two tracks meeting there."""
+    wide and a track that changed width at the gate read as two tracks meeting there. The
+    heading goes with it because the lane laps a width over the road to hide the round cap
+    it ends in, and a road that leaves the gate at an angle is not lapped by a lane walking
+    backwards along its own straight line."""
     ends = []
     for route in _settlement_routes(cx, cy):
         for at_start, (near, far) in ((True, route[:2]), (False, route[1::-1])):
             if math.dist((near[0], near[1]), (x, y)) >= 1:
                 continue
             line = _route_line(route)
-            width = (line[0] if at_start else line[-1]).width if line else float(c.Scenery.ROAD_WIDTH[0])
-            ends.append((*_approach(near[0], near[1], near[2], far[0], far[1]), width))
+            blob = (line[0] if at_start else line[-1]) if line else None
+            width = blob.width if blob else float(c.Scenery.ROAD_WIDTH[0])
+            away = math.atan2(far[1] - near[1], far[0] - near[0])
+            heading = (blob.heading + (0.0 if at_start else math.pi)) if blob else away
+            ends.append((*_approach(near[0], near[1], near[2], far[0], far[1]), width, heading))
     return tuple(ends)
 
 
