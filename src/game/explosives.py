@@ -30,6 +30,43 @@ if TYPE_CHECKING:
     from llm.quest_system import QuestSystem
 
 
+# One recipe per kind of blast, the way a wound's recipe is per weapon family in
+# core/decals.py: the damage, the falloff and the shake are the same call for all four
+# (`explode`'s own arguments), but what it throws up and what it sounds like are not. A
+# grenade is shell and shrapnel, a mine is dirt going off underfoot, a creeper is wet
+# rather than fiery, and a keg is the original, wood and fire.
+_BLAST_STYLES = {
+    "keg": {
+        "fire": (255, 170, 60),
+        "smoke": (90, 80, 75),
+        "debris": (150, 110, 70),
+        "rings": ((255, 220, 150), (200, 130, 60)),
+        "sound": "crate_break",
+    },
+    GRENADE: {
+        "fire": (255, 205, 110),
+        "smoke": (80, 75, 78),
+        "debris": (190, 190, 200),
+        "rings": ((255, 240, 200), (220, 160, 90)),
+        "sound": "grenade_blast",
+    },
+    MINE: {
+        "fire": (200, 140, 70),
+        "smoke": (120, 100, 70),
+        "debris": (110, 85, 55),
+        "rings": ((225, 200, 150), (140, 110, 65)),
+        "sound": "mine_blast",
+    },
+    "creeper": {
+        "fire": (150, 210, 110),
+        "smoke": (90, 110, 85),
+        "debris": (100, 150, 90),
+        "rings": ((190, 235, 165), (95, 160, 80)),
+        "sound": "creeper_blast",
+    },
+}
+
+
 class WorldExplosives:
     """What a blast catches and what it does to each thing it caught."""
 
@@ -95,6 +132,7 @@ class WorldExplosives:
                 shake=c.Bombs.SHAKE,
                 player_mult=c.Bombs.PLAYER_DAMAGE_MULT,
                 message="",
+                blast_kind=bomb.kind,
             )
 
     def explode(
@@ -113,6 +151,7 @@ class WorldExplosives:
         player_mult: float = c.Explosion.PLAYER_DAMAGE_MULT,
         by_player: bool = True,
         message: str = "The powder keg goes off!",
+        blast_kind: str = "keg",
     ):
         """A powder keg going off: the one thing in the world that kills a crowd without a
         swing.
@@ -129,7 +168,7 @@ class WorldExplosives:
 
         `depth` caps a chain so a shipment of kegs cannot recurse without end.
         """
-        self._blast_fx(x, y, radius, shake, message if depth == 0 else "")
+        self._blast_fx(x, y, radius, shake, message if depth == 0 else "", blast_kind)
 
         def blast_damage(distance: float) -> int:
             frac = max(0.0, 1.0 - distance / radius)
@@ -220,7 +259,7 @@ class WorldExplosives:
             # started the chain: nothing a creeper set off pays the player.
             self.explode(keg.x, keg.y, player, quest_system, depth + 1, by_player=by_player)
 
-    def _blast_fx(self, x, y, radius: float, shake: float, message: str):
+    def _blast_fx(self, x, y, radius: float, shake: float, message: str, blast_kind: str = "keg"):
         """How a blast looks and sounds, which is all of what makes it read as the loudest
         thing in the game: the wash, the freeze, the shockwave going out past what it hurt,
         the fire, the smoke that hangs, and the debris that arcs and lands.
@@ -229,23 +268,28 @@ class WorldExplosives:
         blast that started a chain announces itself; the kegs it sets off are the same event.
         The scorch is the exception: every blast burns its own ground, so a chain leaves the
         shape it went off in.
+
+        `blast_kind` picks the recipe in `_BLAST_STYLES`: a grenade, a mine, a creeper and a
+        keg all run this same shockwave and the same counts, but not the same colours or the
+        same sound, so they read as different things going off rather than one effect reused.
         """
+        style = _BLAST_STYLES.get(blast_kind, _BLAST_STYLES["keg"])
         # The mark on the ground first, so everything thrown up by the blast is over it.
         get_decals().scorch(x, y, radius)
         get_shake().add(shake)
-        play_sound("crate_break")
+        play_sound(style["sound"])
         get_flash().trigger(c.Explosion.FLASH_AMOUNT, c.Explosion.FLASH_COLOR)
         get_hitstop().trigger(c.Explosion.HITSTOP_MS)
         get_particles().spawn_burst(
-            x, y, (255, 170, 60), count=c.Explosion.FIRE_PARTICLES, speed=13, life=650, size=8, gravity=0.2
+            x, y, style["fire"], count=c.Explosion.FIRE_PARTICLES, speed=13, life=650, size=8, gravity=0.2
         )
         get_particles().spawn_burst(
-            x, y, (90, 80, 75), count=c.Explosion.SMOKE_PARTICLES, speed=6, life=1100, size=10, gravity=0.03
+            x, y, style["smoke"], count=c.Explosion.SMOKE_PARTICLES, speed=6, life=1100, size=10, gravity=0.03
         )
         get_particles().spawn_burst(
             x,
             y,
-            (150, 110, 70),
+            style["debris"],
             count=c.Explosion.DEBRIS_PARTICLES,
             speed=15,
             life=900,
@@ -253,10 +297,10 @@ class WorldExplosives:
             gravity=0.55,
             shape="shard",
         )
-        for frac, ring_color in zip(c.Explosion.RING_FRACS, c.Explosion.RING_COLORS, strict=True):
+        for frac, ring_color in zip(c.Explosion.RING_FRACS, style["rings"], strict=True):
             get_impacts().pulse(x, y, radius * frac, ring_color)
         if self.notify and message:
-            self.notify(message, (255, 170, 60))
+            self.notify(message, style["fire"])
 
     def detonate_creeper(self, monster: Monster, player: Player, quest_system: QuestSystem):
         """A creeper's fuse burning out: it comes off the map and the blast goes off where it
@@ -283,4 +327,5 @@ class WorldExplosives:
             player_mult=1.0,
             by_player=False,
             message="The creeper bursts!",
+            blast_kind="creeper",
         )

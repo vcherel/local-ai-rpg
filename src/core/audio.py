@@ -58,6 +58,13 @@ _SOUND_SPECS = {
     "gate_close": ([(150, 0.16), (120, 0.14), (90, 0.10), (60, 0.14)], 0.34, "square"),
     # Sitting down at a fire: not a chime, just the wood settling under a pot.
     "fire_crackle": ([(320, 0.04), (180, 0.06), (240, 0.05)], 0.20, "noise"),
+    # A grenade going off: a bright crack rather than the keg's dull crate-break, since it
+    # is shell and shrapnel rather than wood.
+    "grenade_blast": ([(1200, 0.02), (500, 0.05), (220, 0.10), (90, 0.14)], 0.45, "noise"),
+    # A mine going off underfoot: no bright transient at all, just the ground thumping.
+    "mine_blast": ([(150, 0.06), (90, 0.10), (55, 0.20)], 0.42, "square"),
+    # A creeper bursting: wetter than a grenade, closer to `gore` than to a crate breaking.
+    "creeper_blast": ([(260, 0.04), (150, 0.06), (300, 0.03), (90, 0.14)], 0.40, "noise"),
 }
 
 
