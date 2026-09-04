@@ -123,6 +123,9 @@ class Village:
         # is not something a save has to carry, and the board is re-read on the next visit.
         self.notices: list = []
         self.notices_rolled_at: float = 0.0
+        # Where the board stands, rolled once (`board_pos`). Kept because collision asks for
+        # it on every mover's frame and a seeded Random per call is not free.
+        self._board_pos: tuple[float, float] | None = None
 
     @property
     def extent(self) -> int:
@@ -145,10 +148,15 @@ class Village:
         """Where this settlement's notice board stands: on the rim of its own plaza, in a
         direction rolled off the village so the same town always has it in the same corner
         and a street is worth learning. Never in the middle, which is the well's."""
-        rng = random.Random(f"board:{self.chunk[0]},{self.chunk[1]}")
-        angle = rng.uniform(0, 2 * math.pi)
-        reach = c.Villages.PLAZA_RADIUS * c.Board.PLAZA_FRACTION
-        return self.x + math.cos(angle) * reach, self.y + math.sin(angle) * reach * c.Villages.PLAZA_SQUASH
+        if self._board_pos is None:
+            rng = random.Random(f"board:{self.chunk[0]},{self.chunk[1]}")
+            angle = rng.uniform(0, 2 * math.pi)
+            reach = c.Villages.PLAZA_RADIUS * c.Board.PLAZA_FRACTION
+            self._board_pos = (
+                self.x + math.cos(angle) * reach,
+                self.y + math.sin(angle) * reach * c.Villages.PLAZA_SQUASH,
+            )
+        return self._board_pos
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -470,10 +478,14 @@ class Village:
         return any(trench.collidepoint(x, y) for trench in self.defences()["ditch"])
 
     def blocks(self, x, y, radius) -> bool:
-        """The well in the middle of the plaza is solid, and so is the wall around a walled
-        town, its towers and whatever of a gate's leaves stands in the gateway; everything
-        else in a village is a building, collided against by the buildings themselves."""
+        """The well in the middle of the plaza and the notice board on its rim are solid, and
+        so is the wall around a walled town, its towers and whatever of a gate's leaves
+        stands in the gateway; everything else in a village is a building, collided against
+        by the buildings themselves."""
         if math.hypot(self.x - x, self.y - y) < c.Villages.WELL_RADIUS + radius:
+            return True
+        bx, by = self.board_pos()
+        if math.hypot(bx - x, by - y) < c.Board.BLOCK_RADIUS + radius:
             return True
         if not self.defended:
             return False
@@ -1003,6 +1015,11 @@ class Village:
         the one piece of village furniture the player walks up to and reads."""
         bx, by = camera.world_to_screen(*self.board_pos())
         width, height = c.Board.BOARD_W, c.Board.BOARD_H
+        # The shadow on the earth is what makes it stand up rather than lie printed on the
+        # plaza: laid down first, at the foot of the posts, and left where it is.
+        shadow = pygame.Surface((width + 8, 14), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (0, 0, 0, 70), shadow.get_rect())
+        screen.blit(shadow, (round(bx - (width + 8) / 2), round(by + 2)))
         for side in (-1, 1):
             post = pygame.Rect(0, 0, 6, c.Board.POST_HEIGHT)
             post.midtop = (round(bx + side * (width // 2 - 4)), round(by - c.Board.POST_HEIGHT + 10))
@@ -1010,7 +1027,18 @@ class Village:
         face = pygame.Rect(0, 0, width, height)
         face.midbottom = (round(bx), round(by - c.Board.POST_HEIGHT + 34))
         pygame.draw.rect(screen, c.Board.BOARD_COLOR, face)
+        # Planks rather than a panel: the seams are the difference between a board and a
+        # slab at the distance the whole plaza is read from.
+        for offset in range(face.width // 4, face.width, face.width // 4):
+            seam_x = face.left + offset
+            pygame.draw.line(screen, c.Board.SEAM_COLOR, (seam_x, face.top + 2), (seam_x, face.bottom - 2), 1)
         pygame.draw.rect(screen, (74, 54, 34), face, 2)
+        # A shingle header over the top, overhanging both posts. Nothing else in a village
+        # has this outline, which is the whole point of it.
+        roof = pygame.Rect(0, 0, width + 12, c.Board.ROOF_H)
+        roof.midbottom = (face.centerx, face.top + 2)
+        pygame.draw.rect(screen, c.Board.ROOF_COLOR, roof, border_radius=2)
+        pygame.draw.rect(screen, (46, 34, 22), roof, 1, border_radius=2)
         # A scrap of paper per notice actually pinned to it, so a board somebody has cleared
         # out reads as bare boards from across the plaza.
         for index, _notice in enumerate(self.notices[:3]):

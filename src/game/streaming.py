@@ -415,8 +415,6 @@ class WorldStreaming:
         Looked for a few times a second rather than every frame: it walks the villages and
         the NPCs, and an answer is seconds away in any case.
         """
-        if not self.context:
-            return
         self._prepare_timer -= dt
         if self._prepare_timer > 0:
             return
@@ -425,6 +423,16 @@ class WorldStreaming:
         pos = player.get_pos()
         near = [v for v in self.villages if v.distance_to_point(pos) < c.Villages.PREPARE_DISTANCE]
         if not near:
+            return
+
+        # The board is the one thing prepared here that needs no model, so it is rolled
+        # before the lore is asked about: the paper pinned to it is the only thing that says
+        # it is a notice board rather than a plank, and a board first filled when the player
+        # opens it advertises itself after the fact.
+        for village in near:
+            self.board_offers(village)
+
+        if not self.context:
             return
 
         for village in near:

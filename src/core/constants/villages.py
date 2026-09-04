@@ -571,8 +571,11 @@ class Board:
     POST_HEIGHT: int = 54
     BOARD_W: int = 62
     BOARD_H: int = 44
-    # How far away the prompt is offered from.
+    # How far away the prompt is offered from, and how much ground the posts take up. It is
+    # a thing on legs standing on the square, so it is solid like the well: an obstacle you
+    # walk through is what made it read as a mark painted on the plaza.
     INTERACT_DISTANCE: float = 110.0
+    BLOCK_RADIUS: float = 26.0
     # How many notices are pinned to one, and how long before a board that has been emptied
     # (or read early) is worth walking back to.
     OFFERS: int = 3
@@ -593,6 +596,12 @@ class Board:
         "Rope",
     )
 
-    POST_COLOR: tuple = (92, 68, 44)
-    BOARD_COLOR: tuple = (138, 106, 66)
+    # How deep the shingle header sits over the face. A plain rectangle on the plaza is the
+    # same value as the trodden earth it stands on, so the silhouette is what has to say
+    # "board": a roof over it and posts darker than the ground under it.
+    ROOF_H: int = 9
+    POST_COLOR: tuple = (68, 48, 30)
+    ROOF_COLOR: tuple = (74, 54, 36)
+    BOARD_COLOR: tuple = (152, 118, 74)
+    SEAM_COLOR: tuple = (118, 88, 52)
     NOTICE_COLOR: tuple = (232, 226, 208)
