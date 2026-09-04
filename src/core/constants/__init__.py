@@ -45,6 +45,7 @@ from core.constants.combat import (
     Staffs,
     Trees,
     WeaponArchetype,
+    Woodpile,
     weapon_archetype,
     weapon_look,
 )
@@ -137,6 +138,7 @@ __all__ = [
     "WeaponArchetype",
     "Weather",
     "Wildlife",
+    "Woodpile",
     "World",
     "weapon_archetype",
     "weapon_look",

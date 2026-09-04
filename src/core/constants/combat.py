@@ -256,6 +256,28 @@ class Boulders:
 
 
 @dataclass(frozen=True)
+class Woodpile:
+    """Breaking the firewood stacked against a house (game/combat.py `_chop_woodpile`,
+    game/entities/buildings.py `woodpile_rect`).
+
+    The one exterior extra of a building that stands in the way, so it is the one that has
+    to answer a weapon: a prop the player cannot walk through and cannot take apart is a
+    wall nobody put there. It is stacked wood rather than a tree, so it gives sooner than a
+    trunk and pays the same way, in logs. Which piles are gone is kept on the building
+    itself, beside its broken windows, since a house is saved and never rolled again.
+    """
+
+    HP: int = 45
+    # An axe is what firewood was cut with in the first place; anything else is blunt work.
+    AXE_MULT: float = 3.0
+    OTHER_MULT: float = 0.8
+    HIT_RADIUS: int = 22
+    LOG_DROPS: tuple = (1, 2)
+    XP_PER_BREAK: float = 2.0
+    COLOR: tuple = (104, 78, 50)
+
+
+@dataclass(frozen=True)
 class Explosion:
     """A powder keg going off (game/combat.py `explode`).
 

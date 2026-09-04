@@ -160,14 +160,11 @@ class GameRenderer:
         # building's floor is under a roof that is still on, and used to show through it.
         get_decals().draw(self.screen, camera, hidden=lambda x, y: self._hidden_indoors(world, x, y, interior))
 
-        # Up whenever the player is standing in somebody else's room, not only over a chest:
-        # taking the furniture apart is watched exactly like emptying the chest is, and the
-        # rule is only fair if the eyes are on screen before the swing.
-        if (
-            self.always_show_cones
-            or interior is not None
-            or (interaction is not None and interaction.kind in ("chest", "bed"))
-        ):
+        # Only ever because the player asked for them (V). Cones that came up on their own
+        # the moment somebody walked into a room were in the way of the one thing a room is
+        # walked into for, and who is watching is a question the player asks rather than one
+        # the game answers over their shoulder.
+        if self.always_show_cones:
             self._draw_witness_cones(camera, world, player)
 
         # Lying on the ground and under everything that walks over it: a trap is meant to be
@@ -368,12 +365,12 @@ class GameRenderer:
 
     def _draw_witness_cones(self, camera: Camera, world: World, player: Player):
         """What every villager who could catch the player stealing can actually see, drawn on
-        the ground while a chest or a bed is in reach.
+        the ground while `always_show_cones` (V) is on.
 
-        Only up while the player is stood over something that isn't theirs: the cone is the
-        question "is anyone looking right now", and a street permanently full of wedges would
-        be wallpaper. `always_show_cones` (V) is the player asking for that wallpaper anyway,
-        which is a choice they make rather than the state the game hands them.
+        Never raised by the game itself: the cone is the question "is anyone looking right
+        now", and it is the player who decides when they want it asked. Standing in a room
+        used to raise it on its own, which put a fan of wedges over the furniture at exactly
+        the moment the room was being searched.
 
         One rule, and the colour follows the wedge: white is somebody watching, red is the
         player standing in what they are watching. Which is only readable because a villager

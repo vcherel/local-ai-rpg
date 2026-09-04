@@ -1131,8 +1131,10 @@ class Game:
             purse = Item(x, y, "Purse", "coins", rarity="common", quantity=coins)
             purse.start_pop_anim(x, y - c.Player.SIZE)
             self.world.items.append(purse)
-        if coins > 0 or items:
-            self.world.mark_death_drop(x, y)
+        # Pinned whether or not anything fell: where the last death happened is worth
+        # knowing on its own, and a player who died carrying nothing is exactly the one who
+        # needs to find their way back to the fight that killed them.
+        self.world.mark_death_drop(x, y)
 
     def _quit_to_menu(self):
         """Leave the game and return to the main menu. Saved here rather than left to the
