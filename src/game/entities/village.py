@@ -148,7 +148,7 @@ class Village:
         rng = random.Random(f"board:{self.chunk[0]},{self.chunk[1]}")
         angle = rng.uniform(0, 2 * math.pi)
         reach = c.Villages.PLAZA_RADIUS * c.Board.PLAZA_FRACTION
-        return self.x + math.cos(angle) * reach, self.y + math.sin(angle) * reach * 0.75
+        return self.x + math.cos(angle) * reach, self.y + math.sin(angle) * reach * c.Villages.PLAZA_SQUASH
 
     def distance_to_point(self, point) -> float:
         return math.hypot(self.x - point[0], self.y - point[1])
@@ -558,9 +558,10 @@ class Village:
         A lane is routed round the buildings rather than run straight at the door
         (`StreetGrid`): the straight line the lanes used to be was laid over whatever house
         stood between the plaza and the door it was going to, which read as a street running
-        through somebody's front room. Every lane is walked back off one flood fill from the
-        plaza, so they join into one network on the way in instead of being a fan of spokes
-        that happen to meet.
+        through somebody's front room. Every lane is walked back off one cost fill from the
+        plaza and they are all worked out in the same pass (`StreetGrid.trace`), so where two
+        of them share ground they are the same stretch of it: what is laid down is a trunk
+        with branches off it rather than a spoke per door.
 
         Kept as the few corners each lane turns rather than as a line of blobs: laid blob by
         blob a lane was a string of beads with a scalloped edge, which is not what trodden
@@ -579,24 +580,32 @@ class Village:
         # Every lane leaves from the edge of the plaza itself rather than from a circle
         # drawn round it: a ring laid outside the square left a hoop of untrodden grass
         # between the two.
-        rim, squash = c.Villages.PLAZA_RADIUS, 0.75
+        rim, squash = c.Villages.PLAZA_RADIUS, c.Villages.PLAZA_SQUASH
 
         def on_rim(angle: float) -> tuple[float, float]:
             return self.x + math.cos(angle) * rim, self.y + math.sin(angle) * rim * squash
 
         grid = StreetGrid(self, buildings)
-        for building in buildings:
-            if not building.has_door:
-                continue
-            door = building.door_front()
+        doors = [b.door_front() for b in buildings if b.has_door]
+        gates = self.gateways()
+        routes = grid.trace([*doors, *[(gx, gy) for gx, gy, _ in gates]])
+        # A stretch two lanes share is one stretch of earth: laid once, whichever of them
+        # was asked for it first.
+        laid = set()
+        for i, door in enumerate(doors):
             # Nothing found its way in: the lane it always had, straight at the plaza.
-            route = grid.route(door) or [door, on_rim(math.atan2(door[1] - self.y, door[0] - self.x))]
-            lanes.append(tuple((x, y, width) for x, y in route))
-        for end_x, end_y, road_width in self.gateways():
+            stretches = routes.get(i) or [[door, on_rim(math.atan2(door[1] - self.y, door[0] - self.x))]]
+            for stretch in stretches:
+                lane = tuple((x, y, width) for x, y in stretch)
+                if lane not in laid:
+                    laid.add(lane)
+                    lanes.append(lane)
+        for j, (_end_x, _end_y, road_width) in enumerate(gates):
             # No fallback out here: a lane that could not find a gateway would be laid
             # through the wall, and a road stopping at the ditch says more than that.
-            route = grid.route((end_x, end_y))
-            if route is not None:
+            stretches = routes.get(len(doors) + j)
+            if stretches is not None:
+                route = [point for k, stretch in enumerate(stretches) for point in stretch[k > 0 :]]
                 lanes.append(taper_from_gate(route, road_width))
         step = c.Villages.STREET_STEP
         ring = [on_rim(i * step / rim) for i in range(int(2 * math.pi * rim // step) + 1)]
@@ -616,7 +625,8 @@ class Village:
         if not self.streets:
             return False
         reach = c.Villages.STREET_WIDTH + margin
-        rx, ry = c.Villages.PLAZA_RADIUS + reach, c.Villages.PLAZA_RADIUS * 0.75 + reach
+        rx = c.Villages.PLAZA_RADIUS + reach
+        ry = c.Villages.PLAZA_RADIUS * c.Villages.PLAZA_SQUASH + reach
         if ((x - self.x) / rx) ** 2 + ((y - self.y) / ry) ** 2 < 1:
             return True
         cell = self._lane_cell()
@@ -695,7 +705,7 @@ class Village:
             return self._earth
         rng = random.Random(f"plaza:{self.x},{self.y}")
         width = c.Villages.PLAZA_RADIUS * 2
-        height = round(c.Villages.PLAZA_RADIUS * 1.5)
+        height = round(c.Villages.PLAZA_RADIUS * 2 * c.Villages.PLAZA_SQUASH)
         blobs = []
         for _ in range(14):
             angle = rng.uniform(0, 2 * math.pi)
@@ -713,7 +723,8 @@ class Village:
         at noon."""
         self._draw_streets(screen, camera)
         cx, cy = camera.world_to_screen(self.x, self.y)
-        plaza = pygame.Rect(0, 0, c.Villages.PLAZA_RADIUS * 2, round(c.Villages.PLAZA_RADIUS * 1.5))
+        rim = c.Villages.PLAZA_RADIUS
+        plaza = pygame.Rect(0, 0, rim * 2, round(rim * 2 * c.Villages.PLAZA_SQUASH))
         plaza.center = (round(cx), round(cy))
         pygame.draw.ellipse(screen, c.Villages.PLAZA_COLOR, plaza)
 

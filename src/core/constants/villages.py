@@ -101,13 +101,23 @@ class Villages:
     # reached from. Six cells of the street grid: a door stands against its own wall, so
     # the first cell or two is always blocked, and anything past this is a door walled in
     # rather than a door set back.
-    STREET_SEARCH_RINGS: int = 6
+    STREET_SEARCH_RINGS: int = 9
     STREET_TAPER: int = 260
     # A lane is routed on a grid of this size rather than run straight at the door: a
     # straight line from the plaza was laid over whatever house stood between the two.
     # Coarser than the lane is wide, since what it has to find is the gap between two
     # buildings and there is no gap narrower than a lane worth walking down.
-    STREET_GRID: int = 32
+    STREET_GRID: int = 20
+    # What a lane pays to turn, on top of the step itself. Every route out of the plaza is
+    # walked back off one cost fill, and a diagonal step and a straight one cost within a
+    # half of each other, so without this the two are all but tied and a lane comes back as
+    # a staircase the straightening can only shorten, never unbend.
+    STREET_TURN_COST: float = 0.7
+    # How far back from a corner a lane starts turning, and in how many steps. Trodden
+    # earth is worn round a corner rather than mitred at it; the bend is only taken where
+    # the short way round it is clear, so a lane never cuts the house it was going round.
+    STREET_BEND: int = 26
+    STREET_BEND_STEPS: int = 4
     # How far a lane may wander looking for its way round a house, as a multiple of the
     # straight-line distance: past that the settlement is walled in on itself and the
     # straight lane it used to have is the better answer.
@@ -122,6 +132,10 @@ class Villages:
 
     # The plaza: an open patch of packed earth with a well in the middle.
     PLAZA_RADIUS: int = 150
+    # The plaza is drawn as an ellipse rather than a circle, and this is how flat. Every
+    # lane is walked back to the same ellipse, so a lane never stops on the grass short of
+    # the earth it was going to.
+    PLAZA_SQUASH: float = 0.75
     WELL_RADIUS: int = 34
     PLAZA_COLOR: tuple = (146, 118, 84)
     WELL_STONE: tuple = (142, 138, 130)

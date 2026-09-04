@@ -76,7 +76,7 @@ grows on village grounds for it to have to be kept clear of. Nothing about them 
 they are worked out from where the buildings ended up, and the buildings are in the save.
 
 A lane is *found* rather than drawn. The straight line from the plaza to a door was laid
-over whatever house stood between the two, so `StreetGrid` floods the settlement once from
+over whatever house stood between the two, so `StreetGrid` fills the settlement once from
 the plaza across the ground the footprints and the wall leave free, and every lane is the
 walk back from its own end. One fill rather than one search per door is what makes them a
 network: two doors on the same side of town come back along the same lane instead of each
@@ -84,6 +84,37 @@ wearing its own beside it. The grid is coarser than a lane is wide, since what i
 find is the gap between two buildings and no gap narrower than a lane is worth walking down,
 and the route is cut back to the corners it actually turns at (`_straighten`) because a
 route walked cell by cell reads as a staircase however fine the grid.
+
+Three things about that fill are worth spelling out, because getting any of them wrong is
+visible from the street.
+
+It is a cost fill and not a step count. On an eight-way grid a diagonal step and a straight
+one are within half of each other, so counting steps ties every staircase between two points
+with the straight run alongside it and picks between them by whatever order the queue
+happened to be in. What came back was a diagonal stretch and then an axis-aligned one, an L
+the straightening could shorten but never unbend. Each step now costs what it is worth, plus
+`STREET_TURN_COST` for changing direction, and a diagonal between two blocked cells is not a
+step at all, since that is a lane drawn through the corner of the house it was going round.
+
+The lanes are worked out together and straightened *between their junctions*, not each from
+its own door to the plaza (`StreetGrid.trace`). The fill already gives them a shared tree,
+and straightening a route end to end throws that away: each one snaps back to the straight
+line it would have had without the fill, and a town comes out as a fan of spokes crossing
+each other at shallow angles. So a cell used by more routes than the cell before it is a
+junction, the stretches between junctions are straightened on their own, and a stretch two
+lanes share is one stretch of earth laid once. What is drawn is a trunk with branches off it.
+The corners are then worn round rather than mitred (`_bend`), but only where the short way
+round is clear, so a lane never cuts the corner it was going round.
+
+The clearance is asked of the ground and not of the grid (`_clear`). The fill has to work in
+cells, but a cell is as wide as a lane, so a straight run that merely clips the corner of one
+was refused and the staircase the fill had found was kept instead. The straightening tests
+the real footprints, which is a shortcut it is allowed to take and never one through a wall.
+
+Every lane ends on the plaza as it is *drawn*, an ellipse and not the rectangle around it.
+Seeded from the rectangle, a route whose walk back ended in one of its corners stopped on the
+grass a good stride short of the earth it was going to, and that gap is the thing you see
+first.
 
 The wall is laid into that fill and the gateways are not, which is the whole of how a lane
 gets out of a walled town: nothing decides which gate a road belongs to, the fill simply
