@@ -168,6 +168,12 @@ class Bombs:
     THROW_SPEED: float = 9.0
     THROW_RANGE: float = 300.0
     FUSE_MS: int = 900
+    # A grenade is airborne, not slid along the ground: it climbs to this height at the
+    # midpoint of its throw and comes back down to land where it was aimed. Below
+    # CLEARANCE_HEIGHT it is read as close enough to the ground for a wall to stop it;
+    # above it, it is in the air and clears a low wall or a fence on the way over.
+    ARC_HEIGHT: float = 46.0
+    CLEARANCE_HEIGHT: float = 14.0
 
     # A mine is not live the instant it leaves the hand: the player has to be able to lay
     # one and step off it.

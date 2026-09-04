@@ -52,6 +52,15 @@ class Bomb:
     def in_flight(self) -> bool:
         return self.kind == GRENADE and self.traveled < self.to_travel
 
+    def arc_height(self) -> float:
+        """How far off the ground a thrown grenade is right now: 0 at the throw and at the
+        landing, peaking at the midpoint of the arc. This is what lets it clear a low wall
+        or a fence on the way over, and what the draw puts height into on screen."""
+        if self.kind != GRENADE or self.to_travel <= 0:
+            return 0.0
+        t = min(1.0, self.traveled / self.to_travel)
+        return 4.0 * c.Bombs.ARC_HEIGHT * t * (1.0 - t)
+
     def to_dict(self) -> dict:
         return {"x": self.x, "y": self.y, "kind": self.kind}
 
@@ -83,10 +92,16 @@ class Bomb:
                 self.x += total_x / steps
                 self.y += total_y / steps
                 self.traveled += distance / steps
-                if self.traveled >= self.to_travel or (blocked is not None and blocked(self.x, self.y, c.Bombs.SIZE)):
-                    # It has arrived, or bounced off whatever it was thrown into: either
+                # High enough in the arc, a wall does not stop it: it is a throw over the
+                # obstacle, not into it. Only close to the ground, at the start or the end
+                # of the arc, does a wall in the way cut the throw short.
+                grounded = self.arc_height() <= c.Bombs.CLEARANCE_HEIGHT
+                if self.traveled >= self.to_travel or (
+                    grounded and blocked is not None and blocked(self.x, self.y, c.Bombs.SIZE)
+                ):
+                    # It has arrived, or come down on whatever it was thrown into: either
                     # way it is on the ground and the fuse is burning.
-                    self.traveled = self.to_travel
+                    self.traveled = min(self.traveled, self.to_travel)
                     break
             if self.in_flight:
                 return False
@@ -106,10 +121,37 @@ class Bomb:
         return any(math.hypot(body.x - self.x, body.y - self.y) < c.Bombs.TRIGGER_RADIUS for body in bodies)
 
     def draw(self, screen: pygame.Surface, camera):
-        x, y = camera.world_to_screen(self.x, self.y)
+        ground_x, ground_y = camera.world_to_screen(self.x, self.y)
         radius = c.Bombs.SIZE // 2
+        height = self.arc_height()
+        x, y = ground_x, ground_y - height
+        if height > 0.5:
+            # Airborne: a shadow held on the ground marks where it will land, shrinking as
+            # the shell climbs away from it, and the shell itself is drawn a little larger
+            # the higher it gets. That is the whole readability of a throw: without it, a
+            # grenade in the air and one already on the ground look the same.
+            shrink = max(0.35, 1.0 - height / (c.Bombs.ARC_HEIGHT * 1.5))
+            shadow_w, shadow_h = radius * 1.8 * shrink, radius * 0.8 * shrink
+            pygame.draw.ellipse(
+                screen,
+                c.Colors.BLACK,
+                (ground_x - shadow_w / 2, ground_y - shadow_h / 2, shadow_w, shadow_h),
+            )
+            radius = int(radius * (1.0 + height / (c.Bombs.ARC_HEIGHT * 2.5)))
+
         pygame.draw.circle(screen, c.Colors.BLACK, (int(x), int(y)), radius + 2)
         pygame.draw.circle(screen, c.Bombs.BODY_COLOR, (int(x), int(y)), radius)
+
+        if self.kind == GRENADE and self.in_flight:
+            # A spin rather than a flat slide: two marks turning opposite each other around
+            # the shell, in step with how far it has travelled rather than with real time,
+            # so it spins faster while it is moving fast and stops the instant it lands.
+            spin = self.traveled / c.Bombs.SIZE
+            for offset in (0.0, math.pi):
+                mark_x = x + math.cos(spin + offset) * radius * 0.6
+                mark_y = y + math.sin(spin + offset) * radius * 0.6
+                pygame.draw.circle(screen, c.Colors.BLACK, (int(mark_x), int(mark_y)), 2)
+            return
 
         now = pygame.time.get_ticks()
         if self.kind == MINE:
