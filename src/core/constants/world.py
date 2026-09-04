@@ -386,6 +386,8 @@ class Buildings:
     WINDOW_H: int = 20
     WINDOW_Y_FROM_BOTTOM: int = 45
     WINDOW_X_FROM_DOOR: int = 40
+    # How far short of the pane a blow may land and still put it through, measured to the
+    # glass itself rather than to the middle of it (`WorldCombat._find_window_in_reach`).
     WINDOW_HIT_RADIUS: int = 18
     # Some houses are locked, rolled off the building's own id so the same one is always
     # locked and the player can learn which. A locked door never opens for the player from
