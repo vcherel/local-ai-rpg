@@ -253,6 +253,11 @@ class WorldCombat:
             self._hit_breakable(player, breakable, prop_damage, quest_system, blow)
             return
 
+        pile_hit = self._woodpile_in_reach(pos, hit_radius)
+        if pile_hit is not None:
+            self._chop_woodpile(player, pile_hit, arch, prop_damage, blow)
+            return
+
         wild = self._wilderness_in_reach(pos, hit_radius)
         if wild is not None:
             if wild.choppable:
@@ -265,6 +270,46 @@ class WorldCombat:
         if window_hit is not None:
             building, idx, window = window_hit
             self._hit_window(player, building, idx, window, prop_damage, blow)
+
+    def _woodpile_in_reach(self, pos, hit_radius: float):
+        """The stack of firewood a swing at `pos` lands on, or None. The one exterior extra
+        of a building that stands in the way (`Building.woodpile_rect`), so the one a blow
+        aimed at nothing else should find rather than pass through."""
+        for building in self.buildings_in_range(*pos, c.World.CHUNK_SIZE):
+            pile = building.woodpile_rect()
+            if pile is None:
+                continue
+            nearest_x = min(max(pos[0], pile.left), pile.right)
+            nearest_y = min(max(pos[1], pile.top), pile.bottom)
+            if math.hypot(pos[0] - nearest_x, pos[1] - nearest_y) < hit_radius + c.Woodpile.HIT_RADIUS:
+                return building
+        return None
+
+    def _chop_woodpile(self, player: Player, building: Building, arch, prop_damage: int, blow: float):
+        """One swing into the firewood stacked against a house. It reads as solid and it is
+        solid, so it comes apart like the tree it was cut from: an axe does the work several
+        times over, and what is left on the ground is logs.
+
+        The pile is gone for good once it gives (`Building.woodpile_hp`, saved with the
+        house), which takes its collision away with it."""
+        pile = building.woodpile_rect()
+        mult = c.Woodpile.AXE_MULT if arch.name == "axe" else c.Woodpile.OTHER_MULT
+        building.woodpile_hp -= max(1, round(prop_damage * mult))
+        if building.woodpile_hp > 0:
+            self._prop_chip(pile.centerx, pile.centery, c.Woodpile.COLOR, "crate_break", building.woodpile_key(), blow)
+            return
+
+        get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
+        play_sound("crate_break")
+        get_particles().spawn_burst(
+            pile.centerx, pile.centery, c.Woodpile.COLOR, count=20, speed=5, life=550, size=4, gravity=0.4
+        )
+        player.stats.train("strength", c.Woodpile.XP_PER_BREAK)
+        for _ in range(random.randint(*c.Woodpile.LOG_DROPS)):
+            log = Item(pile.centerx + random.uniform(-14, 14), pile.centery + random.uniform(-14, 14), "Log", "misc")
+            log.rarity = "common"
+            log.start_pop_anim(pile.centerx, pile.centery)
+            self.items.append(log)
 
     def _wilderness_in_reach(self, pos, hit_radius: float):
         """The tree or the boulder a swing at `pos` lands on, or None. The two things in the

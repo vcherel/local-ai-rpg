@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from core.damage_fx import draw_cracks, get_damage_fx
+from core.damage_fx import draw_cracks, get_damage_fx, tint
 from core.text_fx import draw_outlined_text
 
 if TYPE_CHECKING:
@@ -321,12 +321,24 @@ class BuildingArt:
                 # drawn from the same rect rather than a second copy of the geometry, so the
                 # solid ground and the stack painted over it never drift apart.
                 world_pile = self.woodpile_rect()
+                if world_pile is None:
+                    # Broken up and carried off (`Building.woodpile_hp`): the wall it stood
+                    # against is bare from then on.
+                    continue
                 px, py = camera.world_to_screen(world_pile.left, world_pile.top)
                 pile = pygame.Rect(round(px), round(py), world_pile.width, world_pile.height)
-                pygame.draw.rect(screen, (104, 78, 50), pile, border_radius=3)
+                # Struck like any other prop with hit points, so it flinches, flashes and
+                # splits as it is worked down (`WorldCombat._chop_woodpile`).
+                fx = get_damage_fx()
+                key = self.woodpile_key()
+                pile = pile.move(fx.offset(key))
+                flash = fx.flash(key)
+                hp_frac = max(0.0, min(1.0, self.woodpile_hp / c.Woodpile.HP))
+                pygame.draw.rect(screen, tint((104, 78, 50), flash), pile, border_radius=3)
                 for y in range(pile.top + 6, pile.bottom - 2, 10):
-                    pygame.draw.circle(screen, (146, 116, 76), (pile.centerx, y), 5)
+                    pygame.draw.circle(screen, tint((146, 116, 76), flash), (pile.centerx, y), 5)
                     pygame.draw.circle(screen, (74, 54, 34), (pile.centerx, y), 5, 1)
+                draw_cracks(screen, pile, hp_frac, key)
 
     def _draw_awning(self, screen, camera: Camera):
         """The shop's striped canopy, hung over whichever wall the door is in. The stripes

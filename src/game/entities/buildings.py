@@ -251,6 +251,11 @@ class Building(BuildingArt):
         # False rather than None marks "asked and there is none" so a plain house isn't
         # re-checked against its style every frame either.
         self._woodpile: pygame.Rect | bool | None = None
+        # What is left of that stack of firewood. It stands in the way, so it answers a
+        # weapon like everything else that does: at zero it is gone, off the collision and
+        # off the wall alike. Kept on the building beside its broken windows, since a house
+        # is saved rather than rolled again from its seed.
+        self.woodpile_hp: int = c.Woodpile.HP
         # The house painted onto its own surface (`BuildingArt._shell`), and where in the
         # world its top left corner sits. Everything that holds still is in there and is
         # blitted from then on; the door, the windows and the smoke are drawn over it.
@@ -658,7 +663,8 @@ class Building(BuildingArt):
 
     def woodpile_rect(self) -> pygame.Rect | None:
         """Where the stacked firewood stands against this wall, in world space, or None if
-        this house rolled no woodpile (`BuildingArt._draw_extras`). A prop drawn standing up
+        this house rolled no woodpile (`BuildingArt._draw_extras`) or the player has already
+        broken the one it had (`woodpile_hp`). A prop drawn standing up
         against the wall is the one exterior extra away from the wall itself, so it is the
         one that needs its own collision: shutters and a flower box are painted flush to the
         wall the player already can't cross, a chimney is out of reach on the roof.
@@ -666,6 +672,8 @@ class Building(BuildingArt):
         Worked out once and kept (`_woodpile`): `blocks` asks every mover's frame near this
         building, and a plain house without one is the common case, not worth a style lookup
         and a Rect built fresh each time."""
+        if self.woodpile_hp <= 0:
+            return None
         if self._woodpile is None:
             self._woodpile = False
             if self.kind != "landmark":
@@ -676,6 +684,12 @@ class Building(BuildingArt):
                     pile.midtop = (r.centerx + style["side"] * (r.width // 2 - 12), r.bottom + 4)
                     self._woodpile = pile
         return self._woodpile or None
+
+    def woodpile_key(self) -> str:
+        """Identity of this house's stack of firewood for `core.damage_fx`, the same way a
+        piece of its furniture has one (`prop_key`): the pile is part of the building rather
+        than an object the registry could key on."""
+        return f"{self.id}:woodpile"
 
     def covers(self, x, y, radius: float = 0.0) -> bool:
         """Whether a body of `radius` standing here is on any part of this building, wing,
@@ -711,6 +725,7 @@ class Building(BuildingArt):
             "looted": self.looted,
             "broken_props": sorted(self.broken_props),
             "broken_windows": sorted(self.broken_windows),
+            "woodpile_hp": self.woodpile_hp,
             "door_unlocked": self.door_unlocked,
             "door_open": self.door_open,
             "door_broken": self.door_broken,
@@ -725,6 +740,7 @@ class Building(BuildingArt):
         building.looted = data["looted"]
         building.broken_props = set(data.get("broken_props", []))
         building.broken_windows = set(data.get("broken_windows", []))
+        building.woodpile_hp = data.get("woodpile_hp", c.Woodpile.HP)
         building.door_unlocked = data.get("door_unlocked", False)
         building.door_open = data.get("door_open", False)
         building.door_broken = data.get("door_broken", False)
