@@ -13,7 +13,7 @@ from core.damage_fx import draw_cracks
 from game.entities.buildings import Building
 from game.entities.village_layout import grounds_reach, tier_for
 from game.entities.village_sites import site_grounds_radius
-from game.entities.village_streets import StreetGrid, taper_from_gate, walk_lane
+from game.entities.village_streets import StreetGrid, lane_width, taper_from_gate, walk_lane
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -74,6 +74,10 @@ class Village:
         # at each. Session-only: the buildings they are worn between are saved, so the same
         # streets come back with them.
         self.streets: tuple = ()
+        # Which of them start inside the road they carry on from, which is the ones out of a
+        # gate: their first stretches are laid on ground the road has already painted and
+        # verged, so they are drawn as earth alone (`_draw_streets`).
+        self._lapped: frozenset[int] = frozenset()
         # The lanes walked into points and bucketed on a grid, built the first time anything
         # asks what is standing on one (`street_at`) and dropped whenever they are laid
         # again.
@@ -547,10 +551,10 @@ class Village:
         from its own side rather than the road guessing at extents it cannot know."""
         return max(self.grounds_radius, site_grounds_radius(*self.chunk))
 
-    def gateways(self) -> tuple[tuple[float, float, float], ...]:
-        """Where the roads from the neighbouring settlements stop outside this one and how
-        wide each is there, which is where and what its own lanes have to reach for the two
-        to read as one thing.
+    def gateways(self) -> tuple[tuple[float, float, float, float], ...]:
+        """Where the roads from the neighbouring settlements stop outside this one, how wide
+        each is there and which way it runs off, which is where, what and how its own lanes
+        have to reach for the two to read as one thing.
 
         Only the sides a road actually arrives on: a lane run out of every gate whether
         anything met it or not left four stubs of packed earth trailing off into the grass.
@@ -581,13 +585,17 @@ class Village:
         the lane has there, which is what a lane out of a gate is tapered by and what the
         drawing reads its colour and its verge off (`_lane_look`).
 
+        What that width is, is how many doors walk the stretch (`lane_width`): the trunk the
+        whole place shares is a road's own width and the spur to one door is a track. Laid
+        at one width the network read as a spider of identical threads with the branch to a
+        door as important as the way through the town.
+
         Held on the village for the session rather than saved, and worked out from where the
         buildings actually ended up rather than from the slot grid they started on: the
         buildings are in the save, so the same lanes come back with them. Drawn here rather
         than generated into a chunk's scenery because a street belongs to the settlement and
         reaches into whichever chunks it likes, and nothing solid grows on village grounds
         for it to have to be kept clear of anyway."""
-        width = float(c.Villages.STREET_WIDTH)
         lanes: list[tuple] = []
         # Every lane leaves from the edge of the plaza itself rather than from a circle
         # drawn round it: a ring laid outside the square left a hoop of untrodden grass
@@ -599,35 +607,59 @@ class Village:
 
         grid = StreetGrid(self, buildings)
         doors = [b.door_front() for b in buildings if b.has_door]
+        # A route is found from the spot outside the door somebody waits on, but the earth is
+        # worn to the leaf itself: a lane stopping where the routing started left a stride of
+        # untrodden grass between it and every threshold in the place.
+        sills = [b.door_rect().center for b in buildings if b.has_door]
         gates = self.gateways()
         # The gateways are laid first and are never diverted: a lane out of a gate is the
         # road outside carrying on in, so it is the one the doors' lanes join.
         routes = grid.trace(
-            [*doors, *[(gx, gy) for gx, gy, _ in gates]],
+            [*doors, *[(gx, gy) for gx, gy, _, _ in gates]],
             frozenset(range(len(doors), len(doors) + len(gates))),
         )
+        trunk = lane_width(c.Villages.STREET_TRUNK_TRAFFIC)
+
+        def worn(stretches: list, floor: float = 0.0) -> list[tuple]:
+            """The stretches of one route at the width each was walked to, every one of them
+            meeting the busier one it runs into at that width: a branch leaving a street is
+            an apron widening into it rather than a step across it.
+
+            `floor` is what a lane is worn to whatever walks it, which is the ones out of a
+            gate: a road arriving from the next village carries on in as a street, and a gate
+            the houses behind it happen not to use is still the way through the town."""
+            widths = [max(floor, lane_width(traffic)) for traffic, _ in stretches]
+            return [
+                (*((x, y, width) for x, y in points[:-1]), (*points[-1], max(width, joins)))
+                for (_, points), width, joins in zip(stretches, widths, [*widths[1:], widths[-1]], strict=True)
+            ]
+
         # A stretch two lanes share is one stretch of earth: laid once, whichever of them
         # was asked for it first.
         laid = set()
         for i, door in enumerate(doors):
             # Nothing found its way in: the lane it always had, straight at the plaza.
-            stretches = routes.get(i) or [[door, on_rim(math.atan2(door[1] - self.y, door[0] - self.x))]]
-            for stretch in stretches:
-                lane = tuple((x, y, width) for x, y in stretch)
+            fallback = [(1, [door, on_rim(math.atan2(door[1] - self.y, door[0] - self.x))])]
+            found = routes.get(i) or fallback
+            traffic, from_door = found[0]
+            for lane in worn([(traffic, [sills[i], *from_door]), *found[1:]]):
                 if lane not in laid:
                     laid.add(lane)
                     lanes.append(lane)
-        for j, (_end_x, _end_y, road_width) in enumerate(gates):
+        lapped = set()
+        for j, (_end_x, _end_y, road_width, heading) in enumerate(gates):
             # No fallback out here: a lane that could not find a gateway would be laid
             # through the wall, and a road stopping at the ditch says more than that.
             stretches = routes.get(len(doors) + j)
             if stretches is not None:
-                route = [point for k, stretch in enumerate(stretches) for point in stretch[k > 0 :]]
-                lanes.append(taper_from_gate(route, road_width))
+                route = [point for k, lane in enumerate(worn(stretches, trunk)) for point in lane[k > 0 :]]
+                lapped.add(len(lanes))
+                lanes.append(taper_from_gate(tuple(route), road_width, heading))
         step = c.Villages.STREET_STEP
         ring = [on_rim(i * step / rim) for i in range(int(2 * math.pi * rim // step) + 1)]
-        lanes.append(tuple((x, y, width) for x, y in ring))
+        lanes.append(tuple((x, y, trunk) for x, y in ring))
         self.streets = tuple(lanes)
+        self._lapped = frozenset(lapped)
         self._lane_cells = None
 
     def street_at(self, x: float, y: float, margin: float = 0.0) -> bool:
@@ -641,7 +673,7 @@ class Village:
         in the nine cells around the point."""
         if not self.streets:
             return False
-        reach = c.Villages.STREET_WIDTH + margin
+        reach = c.Villages.STREET_TRUNK_WIDTH + margin
         rx = c.Villages.PLAZA_RADIUS + reach
         ry = c.Villages.PLAZA_RADIUS * c.Villages.PLAZA_SQUASH + reach
         if ((x - self.x) / rx) ** 2 + ((y - self.y) / ry) ** 2 < 1:
@@ -666,15 +698,21 @@ class Village:
         asks about, which is what makes the nine cells round a point the whole search. A lane
         out of a gate is worn to the width of the road arriving there, so that is the widest
         anything on this ground ever is."""
-        return max(c.Villages.STREET_WIDTH, c.Scenery.ROAD_WIDTH[1]) + c.Scenery.STREET_CLEARANCE
+        return max(c.Villages.STREET_TRUNK_WIDTH, c.Scenery.ROAD_WIDTH[1]) + c.Scenery.STREET_CLEARANCE
 
     @staticmethod
     def _lane_look(width: float, edge: bool) -> tuple[tuple, float]:
         """What a lane looks like where it is this wide, as the colour and how far out it
-        reaches. A lane is trodden earth, a road is wider, lighter and verged, and the one
-        worn out of a gate is both at either end of it: the whole look follows the one
-        number that already tapers, so the two tracks never meet as a step."""
-        narrow, widest = c.Villages.STREET_WIDTH, c.Scenery.ROAD_WIDTH[1]
+        reaches. A spur is trodden earth, a street is wider, lighter and verged like the road
+        it carries on from, and the one worn out of a gate is both at either end of it: the
+        whole look follows the one number that already tapers, so the two tracks never meet
+        as a step.
+
+        Full road at the width a road actually is (`ROAD_WIDTH[0]`) rather than at the widest
+        one there can be: measured against the widest, a lane meeting a road of ordinary
+        width was still half street-coloured on a half-width verge, and the round cap it
+        ends in drew that difference on the road as a circle."""
+        narrow, widest = c.Villages.STREET_SPUR_WIDTH, c.Scenery.ROAD_WIDTH[0]
         blend = max(0.0, min(1.0, (width - narrow) / max(1.0, widest - narrow)))
         near, far = (
             (c.Villages.STREET_EDGE_COLOR, c.Scenery.ROAD_VERGE_COLOR)
@@ -693,20 +731,28 @@ class Village:
         (`Scenery._draw_path`): a stretch that drew both painted its own edge over the middle
         of the one before it.
 
+        The stretches a lane out of a gate laps over the road are earth alone: the road has
+        already laid its own verge there, and a second one on top of it is a dark ring drawn
+        round the joint, since the lane paints a circle at every joint and its verge reaches
+        further than the road's earth does.
+
         Only what is on screen is drawn, the same rule everything else in the world is drawn
         by, and the camera offset is asked for once: a town's lanes are the one loop here
         long enough for the call itself to cost something."""
         view = screen.get_rect().inflate(c.Scenery.ROAD_WIDTH[1] * 4, c.Scenery.ROAD_WIDTH[1] * 4)
         ox, oy = camera.world_to_screen(0, 0)
+        lap = c.Villages.STREET_LAP_STRETCHES
         stretches = []
-        for lane in self.streets:
-            for (ax, ay, aw), (bx, by, bw) in pairwise(lane):
+        for at, lane in enumerate(self.streets):
+            for k, ((ax, ay, aw), (bx, by, bw)) in enumerate(pairwise(lane)):
                 start = (round(ax + ox), round(ay + oy))
                 end = (round(bx + ox), round(by + oy))
                 if view.clipline(start, end):
-                    stretches.append((start, end, (aw + bw) / 2))
+                    stretches.append((start, end, (aw + bw) / 2, not (at in self._lapped and k < lap)))
         for edge in (True, False):
-            for start, end, width in stretches:
+            for start, end, width, verged in stretches:
+                if edge and not verged:
+                    continue
                 color, reach = self._lane_look(width, edge)
                 pygame.draw.line(screen, color, start, end, max(2, round(reach * 2)))
                 # The joints rounded off, so a lane turning a corner is worn round it rather

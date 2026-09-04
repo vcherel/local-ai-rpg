@@ -88,21 +88,37 @@ class Villages:
     # The lanes worn between the houses: one from the plaza out to every front door, laid
     # in the same blobs a road is (`Village.plan_streets`). A settlement whose buildings
     # stood on undisturbed grass read as sheds dropped in a field.
-    STREET_WIDTH: int = 15
+    #
+    # How wide one is, is how many people walk it (`village_streets.lane_width`): a spur to
+    # one door is a track worn by the household that lives behind it, the trunk they all
+    # share is the street. Laid at one width the whole network read as a spider of identical
+    # threads, with the branch to a door as important as the way through the town. Full
+    # width at `STREET_TRUNK_TRAFFIC` walkers rather than at however many the place happens
+    # to have, so a town's main street is a road's own width and a hamlet's is not thinner
+    # for having fewer doors on it.
+    STREET_SPUR_WIDTH: int = 11
+    STREET_TRUNK_WIDTH: int = 25
+    STREET_TRUNK_TRAFFIC: int = 6
     STREET_STEP: int = 16
     # The worn edge either side of a lane, laid under it in a pass of its own exactly as a
     # road's verge is: without it the trodden earth reads as a ribbon dropped on the grass.
     STREET_EDGE: int = 3
     STREET_EDGE_COLOR: tuple = (120, 96, 68)
-    # How far inside the gate a lane takes to narrow from the width of the road arriving
-    # outside it down to its own (`Village.plan_streets`). A road is twice a lane wide, so
-    # the two met as a step until the lane was worn out to it.
     # How far out from a doorstep a lane may start looking for ground the plaza can be
     # reached from. Six cells of the street grid: a door stands against its own wall, so
     # the first cell or two is always blocked, and anything past this is a door walled in
     # rather than a door set back.
     STREET_SEARCH_RINGS: int = 9
+    # How far inside the gate a lane takes to narrow from the width of the road arriving
+    # outside it down to its own (`village_streets.taper_from_gate`). The two are within a
+    # pace of each other now that a trunk is a road's own width, but a road swells and
+    # narrows as it goes and the lane still has to meet whatever width it stopped at.
     STREET_TAPER: int = 260
+    # How many stretches at the mouth of a gate lane are laid inside the road's own earth and
+    # so drawn without a verge of their own. The lane laps the road so the round cap it ends
+    # in is buried; a verge painted over ground the road has already verged is that cap drawn
+    # as a dark ring instead, which is the circle that used to sit at every gate.
+    STREET_LAP_STRETCHES: int = 2
     # A lane is routed on a grid of this size rather than run straight at the door: a
     # straight line from the plaza was laid over whatever house stood between the two.
     # Coarser than the lane is wide, since what it has to find is the gap between two

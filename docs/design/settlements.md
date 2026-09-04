@@ -106,6 +106,22 @@ lanes share is one stretch of earth laid once. What is drawn is a trunk with bra
 The corners are then worn round rather than mitred (`_bend`), but only where the short way
 round is clear, so a lane never cuts the corner it was going round.
 
+How many walk a stretch is how wide it is worn (`lane_width`). The count is already there,
+since the sharing is what cuts the stretches in the first place, and laid at one width the
+whole thing read as a spider of identical threads: the branch to one door was as important
+as the way through the town, and every branch ended in a blob in the grass. A spur is now
+`STREET_SPUR_WIDTH` and a trunk `STREET_TRUNK_WIDTH`, full width at `STREET_TRUNK_TRAFFIC`
+walkers rather than at whatever this particular place happens to carry, so a hamlet's main
+street is a main street. A stretch meets the busier one it runs into at *that* width, which
+makes a branch an apron widening into the street rather than a step across it, and a lane
+out of a gate is floored at a trunk however few doors use it, because a road arriving from
+the next village carries on in as a street.
+
+The earth is worn to the door leaf, not to the spot outside it the route was found from
+(`door_front` stands a stride out, where somebody waits to be let in). Stopping there left a
+stride of untrodden grass between every threshold in the place and the lane meant to reach
+it, which is the thing that made the network look unfinished.
+
 The clearance is asked of the ground and not of the grid (`_clear`). The fill has to work in
 cells, but a cell is as wide as a lane, so a straight run that merely clips the corner of one
 was refused and the staircase the fill had found was kept instead. The straightening tests
@@ -136,13 +152,24 @@ passes over the whole of it, a worn edge under and the trodden earth over the to
 same reason a road's verge is a kind of its own (`Scenery._draw_path`): a stretch that drew
 both painted its own edge across the middle of the one before it.
 
-The width is also how a lane and a road meet. A road is more than twice a lane wide and
+The width is also how a lane and a road meet. A road is more than twice a spur wide and
 carries a verge, so the two used to meet as a step with a round cap on the end of it. The
-lane out of a gate now starts at the arriving road's own width (`road_ends_at` hands back
-the width where it stopped, not just the point) and narrows to a lane's over
+lane out of a gate starts at the arriving road's own width (`road_ends_at` hands back the
+width and the heading where it stopped, not just the point) and falls to its own over
 `STREET_TAPER` on the way in, and the colour and the verge follow that one number
 (`Village._lane_look`): wide is a road, narrow is a lane, and the ground between them is
 the same track changing its mind about which it is.
+
+Three things made that joint read as a circle painted at the gate, and all three are the
+cap the lane's outermost point is drawn with. It was blended against the *widest* road there
+can be, so a lane meeting an ordinary one was still half street-coloured on a half-width
+verge: the blend now reaches full road at `ROAD_WIDTH[0]`. It sat exactly on the road's last
+blob with nothing over it: the lane now laps a width up the road, along the road's own
+heading rather than its own, so a road leaving at an angle is not lapped by a lane walking
+backwards up its straight line. And a verge is always wider than the earth it edges, so a
+verge painted over ground the road had already verged drew that cap as a dark ring whatever
+the colours were: the first `STREET_LAP_STRETCHES` of a gate lane are earth alone
+(`Village._draw_streets`), the road's own verge being already there.
 
 What the village draws as trodden earth is trodden earth, so nothing grows out of it. The
 wilderness already keeps everything solid off a settlement's whole grounds; the tufts and

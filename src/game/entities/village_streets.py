@@ -42,30 +42,47 @@ def walk_lane(lane: tuple, step: float):
     yield lane[-1]
 
 
-def taper_from_gate(route: list[tuple[float, float]], wide: float) -> tuple:
-    """One lane out of a gate: the road's own width where the road stopped, narrowing to a
-    lane's by the time it is `STREET_TAPER` inside.
+def lane_width(traffic: int) -> float:
+    """How wide a stretch of lane is worn, from how many of them walk it. One door's spur is
+    the track its household wore, the trunk they all share is the street.
 
-    A road is twice a lane wide and carries a verge, so the two used to meet as a step with
-    a round cap on the end of it. Only the tapering stretch is walked in steps; past it the
-    lane is the corners it turns like any other."""
-    narrow = float(c.Villages.STREET_WIDTH)
-    taper = c.Villages.STREET_TAPER
-    lane = []
+    Full width at `STREET_TRUNK_TRAFFIC` walkers rather than at whatever the busiest stretch
+    of this particular place happens to carry: a hamlet's main street is a main street, not
+    a thin one for having four doors on it."""
+    spur, trunk = c.Villages.STREET_SPUR_WIDTH, c.Villages.STREET_TRUNK_WIDTH
+    full = max(1, c.Villages.STREET_TRUNK_TRAFFIC - 1)
+    return spur + (trunk - spur) * min(1.0, max(0, traffic - 1) / full)
+
+
+def taper_from_gate(lane: tuple, wide: float, heading: float) -> tuple:
+    """One lane out of a gate: the road's own width where the road stopped, falling back to
+    the width the lane wears by the time it is `STREET_TAPER` inside.
+
+    It starts a full width *outside* where the road stops, laid along the road's own heading
+    rather than along its own: the round cap every lane end is worn with was drawn on top of
+    the road's last blob, and a cap a shade off the road it sat on read as a circle painted
+    at the gate. Lapped a width up the road it is buried, and lapped up the road it actually
+    runs rather than up the lane's straight line it does not hang off the outside of the
+    elbow where the two meet.
+
+    Only the tapering stretch is walked in steps; past it the lane is the corners it turns
+    like any other."""
+    taper, step = c.Villages.STREET_TAPER, c.Villages.STREET_STEP
+    lap = float(c.Scenery.ROAD_STEP)
+    out = (lane[0][0] + math.cos(heading) * lap, lane[0][1] + math.sin(heading) * lap)
+    worn: list[tuple[float, float, float]] = []
     walked = 0.0
-    for start, end in pairwise(route):
-        length = math.dist(start, end)
-        along = 0.0
-        while True:
+    for (ax, ay, aw), (bx, by, bw) in pairwise(((*out, wide), *lane)):
+        length = math.hypot(bx - ax, by - ay)
+        marks = [i * step for i in range(1, int(length // step) + 1)] if walked < taper else []
+        for along in (0.0, *marks):
             t = along / length if length else 0.0
-            here = (start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t)
-            lane.append((*here, wide + (narrow - wide) * min(1.0, (walked + along) / taper)))
-            if walked + along >= taper or along + c.Villages.STREET_STEP >= length:
-                break
-            along += c.Villages.STREET_STEP
+            own = aw + (bw - aw) * t
+            share = min(1.0, (walked + along) / taper)
+            worn.append((ax + (bx - ax) * t, ay + (by - ay) * t, wide + (own - wide) * share))
         walked += length
-    lane.append((*route[-1], narrow))
-    return tuple(lane)
+    worn.append(lane[-1])
+    return tuple(worn)
 
 
 def _towards(start: tuple[float, float], end: tuple[float, float], reach: float) -> tuple[float, float]:
@@ -90,7 +107,7 @@ class StreetGrid:
         reach = village.street_reach() + self.step * 2
         self.origin = (village.x - reach, village.y - reach)
         self.span = int(reach * 2 // self.step) + 1
-        keep = c.Villages.STREET_WIDTH
+        keep = c.Villages.STREET_TRUNK_WIDTH
         # A lane keeps its own width off whatever it passes, so it is never drawn brushing
         # a wall. The gateways are the one gap left open: a gate leaf is not a stretch of
         # wall, which is what lets the fill find its own way out of a walled town.
@@ -174,17 +191,21 @@ class StreetGrid:
 
     def trace(
         self, ends: list[tuple[float, float]], fixed: frozenset[int] = frozenset()
-    ) -> dict[int, list[list[tuple[float, float]]]]:
-        """Every lane the settlement needs at once, each as the stretches it is made of,
-        keyed by which end it was asked for. Missing for an end the plaza cannot be walked
-        to at all, which the caller reads as "no lane here" rather than as a straight one
-        laid through whatever is in the way.
+    ) -> dict[int, list[tuple[int, list[tuple[float, float]]]]]:
+        """Every lane the settlement needs at once, each as the stretches it is made of and
+        how many of the ends walk each one, keyed by which end it was asked for. Missing for
+        an end the plaza cannot be walked to at all, which the caller reads as "no lane here"
+        rather than as a straight one laid through whatever is in the way.
 
         Doing them together is what makes them a network. Every route walks back along the
         same tree, so two doors on the same side of town share cells the whole way in; the
         stretches are cut where that sharing starts and stops, and each is straightened on
         its own. Two lanes that share a trunk are then the same points along it rather than
-        two lines a few paces apart, and the ones that come off it read as branches."""
+        two lines a few paces apart, and the ones that come off it read as branches.
+
+        The count is what the caller wears the stretch to (`lane_width`): the sharing is
+        already known here, and a trunk a dozen doors walk being as wide as the spur to one
+        of them is what made the network read as a spider rather than as a street."""
         chains = self._merge({i: chain for i, end in enumerate(ends) if (chain := self._chain(end)) is not None}, fixed)
         shared = Counter(cell for chain in chains.values() for cell in chain)
         return {i: self._stretches(ends[i], chain, shared) for i, chain in chains.items()}
@@ -261,11 +282,11 @@ class StreetGrid:
     def _length(self, chain: list[tuple[int, int]]) -> float:
         return sum(math.dist(a, b) for a, b in pairwise(self._point(cell) for cell in chain))
 
-    def _stretches(self, end, chain, shared) -> list[list[tuple[float, float]]]:
+    def _stretches(self, end, chain, shared) -> list[tuple[int, list[tuple[float, float]]]]:
         """One route cut into the stretches it shares with its neighbours and the ones it
-        walks alone, each straightened and worn round its corners. A cell used by more
-        routes than the one before it is where another lane joined, and that is a junction
-        rather than a corner to be straightened through."""
+        walks alone, each straightened, worn round its corners and carrying how many routes
+        walk it. A cell used by more routes than the one before it is where another lane
+        joined, and that is a junction rather than a corner to be straightened through."""
         points = [self._point(cell) for cell in chain]
         cuts = [0, *(i for i in range(1, len(chain)) if shared[chain[i]] != shared[chain[i - 1]]), len(chain) - 1]
         stretches = []
@@ -273,8 +294,8 @@ class StreetGrid:
             run = self._straighten(points[start : stop + 1])
             if start == 0:
                 run = [end, *run]
-            stretches.append(self._bend(run))
-        return stretches or [[end, points[-1]]]
+            stretches.append((shared[chain[start]], self._bend(run)))
+        return stretches or [(shared[chain[-1]], [end, points[-1]])]
 
     def _bend(self, route: list[tuple[float, float]]) -> list[tuple[float, float]]:
         """A route with its corners worn round rather than mitred: each one cut back along
