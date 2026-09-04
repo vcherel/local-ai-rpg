@@ -215,7 +215,7 @@ class WorldExplosives:
             # and a recursive blast below may already have taken this keg off.
             if keg not in self.breakables:
                 continue
-            self.breakables.remove(keg)
+            self.drop_breakable(keg)
             # A keg is still a keg whatever lit it, but the credit follows the hand that
             # started the chain: nothing a creeper set off pays the player.
             self.explode(keg.x, keg.y, player, quest_system, depth + 1, by_player=by_player)
