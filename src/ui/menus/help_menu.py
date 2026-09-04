@@ -4,11 +4,16 @@ import core.constants as c
 from ui import widgets
 from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
-WIDTH = 660
+# One control column: the key label, then the description beside it. Two of them side by
+# side is what keeps the whole key map on screen without scrolling it.
+COLUMN_WIDTH = 540
 # Gap between the key column and the description that follows it.
 COLUMN_GAP = 24
+# Gap between the two columns of controls.
+GUTTER = 40
 LINE_HEIGHT = 26
 ROW_GAP = 8
+BOTTOM_MARGIN = 46
 
 CONTROLS = [
     ("W / Z", "Move forward (aim with mouse)"),
@@ -42,9 +47,9 @@ CONTROLS = [
 
 class HelpMenu(BaseMenu):
     def __init__(self, screen):
-        super().__init__(screen, width=WIDTH, height=HEADER_HEIGHT + len(CONTROLS) * 34 + 60)
-        self._rows = None
-        self._desc_x = 0
+        super().__init__(screen, width=2 * COLUMN_WIDTH + GUTTER + 40, height=HEADER_HEIGHT + 200)
+        self._columns = None
+        self._key_width = 0
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -59,19 +64,36 @@ class HelpMenu(BaseMenu):
         return True
 
     def _layout(self):
-        """Measure the rows once: the description column starts after the widest key label,
-        and a description too long for what is left of the panel is wrapped rather than run
-        off its edge. Done here rather than in __init__ because the fonts are only loaded
-        once the game has started."""
-        if self._rows is not None:
+        """Measure the rows once and deal them into two columns of roughly equal height.
+
+        The description column starts after the widest key label, and a description too long
+        for what is left of its column is wrapped rather than run off the edge. One column of
+        every control was taller than the screen, so the panel was cut off at the top and the
+        bottom; two columns is what makes the whole map fit on any screen the game runs at.
+        Done here rather than in __init__ because the fonts are only loaded once the game has
+        started."""
+        if self._columns is not None:
             return
 
-        self._desc_x = self.padding + max(c.Fonts.heading.size(key)[0] for key, _ in CONTROLS) + COLUMN_GAP
-        max_width = self.width - self._desc_x - self.padding
+        self._key_width = max(c.Fonts.heading.size(key)[0] for key, _ in CONTROLS)
+        max_width = COLUMN_WIDTH - self._key_width - COLUMN_GAP
 
-        self._rows = [(key, widgets.wrap_text(description, c.Fonts.text, max_width)) for key, description in CONTROLS]
-        body = sum(len(lines) * LINE_HEIGHT + ROW_GAP for _, lines in self._rows)
-        self.height = HEADER_HEIGHT + 18 + body + 46
+        rows = [(key, widgets.wrap_text(description, c.Fonts.text, max_width)) for key, description in CONTROLS]
+        heights = [len(lines) * LINE_HEIGHT + ROW_GAP for _, lines in rows]
+
+        # Break where the first column has taken up half the total, so neither column is
+        # left a head taller than the other.
+        half = sum(heights) / 2
+        split, run = len(rows), 0
+        for i, height in enumerate(heights):
+            if run + height / 2 >= half:
+                split = i
+                break
+            run += height
+
+        self._columns = [rows[:split], rows[split:]]
+        body = max(sum(heights[:split]), sum(heights[split:]))
+        self.height = min(HEADER_HEIGHT + 18 + body + BOTTOM_MARGIN, c.Screen.HEIGHT - 20)
 
     def draw(self):
         if not self.active:
@@ -81,16 +103,18 @@ class HelpMenu(BaseMenu):
         self.draw_overlay()
         surface = self.create_menu_surface("Controls")
 
-        y = self.content_top
-        for key, lines in self._rows:
-            key_surf = c.Fonts.heading.render(key, True, c.Colors.ACCENT)
-            surface.blit(key_surf, (self.padding, y))
+        for column, rows in enumerate(self._columns):
+            x = self.padding + column * (COLUMN_WIDTH + GUTTER)
+            y = self.content_top
+            for key, lines in rows:
+                key_surf = c.Fonts.heading.render(key, True, c.Colors.ACCENT)
+                surface.blit(key_surf, (x, y))
 
-            for i, line in enumerate(lines):
-                desc_surf = c.Fonts.text.render(line, True, c.Colors.WHITE)
-                surface.blit(desc_surf, (self._desc_x, y + i * LINE_HEIGHT))
+                for i, line in enumerate(lines):
+                    desc_surf = c.Fonts.text.render(line, True, c.Colors.WHITE)
+                    surface.blit(desc_surf, (x + self._key_width + COLUMN_GAP, y + i * LINE_HEIGHT))
 
-            y += len(lines) * LINE_HEIGHT + ROW_GAP
+                y += len(lines) * LINE_HEIGHT + ROW_GAP
 
         self.draw_hint(surface, "H or ESC to close")
         self.blit_panel(surface)
