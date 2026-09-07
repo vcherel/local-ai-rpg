@@ -29,6 +29,7 @@ How a change here is checked, all headless and none of them loading the model. `
 - `scripts/verify/render_diff.py`: those shots on this tree against a git ref, pixel by pixel, with a diff image per shot that moved
 - `scripts/verify/frame_profile.py`: the update/draw split and the percentiles across a run, then a cProfile table
 - `scripts/verify/spawn_rates.py`: what `pick_monster_kind` rolls per distance band, as a table to put beside the one from before the change
+- `scripts/verify/shots.py`: the README's pictures, the same harness posed into six scenes (village, a conversation, a fight, a boss rising, a walked cave, the bag); not a check, the one way the front page is regenerated
 
 ### rpg_ai
 - `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session

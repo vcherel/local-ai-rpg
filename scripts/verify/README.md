@@ -11,6 +11,7 @@ steps that.
     uv run python scripts/verify/frame_profile.py   # where a frame goes
     uv run python scripts/verify/spawn_rates.py     # what the world would roll, as a table
     uv run python scripts/verify/render.py --out D  # the shots on their own, to look at
+    uv run python scripts/verify/shots.py --out assets  # the README's pictures
 
 `refs.py` and `smoke.py` are the two to run after any multi-file change: between them they
 catch a file truncated by a bad write, a call left behind by a deleted method, and a world
