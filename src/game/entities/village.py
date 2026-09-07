@@ -13,7 +13,14 @@ from core.damage_fx import draw_cracks
 from game.entities.buildings import Building
 from game.entities.village_layout import grounds_reach, tier_for
 from game.entities.village_sites import site_grounds_radius
-from game.entities.village_streets import StreetGrid, lane_width, taper_from_gate, walk_lane
+from game.entities.village_streets import (
+    StreetGrid,
+    lane_width,
+    round_corner,
+    taper_from_gate,
+    walk_lane,
+    widen_into,
+)
 
 if TYPE_CHECKING:
     from core.camera import Camera
@@ -37,6 +44,21 @@ def _point_to_segment(x, y, start, end) -> float:
         return math.hypot(x - start[0], y - start[1])
     t = max(0.0, min(1.0, ((x - start[0]) * dx + (y - start[1]) * dy) / span))
     return math.hypot(x - (start[0] + t * dx), y - (start[1] + t * dy))
+
+
+def _one_per_gateway(ends: tuple) -> list[tuple]:
+    """The road ends outside a settlement with the ones stopping at the same place folded
+    into one, kept at the width of the widest road that arrives there.
+
+    Two neighbours reached out of the same side of town stop at the same point, and a lane
+    laid out to each of them is the same lane worn twice, tapered twice and lapped up
+    whichever road came second."""
+    best: dict[tuple[int, int], tuple] = {}
+    for end in ends:
+        key = (round(end[0]), round(end[1]))
+        if key not in best or end[2] > best[key][2]:
+            best[key] = end
+    return list(best.values())
 
 
 class Village:
@@ -566,6 +588,44 @@ class Village:
 
         return road_ends_at(self.x, self.y, *self.chunk)
 
+    def _gate_elbow(self, through: tuple, route: list[tuple], trunk: float) -> list[tuple]:
+        """The turn a gate's lane makes where its straight run in ends, worn round by the
+        lane's own width rather than by `STREET_BEND`.
+
+        This is the widest corner in the settlement and the one every arrival walks: a bend
+        that reads on a spur is a mitre on a street twice as wide. Measured against a point
+        a corner's worth along the route rather than against the next one, since the route
+        is already worn round its own corners in steps far shorter than this one.
+
+        The route back, with the corner at its first point worn round."""
+        anchor = route[0]
+        bend = trunk * 2
+        at = next((k for k, point in enumerate(route) if math.dist(anchor[:2], point[:2]) >= bend), None)
+        arc = round_corner(through, anchor[:2], route[at][:2], bend, c.Villages.STREET_BEND_STEPS * 2) if at else []
+        if not arc:
+            return route
+        return [*((x, y, anchor[2]) for x, y in arc), *route[at:]]
+
+    def _gate_spine(self, x: float, y: float) -> tuple | None:
+        """The straight run a lane out of the gateway nearest (x, y) takes: the middle of
+        the gate itself, and the point inside the wall where the lane is first free to bend.
+
+        A route found by the fill alone starts dodging the first house behind the gate from
+        the gateway, so it crossed the wall at a slant and left the leaves swinging beside
+        the earth rather than over it. The crossing is square and the dodging happens
+        `STREET_GATE_RUN` inside, which is where a street bends round a house anyway.
+
+        None for an unwalled settlement, which has no gateway for a lane to run through."""
+        gates = self.defences()["gates"]
+        if not gates:
+            return None
+        gate = min(gates, key=lambda gate: math.dist((x, y), gate["pos"]))
+        gx, gy = gate["pos"]
+        run = c.Villages.STREET_GATE_RUN
+        if gate["along_x"]:
+            return (gx, gy), (gx, gy + math.copysign(run, self.y - gy))
+        return (gx, gy), (gx + math.copysign(run, self.x - gx), gy)
+
     def plan_streets(self, buildings: list[Building]):
         """Wear the lanes between the houses: one from the plaza out to every front door,
         one out through every gate to where the road from the next village stops, plus the
@@ -611,27 +671,33 @@ class Village:
         # worn to the leaf itself: a lane stopping where the routing started left a stride of
         # untrodden grass between it and every threshold in the place.
         sills = [b.door_rect().center for b in buildings if b.has_door]
-        gates = self.gateways()
+        gates = _one_per_gateway(self.gateways())
+        # Each of them is walked back from a point inside its own gateway rather than from
+        # the road end outside it (`_gate_spine`), so the crossing itself is square and
+        # whatever the lane has to dodge is dodged inside the town.
+        spines = [self._gate_spine(gx, gy) or (None, (gx, gy)) for gx, gy, _, _ in gates]
         # The gateways are laid first and are never diverted: a lane out of a gate is the
         # road outside carrying on in, so it is the one the doors' lanes join.
         routes = grid.trace(
-            [*doors, *[(gx, gy) for gx, gy, _, _ in gates]],
+            [*doors, *[anchor for _, anchor in spines]],
             frozenset(range(len(doors), len(doors) + len(gates))),
         )
         trunk = lane_width(c.Villages.STREET_TRUNK_TRAFFIC)
 
         def worn(stretches: list, floor: float = 0.0) -> list[tuple]:
             """The stretches of one route at the width each was walked to, every one of them
-            meeting the busier one it runs into at that width: a branch leaving a street is
-            an apron widening into it rather than a step across it.
+            opening out over its last stride into the busier one it runs into (`widen_into`):
+            a branch leaving a street is an apron worn into it rather than a step across it.
+            The last stretch of any route opens into the ring round the plaza, which is what
+            every one of them ends at.
 
             `floor` is what a lane is worn to whatever walks it, which is the ones out of a
             gate: a road arriving from the next village carries on in as a street, and a gate
             the houses behind it happen not to use is still the way through the town."""
             widths = [max(floor, lane_width(traffic)) for traffic, _ in stretches]
             return [
-                (*((x, y, width) for x, y in points[:-1]), (*points[-1], max(width, joins)))
-                for (_, points), width, joins in zip(stretches, widths, [*widths[1:], widths[-1]], strict=True)
+                widen_into(points, width, joins)
+                for (_, points), width, joins in zip(stretches, widths, [*widths[1:], trunk], strict=True)
             ]
 
         # A stretch two lanes share is one stretch of earth: laid once, whichever of them
@@ -647,12 +713,20 @@ class Village:
                     laid.add(lane)
                     lanes.append(lane)
         lapped = set()
-        for j, (_end_x, _end_y, road_width, heading) in enumerate(gates):
+        for j, (end_x, end_y, road_width, heading) in enumerate(gates):
             # No fallback out here: a lane that could not find a gateway would be laid
             # through the wall, and a road stopping at the ditch says more than that.
             stretches = routes.get(len(doors) + j)
             if stretches is not None:
                 route = [point for k, lane in enumerate(worn(stretches, trunk)) for point in lane[k > 0 :]]
+                # The straight run in: the road end, the middle of the gateway, and then
+                # the anchor inside it the rest of the lane was found from, the corner it
+                # turns there worn round like any other. An unwalled settlement has no
+                # gateway to run through, so the route is the whole lane.
+                through, _ = spines[j]
+                if through:
+                    route = self._gate_elbow(through, route, trunk)
+                    route = [(end_x, end_y, trunk), (*through, trunk), *route]
                 lapped.add(len(lanes))
                 lanes.append(taper_from_gate(tuple(route), road_width, heading))
         step = c.Villages.STREET_STEP

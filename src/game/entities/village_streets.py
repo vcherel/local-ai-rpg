@@ -85,6 +85,64 @@ def taper_from_gate(lane: tuple, wide: float, heading: float) -> tuple:
     return tuple(worn)
 
 
+def widen_into(points: list[tuple[float, float]], width: float, joins: float) -> tuple:
+    """One stretch of lane at the width it was walked to, opening out over the last
+    `STREET_JOIN` of it to the width of the busier one it runs into.
+
+    A branch leaving a street is an apron, and an apron is a length of ground rather than a
+    point: the width used to change on the last segment of the stretch, which is whatever
+    the corners left there, so a spur doubled from one blob to the next where the bend had
+    been rounded and funnelled the whole way in where it had not. Only the opening stretch
+    is resampled; the rest of the lane is the corners it turns like any other.
+    """
+    run = c.Villages.STREET_JOIN
+    if len(points) < 2 or abs(joins - width) < 0.5:
+        return tuple((x, y, width) for x, y in points)
+    back = [0.0]
+    for a, b in pairwise(reversed(points)):
+        back.append(back[-1] + math.dist(a, b))
+    back.reverse()
+    step = c.Villages.STREET_STEP
+    worn: list[tuple[float, float, float]] = []
+    for i, ((ax, ay), (bx, by)) in enumerate(pairwise(points)):
+        far, near = back[i], back[i + 1]
+        worn.append((ax, ay, _opened(far, width, joins, run)))
+        for mark in range(int(min(far, run) // step), 0, -1):
+            at = mark * step
+            if not near < at < far:
+                continue
+            t = (far - at) / (far - near)
+            worn.append((ax + (bx - ax) * t, ay + (by - ay) * t, _opened(at, width, joins, run)))
+    worn.append((*points[-1], joins))
+    return tuple(worn)
+
+
+def _opened(back: float, width: float, joins: float, run: float) -> float:
+    """How wide a stretch is `back` from the junction it opens into."""
+    return joins + (width - joins) * min(1.0, back / run)
+
+
+def round_corner(before, corner, after, bend: float, steps: int) -> list[tuple[float, float]]:
+    """One corner of a lane worn round rather than mitred: cut back along both its stretches
+    and rounded off between the two. Empty where there is not enough of either stretch to
+    cut, which is a corner that has to stay a corner."""
+    back = min(bend, math.dist(before, corner) / 2)
+    on = min(bend, math.dist(corner, after) / 2)
+    if min(back, on) < 1.0:
+        return []
+    start, end = _towards(corner, before, back), _towards(corner, after, on)
+    arc = []
+    for i in range(steps + 1):
+        t = i / steps
+        arc.append(
+            (
+                (1 - t) ** 2 * start[0] + 2 * (1 - t) * t * corner[0] + t * t * end[0],
+                (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * corner[1] + t * t * end[1],
+            )
+        )
+    return arc
+
+
 def _towards(start: tuple[float, float], end: tuple[float, float], reach: float) -> tuple[float, float]:
     """`reach` along the way from one point to another."""
     length = math.dist(start, end) or 1.0
@@ -109,14 +167,37 @@ class StreetGrid:
         self.span = int(reach * 2 // self.step) + 1
         keep = c.Villages.STREET_TRUNK_WIDTH
         # A lane keeps its own width off whatever it passes, so it is never drawn brushing
-        # a wall. The gateways are the one gap left open: a gate leaf is not a stretch of
-        # wall, which is what lets the fill find its own way out of a walled town.
+        # a wall. The gateways are the one way left open: a gate leaf is not a stretch of
+        # wall, which is what lets the fill find its own way out of a walled town, and only
+        # the band at the middle of one is left free (`_jambs`) so it goes out through it
+        # square rather than across its corner.
         self.rects = [rect.inflate(keep * 2, keep * 2) for b in buildings for rect in b.footprint()]
         self.rects += [rect.inflate(keep, keep) for rect in village.defences()["walls"]]
+        self.rects += [rect.inflate(keep, keep) for rect in self._jambs(village)]
         self.blocked: set[tuple[int, int]] = set()
         for rect in self.rects:
             self.blocked.update(self._cells_in(rect))
         self.parent = self._flood(village)
+
+    @staticmethod
+    def _jambs(village: Village) -> list[pygame.Rect]:
+        """The parts of a gateway no lane may be routed through, which is everything but the
+        band at the middle of it.
+
+        A gap in a wall is several lanes wide, so a route with a house to dodge behind the
+        gate started dodging in the gateway itself: it crossed the wall at a slant, out by
+        the gatehouse, with the leaves swinging beside the earth rather than over it."""
+        band = c.Villages.STREET_GATE_BAND
+        jambs = []
+        for gate in village.defences()["gates"]:
+            gap = gate["rect"]
+            if gate["along_x"]:
+                jambs.append(pygame.Rect(gap.left, gap.top, gap.centerx - band - gap.left, gap.height))
+                jambs.append(pygame.Rect(gap.centerx + band, gap.top, gap.right - gap.centerx - band, gap.height))
+            else:
+                jambs.append(pygame.Rect(gap.left, gap.top, gap.width, gap.centery - band - gap.top))
+                jambs.append(pygame.Rect(gap.left, gap.centery + band, gap.width, gap.bottom - gap.centery - band))
+        return jambs
 
     def _cell(self, x: float, y: float) -> tuple[int, int]:
         return int((x - self.origin[0]) // self.step), int((y - self.origin[1]) // self.step)
@@ -306,20 +387,11 @@ class StreetGrid:
         bend, steps = c.Villages.STREET_BEND, c.Villages.STREET_BEND_STEPS
         worn = [route[0]]
         for before, corner, after in zip(route, route[1:], route[2:], strict=False):
-            back = min(bend, math.dist(before, corner) / 2)
-            on = min(bend, math.dist(corner, after) / 2)
-            start, end = _towards(corner, before, back), _towards(corner, after, on)
-            if min(back, on) < 1.0 or not self._clear(start, end):
+            arc = round_corner(before, corner, after, bend, steps)
+            if not arc or not self._clear(arc[0], arc[-1]):
                 worn.append(corner)
                 continue
-            for i in range(steps + 1):
-                t = i / steps
-                worn.append(
-                    (
-                        (1 - t) ** 2 * start[0] + 2 * (1 - t) * t * corner[0] + t * t * end[0],
-                        (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * corner[1] + t * t * end[1],
-                    )
-                )
+            worn.extend(arc)
         worn.append(route[-1])
         return worn
 

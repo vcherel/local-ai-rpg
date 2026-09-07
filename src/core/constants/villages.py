@@ -114,6 +114,21 @@ class Villages:
     # pace of each other now that a trunk is a road's own width, but a road swells and
     # narrows as it goes and the lane still has to meet whatever width it stopped at.
     STREET_TAPER: int = 260
+    # How long a stretch takes to open out into the busier one it runs into
+    # (`village_streets.widen_into`). A branch meeting a street is an apron worn over a set
+    # run of it, not a step across a line: the width used to change on the last segment of
+    # the stretch, which after the corners are rounded is a few paces of a bend, so a spur
+    # doubled in width from one blob to the next.
+    STREET_JOIN: int = 90
+    # A gateway's own lane: how far inside the wall it runs dead straight before it is
+    # allowed to bend, and how much of the gap is left open for it to be routed through.
+    # A lane found by the fill alone dodges the first house behind the gate from the gateway
+    # itself, so it crossed the wall at a slant and missed the leaves that swing on it; the
+    # spine holds the crossing square and the dodging happens inside the town, which is
+    # where a street bends round a house anyway. The band is what keeps every other lane off
+    # the corners of the gap.
+    STREET_GATE_RUN: int = 150
+    STREET_GATE_BAND: int = 70
     # How many stretches at the mouth of a gate lane are laid inside the road's own earth and
     # so drawn without a verge of their own. The lane laps the road so the round cap it ends
     # in is buried; a verge painted over ground the road has already verged is that cap drawn
