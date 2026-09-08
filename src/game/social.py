@@ -638,9 +638,11 @@ class WorldSocial:
         open sees you. Inside a room, whoever is in that room with you sees you and whoever
         is inside a *different* building sees nothing, because they have their own walls and
         their own roof between. From outside, a room is open along the wall its door and its
-        windows are in: a villager standing in front of the facade sees straight in, one
-        standing round the back does not. Waiting for the street to clear is still the
-        answer, and now so is robbing the far side of a house."""
+        windows are in, and only while one of them is actually open: a villager in front of
+        the facade of a house whose door stands open sees straight in, one standing round
+        the back does not, and nobody at all sees in once the door is shut and the panes are
+        whole. Waiting for the street to clear is still the answer, so is robbing the far
+        side of a house, and so now is shutting the door behind you."""
         return npc.sees(x, y, radius) and self.sight_reaches(npc, room)
 
     def sight_reaches(self, npc: NPC, room) -> bool:
@@ -656,7 +658,12 @@ class WorldSocial:
         if standing_in is not None:
             return standing_in is room
         nx, ny = room.outward()
-        return (npc.x - room.x) * nx + (npc.y - room.y) * ny > 0
+        if (npc.x - room.x) * nx + (npc.y - room.y) * ny <= 0:
+            return False
+        # The facade is a wall like the other three until something in it is open. A door
+        # standing open, a door beaten down and a window put through are the three, and the
+        # last is why going in through the pane is not free: the hole stays a hole.
+        return room.door_open or room.door_broken or bool(room.broken_windows)
 
     def vision_polygon(self, npc: NPC, radius: float, rays: int = 12) -> list[tuple]:
         """The wedge this villager is looking down, in world coordinates: their own position
@@ -703,9 +710,10 @@ class WorldSocial:
         Two ways of being found, and they are the whole rule. The household is the first:
         whoever lives in this room walks past its bed every morning, so neither the light
         nor which way they happen to be turned saves the player from the people whose house
-        it is. Everybody else is answered exactly as a theft is (`can_see`): near enough for
-        the hour's light (`squat_witness_radius`), facing this way, and standing somewhere
-        the room is open to them. Somebody still in their own bed across the street has seen
+        it is, unless they are already asleep in it themselves. Everybody else is answered
+        exactly as a theft is (`can_see`): near enough for the hour's light
+        (`squat_witness_radius`), facing this way, and standing somewhere the room is open
+        to them. Somebody still in their own bed across the street has seen
         nothing at all.
 
         Which makes an empty house on the dark edge of a settlement a bed the player can
@@ -719,7 +727,11 @@ class WorldSocial:
         for npc in self.npcs:
             if npc.hostile or not village.contains_point(npc.x, npc.y):
                 continue
-            lives_here = room is not None and self._home_for(npc) is room
+            # Asleep is asleep, in your own bed as much as in anybody else's: a household
+            # that has turned in catches nothing, which is what makes the tavern with its
+            # keeper already down for the night a room worth taking, and a gamble on the
+            # hour rather than on which door you picked.
+            lives_here = room is not None and not npc.asleep and self._home_for(npc) is room
             if lives_here or (not npc.asleep and self.can_see(npc, x, y, radius, room)):
                 found.append(npc)
         return min(found, key=lambda npc: npc.distance_to_point((x, y)), default=None)

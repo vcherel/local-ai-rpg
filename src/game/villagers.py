@@ -534,7 +534,7 @@ class WorldVillagers:
         for village in self.villages:
             angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
             # The houses first, since every settlement has doors and only some have gates.
-            self._bar_doors(village, self.daynight.curfew or bool(angry))
+            self._bar_doors(village, self.daynight.curfew or bool(angry), player)
             if not village.defended:
                 continue
             village.barred = any(npc.grudge for npc in angry) or len(angry) >= c.Villages.BAR_GATES_MOB
@@ -544,7 +544,7 @@ class WorldVillagers:
                 # Whichever of the two shut it, nothing is ever sealed inside a leaf.
                 self.clear_gateways(village, player)
 
-    def _bar_doors(self, village, barred: bool):
+    def _bar_doors(self, village, barred: bool, player: Player):
         """Whether this settlement's houses have their beams across right now.
 
         Two things put them there: the hour and the temper. A village that has gone to bed
@@ -554,10 +554,19 @@ class WorldVillagers:
         prompt, and the window beside it is still the way in.
 
         Set rather than rolled, so it is one flag a building reads and nothing has to ask the
-        clock or count the angry from inside a draw call."""
+        clock or count the angry from inside a draw call.
+
+        The leaf is shut on the frame the beam goes across and never again, which is the
+        difference between a settlement shutting up and a settlement holding every door shut
+        against its own people: after that frame a door somebody opened is open, and an open
+        door is not a barred one (`Building.locked`). Whoever is standing in the frame is
+        stepped out of it rather than sealed in it, as everywhere else."""
         for building in self.buildings_in_range(village.x, village.y, village.grounds_radius):
-            if village.contains_point(building.x, building.y):
-                building.barred_now = barred
+            if not village.contains_point(building.x, building.y):
+                continue
+            if barred and not building.barred_now and building.door_open and not building.door_broken:
+                self.shut_door(building, player)
+            building.barred_now = barred
 
     def _loose_arrows(self, fight: dict, mob: dict, player: Player):
         """The archers posted in the towers, shooting over their own wall.

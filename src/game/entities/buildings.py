@@ -474,7 +474,14 @@ class Building(BuildingArt):
 
         A barred door is not a tougher door: it is a wall with a window beside it, and the
         window is the way in (`window_gaps`). Once the player is inside, they lift the beam
-        themselves and it is a door like any other from then on."""
+        themselves and it is a door like any other from then on.
+
+        A leaf standing open is never barred, whatever the hour thinks. The settlement puts
+        the beam across on the frame its temper or the clock changes (`_bar_doors`) and not
+        on every frame after it, so a door opened since then is a door: without this the
+        player walked through an open doorway the prompt beside it called a wall."""
+        if self.door_open:
+            return False
         return self.barred_now or self.house_locked
 
     def unlock(self):
@@ -809,7 +816,14 @@ class Building(BuildingArt):
         )
         opening = self._canon_opening()
         floors = [floor] if opening is None else [floor, opening]
-        keep_clear = [door_path]
+        # The rug is laid before the room is furnished rather than after it, because it is
+        # the one thing in here that is drawn under everything else: worked out afterwards,
+        # the table went down wherever it liked and the rug was painted beneath it, which
+        # from above is a rug that has been eaten. Kept clear like the corridor in from the
+        # door, so the furniture is arranged around it.
+        rug = pygame.Rect(0, 0, 130, 80)
+        rug.center = (round(floor.centerx), round(floor.centery - 25))
+        keep_clear = [door_path, rug]
         if opening is not None:
             # The way through to the wing, kept clear exactly as the way in from the door
             # is: a table dropped in the neck of an L walls half the building off.
@@ -822,9 +836,6 @@ class Building(BuildingArt):
             self._lay_out_shop(space)
         elif self.kind == "tavern":
             self._lay_out_tavern(space)
-
-        rug = pygame.Rect(0, 0, 130, 80)
-        rug.center = (round(floor.centerx), round(floor.centery - 25))
 
         # Everything in the room that can be taken apart, in placement order: that order is
         # what `broken_props` indexes, so it has to be built before anything is dropped for
