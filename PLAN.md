@@ -16,9 +16,11 @@ Tick a box as it lands, commit per batch, delete this file when every box is tic
 - [x] 14. `inventory_menu.py:111`: `list.extend` of a comprehension
 
 ## Batch 3: dead weight and misplaced state
-- [ ] 7. `constants/combat.py:306` `Explosion.RING_COLORS`: read nowhere, delete
-- [ ] 9. `npcs.py:39`: the merchant four off every farmer, onto a shop object made only for merchants
-- [ ] 11. `game_renderer.py:170`/`:175`: traps and breakables walk the whole list, use the range lookups the neighbours use
+- [x] 7. `constants/combat.py:306` `Explosion.RING_COLORS`: read nowhere, delete
+- [~] 9. `npcs.py:39`: NOT DONE. A `Shop` object means `npc.shop_ready` becomes `npc.shop is not None and
+  npc.shop.ready` at 40 call sites across 8 files: it trades four cheap attributes for a None-check
+  everywhere they are read. The current design is the right one; the proposal was wrong.
+- [x] 11. `game_renderer.py:170`/`:175`: traps and breakables walk the whole list, use the range lookups the neighbours use
 
 ## Batch 4: files split along the mixin seam
 - [ ] 5. `player.py`: affixes and buffs into a `player_affixes.py` mixin

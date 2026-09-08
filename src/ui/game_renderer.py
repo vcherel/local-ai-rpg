@@ -169,11 +169,16 @@ class GameRenderer:
 
         # Lying on the ground and under everything that walks over it: a trap is meant to be
         # caught sight of, not read off the top of whoever is about to step in it.
+        # A plain walk rather than a chunk lookup: traps leave with their chunk
+        # (`WorldStreaming._unload_chunks`), so this list is only ever what is loaded.
         for trap in world.traps:
             if self._on_screen(camera, trap.x, trap.y):
                 trap.draw(self.screen, camera)
 
-        for breakable in world.breakables:
+        # Asked for by chunk like the scenery and the buildings: unlike the traps above,
+        # the props are never dropped when their chunk unloads, so the list is every barrel
+        # in every town the player has ever walked through.
+        for breakable in world.breakables_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 100):
             if self._on_screen(camera, breakable.x, breakable.y):
                 breakable.draw(self.screen, camera)
 

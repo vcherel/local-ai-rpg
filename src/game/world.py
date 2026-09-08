@@ -180,6 +180,12 @@ class World(
         # few hundred once the player has found a handful of towns, and `blocked` runs
         # several times per body per frame, so this is never a walk of the list.
         self._breakables_by_cell: dict = {}
+        # And the same props bucketed by chunk, for the callers working over an area rather
+        # than a point: the renderer asks for what it can see. Unlike the traps, these are
+        # not dropped when their chunk unloads (a smashed barrel is world state), so the
+        # list grows for the whole session exactly as the buildings do, and is looked up
+        # the same way for the same reason.
+        self._breakables_by_chunk: dict = {}
         # Bombs the player has thrown or laid. A grenade in the air and a mine waiting in
         # the grass are the same object at different points of its life (`game/entities/bomb.py`).
         self.bombs: list[Bomb] = []
@@ -632,16 +638,22 @@ class World(
         arrives at once (a new world, a loaded save); everything after that goes piece by
         piece through `add_breakables` and `drop_breakable`."""
         self._breakables_by_cell = {}
-        for breakable in self.breakables:
-            for cell in breakable.block_cells():
-                self._breakables_by_cell.setdefault(cell, []).append(breakable)
+        self._breakables_by_chunk = {}
+        self._file_breakables(self.breakables)
 
     def add_breakables(self, breakables: list[Breakable]):
         """Scatter a newly generated settlement's props, filing the solid ones as they land."""
         self.breakables.extend(breakables)
+        self._file_breakables(breakables)
+
+    def _file_breakables(self, breakables: list[Breakable]):
+        """Put props into both lookups: the fine grid the solid ones are collided against,
+        and the chunk bucket the renderer reads. The one place a prop is filed."""
         for breakable in breakables:
             for cell in breakable.block_cells():
                 self._breakables_by_cell.setdefault(cell, []).append(breakable)
+            chunk = self._chunk_of(breakable.x, breakable.y)
+            self._breakables_by_chunk.setdefault(chunk, []).append(breakable)
 
     def drop_breakable(self, breakable: Breakable):
         """Take one off the world for good, out of the lookup as well as out of the list. The
@@ -652,6 +664,9 @@ class World(
             here = self._breakables_by_cell.get(cell)
             if here and breakable in here:
                 here.remove(breakable)
+        bucket = self._breakables_by_chunk.get(self._chunk_of(breakable.x, breakable.y))
+        if bucket and breakable in bucket:
+            bucket.remove(breakable)
 
     def _register_buildings(self, buildings: list[Building]):
         """Add a newly generated village's buildings to the world and the lookup index."""
@@ -744,6 +759,12 @@ class World(
         """The trees, rocks and reeds standing around a point."""
         for chunk in self._chunk_window(x, y, radius):
             yield from self._props_by_chunk.get(chunk, ())
+
+    def breakables_in_range(self, x, y, radius):
+        """The outdoor props standing in the chunks around a point, for the frame that has to
+        draw them. `scenery_props_in_range` for the barrels and the kegs."""
+        for chunk in self._chunk_window(x, y, radius):
+            yield from self._breakables_by_chunk.get(chunk, ())
 
     def scenery_near(self, x, y) -> list[Scenery]:
         """The solid scenery (trunks, boulders) that can reach (x, y). Bucketed on its own

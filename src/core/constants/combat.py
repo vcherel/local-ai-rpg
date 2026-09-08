@@ -303,7 +303,6 @@ class Explosion:
     # Ring radii as a share of the blast, drawn outward: the damage ring, then the
     # shockwave carrying past what it hurt.
     RING_FRACS: tuple = (1.0, 1.35)
-    RING_COLORS: tuple = ((255, 220, 150), (200, 130, 60))
     FLASH_AMOUNT: float = 0.22
     FLASH_COLOR: tuple = (255, 225, 180)
     FIRE_PARTICLES: int = 45
