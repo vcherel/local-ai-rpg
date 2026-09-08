@@ -46,57 +46,41 @@ def swing_duration_ms(cooldown_ms: float) -> float:
     return min(cooldown_ms, max(c.Entities.SWING_MIN_MS, cooldown_ms * c.Entities.SWING_DURATION_FRAC))
 
 
-class Entity:
-    def __init__(self, x, y, color, size, hp, max_hp):
-        self.x = x
-        self.y = y
-        self.orientation = random.uniform(0, 2 * math.pi)
-        self.color = color
-        self.size = size
-        self.hp = hp
-        self.max_hp = max_hp
-        self.attack_in_progress = False
-        self.attack_progress = 0.0
-        # How long the swing under way takes end to end, and whether its blow is still to
-        # come: a swing that lands does so once, halfway through its own arc
-        # (`update_attack_anim`), and one that never lands is marked struck from the start.
-        self.attack_duration_ms = c.Entities.SWING_MS
-        self.attack_struck = True
-        self.attack_hand = "left"
-        self.last_damage_ms = 0
-        # Held where it stands until this tick (a bear trap's jaws, the only thing that
-        # roots). Session-only and shared by everything that moves, since the trap does not
-        # care what it caught: whoever is rooted still turns, still swings, still bleeds.
-        self.rooted_until_ms = 0
-        self.root_span_ms = 0
-        # Slowed rather than held: a frost staff's bolt leaves whatever it touched walking
-        # at `chill_mult` of its pace until this tick. Read by every mover the same way
-        # `rooted` is, and deliberately never a stop, since a bear trap is the only thing
-        # in the world that takes movement away entirely.
-        self.chilled_until_ms = 0
-        self.chill_factor = 1.0
-        # When this body next throws the motes for whatever effects are on it
-        # (`core/status_fx.py`). Its own clock, so a street full of burning things does not
-        # pulse in unison.
-        self._status_next_ms = 0
-        # The walk cycle. Read once per frame by whatever draws this thing, from its own
-        # movement, so nothing has to remember to keep it turning.
-        self.gait = Gait(x, y)
-        # The shove it is still travelling under, in pixels per 60fps frame. A blow hands
-        # over an impulse rather than a new position (`apply_impulse`), and it is spent one
-        # frame at a time by `advance_impulse` like any other movement, walls included.
-        self.kb_vx = 0.0
-        self.kb_vy = 0.0
-        # The id of the door this one has committed to walking through (World._door_goal),
-        # dropped once it is on the same side of the wall as whatever it is chasing. Without
-        # it the goal flips between the doorstep and the threshold as the body crosses, and
-        # the chaser shivers in the gap instead of coming through.
-        self.door_commit = None
-        # The corner of an obstacle this one is currently walking round (World._detour_corner),
-        # dropped the moment nothing stands between it and what it is chasing. `door_commit`
-        # for the open ground: both ways round a wall cost the same from the middle of it,
-        # and a body that re-decides every frame rocks on the spot instead of walking.
-        self.route_corner = None
+class Statuses:
+    """A body that can be hurt, held and chilled: the state a blow leaves on one and the
+    clocks it runs on.
+
+    Mixed into both `Entity` and `Critter`. An animal is not an `Entity` (it has no gear,
+    no swing and none of the humanoid drawing), but a bear trap, a frost bolt and a shove
+    do not care what they caught: all three shut on a body. This used to be written out
+    twice, once in each class, with the copy in `critter.py` carrying comments saying so.
+
+    The defaults are class attributes rather than `__init__` assignments, so neither class
+    has to remember to set them and the first `root` or `chill` shadows them per instance.
+    """
+
+    # Held where it stands until this tick (a bear trap's jaws, the only thing that roots),
+    # and how long the hold was when it was put on. Session-only and shared by everything
+    # that moves, since the trap does not care what it caught: whoever is rooted still
+    # turns, still swings, still bleeds.
+    rooted_until_ms = 0
+    root_span_ms = 0
+    # Slowed rather than held: a frost staff's bolt leaves whatever it touched walking at
+    # `chill_mult` of its pace until this tick. Read by every mover the same way `rooted`
+    # is, and deliberately never a stop, since a bear trap is the only thing in the world
+    # that takes movement away entirely.
+    chilled_until_ms = 0
+    chill_factor = 1.0
+    # The shove it is still travelling under, in pixels per 60fps frame. A blow hands over
+    # an impulse rather than a new position (`apply_impulse`), and it is spent one frame at
+    # a time by `advance_impulse` like any other movement, walls included.
+    kb_vx = 0.0
+    kb_vy = 0.0
+    # When this body next throws the motes for whatever effects are on it
+    # (`core/status_fx.py`). Its own clock, so a street full of burning things does not
+    # pulse in unison.
+    _status_next_ms = 0
+    last_damage_ms = 0
 
     def root(self, duration_ms: int):
         now = pygame.time.get_ticks()
@@ -140,6 +124,13 @@ class Entity:
     def chill_mult(self) -> float:
         return self.chill_factor if self.chilled else 1.0
 
+    @property
+    def staggered(self) -> bool:
+        """Still travelling under a shove hard enough that it is not walking anywhere of its
+        own accord this frame. It still turns, still swings, still bleeds: what it has lost
+        is its footing, which is the follow-through the impulse is worth."""
+        return math.hypot(self.kb_vx, self.kb_vy) > c.Combat.KNOCKBACK_STAGGER_SPEED
+
     def status_effects(self) -> list:
         """Which status bubbles float over this body right now, worst first.
 
@@ -162,15 +153,8 @@ class Entity:
         (x, y), not wherever it happens to be drawn."""
         self._status_next_ms = emit_status(self.x, self.y, size, self.status_effects(), self._status_next_ms)
 
-    @property
-    def staggered(self) -> bool:
-        """Still travelling under a shove hard enough that it is not walking anywhere of its
-        own accord this frame. It still turns, still swings, still bleeds: what it has lost
-        is its footing, which is the follow-through the impulse is worth."""
-        return math.hypot(self.kb_vx, self.kb_vy) > c.Combat.KNOCKBACK_STAGGER_SPEED
-
-    def receive_damage(self, damage):
-        """Returns True if the entity died"""
+    def receive_damage(self, damage) -> bool:
+        """Apply damage; True if it died."""
         self.hp -= damage
         self.last_damage_ms = pygame.time.get_ticks()
         return self.hp <= 0
@@ -186,6 +170,41 @@ class Entity:
         takes no further damage, drops no second purse and is removed exactly once."""
         return self.hp <= 0
 
+    def distance_to_point(self, point) -> float:
+        return math.hypot(self.x - point[0], self.y - point[1])
+
+
+class Entity(Statuses):
+    def __init__(self, x, y, color, size, hp, max_hp):
+        self.x = x
+        self.y = y
+        self.orientation = random.uniform(0, 2 * math.pi)
+        self.color = color
+        self.size = size
+        self.hp = hp
+        self.max_hp = max_hp
+        self.attack_in_progress = False
+        self.attack_progress = 0.0
+        # How long the swing under way takes end to end, and whether its blow is still to
+        # come: a swing that lands does so once, halfway through its own arc
+        # (`update_attack_anim`), and one that never lands is marked struck from the start.
+        self.attack_duration_ms = c.Entities.SWING_MS
+        self.attack_struck = True
+        self.attack_hand = "left"
+        # The walk cycle. Read once per frame by whatever draws this thing, from its own
+        # movement, so nothing has to remember to keep it turning.
+        self.gait = Gait(x, y)
+        # The id of the door this one has committed to walking through (World._door_goal),
+        # dropped once it is on the same side of the wall as whatever it is chasing. Without
+        # it the goal flips between the doorstep and the threshold as the body crosses, and
+        # the chaser shivers in the gap instead of coming through.
+        self.door_commit = None
+        # The corner of an obstacle this one is currently walking round (World._detour_corner),
+        # dropped the moment nothing stands between it and what it is chasing. `door_commit`
+        # for the open ground: both ways round a wall cost the same from the middle of it,
+        # and a body that re-decides every frame rocks on the spot instead of walking.
+        self.route_corner = None
+
     def flash_color(self, color):
         """Blend toward white briefly after taking a hit, for visual feedback."""
         if not self.last_damage_ms:
@@ -195,9 +214,6 @@ class Entity:
             return color
         t = (1 - elapsed / c.Entities.FLASH_MS) * 0.75
         return tuple(int(comp + (255 - comp) * t) for comp in color)
-
-    def distance_to_point(self, point):
-        return math.hypot(self.x - point[0], self.y - point[1])
 
     def start_attack_anim(self, hand=None, duration_ms: float | None = None, lands: bool = False):
         """Begin a swing. `hand` forces which arm comes round, so a visible weapon animates in

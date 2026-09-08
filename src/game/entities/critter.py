@@ -9,7 +9,7 @@ import pygame
 import core.constants as c
 from core.status_fx import emit_status
 from core.utils import frames
-from game.entities.entities import Gait, step_towards
+from game.entities.entities import Gait, Statuses, step_towards
 from game.entities.wander import Wander
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ def pick_critter_kind(distance_from_center: float) -> c.CritterKind:
     return random.choices(eligible, weights=[k.weight for k in eligible])[0]
 
 
-class Critter:
+class Critter(Statuses):
     """An animal: wildlife, a village dog, or something with teeth.
 
     What it does with the player is entirely its kind's `temperament` (see CritterKind).
@@ -56,7 +56,6 @@ class Critter:
         self.orientation = random.uniform(0, 2 * math.pi)
         self.max_hp = kind.hp
         self.hp = self.max_hp
-        self.last_damage_ms = 0
         # Which settlement stood this dog up, so it can be topped back up when the player
         # returns and turned on the player when its village is provoked.
         self.village_key = village_key
@@ -69,27 +68,15 @@ class Critter:
         self.flee_heading: float | None = None
         self.flee_started_ms = 0
         self.bolt_until_ms = 0
-        # Held in a bear trap's jaws until this tick. An animal caught in one still turns
-        # and still bites whatever comes within reach; it just cannot leave.
-        self.rooted_until_ms = 0
-        # The shove it is still travelling under, its own copy of the pair every Entity
-        # holds, for the same reason it has its own `root`.
-        self.kb_vx = 0.0
-        self.kb_vy = 0.0
-        self.chilled_until_ms = 0
-        self.chill_factor = 1.0
-        # When the next round of status motes is due, its own copy of the clock every Entity
-        # keeps, so an animal held in a trap or frozen solid looks it like anything else.
-        self._status_next_ms = 0
         # A dog belongs somewhere and strolls around it; wildlife roams from wherever it
         # happens to be standing, so its anchor moves with it.
         self.anchored = home is not None
         self.home = home if home is not None else (x, y)
-        # The walk cycle, read off its own movement when it is drawn. A critter is not an
-        # Entity, so it carries its own, exactly as it carries its own `root`.
+        # The walk cycle, read off its own movement when it is drawn. Its own, since a
+        # critter is not an `Entity`: what the two share is the `Statuses` half.
         self.gait = Gait(x, y)
         # The door it has committed to coming through, its own copy of the one every Entity
-        # holds, for the same reason: a hunting dog routes through a doorway like anything else.
+        # holds: a hunting dog routes through a doorway like anything else.
         self.door_commit = None
         self.route_corner = None
         radius = c.Wildlife.DOG_WANDER_RADIUS if self.anchored else c.Wildlife.WANDER_RADIUS
@@ -106,62 +93,12 @@ class Critter:
         half the size missed the head, flank and rear of what was plainly on screen."""
         return self.size * self.kind.hit_radius_mult
 
-    def distance_to_point(self, point) -> float:
-        return math.hypot(self.x - point[0], self.y - point[1])
-
-    def receive_damage(self, damage) -> bool:
-        """Apply damage; True if it died."""
-        self.hp -= damage
-        self.last_damage_ms = pygame.time.get_ticks()
-        return self.hp <= 0
-
-    @property
-    def dead(self) -> bool:
-        """Down and awaiting removal, exactly as `Entity.dead`: a `Critter` is not an
-        `Entity`, so it carries its own copy the way it carries its own `root` and `Gait`."""
-        return self.hp <= 0
-
     def aggro(self):
         """Turn on the player: what a struck retaliator does, what a provoked village dog
         does, and what the rest of the pack does when one of them is attacked."""
         if self.kind.damage and self.kind.temperament != "passive":
             self.hostile = True
             self.flee_heading = None
-
-    def root(self, duration_ms: int):
-        self.rooted_until_ms = max(self.rooted_until_ms, pygame.time.get_ticks() + duration_ms)
-
-    @property
-    def rooted(self) -> bool:
-        return pygame.time.get_ticks() < self.rooted_until_ms
-
-    @property
-    def staggered(self) -> bool:
-        """Still travelling under a shove, so it gets no step of its own this frame."""
-        return math.hypot(self.kb_vx, self.kb_vy) > c.Combat.KNOCKBACK_STAGGER_SPEED
-
-    def chill(self, duration_ms: int, factor: float):
-        """Slowed by a frost bolt. Its own copy of `Entity.chill` for the same reason it
-        has its own `root`: a critter is not an `Entity`."""
-        self.chill_factor = min(self.chill_factor, factor) if self.chilled else factor
-        self.chilled_until_ms = max(self.chilled_until_ms, pygame.time.get_ticks() + duration_ms)
-
-    @property
-    def chilled(self) -> bool:
-        return pygame.time.get_ticks() < self.chilled_until_ms
-
-    @property
-    def chill_mult(self) -> float:
-        return self.chill_factor if self.chilled else 1.0
-
-    def status_effects(self) -> list:
-        """What is on this animal right now, the same two an Entity can catch."""
-        effects = []
-        if self.rooted:
-            effects.append("root")
-        if self.chilled:
-            effects.append("chill")
-        return effects
 
     def startle(self):
         """Wounded but alive: run flat out for a while, wherever the player is."""

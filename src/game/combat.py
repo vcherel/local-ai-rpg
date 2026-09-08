@@ -627,6 +627,35 @@ class WorldCombat:
         if self.notify:
             self.notify("The gate gives way", c.Colors.WHITE)
 
+    def _bashers(self, player: Player):
+        """Every monster close enough to be held up by something and off its bash cooldown.
+
+        The loop both `bash_doors` and `bash_gates` are: the same box cull and the same
+        clock, written once. What is actually in the way, and the blow it takes, is the
+        caller's business, so the cooldown is spent by `_wind_up_bash` only once something
+        has been found to swing at.
+        """
+        now = pygame.time.get_ticks()
+        for monster in self.monsters:
+            # Cheap box test first: only something already on the player can be held up by
+            # anything between them, and this runs over every monster alive every frame.
+            if (
+                abs(monster.x - player.x) > c.World.DETECTION_RANGE
+                or abs(monster.y - player.y) > c.World.DETECTION_RANGE
+            ):
+                continue
+            if now >= monster.next_bash_ms:
+                yield monster
+
+    @staticmethod
+    def _wind_up_bash(monster):
+        """Put a monster on its bash cooldown with its arm coming round.
+
+        A leaf is bashed on its own cadence rather than on the monster's swing clock, so
+        this is the animation only: no wind-up to read and no blow to land."""
+        monster.next_bash_ms = pygame.time.get_ticks() + c.Buildings.DOOR_BASH_COOLDOWN_MS
+        monster.start_attack_anim()
+
     def bash_gates(self, player: Player, damage_mult: float = 1.0):
         """Let a monster shut out by a barred gate beat on it, exactly as it would a door.
 
@@ -634,15 +663,7 @@ class WorldCombat:
         a pack is most likely to be standing at it: the wall is not breakable, the way round
         is a long one, and the leaf across the gap is the one thing in the way that answers a
         swing."""
-        now = pygame.time.get_ticks()
-        for monster in self.monsters:
-            if (
-                abs(monster.x - player.x) > c.World.DETECTION_RANGE
-                or abs(monster.y - player.y) > c.World.DETECTION_RANGE
-            ):
-                continue
-            if now < monster.next_bash_ms:
-                continue
+        for monster in self._bashers(player):
             hit = self._gate_in_reach((monster.x, monster.y), c.Buildings.DOOR_BASH_REACH)
             if hit is None:
                 continue
@@ -651,8 +672,7 @@ class WorldCombat:
             # other way about, either side of the line the gateway is cut in.
             if not village.gate_between(index, monster.x, monster.y, player.x, player.y):
                 continue
-            monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
-            monster.start_attack_anim()
+            self._wind_up_bash(monster)
             rect = village.defences()["gates"][index]["rect"]
             angle = math.atan2(rect.centery - monster.y, rect.centerx - monster.x)
             self._hit_gate(village, index, round(monster.kind.damage * damage_mult), angle)
@@ -673,10 +693,7 @@ class WorldCombat:
         ]
         if not villages:
             return
-        victims = [(player, c.Player.SIZE / 2)]
-        victims += [(m, m.kind.size / 2) for m in self.monsters]
-        victims += [(cr, cr.hit_radius) for cr in self.critters]
-        for victim, radius in victims:
+        for victim, radius in self._bodies_with_radius(player, npcs=False):
             if now < self._spike_ready.get(id(victim), 0):
                 continue
             if not any(village.spike_hit(victim.x, victim.y, radius) for village in villages):
@@ -723,22 +740,11 @@ class WorldCombat:
         belongs to the world, and what happens to it is a blow landing on a hit-point pool
         like any other. It takes the monster's own damage, so a troll is through a door in a
         few swings and a slime is a long while about it, and the hole it leaves is permanent."""
-        now = pygame.time.get_ticks()
-        for monster in self.monsters:
-            # Cheap box test first: only something already on the player can be held up by
-            # a door between them, and this runs over every monster alive every frame.
-            if (
-                abs(monster.x - player.x) > c.World.DETECTION_RANGE
-                or abs(monster.y - player.y) > c.World.DETECTION_RANGE
-            ):
-                continue
+        for monster in self._bashers(player):
             building = self._blocking_door(monster, player)
-            if building is None or now < monster.next_bash_ms:
+            if building is None:
                 continue
-            monster.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
-            # A door is bashed on its own cadence rather than on the monster's swing clock,
-            # so this is the animation only: no wind-up to read and no blow to land.
-            monster.start_attack_anim()
+            self._wind_up_bash(monster)
             door = building.door_rect()
             angle = math.atan2(door.centery - monster.y, door.centerx - monster.x)
             self._hit_door(building, round(monster.kind.damage * damage_mult), angle)
@@ -1024,6 +1030,22 @@ class WorldCombat:
         coins, loot_item = break_crate()
         self._break_loot(player, breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
 
+    def _bodies_with_radius(self, player: Player, npcs: bool = True) -> list[tuple]:
+        """Everything standing on the ground that something underfoot can catch, each with
+        the radius it is caught at: the player, the monsters, the animals and (unless the
+        caller says otherwise) the villagers.
+
+        What a bear trap and a town's stakes both need, and the one place the four different
+        ways of asking a body how wide it is are written down. The villagers are left out
+        for the stakes because they know where their own are.
+        """
+        bodies = [(player, c.Player.SIZE / 2)]
+        bodies += [(monster, monster.kind.size / 2) for monster in self.monsters]
+        bodies += [(critter, critter.hit_radius) for critter in self.critters]
+        if npcs:
+            bodies += [(npc, c.Entities.NPC_SIZE / 2) for npc in self.npcs]
+        return bodies
+
     def snap_traps(self, player: Player, quest_system: QuestSystem):
         """Whatever has just put a foot in a set bear trap, and what it costs them.
 
@@ -1032,23 +1054,16 @@ class WorldCombat:
         catches pays the player anything (`by_player=False`), since the player did not set
         it; what they get out of one is the seconds it holds something still.
         """
-        for trap in self.traps:
-            if trap.sprung:
-                continue
-            if trap.catches(player.x, player.y, c.Player.SIZE / 2):
-                self._spring_trap(trap, player, player, quest_system)
-                continue
-            monster = next((m for m in self.monsters if trap.catches(m.x, m.y, m.kind.size / 2)), None)
-            if monster is not None:
-                self._spring_trap(trap, monster, player, quest_system)
-                continue
-            critter = next((cr for cr in self.critters if trap.catches(cr.x, cr.y, cr.hit_radius)), None)
-            if critter is not None:
-                self._spring_trap(trap, critter, player, quest_system)
-                continue
-            npc = next((n for n in self.npcs if trap.catches(n.x, n.y, c.Entities.NPC_SIZE / 2)), None)
-            if npc is not None:
-                self._spring_trap(trap, npc, player, quest_system)
+        live = [trap for trap in self.traps if not trap.sprung]
+        if not live:
+            return
+        # The player first and then everything else, which is the order the jaws are checked
+        # in and not a priority: one trap shuts on one body, whoever reached it.
+        underfoot = self._bodies_with_radius(player)
+        for trap in live:
+            caught = next((body for body, radius in underfoot if trap.catches(body.x, body.y, radius)), None)
+            if caught is not None:
+                self._spring_trap(trap, caught, player, quest_system)
 
     def _spring_trap(self, trap, victim, player: Player, quest_system: QuestSystem):
         """Shut the jaws on whoever stood in them: a bite of health off, and held where they
@@ -1211,6 +1226,20 @@ class WorldCombat:
             if monster.receive_damage(monster.hp):
                 self._kill_monster(monster, monster_list, player, quest_system)
 
+    @staticmethod
+    def _others_within(primary, target_list, radius: float) -> list:
+        """Everything in `target_list` but `primary` standing within `radius` of it.
+
+        What a hit jumps to when it carries on past what it landed on, whether that is Chain
+        Strike taking all of them or a storm staff taking the nearest. The two differ in
+        what they do with the list, not in how they find it.
+        """
+        return [
+            target
+            for target in target_list
+            if target is not primary and target.distance_to_point((primary.x, primary.y)) < radius
+        ]
+
     def _apply_chainstrike(self, primary, target_list, damage, player, quest_system, blocked, hand: int = 0):
         """Chain Strike: a landed hit sends a pulse out from whatever was struck, and
         everything else within `Affixes.CHAINSTRIKE_RADIUS` takes a share of the blow.
@@ -1222,11 +1251,7 @@ class WorldCombat:
         frac = player.chainstrike_frac(hand)
         if frac <= 0:
             return
-        caught = [
-            target
-            for target in target_list
-            if target is not primary and target.distance_to_point((primary.x, primary.y)) < c.Affixes.CHAINSTRIKE_RADIUS
-        ]
+        caught = self._others_within(primary, target_list, c.Affixes.CHAINSTRIKE_RADIUS)
         get_impacts().pulse(
             primary.x,
             primary.y,
@@ -1269,11 +1294,7 @@ class WorldCombat:
         """A storm staff's bolt jumping to the nearest other body: the Chain Strike idea at
         a weapon's strength, one target and no pulse."""
         nearest = min(
-            (
-                target
-                for target in target_list
-                if target is not primary and target.distance_to_point((primary.x, primary.y)) < c.Staffs.CHAIN_RADIUS
-            ),
+            self._others_within(primary, target_list, c.Staffs.CHAIN_RADIUS),
             key=lambda target: target.distance_to_point((primary.x, primary.y)),
             default=None,
         )
