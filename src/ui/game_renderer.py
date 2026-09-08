@@ -116,41 +116,10 @@ class GameRenderer:
             self._draw_entities(camera, world, player, interior, interaction, underground=True)
             return
 
-        self.screen.fill(c.Colors.GREEN)
-
         # How dark the sky is, asked once for the frame: the wall braziers and the lit
         # windows of a village are the only things out here drawn differently after dark.
         darkness = world.daynight.darkness
-
-        # The one loop long enough for the culling itself to cost something: a few hundred
-        # pebbles per chunk, so it asks the world for the chunks it can see rather than
-        # walking every one the player has loaded, and measures each against the view here
-        # rather than through a call per pebble.
-        ox, oy = camera.world_to_screen(0, 0)
-        details = c.World.FLOOR_DETAILS
-        for x, y, kind in world.floor_details_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 5):
-            sx, sy = x + ox, y + oy
-            if not (-5 <= sx <= c.Screen.WIDTH + 5 and -5 <= sy <= c.Screen.HEIGHT + 5):
-                continue
-            color, radius = details[kind]
-            pygame.draw.circle(self.screen, color, (sx, sy), radius)
-
-        # Roads, ponds, grass and flowers: the ground itself, so they go under everything
-        # standing on it (the props they came with are drawn further down, with the barrels).
-        ground_margin = max(c.Scenery.POND_RADIUS[1], c.Scenery.PATCH_RADIUS[1])
-        for item in world.scenery_ground_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + ground_margin):
-            if self._on_screen(camera, item.x, item.y, margin=ground_margin):
-                item.draw(self.screen, camera)
-
-        # The plaza a village is built around, drawn under its buildings.
-        for village in world.villages:
-            # A walled town is drawn from a long way outside its plaza: the palisade stands
-            # at the edge of the settlement, not at the middle of it.
-            # Its grounds either way: the streets between the houses belong to the village
-            # and reach every door, so a hamlet culled on its plaza alone lost its lanes.
-            reach = village.grounds_radius + 40
-            if self._on_screen(camera, village.x, village.y, margin=reach):
-                village.draw(self.screen, camera, darkness)
+        self._draw_ground(camera, world, darkness)
 
         for building in world.buildings_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 500):
             if self._on_screen(camera, building.x, building.y, margin=max(building.w, building.h)):
@@ -205,6 +174,43 @@ class GameRenderer:
             interaction,
             overlay=lambda: self._draw_canopies(camera, world, player, canopies),
         )
+
+    def _draw_ground(self, camera: Camera, world: World, darkness: float):
+        """Everything under everything: the grass, the pebbles and flowers scattered over it,
+        the roads and water drawn in passes over the chunk, and the plaza each settlement is
+        built around. Nothing here stands on the ground, so nothing here is depth-sorted:
+        the order is the order the passes are written in and that is the whole of it."""
+        self.screen.fill(c.Colors.GREEN)
+
+        # The one loop long enough for the culling itself to cost something: a few hundred
+        # pebbles per chunk, so it asks the world for the chunks it can see rather than
+        # walking every one the player has loaded, and measures each against the view here
+        # rather than through a call per pebble.
+        ox, oy = camera.world_to_screen(0, 0)
+        details = c.World.FLOOR_DETAILS
+        for x, y, kind in world.floor_details_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + 5):
+            sx, sy = x + ox, y + oy
+            if not (-5 <= sx <= c.Screen.WIDTH + 5 and -5 <= sy <= c.Screen.HEIGHT + 5):
+                continue
+            color, radius = details[kind]
+            pygame.draw.circle(self.screen, color, (sx, sy), radius)
+
+        # Roads, ponds, grass and flowers: the ground itself, so they go under everything
+        # standing on it (the props they came with are drawn further down, with the barrels).
+        ground_margin = max(c.Scenery.POND_RADIUS[1], c.Scenery.PATCH_RADIUS[1])
+        for item in world.scenery_ground_in_range(camera.x, camera.y, c.Screen.ORIGIN_X + ground_margin):
+            if self._on_screen(camera, item.x, item.y, margin=ground_margin):
+                item.draw(self.screen, camera)
+
+        # The plaza a village is built around, drawn under its buildings.
+        for village in world.villages:
+            # A walled town is drawn from a long way outside its plaza: the palisade stands
+            # at the edge of the settlement, not at the middle of it.
+            # Its grounds either way: the streets between the houses belong to the village
+            # and reach every door, so a hamlet culled on its plaza alone lost its lanes.
+            reach = village.grounds_radius + 40
+            if self._on_screen(camera, village.x, village.y, margin=reach):
+                village.draw(self.screen, camera, darkness)
 
     def _draw_canopies(self, camera: Camera, world: World, player: Player, canopies):
         """The leaves, drawn over everything standing on the ground and faded out wherever

@@ -23,7 +23,7 @@ Tick a box as it lands, commit per batch, delete this file when every box is tic
 - [x] 11. `game_renderer.py:170`/`:175`: traps and breakables walk the whole list, use the range lookups the neighbours use
 
 ## Batch 4: files split along the mixin seam
-- [ ] 5. `player.py`: affixes and buffs into a `player_affixes.py` mixin
-- [ ] 6. `game.py`: `current_interaction` and the seven `_offer_*` into `game/interactions.py`, closures replaced by returned candidates
-- [ ] 8. `combat.py`: gore and feedback into `game/gore.py`
-- [ ] 10. `game_renderer.py:102` `draw_world`: the ground passes into `_draw_ground`
+- [x] 5. `player.py`: affixes and buffs into a `player_affixes.py` mixin
+- [x] 6. `game.py`: `current_interaction` and the seven `_offer_*` into `game/interactions.py`, closures replaced by returned candidates
+- [x] 8. `combat.py`: gore and feedback into `game/gore.py`
+- [x] 10. `game_renderer.py:102` `draw_world`: the ground passes into `_draw_ground`

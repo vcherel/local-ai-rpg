@@ -9,7 +9,6 @@ import pygame
 import core.constants as c
 from core.audio import play_sound
 from core.camera import get_shake
-from core.damage_fx import get_damage_fx
 from core.decals import get_decals, style_for_weapon
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
@@ -42,13 +41,6 @@ class WorldCombat:
     Split out of `world.py` purely for size: this is one coherent job, and the rest of the
     class is world state and lookups.
     """
-
-    # The weapon family whose wound is being drawn right now, one of `core.decals`'
-    # splat styles. Set for the length of one blow by whatever started it (a swing, a
-    # shot) and read by the gore, so a spear leaves a spear's mess without every damage
-    # path having to carry an archetype down to the decal. Anything nobody set it for (a
-    # burn tick, a monster's bite, a fall) bleeds generically.
-    blow_style = "generic"
 
     def handle_attack(self, player: Player, quest_system: QuestSystem, hand: int = 0):
         """The weapon's archetype (constants.weapon_archetype) drives reach, damage, cadence,
@@ -533,21 +525,6 @@ class WorldCombat:
                     best = (dist, building, idx, window)
         return None if best is None else (best[1], best[2], best[3])
 
-    @staticmethod
-    def _prop_chip(x, y, color, sound: str = "hit", key: str | None = None, angle: float = 0.0):
-        """A blow that damaged a prop without finishing it: a small puff, a knock, and the
-        prop itself flinching and cracking, so hitting something breakable always reads as
-        progress even when it holds.
-
-        `key` is what identifies the prop to `core.damage_fx`, which is what the drawing
-        side reads back: props are not all objects (a crate is an index into a building's
-        layout), so the registry is keyed by string rather than by identity."""
-        get_shake().add(c.Combat.DECOR_BREAK_SHAKE * 0.5)
-        play_sound(sound)
-        get_particles().spawn_burst(x, y, color, count=5, speed=4, life=280, size=3, gravity=0.4, shape="shard")
-        if key is not None:
-            get_damage_fx().hit(key, angle)
-
     def _hit_window(self, player: Player, building: Building, idx: int, window, damage: int, angle: float = 0.0):
         """Crack a window, and shatter it once it has taken enough."""
         remaining = building.window_hp.get(idx, c.Buildings.WINDOW_HP) - damage
@@ -916,13 +893,6 @@ class WorldCombat:
             self.items.append(drop)
         self.critters.remove(critter)
 
-    @staticmethod
-    def _break_effects(x, y, color, count):
-        """Shared shake, crash sound and shard burst for a smashed crate/cache/barrel."""
-        get_shake().add(c.Combat.CRATE_SHAKE)
-        play_sound("crate_break")
-        get_particles().spawn_burst(x, y, color, count=count, speed=6, life=550, size=5, gravity=0.4, shape="shard")
-
     def _break_loot(self, player: Player, x, y, coins, loot_item, label: str, place_item):
         """Credit coins, pop any dropped item out near (x, y) via `place_item`, and toast the result."""
         player.gain_coins(coins)
@@ -1118,47 +1088,6 @@ class WorldCombat:
         if not monster.knockback_immune:
             self._knockback(monster, monster.kind.size / 2, blow.kb_dir, blow.knockback, blow.blocked)
         return False
-
-    def _spill_blood(self, x, y, body_color, direction=None, boss: bool = False):
-        """The gore of a kill: a pool where it dropped, a fan of droplets thrown along the
-        killing blow, and a spray still in the air over both.
-
-        `direction` is the blow's (dx, dy) unit vector, so the mess points away from the
-        player instead of ringing the corpse. A kill with no direction (a burn tick, an
-        execute) bursts outward instead. What the mess is shaped like comes from the weapon
-        that made it (`blow_style`), so a spear kill and a hammer kill leave different
-        ground behind them."""
-        style = self.blow_style
-        get_decals().splash(x, y, style, direction, fatal=True, boss=boss)
-        play_sound("gore")
-
-        blood = (178, 26, 26)
-        count = 78 if boss else 52
-        speed = 17 if boss else 14
-        size = 8 if boss else 7
-        if direction:
-            get_particles().spawn_directional_burst(
-                x,
-                y,
-                math.atan2(direction[1], direction[0]),
-                spread_deg=c.Decals.SPRAY_SPREAD_DEG,
-                color=blood,
-                count=count,
-                speed=speed,
-                life=780,
-                size=size,
-                gravity=0.32,
-            )
-        else:
-            get_particles().spawn_burst(x, y, blood, count=count, speed=speed, life=780, size=size, gravity=0.32)
-        # Chunks of the thing itself, so a slime still bleeds green over the red.
-        get_particles().spawn_burst(x, y, body_color, count=30 if boss else 22, speed=8, life=600, size=7, gravity=0.42)
-        # A slow, dark mist hanging where the body was, under the fast stuff: it lingers
-        # after the droplets have landed, so the moment does not end on the same frame.
-        get_particles().spawn_burst(
-            x, y, (96, 12, 12), count=24 if boss else 16, speed=2, life=1200, size=10 if boss else 8, gravity=0.02
-        )
-        get_shake().add(c.Combat.KILL_SHAKE_BONUS * (2.0 if boss else 1.0))
 
     def _kill_monster(
         self, monster, monster_list, player: Player, quest_system: QuestSystem, direction=None, by_player: bool = True
@@ -1416,36 +1345,6 @@ class WorldCombat:
             )
         else:
             self.notify(f"{npc.name or 'The body'} drops a purse", c.Colors.WHITE)
-
-    def _hit_feedback(self, x, y, crit: bool, direction=None):
-        """Sound + particle burst for a non-fatal hit; crits read brighter and louder.
-        `direction` (attacker -> target unit vector), if given, sprays the particles as a
-        cone away from the hit instead of a plain omnidirectional poof."""
-        play_sound("crit" if crit else "hit")
-        if crit:
-            get_hitstop().trigger(c.Combat.HITSTOP_CRIT_MS)
-        # Even a hit that does not kill throws blood: a short fan along the blow, so a long
-        # fight paints the ground it was fought over instead of leaving one dot per hit.
-        get_decals().splash(x, y, self.blow_style, direction, fatal=False)
-        color = (255, 240, 160) if crit else (255, 180, 180)
-        count = 18 if crit else 10
-        speed = 5 if crit else 4
-        life = 420 if crit else 340
-        size = 5 if crit else 4
-        if direction:
-            angle = math.atan2(direction[1], direction[0])
-            get_particles().spawn_directional_burst(
-                x, y, angle, spread_deg=80.0, color=color, count=count, speed=speed, life=life, size=size, gravity=0.35
-            )
-        else:
-            get_particles().spawn_burst(x, y, color, count=count, speed=speed, life=life, size=size)
-
-    @staticmethod
-    def _pop_damage(x, y, damage: int, crit: bool):
-        """Floating damage number over a hit; crits pop bigger and gold."""
-        text = f"{damage}!" if crit else str(damage)
-        color = (255, 210, 90) if crit else c.Colors.WHITE
-        get_floating_text().spawn(x, y, text, color, big=crit)
 
     def _tick_burns(self, monster_list: list[Monster], player: Player, quest_system: QuestSystem):
         now = pygame.time.get_ticks()

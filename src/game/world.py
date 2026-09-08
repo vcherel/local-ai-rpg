@@ -34,6 +34,7 @@ from game.entities.village_generation import generate_starting_world
 from game.entities.village_sites import register_world_sites
 from game.events import EventSystem
 from game.explosives import WorldExplosives
+from game.gore import WorldGore
 from game.navigation import WorldNavigation
 from game.places import WorldPlaces
 from game.projectiles import WorldProjectiles
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
 class World(
     WorldBosses,
     WorldCombat,
+    WorldGore,
     WorldExplosives,
     WorldProjectiles,
     WorldStreaming,
@@ -65,7 +67,8 @@ class World(
     """The living world and everything standing in it.
 
     The jobs live in their own modules and are mixed in here: `WorldCombat`
-    (game/combat.py) resolves every blow and its aftermath, `WorldExplosives`
+    (game/combat.py) resolves every blow and its aftermath and `WorldGore` (game/gore.py)
+    draws what one left behind, `WorldExplosives`
     (game/explosives.py) is every blast and what it caught, `WorldStreaming`
     (game/streaming.py) generates the endless map around the player and names what it
     finds, `WorldPlaces` (game/places.py) is what the player can do at a place once they
