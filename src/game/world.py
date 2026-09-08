@@ -388,7 +388,13 @@ class World(
         per_home = c.Villages.VILLAGERS_PER_HOME_BY_SIZE.get(size, c.Villages.VILLAGERS_PER_HOME)
         for home in (b for b in buildings if b.kind in ("house", "tavern")):
             door_x, door_y = home.door_front()
-            for _ in range(random.randint(*per_home)):
+            # Never more people than the room was furnished for. How many beds a room fits is
+            # the room's own arithmetic (a second one is skipped when there is no wall left
+            # for it), and a household dealt more people than beds is somebody lying on the
+            # floor of their own house every night of the save. One is the floor: a house
+            # nobody lives in is a house, but not one this is allowed to make.
+            beds = max(1, len(home.interior_layout()["beds"]))
+            for _ in range(min(random.randint(*per_home), beds)):
                 npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
                 npc.home = (door_x, door_y)
                 self._set_toughness(npc, village)
@@ -436,6 +442,11 @@ class World(
             guard.home = spot
             guard.color = c.Villages.GUARD_COLOR
             guard.wander.radius = 0 if archer else c.Villages.GUARD_POST_RADIUS
+            if not archer:
+                # A watch is walked, not stood: a guard covers a wider patch than the two
+                # paces they used to and barely stops on it, and their head turns while they
+                # do stop (`NPC._keep_watch`). Posted still, since the anchor is the gate.
+                guard.wander.idle_min_ms, guard.wander.idle_max_ms = c.Villages.GUARD_IDLE_MS
             self._set_toughness(guard, village)
             self.npcs.append(guard)
 
@@ -1405,6 +1416,15 @@ class World(
             # Only an animal actually coming for the player needs a route round the houses;
             # everything else is wandering or running and steers for itself.
             chasing = critter.hostile and critter.distance_to_point(player_pos) <= critter.kind.detection
+            # And an animal is prised off a corner it cannot walk off exactly as a villager
+            # is: the inside corner of an L is invisible to `blocked` and a deer that walked
+            # into one grazed there for the rest of the session.
+            self.unwedge(
+                critter,
+                critter.size / 2,
+                dt,
+                wants_move=chasing or critter.flee_heading is not None or critter.wander.target is not None,
+            )
             waypoint = self.chase_waypoint(critter, player, critter.size / 2) if chasing else None
             critter.update(
                 player, dt, self.blocked, damage_mult, waypoint, terrain_mult=self.terrain_speed(critter.x, critter.y)

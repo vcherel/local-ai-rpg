@@ -138,6 +138,11 @@ class NPC(Entity):
         self.bed = None
         self.bed_dealt = False
         self.asleep = False
+        # Where a stopped guard's head sweeps from, and their own offset into that sweep so
+        # two on one gate never turn together (`_keep_watch`). Taken from wherever they
+        # happened to stop, and dropped again the moment they walk.
+        self._watch_from: float | None = None
+        self._watch_phase = 0.0
 
     @property
     def hostile(self) -> bool:
@@ -518,7 +523,28 @@ class NPC(Entity):
         # the wall, and one pinned against a building stops staring straight into it.
         if moved_angle is not None:
             self.orientation = moved_angle + math.pi / 2
+            self._watch_from = None
+        elif self.is_guard:
+            self._keep_watch()
         return 0
+
+    def _keep_watch(self):
+        """A stopped guard's head turning across their post.
+
+        The one thing standing still is allowed to be: a watch. Their facing sweeps either
+        side of whatever they last looked at, slowly and on the clock rather than stepped, so
+        a guard between two strides is looking at the road instead of holding a pose. Off
+        their own post, so two of them on one gate are never in step.
+
+        It is only ever the facing, never the position: what the cone is for is telling the
+        player which way somebody is looking (`WorldSocial.can_see`), and a guard whose head
+        moves is a guard whose cone can be waited out."""
+        if self._watch_from is None:
+            self._watch_from = self.orientation
+            self._watch_phase = random.Random(f"watch:{round(self.home[0])}:{round(self.home[1])}").random()
+        sweep = math.radians(c.Villages.GUARD_SWEEP_DEG)
+        turn = time.time() / c.Villages.GUARD_SWEEP_S + self._watch_phase * 2 * math.pi
+        self.orientation = self._watch_from + math.sin(turn) * sweep
 
     def _step_towards(self, point, dt, blocked, speed_mult: float = 1.0) -> float:
         """Walk at a point, sliding along whatever is in the way. Returns the heading.
@@ -661,6 +687,99 @@ class NPC(Entity):
         point = ((cx - lobe * 2 + 1, top), (cx + lobe * 2 - 1, top), (cx, bottom))
         pygame.draw.polygon(screen, color, point)
 
+    def _sleep_axis(self) -> tuple:
+        """Which way a sleeper is lying, as a unit vector pointing at their head.
+
+        Already decided when they lay down (`WorldVillagers._turn_in` turns them to face the
+        head of the bed), so it is read back off the facing rather than asked of the room a
+        second time."""
+        heading = self.orientation - math.pi / 2
+        return (math.cos(heading), math.sin(heading))
+
+    def _draw_bedroll(self, screen: pygame.Surface, screen_x: int, screen_y: int):
+        """The mat under whoever the house had no bed for: the tavern's fourth guest, an
+        overfull household.
+
+        Drawn before the body and not with the covers, because it is the one piece of this
+        that goes underneath: painted after, it is a mat with nobody on it."""
+        along = self._sleep_axis()
+        length, width = c.Entities.NPC_SIZE * 2.4, c.Entities.NPC_SIZE * 1.6
+        mat = self._span_rect(screen_x, screen_y, along, length, width, 0.0, 1.0)
+        pygame.draw.rect(screen, (126, 106, 78), mat, border_radius=6)
+        pygame.draw.rect(screen, (86, 70, 50), mat, 2, border_radius=6)
+
+    def _draw_bedding(self, screen: pygame.Surface, screen_x: int, screen_y: int):
+        """The covers over a sleeping villager, pulled up to the chest.
+
+        Somebody asleep used to be an ordinary standing sprite that had stopped moving, which
+        from overhead is somebody standing on the furniture. The covers are the whole tell:
+        the body ends halfway along and cloth carries on to the foot of the bed."""
+        along = self._sleep_axis()
+        size = c.Entities.NPC_SIZE
+        lengthwise = abs(along[1]) > abs(along[0])
+        if self.bed is not None:
+            length = self.bed.height if lengthwise else self.bed.width
+            # Narrower than the bed on purpose: the mattress is already drawn under this, and
+            # covers the full width of it are a repainted bed rather than a body in one.
+            width = min((self.bed.width if lengthwise else self.bed.height) - 14, size * 1.7)
+        else:
+            length, width = size * 2.4, size * 1.6
+        # From the foot up to the chest and no further, so the head and the shoulders stay
+        # out in the open: covers drawn over the whole body are a bed with nobody in it.
+        cover = self._span_rect(screen_x, screen_y, along, length, width, 0.0, 0.45)
+        pygame.draw.rect(screen, (176, 92, 78), cover, border_radius=4)
+        pygame.draw.rect(screen, (104, 46, 40), cover, 2, border_radius=4)
+        # The hem, where the covers stop: one band across the chest, which is what tells the
+        # eye the shape is cloth laid over something rather than a painted rectangle.
+        hem = self._span_rect(screen_x, screen_y, along, length, width, 0.39, 0.45)
+        pygame.draw.rect(screen, (214, 128, 112), hem, border_radius=2)
+
+    @staticmethod
+    def _span_rect(screen_x, screen_y, along, length, width, near: float, far: float) -> pygame.Rect:
+        """A rect covering the stretch of a body's own long axis between `near` and `far`,
+        measured from the foot end (0) to the head end (1) with the middle at 0.5.
+
+        The one piece of arithmetic all of the bedding is laid out with, so the mat, the
+        covers and the hem are all the same shape cut at different places."""
+        centre = (near + far) / 2 - 0.5
+        span = abs(far - near) * length
+        # `along` already points at the head (`WorldVillagers._turn_in` faces them that way),
+        # so a stretch nearer the foot is a step back down it.
+        cx = screen_x + along[0] * centre * length
+        cy = screen_y + along[1] * centre * length
+        if abs(along[1]) > abs(along[0]):
+            rect = pygame.Rect(0, 0, round(width), max(2, round(span)))
+        else:
+            rect = pygame.Rect(0, 0, max(2, round(span)), round(width))
+        rect.center = (round(cx), round(cy))
+        return rect
+
+    def _draw_sleep(self, screen: pygame.Surface, screen_x: int, screen_y: int):
+        """The z's drifting off a sleeper: three of them on one loop, each rising and fading
+        out as the next comes in.
+
+        A body under covers is asleep; a body under covers with something coming off it is
+        asleep from across the room, which is where the player usually is when they want to
+        know whether the house is down for the night."""
+        font = getattr(c.Fonts, "small", None)
+        if font is None:
+            return
+        now = time.time() + (self.x + self.y) * 0.01
+        for index in range(3):
+            phase = (now / 2.4 + index / 3) % 1.0
+            alpha = round(210 * math.sin(phase * math.pi))
+            if alpha <= 4:
+                continue
+            glyph = font.render("z", True, (232, 236, 245))
+            glyph.set_alpha(alpha)
+            rect = glyph.get_rect(
+                center=(
+                    screen_x + c.Entities.NPC_SIZE // 2 + round(phase * 14),
+                    screen_y - c.Entities.NPC_SIZE // 2 - round(phase * 30),
+                )
+            )
+            screen.blit(glyph, rect)
+
     @staticmethod
     def _draw_white_flag(screen: pygame.Surface, x: float, y: float):
         """The one cue that says this one has yielded, and the reason it is not a badge: an
@@ -678,6 +797,10 @@ class NPC(Entity):
         """`health_bar` off is the title screen's village, where nobody is fighting anyone
         and a row of full green bars would read as HUD rather than as people."""
         screen_x, screen_y = camera.world_to_screen(self.x, self.y)
+        if self.asleep and self.bed is None:
+            # Under the body, unlike the covers over it: everything else about a sleeper is
+            # drawn on top of them.
+            self._draw_bedroll(screen, screen_x, screen_y)
         super().draw(
             screen,
             screen_x,
@@ -690,6 +813,13 @@ class NPC(Entity):
             health_bar=health_bar,
             gear=self.gear(),
         )
+
+        if self.asleep:
+            # Drawn over the body rather than under it: a sleeper is lying down, and what
+            # says so from above is the covers coming up over them. Under it, the sprite is
+            # somebody standing on a bed.
+            self._draw_bedding(screen, screen_x, screen_y)
+            self._draw_sleep(screen, screen_x, screen_y)
 
         if self.surrendered:
             self._draw_white_flag(screen, screen_x, screen_y)

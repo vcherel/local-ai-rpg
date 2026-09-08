@@ -350,7 +350,16 @@ class Villages:
     # Somebody stands at each gate and each tower, always armed and always willing. They
     # hold their post rather than strolling the way a villager does; how many of them is the
     # settlement's tier, through GUARDS_PER_POST_BY_TIER.
-    GUARD_POST_RADIUS: int = 70
+    #
+    # Holding a post is walking it. The patch is a good deal wider than the two paces it
+    # used to be and the pause on it is short, because a body that moves twice a minute in
+    # a street where everyone else is strolling reads as scenery rather than as a watch.
+    GUARD_POST_RADIUS: int = 150
+    GUARD_IDLE_MS: tuple = (400, 1600)
+    # How far either side of straight ahead a stopped guard's head turns, and how long one
+    # sweep across takes. Slow on purpose: a watch that whips round is a twitch.
+    GUARD_SWEEP_DEG: float = 55.0
+    GUARD_SWEEP_S: float = 7.0
     GUARD_COLOR: tuple = (92, 104, 126)
 
     # How well defended one settlement is: a number from 0 to MAX_TIER, rolled once from

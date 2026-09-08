@@ -7,10 +7,10 @@
 - [x] 1. Furniture laid on top of the rug (`interior_layout` places the rug after the room is furnished)
 
 ## Batch 2: bodies that move and bodies that don't
-- [ ] 3. Critters wedged in outside corners (`_update_critters` never calls `unwedge`)
-- [ ] 10. Villagers with no bed (`_populate_npcs` ignores how many beds the room fits)
-- [ ] 11. Guards too immobile (post radius 70 with ordinary villager idle timings)
-- [ ] 4. Sleep unreadable (blanket over the sleeper, a rising z, a bedroll on the floor)
+- [x] 3. Critters wedged in outside corners (`_update_critters` never calls `unwedge`)
+- [x] 10. Villagers with no bed (`_populate_npcs` ignores how many beds the room fits)
+- [x] 11. Guards too immobile (post radius 70 with ordinary villager idle timings)
+- [x] 4. Sleep unreadable (blanket over the sleeper, a rising z, a bedroll on the floor)
 
 ## Batch 3: the night
 - [ ] 2a. A bell rung once at curfew, heard inside a settlement
