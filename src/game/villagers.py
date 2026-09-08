@@ -43,6 +43,7 @@ class WorldVillagers:
         villager only ever fights one thing at a time, and defending the settlement comes
         first: a monster in the street is more pressing than a grudge."""
         indoors = self.building_at(player.x, player.y) is not None
+        self._keep_curfew(player)
         self._restock_merchants()
         fight, flee = self.militia_orders()
         mob = self._mob_orders(player, flee, quest_system)
@@ -50,7 +51,7 @@ class WorldVillagers:
         # never in the crowd: a body on a tower roof is not one of the ring of people pushing
         # in around the player, and being shouldered by that ring is what walked them off it.
         crowd = [npc for npc in self.npcs if id(npc) in mob and not npc.is_archer]
-        all_home = self._households_in(mob) if self.daynight.curfew else frozenset()
+        all_home = self._households_in(mob) if self.curfew_on else frozenset()
         defenders = [npc for npc in self.npcs if id(npc) in fight]
         self.assign_surround_slots(crowd, player)
         self._throw_stones(player, mob)
@@ -70,7 +71,7 @@ class WorldVillagers:
                 # the archer on the roof is. Anything at all to do (dawn, a fight, a monster
                 # in the street) has them out of it first, and the `unstick` below is what
                 # puts their feet on the floor.
-                if self.daynight.curfew and not (id(npc) in mob or id(npc) in fight or id(npc) in flee):
+                if self.curfew_on and not (id(npc) in mob or id(npc) in fight or id(npc) in flee):
                     # Given the frame anyway, with their own spot as the place to go, so
                     # anger still cools overnight and nothing else moves them.
                     npc.update(player, dt, self.blocked, refuge=(npc.x, npc.y), face_player=False)
@@ -87,7 +88,7 @@ class WorldVillagers:
             # Walking home is meaning to move like any other errand. Left out of this, the
             # one rescue written for a body pinned on a corner was switched off for exactly
             # the walk that pins them there.
-            going_home = self.daynight.curfew and not npc.is_guard and id(npc) not in mob
+            going_home = id(npc) not in mob and self._turning_in(npc)
             self.unwedge(
                 npc,
                 c.Entities.NPC_SIZE / 2,
@@ -114,7 +115,7 @@ class WorldVillagers:
             # off what they were doing and goes home to bed. A settlement after dark is a
             # street of shut doors and lit windows, which is what makes coming back into one
             # at dusk worth something and makes the wilds at night worth avoiding.
-            if self.daynight.curfew and id(npc) not in mob and not npc.is_guard:
+            if going_home:
                 home = self._home_for(npc)
                 if home is not None:
                     self._npc_sleeps(npc, home, player, dt, shut=id(home) in all_home)
@@ -122,6 +123,114 @@ class WorldVillagers:
 
             self._wake_up(npc)
             self._npc_walks(npc, player, dt, mob, crowd, indoors)
+
+    def _keep_curfew(self, player: Player):
+        """The settlement's night starting and ending: the bell, the hour every villager's
+        own bedtime is counted from, and who is put on the tavern door until dawn.
+
+        The one place either edge is answered, so nothing else has to compare the clock
+        against what it was last frame. The bell is why the street empties: a town going to
+        bed with no warning is a town of people who stopped what they were doing at once,
+        and three tolls with a walk home behind them is an evening ending."""
+        now = pygame.time.get_ticks()
+        if self.daynight.curfew and not self.curfew_on:
+            self.curfew_on = True
+            self.curfew_at_ms = now
+            self.bell_left = c.Villages.BELL_TOLLS
+            self.bell_next_ms = now
+            for village in self.villages:
+                self._post_doorman(village)
+        elif not self.daynight.curfew and self.curfew_on:
+            self.curfew_on = False
+            self.bell_left = 0
+            self._stand_down_doormen()
+        if self.bell_left and now >= self.bell_next_ms:
+            # Rung where it stands rather than everywhere: a bell heard out in the wilds is
+            # a sound effect, and one heard from the plaza is the town telling you the hour.
+            if self.village_at(player.x, player.y) is not None:
+                play_sound("bell")
+            self.bell_left -= 1
+            self.bell_next_ms = now + c.Villages.BELL_GAP_MS
+
+    def _turning_in(self, npc: NPC) -> bool:
+        """Whether this one has left off their evening and started for home yet.
+
+        Their own hour rather than the town's (`NPC.bedtime_delay_ms`), and later again for
+        whoever lives over the tavern, so the street thins out over the minute after the
+        bell instead of emptying on the frame it rings. A guard's night is their post, so
+        they never have one."""
+        if not self.curfew_on or npc.is_guard:
+            return False
+        home = self._home_for(npc)
+        late = c.Villages.TAVERN_LATE_MS if home is not None and home.kind == "tavern" else 0.0
+        return pygame.time.get_ticks() - self.curfew_at_ms >= npc.bedtime_delay_ms + late
+
+    def _post_doorman(self, village) -> None:
+        """Put somebody on the tavern door for the night, in a settlement that can spare one.
+
+        Only a walled settlement has anybody to spare, which is the whole of "some villages":
+        out on the border a bed is taken and risked, and in a town it is paid for at the door
+        (`room_price`). The doorman is an ordinary guard given a different anchor for the
+        night, so the militia orders, the mob and the surround slots go on treating them as
+        what they are, and dawn puts them back on their gate."""
+        if not village.defended:
+            return
+        tavern = next(
+            (
+                b
+                for b in self.buildings_in_range(village.x, village.y, village.grounds_radius)
+                if b.kind == "tavern" and village.contains_point(b.x, b.y)
+            ),
+            None,
+        )
+        if tavern is None:
+            return
+        spot = tavern.door_front()
+        guards = [
+            npc
+            for npc in self.npcs
+            if npc.is_guard and not npc.is_archer and npc.doorman_for is None and village.contains_point(npc.x, npc.y)
+        ]
+        guard = min(guards, key=lambda npc: npc.distance_to_point(spot), default=None)
+        if guard is None:
+            return
+        guard.doorman_for = tavern
+        guard.post_home = guard.home
+        guard.home = spot
+        guard.wander.interrupt()
+
+    def _stand_down_doormen(self) -> None:
+        """Dawn: everybody put on a tavern door last night goes back to their gate."""
+        for npc in self.npcs:
+            if npc.doorman_for is None:
+                continue
+            npc.doorman_for = None
+            if npc.post_home is not None:
+                npc.home = npc.post_home
+                npc.post_home = None
+            npc.wander.interrupt()
+
+    def doorman_for(self, building) -> NPC | None:
+        """Whoever is standing on this tavern's door tonight, or None.
+
+        Asked when the player is about to take a room and nowhere else, so it walks the
+        settlement's people rather than keeping an index of one body."""
+        if building is None:
+            return None
+        return next((npc for npc in self.npcs if npc.doorman_for is building and npc.hp > 0), None)
+
+    def room_price(self, building) -> int:
+        """What a room in this tavern costs tonight, or 0 where nobody is on the door.
+
+        Off the settlement's tier like every other price, and 0 by day and in a hamlet: the
+        charge is the doorman, not the building. A room paid for is not a room stolen, so
+        this is also what decides whether sleeping here is trespass (`Game._sleep_in_bed`)."""
+        if self.doorman_for(building) is None:
+            return 0
+        village = self.village_at(building.x, building.y)
+        tier = village.tier if village is not None else 0
+        prices = c.Villages.ROOM_PRICE_BY_TIER
+        return prices[max(0, min(tier, len(prices) - 1))]
 
     def _npc_fights(self, npc: NPC, enemy, player: Player, dt, quest_system: QuestSystem, defenders: list):
         """One villager's frame spent meeting whatever the settlement sent them at."""
@@ -534,7 +643,7 @@ class WorldVillagers:
         for village in self.villages:
             angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
             # The houses first, since every settlement has doors and only some have gates.
-            self._bar_doors(village, self.daynight.curfew or bool(angry), player)
+            self._bar_doors(village, bool(angry), player)
             if not village.defended:
                 continue
             village.barred = any(npc.grudge for npc in angry) or len(angry) >= c.Villages.BAR_GATES_MOB
@@ -544,12 +653,13 @@ class WorldVillagers:
                 # Whichever of the two shut it, nothing is ever sealed inside a leaf.
                 self.clear_gateways(village, player)
 
-    def _bar_doors(self, village, barred: bool, player: Player):
+    def _bar_doors(self, village, angry: bool, player: Player):
         """Whether this settlement's houses have their beams across right now.
 
         Two things put them there: the hour and the temper. A village that has gone to bed
-        shuts up as well as shutting its gates, and one that has turned on the player is not
-        a row of rooms to walk into while its people are outside looking for them. Either way
+        shuts up as well as shutting its gates, save for the tavern, which is the one door
+        left open after dark; a village that has turned on the player is not a row of rooms
+        to walk into while its people are outside looking for them, tavern included. Either way
         the door says so on the leaf (`BuildingArt._draw_lock`) rather than only in the
         prompt, and the window beside it is still the way in.
 
@@ -564,6 +674,11 @@ class WorldVillagers:
         for building in self.buildings_in_range(village.x, village.y, village.grounds_radius):
             if not village.contains_point(building.x, building.y):
                 continue
+            # The tavern is the exception to the hour and not to the temper: a town that has
+            # gone to bed is still a town with one lit door in it, which is what a tavern is
+            # for and where the player sleeps when every house is shut. A town that has
+            # turned on the player shuts that one too.
+            barred = angry or (self.curfew_on and building.kind != "tavern")
             if barred and not building.barred_now and building.door_open and not building.door_broken:
                 self.shut_door(building, player)
             building.barred_now = barred

@@ -166,6 +166,14 @@ class World(
         # (npc, where they lay down, where they will be standing at dawn). Session-only and
         # empty every frame but the second or so of a fade (`WorldVillagers.plan_morning`).
         self.morning_walk: list = []
+        # The settlement's night, as the three things that start with the bell: whether it
+        # is under way, when it began (the hour every villager's own bedtime is measured
+        # from) and how many tolls are still to come. Session-only, like the weather: what
+        # the clock was doing is worked out again on the next frame after a load.
+        self.curfew_on = False
+        self.curfew_at_ms = 0
+        self.bell_left = 0
+        self.bell_next_ms = 0
         self.monsters: list[Monster] = []
         # Named, multi-phase bosses. Kept apart from monsters: they never despawn, don't
         # count toward the monster cap, and get their own update, health bar and rewards.

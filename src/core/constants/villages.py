@@ -362,6 +362,23 @@ class Villages:
     GUARD_SWEEP_S: float = 7.0
     GUARD_COLOR: tuple = (92, 104, 126)
 
+    # The bell in the plaza, rung when the light goes (`WorldVillagers._keep_curfew`). It is
+    # what makes a street emptying itself something the player watched start rather than
+    # something they noticed had happened, so it tolls several times rather than once.
+    BELL_TOLLS: int = 3
+    BELL_GAP_MS: int = 1400
+    # And the street empties over the length of it rather than on the frame it rings: each
+    # villager has their own hour, rolled off their home so the same neighbour is always the
+    # last one in. A whole town turning on its heel together is the tell that a clock and not
+    # a person decided it.
+    BEDTIME_SPREAD_MS: tuple = (0.0, 55000.0)
+    # Whoever lives over the tavern keeps the latest hours in the settlement.
+    TAVERN_LATE_MS: float = 40000.0
+    # A settlement with a wall puts somebody on the tavern door after dark and charges for
+    # the room. A hamlet with no wall has no one to spare, which is what makes a bed free
+    # out on the border and paid for in a town.
+    ROOM_PRICE_BY_TIER: tuple = (8, 14, 22)
+
     # How well defended one settlement is: a number from 0 to MAX_TIER, rolled once from
     # how far out it stands and how big it is, then persisted with the village like its
     # wall. It is the one lever behind every difference between a border hamlet and a deep

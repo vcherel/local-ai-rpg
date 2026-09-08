@@ -672,9 +672,12 @@ class Game(GameInteractions):
         return f"{label} ({witness.name or 'someone'} is watching)"
 
     def _bed_label(self, bed) -> str:
-        """What the prompt over a bed says. No bed is paid for and none of them is the
-        player's, so all of them read the same way: whether there is somebody in it, whether
-        it is still warm, and who is watching them climb into it."""
+        """What the prompt over a bed says: whether there is somebody in it, whether it is
+        still warm, what the room costs and who is watching them climb into it.
+
+        One bed in the game is paid for, and it is paid for because somebody is standing at
+        the door of it (`World.room_price`). Every other bed in the world is taken and
+        risked, which is what the watching cones under the prompt are about."""
         sleeper = self.world.bed_taken(bed)
         if sleeper is not None:
             return f"{sleeper.name or 'Someone'} is asleep in this bed"
@@ -683,6 +686,13 @@ class Game(GameInteractions):
         cooling = self._bed_cooling()
         if cooling > 0:
             return f"E: this bed is still warm ({int(cooling) + 1}s)"
+        price = self.world.room_price(self.interior)
+        if price:
+            # Paid for at the door, so nobody is watching and there is nothing to watch: the
+            # cones are for a bed being taken, and this one is being rented.
+            if self.player.coins < price:
+                return f"A room here is {price} coins"
+            return f"E: take a room ({price} coins)"
         label = "E: sleep in their bed" if self.interior.kind == "house" else "E: take a room"
         return self._watched_label(label)
 
@@ -739,6 +749,15 @@ class Game(GameInteractions):
         if remaining > 0:
             self.loot_notification.show(f"You slept here recently. Again in {int(remaining) + 1}s", c.Colors.MUTED)
             return
+        # A tavern with somebody on the door after dark rents its rooms. Paying for one is
+        # the only way a bed in this game is ever anything but taken, and it is why the
+        # household is not woken up about it below.
+        price = self.world.room_price(self.interior)
+        if price:
+            if self.player.coins < price:
+                self.loot_notification.show(f"The doorman wants {price} coins for a room", c.Colors.RED)
+                return
+            self.player.coins -= price
         self.world.rest_in_house(self.interior)
 
         play_sound("quest_complete")
@@ -748,7 +767,10 @@ class Game(GameInteractions):
         self.player.hp = self.player.max_hp
         self.loot_notification.show("You sleep until dawn and wake fully rested", c.Colors.GREEN)
         # Not a theft, and never worded as one: the household finds a stranger in the bed.
-        self._check_witness("squatting")
+        # Unless it was paid for at the door, in which case there is no stranger and no bed
+        # of anybody's: that is the whole of what the coins buy.
+        if not price:
+            self._check_witness("squatting")
         # A night is hours of world clocks moved on; nobody wants to sleep it twice.
         self.save_data()
 

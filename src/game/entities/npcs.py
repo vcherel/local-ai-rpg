@@ -138,6 +138,12 @@ class NPC(Entity):
         self.bed = None
         self.bed_dealt = False
         self.asleep = False
+        # How long after the bell this one is still out (`WorldVillagers._turning_in`), and
+        # the tavern door they are standing on tonight if they were the one put there
+        # (`_post_doorman`), with the post they will go back to at dawn.
+        self._bedtime = None
+        self.doorman_for = None
+        self.post_home = None
         # Where a stopped guard's head sweeps from, and their own offset into that sweep so
         # two on one gate never turn together (`_keep_watch`). Taken from wherever they
         # happened to stop, and dropped again the moment they walk.
@@ -216,6 +222,18 @@ class NPC(Entity):
         holds it at the length of the spear; someone with a knife has to walk in."""
         reach = c.Entities.NPC_ATTACK_RANGE * self.weapon.reach_mult
         return max(0.0, reach + target_size / 2 - c.Entities.CHASE_RING_MARGIN)
+
+    @property
+    def bedtime_delay_ms(self) -> float:
+        """How long this one stays out after the curfew bell.
+
+        Rolled off their home like the militia flag and the weapon, so the same house always
+        turns out the same late riser: a street that empties in the same order every night is
+        a street with people in it, and one that empties all at once is a clock."""
+        if self._bedtime is None:
+            seed = f"bedtime:{round(self.home[0])}:{round(self.home[1])}"
+            self._bedtime = random.Random(seed).uniform(*c.Villages.BEDTIME_SPREAD_MS)
+        return self._bedtime
 
     @property
     def is_militia(self) -> bool:

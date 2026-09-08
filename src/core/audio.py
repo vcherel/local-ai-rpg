@@ -42,6 +42,10 @@ _SOUND_SPECS = {
     # Steel jaws: a bright snap over a low thunk, so a trap shutting is heard before the
     # health bar is read.
     "trap_snap": ([(1700, 0.02), (900, 0.03), (240, 0.06), (120, 0.12)], 0.40, "square"),
+    # The curfew bell in a settlement's plaza: a bright strike over a long low hum, which
+    # is the one sound in the game meant to be heard from the other side of a town. It is
+    # also the only explanation the player ever gets for a street emptying itself.
+    "bell": ([(1320, 0.03), (660, 0.10), (330, 0.85)], 0.38, "sine"),
     # A villager shouting the player off before their street turns on them.
     "shout": ([(330, 0.05), (392, 0.05), (294, 0.09)], 0.30, "square"),
     # A boss finishing its climb out of the ground: the lowest, longest thing in the game,

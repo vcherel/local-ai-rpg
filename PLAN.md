@@ -13,10 +13,10 @@
 - [x] 4. Sleep unreadable (blanket over the sleeper, a rising z, a bedroll on the floor)
 
 ## Batch 3: the night
-- [ ] 2a. A bell rung once at curfew, heard inside a settlement
-- [ ] 2b. Villagers go to bed on their own rolled delay instead of all on one frame
-- [ ] 2c. The tavern stays open at night, its keeper up longest
-- [ ] 2d. A doorman on the tavern at night: a few coins for the room
+- [x] 2a. A bell rung once at curfew, heard inside a settlement
+- [x] 2b. Villagers go to bed on their own rolled delay instead of all on one frame
+- [x] 2c. The tavern stays open at night, its keeper up longest
+- [x] 2d. A doorman on the tavern at night: a few coins for the room
 
 ## Batch 4: the sky and one surprise
 - [ ] 8. Fog fades in over a doorway instead of popping (`game.py` `if self.interior is None`)
