@@ -298,10 +298,30 @@ opening for the player. A gate that is only shut is not something to hack at eit
 `WorldCombat._gate_in_reach` answers on `barred` alone, since a leaf that opens to a press
 is nobody's obstacle.
 
-## A village goes to bed
+## A village goes to bed, and a bell says when
 
-`World._npc_sleeps` is the night's one order: everyone who is not a guard and is not already
-after the player walks to their own building and stays in it. It is the same act as running
+The night starts with a sound. `WorldVillagers._keep_curfew` answers both edges of
+`DayNight.curfew` in one place: the bell tolls three times from the plaza (heard only by a
+player standing inside a settlement, since a bell heard out in the wilds is a sound effect
+and one heard from the plaza is the town telling you the hour), the hour every villager's
+own bedtime is measured from is stamped, and somebody is put on the tavern door until dawn.
+Without it a town simply stopped what it was doing, and a street emptying itself for no
+stated reason is a thing the player notices afterwards rather than watches begin.
+
+Nobody answers the bell at once. Each villager has their own hour after it
+(`NPC.bedtime_delay_ms`, up to `Villages.BEDTIME_SPREAD_MS`, rolled off their home so the
+same neighbour is always the last one in, and later again for whoever lives over the
+tavern), so the street thins out over the minute that follows. A whole town turning on its
+heel together is the tell that a clock and not a person decided it.
+
+Each of them carries a light for exactly the length of the walk and no longer
+(`NPC.lantern`, drawn by `GameRenderer.draw_lanterns` over the night tint rather than under
+it, because a lamp painted under the sky's own darkness is a slightly less dark villager).
+A settlement at curfew, seen from a hill, is a handful of lamps converging on their own
+doors and going out one by one.
+
+`World._npc_sleeps` is the night's one order: everyone whose hour has come, who is not a
+guard and is not already after the player walks to their own building and stays in it. It is the same act as running
 from a monster (`_npc_flees`) with a different destination, so the door, the gate and the
 waypoint round the houses all come for free, and their home is found once off the doorstep
 they were stood up at (`_home_for`, kept on the villager: a house does not move).
@@ -324,7 +344,17 @@ The walk home ends in a bed and not in the middle of the floor (`_npc_sleeps`,
 `_turn_in`). Each household is dealt its own beds once (`_bed_for`, the people who live here
 in a fixed order against the beds in a fixed order), so the same person has the same bed
 every night and two of them never climb into one; a cottage has a single bed and a tavern
-three or four, and whoever the house has no bed for stands in the room as everybody used to.
+three or four. A household is never dealt more people than the room was furnished for in
+the first place (`World._populate_npcs` caps the roll at the beds the layout actually fit,
+since a second bed is skipped when there is no wall left for it), and whoever a room still
+has none for lies down on its floor (`_bed_down`) rather than standing in it until dawn.
+
+Either way they are drawn asleep rather than drawn stopped. From overhead an idle sprite on
+a mattress is somebody standing on the furniture, so the covers are the tell: cloth from the
+foot of the bed up to the chest with the head and shoulders left out of it
+(`NPC._draw_bedding`, laid along the axis they were turned onto when they lay down), a
+bedroll under whoever is on the floor, and z's drifting off both, which is what says it from
+the other side of a room.
 
 A bed is furniture, so it is solid, so this is the one place in a settlement a body is
 deliberately put on top of something solid. That buys one exemption and no more: a sleeper
@@ -339,6 +369,34 @@ The player sees it from the other side: a bed with somebody in it is not a bed t
 (`World.bed_taken`), so the prompt names the sleeper and the key refuses. Which bed is free
 is a real question in a tavern after dark rather than a formality, and nobody is tipped out
 of their own to make room.
+
+## The tavern is the one door the hour does not bar
+
+Everything else in a settlement shuts at curfew (`_bar_doors`), which is what makes coming
+back into a town at dusk worth something. If it shut too, the player's answer to a night in
+a strange town would be to break a window, and the game already has that answer for houses.
+
+So the tavern stays open, and a settlement with a wall puts somebody on the door
+(`_post_doorman`: an ordinary guard given a different anchor for the night, so the militia
+orders, the mob and the surround slots go on treating them as exactly what they are, and
+dawn puts them back on their gate). What the doorman is for is the price: `World.room_price`
+quotes off the settlement's tier, `Game._sleep_in_bed` takes the coins, and paying skips the
+squatting check entirely. That is the whole design of it. Out on the border, where a hamlet
+has nobody to spare, a bed is taken and risked like any other; in a town it is rented, and
+the coins are what buy the one night in the game nobody is a witness to.
+
+## A watch is walked, not stood
+
+A guard holds a post rather than a street, which used to mean `Villages.GUARD_POST_RADIUS`
+of 70 with an ordinary villager's two-to-seven-second idle: two paces, then a very long
+stand. Beside neighbours who stroll, that reads as scenery. The post is now wide enough to
+walk and the pause on it short (`Villages.GUARD_IDLE_MS`), and while they are stopped their
+facing sweeps across it (`NPC._keep_watch`, on the clock rather than stepped, phased off
+their own post so two on one gate are never in step).
+
+Only the facing, never the position. What a vision cone is for is telling the player which
+way somebody is looking (`WorldSocial.can_see`), so a guard whose head moves is a guard
+whose cone can be waited out, which is a better answer than a guard who cannot see at all.
 
 ## How well defended a settlement is is one number
 

@@ -34,7 +34,12 @@ Theft is the one exception to the all-or-nothing rule and it has exactly one ent
 `World.catch_thief` turns that one villager, alone, while the rest of the settlement goes on
 with its day. A bed is asked about differently (`World.squatter_witness`): sleeping is not an
 instant somebody either had eyes on or missed, it is a night, so what answers for it is who
-of that settlement is near the bed by morning rather than who was facing it.
+of that settlement is near the bed by morning rather than who was facing it. Whoever lives
+in the room is the exception and catches the player whichever way they are turned, unless
+they are asleep themselves: a household already in bed finds nothing, which is what makes a
+tavern with its keeper down for the night a gamble on the hour rather than on the roll. The
+one bed nobody is ever a witness to is one that was paid for at the door
+(`World.room_price`), because a room rented is not a room taken.
 
 Being seen is a field of view with rooms in it, not a radius and not a raycast: `NPC.sees`
 tests `Crime.VIEW_CONE_DEG` off the villager's own facing, and `World.can_see` then asks
@@ -42,8 +47,15 @@ which room each of the two is standing in (`World.theft_room` is the building th
 happens in). Out in the open, anyone else out in the open sees you. Inside a room, whoever
 is in it with you sees you and whoever is inside a different building sees nothing, having
 their own walls and their own roof between. From outside, a room is open along the wall its
-door and its windows are in: a villager in front of the facade sees straight in, one round
-the back does not, which is why the far side of a house is worth walking to.
+door and its windows are in, and only while one of them is actually open: a villager in
+front of the facade of a house whose door stands open sees straight in, one round the back
+does not, and nobody at all sees in once the door is shut and the panes are whole.
+
+That last clause is the one the player can act on. Shutting the door behind you is the
+cheapest thing in the game and it takes a room out of the street's sight entirely, which
+makes it a move rather than a habit; and it is why going in through a window is not free,
+since the hole a broken pane leaves is a hole in the wall for as long as the building
+stands. The far side of a house is still worth walking to, and now so is the latch.
 
 That is the whole test and it is a handful of comparisons per villager. It used to be a ray
 per villager per frame, marched in half-wall steps against every solid nearby, which cost

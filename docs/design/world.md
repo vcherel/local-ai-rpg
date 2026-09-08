@@ -318,9 +318,25 @@ a shower thickens into a downpour. The rain is a fixed set of streaks falling on
 in screen space rather than a particle system: it interacts with nothing, and a thousand
 live particles a frame for something that cannot be walked into is a frame spent on nothing.
 Fog is one flat wash through `screen_fx.Overlay`, painted once per step of the ramp like the
-sky it sits under.
+sky it sits under, with banks of it drifting across.
+
+Those banks are also where the whole system very nearly went wrong. Seven of them, each up
+to a screen wide, were being blitted every frame as per-pixel-alpha surfaces carrying a
+surface alpha as well, which is pygame's slowest blit there is: they cost 5.8 ms of a 16 ms
+frame on their own, and the fog as a whole 7.1 ms. They now carry their alpha in their own
+pixels, repainted only when the ramp crosses one of `Weather.FOG_BANK_STEPS` (fog thickens
+over ten seconds, so a step it can cross a handful of times is a step nobody can see), and
+they are converted to the display format. That is 4.1 ms for the whole of fog, of which 2.6
+is the banks. The rule it comes from is the one the building shells and the body sprites
+follow: what holds still is painted once and kept.
 
 It is session-only, like the wildlife and the decals. What the sky was doing is not a fact a
 save has any business restoring, and a spell that survived a reload would be weather the
 player could plan around. It is not drawn over a room the player is standing in, because
 that is what a roof is, and there is none of it underground.
+
+How much roof is overhead is a ramp and not a flag (`WeatherSystem.shelter`, fed the
+building the player is standing in). A doorway is a step; weather is not, and fog arriving
+whole on the frame a threshold is crossed reads as a bug rather than as walking outside. It
+is only ever what is drawn: `sight_mult` is the world's, so a villager indoors sees exactly
+as far as one in the street, and a room is still weatherless once the ramp has run.
