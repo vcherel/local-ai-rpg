@@ -425,18 +425,29 @@ def _gear_key(gear: dict | None):
     return tuple(sorted((slot, tuple(sorted(spec.items()))) for slot, spec in gear.items()))
 
 
-def _body_sprite(size, color, attack_progress, attack_hand, gear, arm_swing, key):
-    """One body drawn facing up its own surface: the circle, what it is wearing, its two
-    arms wherever the stride and the swing have put them, and whatever each hand holds.
+def _body_sprite(key, gear):
+    """One body's sprite, painted once and then handed back for as long as it is asked for.
 
     Kept, because it is the same handful of circles frame after frame: what really changes
     as somebody walks past is which way they are facing, and that is a rotation of the
-    finished sprite rather than a different sprite."""
+    finished sprite rather than a different sprite. `gear` rides alongside `key` rather
+    than in it because a dict cannot be a key; `_gear_key` is its stand-in inside one.
+    """
     sprite = _SPRITE_CACHE.get(key)
     if sprite is not None:
         _SPRITE_CACHE.move_to_end(key)
         return sprite
+    size, color, attack_progress, attack_hand, _, arm_swing = key
+    sprite = _paint_body(size, color, attack_progress, attack_hand, gear, arm_swing)
+    _SPRITE_CACHE[key] = sprite
+    if len(_SPRITE_CACHE) > _SPRITE_CACHE_MAX:
+        _SPRITE_CACHE.popitem(last=False)
+    return sprite
 
+
+def _paint_body(size, color, attack_progress, attack_hand, gear, arm_swing):
+    """The drawing itself: the circle, what it is wearing, its two arms wherever the stride
+    and the swing have put them, and whatever each hand holds, all facing up the surface."""
     border_thickness = 2
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
@@ -508,9 +519,6 @@ def _body_sprite(size, color, attack_progress, attack_hand, gear, arm_swing, key
         swing = attack_progress if attack_hand == hand else 0.0
         draw_weapon(char_surf, arm, spec, size, hand, swing)
 
-    _SPRITE_CACHE[key] = char_surf
-    if len(_SPRITE_CACHE) > _SPRITE_CACHE_MAX:
-        _SPRITE_CACHE.popitem(last=False)
     return char_surf
 
 
@@ -538,7 +546,7 @@ def draw_human(
     arm_swing = round(walk * c.Entities.GAIT_ARM)
     attack_progress = round(attack_progress * _ATTACK_STEPS) / _ATTACK_STEPS if attack_hand else 0.0
     key = (size, color, attack_progress, attack_hand, _gear_key(gear), arm_swing)
-    char_surf = _body_sprite(size, color, attack_progress, attack_hand, gear, arm_swing, key)
+    char_surf = _body_sprite(key, gear)
 
     if angle != 0:
         char_surf = pygame.transform.rotate(char_surf, math.degrees(-angle))

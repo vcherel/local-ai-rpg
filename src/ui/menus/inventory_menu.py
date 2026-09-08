@@ -107,8 +107,7 @@ class InventoryMenu(BaseMenu):
             if not group:
                 continue
             rows.append(("header", title))
-            for start in range(0, len(group), cols):
-                rows.append(("cells", group[start : start + cols]))
+            rows.extend(("cells", group[start : start + cols]) for start in range(0, len(group), cols))
         return rows
 
     def _row_height(self, row) -> int:

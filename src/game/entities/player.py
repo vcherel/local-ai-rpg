@@ -959,22 +959,42 @@ class Player(Entity):
         something was thrown at them and stopped before it reached them."""
         get_particles().spawn_burst(self.x, self.y, color, count=count, speed=3, life=250, size=3)
 
-    def receive_damage(self, damage, source=None):
-        now = time.time()
-        # Spawn grace: the few seconds after arriving in the world or coming back from a
-        # death, so a respawn can never chain straight into the next one.
+    def _shrugged_off(self, now: float) -> bool:
+        """The three ways a blow never lands at all, each with its own puff so the player can
+        tell which one saved them: the grace after arriving or standing back up, the window
+        Guardian's Ward opens, and the armour's dodge roll."""
         if now < self.invuln_until:
             self._shrug_off(c.Colors.WHITE, 4)
-            return
-
-        # Guardian's Ward: while its brief invulnerability window is up, nothing lands.
+            return True
         if now < self.guardian_ward_invuln_until:
             self._shrug_off((255, 215, 120), 6)
-            return
-
-        # Armour's dodge affix can shrug a hit off entirely.
+            return True
         if random.random() < self.dodge_chance():
             self._shrug_off(c.Colors.WHITE, 5)
+            return True
+        return False
+
+    def _apply_ward(self, actual: int, old_hp: float, now: float) -> bool:
+        """Guardian's Ward against a hit that would actually kill: hp is left at the affix's
+        floor, the invulnerability window opens and the affix goes on cooldown. Returns
+        whether it fired, which is what decides between the gold pop and a damage number.
+
+        Only a lethal hit, as the affix promises: triggering on any hit that merely dropped
+        the player below the floor made it a passive health floor and could even hand back
+        hp. Never above what they had a moment ago either, for the same reason (which would
+        also pop a negative damage number, `lost` being what they actually lost)."""
+        threshold = self.guardian_ward_threshold()
+        if threshold <= 0 or now < self.guardian_ward_cooldown_until or old_hp - actual > 0:
+            return False
+        self.hp = min(old_hp, round(self.max_hp * threshold))
+        self.guardian_ward_invuln_until = now + c.Affixes.GUARDIAN_WARD_INVULN_S
+        self.guardian_ward_cooldown_until = now + c.Affixes.GUARDIAN_WARD_COOLDOWN_S
+        self.save_system.update("guardian_ward_cooldown_until", self.guardian_ward_cooldown_until)
+        return True
+
+    def receive_damage(self, damage, source=None):
+        now = time.time()
+        if self._shrugged_off(now):
             return
 
         # A raised shield eats its share of a frontal blow before anything else looks at it.
@@ -993,21 +1013,8 @@ class Player(Entity):
         actual = max(damage - reduction, 1)
         old_hp = self.hp
 
-        # Guardian's Ward: a hit that would actually kill instead leaves hp at the affix's
-        # floor and opens the invulnerability window, then goes on cooldown. Only a lethal
-        # hit, as the affix promises: triggering on any hit that merely dropped the player
-        # below the floor made it a passive health floor and could even hand back hp.
-        ward_threshold = self.guardian_ward_threshold()
-        warded = ward_threshold > 0 and now >= self.guardian_ward_cooldown_until and old_hp - actual <= 0
-        if warded:
-            # Never above what the player had a moment ago: a ward that fires while they
-            # are already under its floor saves them, it doesn't hand back health (which
-            # would also pop a negative damage number, `lost` being what they actually lost).
-            self.hp = min(old_hp, round(self.max_hp * ward_threshold))
-            self.guardian_ward_invuln_until = now + c.Affixes.GUARDIAN_WARD_INVULN_S
-            self.guardian_ward_cooldown_until = now + c.Affixes.GUARDIAN_WARD_COOLDOWN_S
-            self.save_system.update("guardian_ward_cooldown_until", self.guardian_ward_cooldown_until)
-        else:
+        warded = self._apply_ward(actual, old_hp, now)
+        if not warded:
             self.hp -= actual
         # What the player actually lost, which the ward clamp can make smaller than `actual`.
         lost = old_hp - self.hp

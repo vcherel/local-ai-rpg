@@ -10,10 +10,10 @@ Tick a box as it lands, commit per batch, delete this file when every box is tic
 - [x] 15. `combat.py:1211`/`:1268` `_apply_chainstrike`/`_chain_bolt`: one mechanic at two strengths, one function with a target count
 
 ## Batch 2: long functions flattened
-- [ ] 4. `player.py:962` `receive_damage`: three bail-outs into one `_shrugged_off` guard, the ward branch into `_apply_ward`
-- [ ] 12. `entities.py:412` `_body_sprite`: split the cache key from the painting
-- [ ] 13. `main_menu.py:41`, `notification.py:36`: superfluous `elif` after `return`
-- [ ] 14. `inventory_menu.py:111`: `list.extend` of a comprehension
+- [x] 4. `player.py:962` `receive_damage`: three bail-outs into one `_shrugged_off` guard, the ward branch into `_apply_ward`
+- [x] 12. `entities.py:412` `_body_sprite`: split the cache key from the painting
+- [x] 13. `main_menu.py:41`, `notification.py:36`: superfluous `elif` after `return`
+- [x] 14. `inventory_menu.py:111`: `list.extend` of a comprehension
 
 ## Batch 3: dead weight and misplaced state
 - [ ] 7. `constants/combat.py:306` `Explosion.RING_COLORS`: read nowhere, delete

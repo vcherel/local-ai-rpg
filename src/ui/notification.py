@@ -33,11 +33,10 @@ class _TimedBanner:
         if elapsed < self.slide_duration:
             progress = elapsed / self.slide_duration
             return start_x + (self.target_x - start_x) * progress
-        elif elapsed > self.duration - self.slide_duration:
+        if elapsed > self.duration - self.slide_duration:
             progress = (elapsed - (self.duration - self.slide_duration)) / self.slide_duration
             return self.target_x + (start_x - self.target_x) * progress
-        else:
-            return self.target_x
+        return self.target_x
 
 
 class ToastNotification(_TimedBanner):

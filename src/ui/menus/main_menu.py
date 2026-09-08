@@ -38,7 +38,7 @@ class MainMenu:
         if self.new_game_button.collidepoint(pos):
             self.active = False
             return "new_game"
-        elif self.continue_button.collidepoint(pos):
+        if self.continue_button.collidepoint(pos):
             self.active = False
             return "continue"
         return None
