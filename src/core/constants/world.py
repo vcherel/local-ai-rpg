@@ -1094,5 +1094,12 @@ class Weather:
     # one is as a share of the screen, and how long one takes to cross the view.
     FOG_BANKS: int = 7
     FOG_BANK_ALPHA: int = 46
+    # How many steps of the ramp the banks are repainted at. They carry their alpha in their
+    # own pixels (`WeatherSystem._bank_surfaces`), so this is how often that repaint happens
+    # rather than anything the eye can pick out of a spell that thickens over ten seconds.
+    FOG_BANK_STEPS: int = 8
+    # How long the sky takes to arrive after walking out of a door, and to go again on the
+    # way in. A doorway is a step and weather is not.
+    SHELTER_FADE_MS: float = 450.0
     FOG_BANK_WIDTH: tuple = (0.45, 0.95)
     FOG_BANK_CROSS_S: tuple = (55.0, 130.0)

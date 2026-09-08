@@ -144,6 +144,9 @@ class NPC(Entity):
         self._bedtime = None
         self.doorman_for = None
         self.post_home = None
+        # Whether they are carrying a light right now, which is only ever on the walk home
+        # after the bell (`WorldVillagers._npc_sleeps`, `GameRenderer.draw_lanterns`).
+        self.lantern = False
         # Where a stopped guard's head sweeps from, and their own offset into that sweep so
         # two on one gate never turn together (`_keep_watch`). Taken from wherever they
         # happened to stop, and dropped again the moment they walk.

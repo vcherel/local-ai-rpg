@@ -1258,7 +1258,10 @@ class World(
         # The sky over the surface only: a tunnel has no weather, and the rain that was
         # falling when the player climbed down is still falling when they come back up.
         if self.underground is None:
-            self.weather.update(dt)
+            # A roof is a roof whether it is a house's or a hill's: the fog is drawn through
+            # how much sky the player is standing out under, which is what makes a doorway a
+            # moment instead of a switch.
+            self.weather.update(dt, self.building_at(player.x, player.y) is not None)
         # None of this happens underground, and that absence is most of what makes a tunnel
         # somewhere else: no ground streams in around the player, nothing is discovered, no
         # event finds them, and the map remembers nothing of a place with no landmarks.

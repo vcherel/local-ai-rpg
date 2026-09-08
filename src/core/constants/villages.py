@@ -378,6 +378,13 @@ class Villages:
     # the room. A hamlet with no wall has no one to spare, which is what makes a bed free
     # out on the border and paid for in a town.
     ROOM_PRICE_BY_TIER: tuple = (8, 14, 22)
+    # The lamp each of them carries on the walk home, and how bright it burns at the depth of
+    # night. Drawn over the sky's own darkness (`GameRenderer.draw_lanterns`),
+    # in this many steps of the dark, which is the same trick the fog banks are painted with.
+    LANTERN_RADIUS: int = 96
+    LANTERN_COLOR: tuple = (255, 198, 122)
+    LANTERN_GLOW: float = 135.0
+    LANTERN_STEPS: int = 5
 
     # How well defended one settlement is: a number from 0 to MAX_TIER, rolled once from
     # how far out it stands and how big it is, then persisted with the village like its

@@ -59,6 +59,9 @@ class WorldVillagers:
         self._loose_arrows(fight, mob, player)
 
         for npc in self.npcs:
+            # Put out at the top of every frame and lit again by the one thing that lights
+            # it: the walk home. Nothing else in the world carries a light.
+            npc.lantern = False
             if npc.is_archer:
                 # Posted on a tower roof, which is solid ground: never unstuck off it, never
                 # walked off it, never pushed off it. All they do is aim and loose
@@ -408,6 +411,9 @@ class WorldVillagers:
         on it until dawn, and the way across the room is routed too, so the table is walked
         round rather than into.
 
+        The lamp in their hand is lit for the length of that walk and no longer, which is the
+        whole of what a settlement's night looks like from a hill above it.
+
         Arriving is getting into bed (`_turn_in`), not stopping in the middle of the floor: a
         settlement after dark should be bodies in beds behind lit windows. Whoever the house
         has no bed for lies down on its floor instead (`_bed_down`), which is what somebody
@@ -416,6 +422,10 @@ class WorldVillagers:
         radius = c.Entities.NPC_SIZE / 2
         inside = (home.x, home.interior_rect().centery)
         door = home.door_rect()
+        # The one light anybody carries, and it is carried for exactly as long as the walk
+        # takes: a street at curfew is a handful of lamps converging on their own doors and
+        # going out one by one, which is what the bell is announcing.
+        npc.lantern = not npc.asleep and not home.contains_point(npc.x, npc.y)
         self.pass_gate_for(npc, radius, Point(*inside))
         bed = self._bed_for(npc, home)
         if home.contains_point(npc.x, npc.y):

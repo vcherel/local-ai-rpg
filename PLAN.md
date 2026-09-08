@@ -19,6 +19,6 @@
 - [x] 2d. A doorman on the tavern at night: a few coins for the room
 
 ## Batch 4: the sky and one surprise
-- [ ] 8. Fog fades in over a doorway instead of popping (`game.py` `if self.interior is None`)
-- [ ] 9. Fog costs frames (unconverted per-pixel-alpha banks re-`set_alpha`ed and blitted every frame)
-- [ ] 12. Villagers walking home after the bell carry a lantern
+- [x] 8. Fog fades in over a doorway instead of popping (`game.py` `if self.interior is None`)
+- [x] 9. Fog costs frames (unconverted per-pixel-alpha banks re-`set_alpha`ed and blitted every frame)
+- [x] 12. Villagers walking home after the bell carry a lantern

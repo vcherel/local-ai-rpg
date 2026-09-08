@@ -38,6 +38,10 @@ class GameRenderer:
     HUD_SLOT_SIZE = 34
     HUD_SLOT_STEP = 38
 
+    # The lamp every villager walking home carries, as (night step, surface): one blob for
+    # the whole world, repainted only when the dark steps (`_lantern_glow`).
+    _glow: tuple | None = None
+
     # Potion quickbar, centred just above the player's health bar (drawn by Player.draw
     # at ORIGIN_Y + SIZE/2 + its health_bar_offset).
     # How long the corner save marker stays up, and how much of that is spent fading out.
@@ -98,6 +102,57 @@ class GameRenderer:
         the top of it."""
         building = world.building_at(x, y)
         return building is not None and building is not interior
+
+    def draw_lanterns(self, camera: Camera, world: World, interior=None):
+        """The lamps villagers carry home after the curfew bell, drawn over the night tint.
+
+        Over it rather than under it, because a light painted under the sky's own darkness is
+        a slightly less dark villager. How strong it is, is how dark it is, so one carried
+        through a late dusk is barely there and one at the depth of night is the only warm
+        thing in the street.
+
+        Nothing here decides who is carrying one (`NPC.lantern`), and nothing is drawn for a
+        body standing on somebody else's floor, which still has its roof on."""
+        darkness = world.daynight.darkness
+        step = round(darkness * c.Villages.LANTERN_STEPS)
+        if step <= 0 or world.underground is not None:
+            return
+        glow = self._lantern_glow(step)
+        radius = glow.get_width() / 2
+        for npc in world.npcs:
+            if not npc.lantern or self._hidden_indoors(world, npc.x, npc.y, interior):
+                continue
+            x, y = camera.world_to_screen(npc.x, npc.y)
+            if not -radius <= x <= c.Screen.WIDTH + radius or not -radius <= y <= c.Screen.HEIGHT + radius:
+                continue
+            self.screen.blit(glow, (round(x - radius), round(y - radius)))
+            # The lamp itself, so the light in the street has something making it.
+            lamp = (round(x + c.Entities.NPC_SIZE / 2), round(y + 6))
+            pygame.draw.circle(self.screen, (255, 226, 150), lamp, 4)
+            pygame.draw.circle(self.screen, (92, 68, 32), lamp, 4, 1)
+
+    @staticmethod
+    def _lantern_glow(step: int) -> pygame.Surface:
+        """One warm blob at one step of the night, painted when that step changes and kept:
+        every lamp in the world is the same lamp.
+
+        Laid over the ground rather than added to it. Added light on grass that is already
+        green clips to a sour yellow before it ever looks warm, and what a lamp does to a
+        street at night is put its own colour on it, so the colour is fixed and only how
+        much of it lands changes."""
+        if GameRenderer._glow is None or GameRenderer._glow[0] != step:
+            size = c.Villages.LANTERN_RADIUS * 2
+            level = step / c.Villages.LANTERN_STEPS
+            art = pygame.Surface((size, size), pygame.SRCALPHA)
+            rings = 22
+            for i in range(rings):
+                t = 1 - i / rings  # 1 at the rim, 0 at the flame
+                shade = round(c.Villages.LANTERN_GLOW * level * (1 - t) ** 2)
+                pygame.draw.circle(
+                    art, (*c.Villages.LANTERN_COLOR, shade), (size // 2, size // 2), max(1, round(size / 2 * t))
+                )
+            GameRenderer._glow = (step, art.convert_alpha())
+        return GameRenderer._glow[1]
 
     def draw_world(self, camera: Camera, world: World, player: Player, interior=None, interaction=None):
         """`interior` is the building (if any) the player is currently standing inside; that

@@ -73,8 +73,17 @@ class WeatherSystem:
         )
         # One soft blob per bank, painted the first time fog is drawn and kept: a bank is
         # the same shape wherever it has drifted to, so painting or scaling one per frame is
-        # a gradient a frame for nothing.
+        # a gradient a frame for nothing. Painted at whatever step of the ramp asked for
+        # them (`_bank_step`) with that alpha already in their pixels, because a per-pixel
+        # alpha surface given a surface alpha as well is pygame's slowest blit there is: the
+        # seven of them cost 5.8 ms of a 16 ms frame that way, and nothing else about fog
+        # came close.
         self._bank_art: tuple | None = None
+        self._bank_step = -1
+        # How much of the world is roof: 0 out under the sky, 1 inside a room or underground.
+        # The weather is drawn through it (`draw`), so walking out of a house is the fog
+        # coming in over a moment rather than the frame the doorway is crossed.
+        self.shelter = 0.0
 
     @property
     def intensity(self) -> float:
@@ -94,8 +103,17 @@ class WeatherSystem:
             return ""
         return "rain" if self.kind == "rain" else "fog"
 
-    def update(self, dt):
-        """Run the current spell down and roll the next one when its check comes round."""
+    def update(self, dt, sheltered: bool = False):
+        """Run the current spell down and roll the next one when its check comes round, and
+        carry the roof over the player a step along.
+
+        The roof is a ramp and not a flag because a doorway is a step and weather is not:
+        the sky arriving whole on the frame the threshold is crossed is what made walking
+        out of a house in fog read as a bug. It is only ever what is *drawn*: `sight_mult`
+        is the world's, and a villager indoors sees exactly as far as one outside."""
+        target = 1.0 if sheltered else 0.0
+        step = dt / c.Weather.SHELTER_FADE_MS
+        self.shelter = min(target, self.shelter + step) if target > self.shelter else max(target, self.shelter - step)
         if self.timer > 0:
             self.timer = max(0.0, self.timer - dt)
             if self.timer == 0:
@@ -138,8 +156,12 @@ class WeatherSystem:
 
         Rain is drawn straight, since every streak is a different line every frame and there
         is nothing to keep; fog is one flat wash and goes through `Overlay` like the night
-        tint, painted once per step of the ramp rather than once a frame."""
-        amount = self.intensity
+        tint, painted once per step of the ramp rather than once a frame.
+
+        What is under a roof is under a roof: how much sky the player is standing out in
+        (`shelter`) scales the whole of it, so a room is still weatherless and a doorway is
+        a moment rather than a switch."""
+        amount = self.intensity * (1.0 - self.shelter)
         if amount <= 0:
             return
         if self.kind == "rain":
@@ -211,27 +233,37 @@ class WeatherSystem:
             ring = span.inflate(-round(span.width * t), -round(span.height * t))
             pygame.draw.ellipse(surface, (*c.Weather.FOG_COLOR, max(0, shade)), ring)
 
-    def _bank_surfaces(self) -> tuple:
-        """One soft blob per bank, at that bank's own width. Painted the first time fog is
-        drawn and kept: a bank is the same shape wherever it has drifted to, so scaling one
-        per frame would be a gradient a frame for nothing."""
-        if self._bank_art is None:
-            size = round(c.Screen.WIDTH * c.Weather.FOG_BANK_WIDTH[1])
-            art = pygame.Surface((size, round(size * 0.55)), pygame.SRCALPHA)
-            rect = art.get_rect()
-            # Widest and faintest first, thickening inwards: the rim of a bank has to fade
-            # to nothing or it is a drawn ellipse drifting across the screen.
-            rings = 26
-            for i in range(rings):
-                t = i / rings
-                shade = round(255 * t**1.7)
-                pygame.draw.ellipse(art, (*c.Weather.FOG_COLOR, shade), rect.inflate(-rect.width * t, -rect.height * t))
-            self._bank_art = tuple(
-                pygame.transform.smoothscale(
-                    art, (round(c.Screen.WIDTH * width_frac), round(c.Screen.WIDTH * width_frac * 0.55))
-                )
-                for _, width_frac, _, _, _ in self._banks
-            )
+    def _bank_surfaces(self, step: int) -> tuple:
+        """One soft blob per bank, at that bank's own width and with `step` of the ramp
+        already in its pixels.
+
+        Painted when the step changes and kept: a bank is the same shape wherever it has
+        drifted to, so scaling one per frame would be a gradient a frame for nothing. The
+        alpha is baked rather than set on the blit because a surface carrying both a
+        per-pixel alpha and a surface alpha takes pygame's slowest blit path, and seven
+        near-screen-width blits down it is most of a frame. The ramp is quantised for the
+        same reason the night tint is (`screen_fx.Overlay`): fog thickens over seconds, so
+        a step it can only cross a handful of times is a step nobody can see."""
+        if self._bank_art is not None and step == self._bank_step:
+            return self._bank_art
+        self._bank_step = step
+        level = step / c.Weather.FOG_BANK_STEPS
+        size = round(c.Screen.WIDTH * c.Weather.FOG_BANK_WIDTH[1])
+        art = pygame.Surface((size, round(size * 0.55)), pygame.SRCALPHA)
+        rect = art.get_rect()
+        # Widest and faintest first, thickening inwards: the rim of a bank has to fade
+        # to nothing or it is a drawn ellipse drifting across the screen.
+        rings = 26
+        for i in range(rings):
+            t = i / rings
+            shade = round(c.Weather.FOG_BANK_ALPHA * level * t**1.7)
+            pygame.draw.ellipse(art, (*c.Weather.FOG_COLOR, shade), rect.inflate(-rect.width * t, -rect.height * t))
+        self._bank_art = tuple(
+            pygame.transform.smoothscale(
+                art, (round(c.Screen.WIDTH * width_frac), round(c.Screen.WIDTH * width_frac * 0.55))
+            ).convert_alpha()
+            for _, width_frac, _, _, _ in self._banks
+        )
         return self._bank_art
 
     def _draw_banks(self, screen: pygame.Surface, amount: float):
@@ -239,13 +271,12 @@ class WeatherSystem:
         one is is worked out from the time rather than stepped, so nothing has to be updated
         and a paused game still has air that moves."""
         now = pygame.time.get_ticks() / 1000.0
-        alpha = round(c.Weather.FOG_BANK_ALPHA * amount)
-        if alpha <= 0:
+        step = round(amount * c.Weather.FOG_BANK_STEPS)
+        if step <= 0:
             return
-        for bank, (y_frac, _, cross_s, phase, bob) in zip(self._bank_surfaces(), self._banks, strict=True):
+        for bank, (y_frac, _, cross_s, phase, bob) in zip(self._bank_surfaces(step), self._banks, strict=True):
             width, height = bank.get_size()
             travel = (phase + now / cross_s) % 1.0
             x = travel * (c.Screen.WIDTH + width) - width
             y = y_frac * c.Screen.HEIGHT + math.sin(bob + now * 0.08) * c.Screen.HEIGHT * 0.05
-            bank.set_alpha(alpha)
             screen.blit(bank, (round(x), round(y - height / 2)))

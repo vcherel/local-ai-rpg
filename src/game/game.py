@@ -1120,10 +1120,14 @@ class Game(GameInteractions):
         if self.world.underground is None:
             self.world.daynight.draw(self.screen, self.world.events.blood_intensity)
             # Rain and fog go over the sky and under everything that is read: the weather is
-            # the world, not a readout. Never while the player is standing in somebody's
-            # room, where the roof is what they are under.
-            if self.interior is None:
-                self.world.weather.draw(self.screen)
+            # the world, not a readout. Nothing of it is drawn over a room the player is
+            # standing in, where the roof is what they are under, and the way out of one is
+            # the sky arriving over a moment rather than on the frame the threshold is
+            # crossed (`WeatherSystem.shelter`).
+            self.world.weather.draw(self.screen)
+            # And the lamps in the street over both: a light under the night tint is not a
+            # light. The one thing in the world drawn after the sky and before the HUD.
+            self.game_renderer.draw_lanterns(self.camera, self.world, self.interior)
         # Underground or not: a blood night is on the world, and the tunnel is world space.
         draw_blood_veil(self.screen, self.world.events.blood_intensity)
         get_vignette().draw(self.screen)
