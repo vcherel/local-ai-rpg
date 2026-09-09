@@ -346,9 +346,26 @@ class Minimap:
         band = pygame.Rect(strip.left + 6, strip.top + 6, strip.width - label.get_width() - 20, strip.height - 12)
         horizon = band.bottom - 7
 
-        # The sky in three bands rather than a gradient: dark at the top, lighter at the
-        # horizon, and the whole thing pulled toward the sunset colour through dusk and dawn,
-        # which is the half of the cycle the two ends of the strip are actually spent in.
+        sky = self._draw_sky(band, horizon, darkness)
+        self._draw_stars(band, horizon, sky, darkness)
+        self._draw_horizon(band, horizon)
+
+        travelled, is_moon = self._sky_position(daynight)
+        color = c.Minimap.CLOCK_NIGHT_COLOR if is_moon else c.Minimap.CLOCK_DAY_COLOR
+        left, span = band.left + 8, band.width - 16
+        arc = horizon - band.top - 5
+        self._draw_travelled(left, span, horizon, arc, travelled, sky, color)
+        self._draw_body(left, span, horizon, arc, travelled, sky, color, is_moon)
+
+        self.screen.blit(label, label.get_rect(midleft=(band.right + 8, strip.centery)))
+
+    def _draw_sky(self, band: pygame.Rect, horizon: int, darkness: float) -> tuple:
+        """Paint the sky behind the clock and hand back the flat colour it was mixed from,
+        which is what the stars, the track and the moon's bite are all drawn against.
+
+        Three bands rather than a gradient: dark at the top, lighter at the horizon, and the
+        whole thing pulled toward the sunset colour through dusk and dawn, which is the half
+        of the cycle the two ends of the strip are actually spent in."""
         warmth = 4 * darkness * (1 - darkness)
         sky = _mix(c.Minimap.CLOCK_SKY_DAY, c.Minimap.CLOCK_SKY_NIGHT, darkness)
         for i in range(3):
@@ -356,27 +373,26 @@ class Minimap:
             row = pygame.Rect(band.left, band.top + (horizon - band.top) * i // 3, band.width, 0)
             row.height = band.top + (horizon - band.top) * (i + 1) // 3 - row.top
             pygame.draw.rect(self.screen, _mix(sky, low, 0.5 + i * 0.25), row)
+        return sky
 
-        # Fixed stars, faded in with the darkness by being mixed into the sky they stand in:
-        # a colour rather than an alpha, so nothing is allocated per frame for six dots.
+    def _draw_stars(self, band: pygame.Rect, horizon: int, sky: tuple, darkness: float):
+        """Fixed stars, faded in with the darkness by being mixed into the sky they stand in:
+        a colour rather than an alpha, so nothing is allocated per frame for six dots."""
         star = _mix(sky, (236, 238, 255), darkness)
         for fx, fy in ((0.12, 0.3), (0.28, 0.62), (0.46, 0.2), (0.63, 0.52), (0.78, 0.28), (0.9, 0.66)):
             x = band.left + band.width * fx
             y = band.top + (horizon - band.top) * fy
             pygame.draw.circle(self.screen, star, (x, y), 1)
 
+    def _draw_horizon(self, band: pygame.Rect, horizon: int):
+        """The ground under the sky and the line it meets it on: what makes the body's height
+        a height rather than a dot somewhere in a box."""
         pygame.draw.rect(self.screen, c.Minimap.CLOCK_GROUND, (band.left, horizon, band.width, band.bottom - horizon))
         pygame.draw.line(self.screen, (16, 14, 12), (band.left, horizon), (band.right - 1, horizon), 1)
 
-        travelled, is_moon = self._sky_position(daynight)
-        color = c.Minimap.CLOCK_NIGHT_COLOR if is_moon else c.Minimap.CLOCK_DAY_COLOR
-        left, span = band.left + 8, band.width - 16
-        arc = horizon - band.top - 5
-        x = left + span * travelled
-        y = horizon - math.sin(math.pi * travelled) * arc
-
-        # The track already crossed, so the strip says how much of this sky is behind the
-        # player as well as where in it the body currently is.
+    def _draw_travelled(self, left: int, span: int, horizon: int, arc: float, travelled: float, sky, color):
+        """The track already crossed, so the strip says how much of this sky is behind the
+        player as well as where in it the body currently is."""
         steps = max(2, int(span * travelled / 6))
         for i in range(steps):
             t = travelled * i / steps
@@ -387,6 +403,10 @@ class Minimap:
                 1,
             )
 
+    def _draw_body(self, left: int, span: int, horizon: int, arc: float, travelled: float, sky, color, is_moon: bool):
+        """The sun or the moon itself, at the point on the arc it has got to."""
+        x = left + span * travelled
+        y = horizon - math.sin(math.pi * travelled) * arc
         radius = 6 if not is_moon else 5
         if is_moon:
             # The bite taken out of it is the sky drawn back over the disc, so the crescent
@@ -405,5 +425,3 @@ class Minimap:
                 )
             pygame.draw.circle(self.screen, color, (x, y), radius)
             pygame.draw.circle(self.screen, (255, 244, 200), (x - radius * 0.3, y - radius * 0.3), radius * 0.4)
-
-        self.screen.blit(label, label.get_rect(midleft=(band.right + 8, strip.centery)))

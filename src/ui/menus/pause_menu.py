@@ -13,6 +13,8 @@ BUTTON_SPACING = 12
 
 
 class PauseMenu(BaseMenu):
+    toggle_key = pygame.K_p
+
     def __init__(self, screen):
         super().__init__(screen, width=360, height=360)
         self.save_button_rect = None
@@ -46,10 +48,10 @@ class PauseMenu(BaseMenu):
         if not self.active:
             return False
 
-        if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_p, pygame.K_ESCAPE):
-                self.close()
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if self.handle_close(event):
+            return True
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             menu_x, menu_y = self.get_centered_position()
             rel = (event.pos[0] - menu_x, event.pos[1] - menu_y)
             if self.save_button_rect and self.save_button_rect.collidepoint(rel):

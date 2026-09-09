@@ -24,6 +24,83 @@ if TYPE_CHECKING:
     from game.world import World
 
 
+# The HUD's own glyphs: one function per icon a dock button or a stat chip can name, gathered
+# into `_ICONS` below the way `item_icons._SHAPES` holds the item art. Each takes the surface,
+# the centre it is drawn about, roughly its radius, and the one colour it is painted in, so a
+# new icon is a function and a row here rather than another branch in the drawing code.
+
+
+def _icon_bag(screen, center, r, color):
+    cx, cy = center
+    top_w, bot_w = r * 0.9, r * 1.3
+    top_y, bot_y = cy - r * 0.3, cy + r * 0.9
+    pygame.draw.polygon(
+        screen,
+        color,
+        [(cx - top_w / 2, top_y), (cx + top_w / 2, top_y), (cx + bot_w / 2, bot_y), (cx - bot_w / 2, bot_y)],
+        2,
+    )
+    pygame.draw.arc(screen, color, pygame.Rect(cx - r * 0.4, cy - r * 1.3, r * 0.8, r * 1.0), 3.4, 6.0, 2)
+
+
+def _icon_scroll(screen, center, r, color):
+    cx, cy = center
+    rect = pygame.Rect(cx - r * 0.7, cy - r * 0.9, r * 1.4, r * 1.8)
+    pygame.draw.rect(screen, color, rect, 2, border_radius=3)
+    for i in range(3):
+        ly = rect.top + rect.height * 0.32 + i * rect.height * 0.22
+        pygame.draw.line(screen, color, (rect.left + 4, ly), (rect.right - 4, ly), 1)
+
+
+def _icon_person(screen, center, r, color):
+    cx, cy = center
+    pygame.draw.circle(screen, color, (cx, cy - r * 0.5), r * 0.4, 2)
+    pygame.draw.arc(screen, color, pygame.Rect(cx - r * 0.7, cy - r * 0.1, r * 1.4, r * 1.3), 3.14, 6.28, 2)
+
+
+def _icon_book(screen, center, r, color):
+    cx, cy = center
+    rect = pygame.Rect(cx - r * 0.9, cy - r * 0.7, r * 1.8, r * 1.4)
+    pygame.draw.rect(screen, color, rect, 2)
+    pygame.draw.line(screen, color, (cx, rect.top), (cx, rect.bottom), 2)
+
+
+def _icon_question(screen, center, _r, color):
+    label = c.Fonts.button.render("?", True, color)
+    screen.blit(label, label.get_rect(center=center))
+
+
+def _icon_pause(screen, center, r, color):
+    cx, cy = center
+    bar_w, gap, h = max(2, int(r * 0.35)), r * 0.4, r * 1.4
+    pygame.draw.rect(screen, color, pygame.Rect(cx - gap - bar_w, cy - h / 2, bar_w, h))
+    pygame.draw.rect(screen, color, pygame.Rect(cx + gap, cy - h / 2, bar_w, h))
+
+
+def _icon_coin(screen, center, r, color):
+    pygame.draw.circle(screen, color, center, r * 0.9, 2)
+    label = c.Fonts.small.render("$", True, color)
+    screen.blit(label, label.get_rect(center=center))
+
+
+_ICONS = {
+    "bag": _icon_bag,
+    "scroll": _icon_scroll,
+    "person": _icon_person,
+    "book": _icon_book,
+    "question": _icon_question,
+    "pause": _icon_pause,
+    "coin": _icon_coin,
+}
+
+
+def _dock_tooltip(name: str, key: int) -> str:
+    """A dock button's label with its own shortcut in it, taken from the binding rather than
+    typed beside it: the key map is written in `Game.key_actions` and in `HelpMenu.CONTROLS`,
+    and a third copy on the HUD is one more place a rebinding can be missed."""
+    return f"{name} ({pygame.key.name(key).upper()})"
+
+
 class GameRenderer:
     # Everything below sits inside one permanent panel in the top left corner:
     # a row of icon buttons, then coin/item/quest counters, then the two hands and the bomb,
@@ -58,22 +135,29 @@ class GameRenderer:
         icon_y = self.HUD_PANEL_RECT.y + 10
         icon_x = self.HUD_PANEL_RECT.x + 10
         step = self.HUD_ICON_SIZE + self.HUD_ICON_GAP
-        # (action, rect, icon glyph, tooltip label) for the icon dock row, in draw/hit-test
-        # order. The action is what `Game.handle_input` looks the click up by, so a button
-        # is one row here rather than a rect named in this file and an `elif` naming it again
-        # over there.
+        # (action, icon glyph, name, key) per dock button, in draw/hit-test order. The action
+        # is what `Game.handle_input` looks the click up by, so a button is one row here
+        # rather than a rect named in this file and an `elif` naming it again over there.
+        # The letter in the tooltip is read off the key itself (`_dock_tooltip`), so the
+        # printed shortcut cannot drift away from the one `Game.key_actions` is bound to.
+        dock = (
+            ("inventory", "bag", "Inventory", pygame.K_i),
+            ("quests", "scroll", "Quests", pygame.K_j),
+            ("stats", "person", "Character", pygame.K_c),
+            ("lore", "book", "Lore", pygame.K_l),
+            ("help", "question", "Help", pygame.K_h),
+            ("pause", "pause", "Pause", pygame.K_p),
+        )
+        # What is handed out stays a 4-tuple: `Game._handle_left_click` unpacks exactly that,
+        # so the key lives in the table above and never in the row itself.
         self.dock_buttons = tuple(
-            (action, pygame.Rect(icon_x + step * i, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE), icon, tooltip)
-            for i, (action, icon, tooltip) in enumerate(
-                (
-                    ("inventory", "bag", "Inventory (I)"),
-                    ("quests", "scroll", "Quests (J)"),
-                    ("stats", "person", "Character (C)"),
-                    ("lore", "book", "Lore (L)"),
-                    ("help", "question", "Help (H)"),
-                    ("pause", "pause", "Pause (P)"),
-                )
+            (
+                action,
+                pygame.Rect(icon_x + step * i, icon_y, self.HUD_ICON_SIZE, self.HUD_ICON_SIZE),
+                icon,
+                _dock_tooltip(name, key),
             )
+            for i, (action, icon, name, key) in enumerate(dock)
         )
         self.dock_bottom = icon_y + self.HUD_ICON_SIZE
 
@@ -495,44 +579,9 @@ class GameRenderer:
 
     def _draw_icon(self, kind: str, center: tuple, size: int, color: tuple):
         """A small flat glyph for a HUD icon button. `size` is roughly the icon's radius."""
-        cx, cy = center
-        r = size
-        if kind == "bag":
-            top_w, bot_w = r * 0.9, r * 1.3
-            top_y, bot_y = cy - r * 0.3, cy + r * 0.9
-            pygame.draw.polygon(
-                self.screen,
-                color,
-                [(cx - top_w / 2, top_y), (cx + top_w / 2, top_y), (cx + bot_w / 2, bot_y), (cx - bot_w / 2, bot_y)],
-                2,
-            )
-            pygame.draw.arc(self.screen, color, pygame.Rect(cx - r * 0.4, cy - r * 1.3, r * 0.8, r * 1.0), 3.4, 6.0, 2)
-        elif kind == "scroll":
-            rect = pygame.Rect(cx - r * 0.7, cy - r * 0.9, r * 1.4, r * 1.8)
-            pygame.draw.rect(self.screen, color, rect, 2, border_radius=3)
-            for i in range(3):
-                ly = rect.top + rect.height * 0.32 + i * rect.height * 0.22
-                pygame.draw.line(self.screen, color, (rect.left + 4, ly), (rect.right - 4, ly), 1)
-        elif kind == "person":
-            pygame.draw.circle(self.screen, color, (cx, cy - r * 0.5), r * 0.4, 2)
-            pygame.draw.arc(
-                self.screen, color, pygame.Rect(cx - r * 0.7, cy - r * 0.1, r * 1.4, r * 1.3), 3.14, 6.28, 2
-            )
-        elif kind == "book":
-            rect = pygame.Rect(cx - r * 0.9, cy - r * 0.7, r * 1.8, r * 1.4)
-            pygame.draw.rect(self.screen, color, rect, 2)
-            pygame.draw.line(self.screen, color, (cx, rect.top), (cx, rect.bottom), 2)
-        elif kind == "question":
-            label = c.Fonts.button.render("?", True, color)
-            self.screen.blit(label, label.get_rect(center=center))
-        elif kind == "pause":
-            bar_w, gap, h = max(2, int(r * 0.35)), r * 0.4, r * 1.4
-            pygame.draw.rect(self.screen, color, pygame.Rect(cx - gap - bar_w, cy - h / 2, bar_w, h))
-            pygame.draw.rect(self.screen, color, pygame.Rect(cx + gap, cy - h / 2, bar_w, h))
-        elif kind == "coin":
-            pygame.draw.circle(self.screen, color, center, r * 0.9, 2)
-            label = c.Fonts.small.render("$", True, color)
-            self.screen.blit(label, label.get_rect(center=center))
+        draw = _ICONS.get(kind)
+        if draw is not None:
+            draw(self.screen, center, size, color)
 
     def _draw_dock_button(self, rect: pygame.Rect, icon: str, mouse_pos) -> bool:
         """Draw one dock icon. Returns whether it's hovered, so the caller can draw its

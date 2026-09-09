@@ -35,6 +35,8 @@ AUTO_EQUIP_SIZE = (170, 30)
 
 
 class InventoryMenu(BaseMenu):
+    toggle_key = pygame.K_i
+
     def __init__(self, screen):
         super().__init__(screen, width=1000, height=640)
         self.header_height = HEADER_HEIGHT
@@ -242,9 +244,9 @@ class InventoryMenu(BaseMenu):
             self.scroll_row = max(0, min(self._max_scroll(rows), self.scroll_row - event.y))
 
         elif event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_i, pygame.K_ESCAPE):
-                self.close()
-            elif event.key == pygame.K_UP:
+            if self.handle_close(event):
+                return True
+            if event.key == pygame.K_UP:
                 self.scroll_row = max(0, self.scroll_row - 1)
             elif event.key == pygame.K_DOWN:
                 self.scroll_row = min(self._max_scroll(rows), self.scroll_row + 1)

@@ -46,6 +46,8 @@ CONTROLS = [
 
 
 class HelpMenu(BaseMenu):
+    toggle_key = pygame.K_h
+
     def __init__(self, screen):
         super().__init__(screen, width=2 * COLUMN_WIDTH + GUTTER + 40, height=HEADER_HEIGHT + 200)
         self._columns = None
@@ -55,10 +57,7 @@ class HelpMenu(BaseMenu):
         if not self.active:
             return False
 
-        if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_h, pygame.K_ESCAPE):
-                self.close()
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if not self.handle_close(event) and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.close()
 
         return True

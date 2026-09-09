@@ -16,6 +16,8 @@ TALLY_ROW_HEIGHT = 52
 
 
 class StatsMenu(BaseMenu):
+    toggle_key = pygame.K_c
+
     def __init__(self, screen):
         super().__init__(screen, width=620, height=712 + TALLY_ROW_HEIGHT * 2 + 10)
 
@@ -23,10 +25,7 @@ class StatsMenu(BaseMenu):
         if not self.active:
             return False
 
-        if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_c, pygame.K_ESCAPE):
-                self.close()
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if not self.handle_close(event) and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.close()
 
         return True

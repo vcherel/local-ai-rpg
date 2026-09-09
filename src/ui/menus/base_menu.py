@@ -18,6 +18,11 @@ _OVERLAY: pygame.Surface | None = None
 
 
 class BaseMenu:
+    # The key that opened this menu, which is also the key that shuts it again. One key, or
+    # several when more than one thing leads here (a board is opened with E and named N).
+    # Escape is never listed: it shuts every menu and `handle_close` already knows that.
+    toggle_key: int | tuple[int, ...] | None = None
+
     def __init__(self, screen: pygame.Surface, width: int, height: int):
         self.screen = screen
         self.active = False
@@ -34,6 +39,20 @@ class BaseMenu:
 
     def close(self):
         self.active = False
+
+    def handle_close(self, event) -> bool:
+        """Shut the menu if this event is the press that shuts it, and say whether it was.
+
+        The toggle key is written once in `Game.key_actions` and once here, and a menu that
+        spelled its own key tuple out inside `handle_event` was a third copy that could be
+        rebound in one place and not the other."""
+        if event.type != pygame.KEYDOWN:
+            return False
+        keys = self.toggle_key if isinstance(self.toggle_key, tuple) else (self.toggle_key,)
+        if event.key != pygame.K_ESCAPE and event.key not in keys:
+            return False
+        self.close()
+        return True
 
     def get_centered_position(self) -> tuple[int, int]:
         menu_x = (c.Screen.WIDTH - self.width) // 2

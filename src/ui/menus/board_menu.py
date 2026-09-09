@@ -26,6 +26,10 @@ class BoardMenu(BaseMenu):
     same object a conversation would have produced.
     """
 
+    # N names it, and E shuts it because E is what opened it: standing at the board and
+    # pressing the interact key again is how anybody leaves anything they walked up to.
+    toggle_key = (pygame.K_n, pygame.K_e)
+
     def __init__(self, screen):
         super().__init__(screen, width=680, height=442)
         self.header_height = HEADER_HEIGHT
@@ -60,9 +64,9 @@ class BoardMenu(BaseMenu):
     def handle_event(self, event) -> bool:
         if not self.active:
             return False
-        if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_n, pygame.K_e):
-            self.close()
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if self.handle_close(event):
+            return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             menu_x, menu_y = self.get_centered_position()
             local = (event.pos[0] - menu_x, event.pos[1] - menu_y)
             for index in range(len(self.offers)):

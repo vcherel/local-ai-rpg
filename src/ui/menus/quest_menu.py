@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 
 class QuestMenu(BaseMenu):
+    toggle_key = pygame.K_j
+
     def __init__(self, screen):
         super().__init__(screen, width=720, height=560)
         self.header_height = HEADER_HEIGHT
@@ -59,13 +61,14 @@ class QuestMenu(BaseMenu):
 
         max_scroll = max(0, len(quest_system.active_quests) - self.max_visible_quests)
 
+        if self.handle_close(event):
+            return True
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
                 self.scroll_offset = max(0, self.scroll_offset - 1)
             elif event.key == pygame.K_DOWN:
                 self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
-            elif event.key in (pygame.K_j, pygame.K_ESCAPE):
-                self.close()
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_offset = max(0, min(max_scroll, self.scroll_offset - event.y))
 

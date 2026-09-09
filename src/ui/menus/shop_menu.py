@@ -37,6 +37,8 @@ def _affinity_swing(npc: NPC) -> float:
 
 
 class ShopMenu(BaseMenu):
+    toggle_key = pygame.K_b
+
     def __init__(self, screen):
         super().__init__(screen, width=940, height=600)
         self.header_height = HEADER_HEIGHT
@@ -158,10 +160,11 @@ class ShopMenu(BaseMenu):
 
         menu_x, menu_y = self.get_centered_position()
 
+        if self.handle_close(event):
+            return True
+
         if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_b, pygame.K_ESCAPE):
-                self.close()
-            elif event.key == pygame.K_UP:
+            if event.key == pygame.K_UP:
                 self._scroll(-1, *pygame.mouse.get_pos())
             elif event.key == pygame.K_DOWN:
                 self._scroll(1, *pygame.mouse.get_pos())
