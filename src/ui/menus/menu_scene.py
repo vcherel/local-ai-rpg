@@ -26,7 +26,7 @@ class _Nobody:
     x = y = -1e9
     size = 0
 
-    def get_pos(self, _distance=None):
+    def get_pos(self):
         return (self.x, self.y)
 
 

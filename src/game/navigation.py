@@ -198,7 +198,7 @@ class WorldNavigation:
     def open_door_for(self, chaser):
         """A villager chasing the player into a house lets themselves in: the door is theirs
         and they live behind it. Monsters get no such courtesy and beat it down instead
-        (WorldCombat.bash_doors), which is the whole difference between the two."""
+        (WorldBreaking.bash_doors), which is the whole difference between the two."""
         for building in self.buildings_near(chaser.x, chaser.y):
             if not building.door_closed:
                 continue
@@ -213,7 +213,7 @@ class WorldNavigation:
         The bar is theirs: they lift it, step across the gateway and it swings shut behind
         them (`Village.let_through`), which is the difference between a wall that keeps the
         player out and one that keeps its own people in. Nothing else in the world may do
-        this: a monster beats the leaf down instead (`WorldCombat.bash_gates`) and the player
+        this: a monster beats the leaf down instead (`WorldBreaking.bash_gates`) and the player
         hacks their way through it.
 
         One step across, never a walk through: the leaf is solid to everything `blocked`
@@ -303,7 +303,7 @@ class WorldNavigation:
             return door_front if leaving else inside
         if building.door_closed:
             # A shut door is a wall with nothing to walk round: come right up against it from
-            # whichever side this is on and beat on it (WorldCombat.bash_doors). Close enough
+            # whichever side this is on and beat on it (WorldBreaking.bash_doors). Close enough
             # to be in reach of the leaf, which the usual standing-off point is not.
             if leaving:
                 return inside

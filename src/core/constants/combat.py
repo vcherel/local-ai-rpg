@@ -207,7 +207,7 @@ class Bombs:
 
 @dataclass(frozen=True)
 class Trees:
-    """Felling a tree (game/combat.py `_swing_at_scenery`, game/entities/scenery.py).
+    """Felling a tree (game/breaking.py `_swing_at_scenery`, game/entities/scenery.py).
 
     A wood is the one piece of scenery the player can argue with. A tree takes real work to
     bring down, an axe does that work several times faster than anything else, and what is
@@ -235,7 +235,7 @@ class Trees:
 
 @dataclass(frozen=True)
 class Boulders:
-    """Breaking a boulder (game/combat.py `_smash_boulder`, game/entities/scenery.py).
+    """Breaking a boulder (game/breaking.py `_smash_boulder`, game/entities/scenery.py).
 
     The second thing in the wilderness the player can argue with, and written the same way
     a tree is: a real pool of hit points, one weapon family that does the work properly
@@ -257,7 +257,7 @@ class Boulders:
 
 @dataclass(frozen=True)
 class Woodpile:
-    """Breaking the firewood stacked against a house (game/combat.py `_chop_woodpile`,
+    """Breaking the firewood stacked against a house (game/breaking.py `_chop_woodpile`,
     game/entities/buildings.py `woodpile_rect`).
 
     The one exterior extra of a building that stands in the way, so it is the one that has

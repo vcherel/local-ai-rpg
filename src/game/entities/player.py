@@ -227,12 +227,15 @@ class Player(PlayerBonuses, Entity):
     def save_stats(self):
         self.save_system.update("stats", self.stats.to_dict())
 
-    def get_pos(self, distance=None):
-        if distance is not None:
-            attack_x = self.x + math.sin(self.orientation) * distance
-            attack_y = self.y - math.cos(self.orientation) * distance
-            return (attack_x, attack_y)
+    def get_pos(self):
         return (self.x, self.y)
+
+    def reach_point(self, distance):
+        """The point `distance` ahead of the player along their facing: where a swing lands
+        and how far a prompt reaches, as against `get_pos`, which is where they stand."""
+        reach_x = self.x + math.sin(self.orientation) * distance
+        reach_y = self.y - math.cos(self.orientation) * distance
+        return (reach_x, reach_y)
 
     def move(self, camera_pos, dt, blocked=None, in_water=False):
         keys = pygame.key.get_pressed()
