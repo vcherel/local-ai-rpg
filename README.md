@@ -94,12 +94,12 @@ sudo apt install -y build-essential cmake python3.12-dev libomp-dev libopenblas-
 **2. llama-cpp-python, built for your GPU**
 
 This is what runs the model. The version on PyPI is CPU only and fails quietly, slow and
-never touching the card, so it is compiled here instead, which takes a few minutes. Replace
-`75` with your card's [compute capability](https://developer.nvidia.com/cuda-gpus)
-(75 is Turing: GTX 1650, RTX 20xx).
+never touching the card, so it is compiled here instead, which takes a few minutes.
+`native` is whichever card is in this machine; a CUDA older than 11.5 does not know the
+word, and `uv run doctor` prints the number to put there instead.
 
 ```bash
-CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=75" \
+CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=native" \
 uv pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
@@ -113,9 +113,11 @@ uv run fetch-model
 
 **4. Check it**
 
-Says what this machine has, and the exact command for whatever is missing. The two failures
-worth catching are a build that never reaches the GPU and a model too big for the VRAM: both
-of them otherwise look like the game simply being slow.
+Says what this machine has, and the exact command for whatever is missing. The failures
+worth catching are a build that never reaches the GPU, a model too big for the VRAM and a
+build compiled for another card: the first looks like the game simply being slow, and the
+last two look like nothing at all until the game asks for a line. So the last check loads
+the weights and asks for one token, which is why it takes a moment.
 
 ```bash
 uv run doctor

@@ -197,7 +197,15 @@ def model_available() -> bool:
 
 
 def get_llm_queue():
-    global llm_queue, llm
+    """The queue, or None when the weights would not load.
+
+    A refused load is a session that plays from the written bank, not a session that ends:
+    `model_available()` is answered False from here on, so every call falls through to
+    `offline.py` exactly as a clone with no weights does. What it cannot cover is the card
+    aborting mid-generation, which is a C abort() and takes the process with it whatever
+    this does; `uv run doctor` asks for a token up front to catch that one instead.
+    """
+    global llm_queue, llm, _available
     if llm_queue is None:
         with _init_lock:
             # Double-check pattern
@@ -206,16 +214,22 @@ def get_llm_queue():
                 # optional dependency, and a clone without it still plays.
                 from llama_cpp import Llama
 
-                llm = Llama(
-                    model_path=c.Hyperparameters.MODEL_PATH,
-                    n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
-                    verbose=False,
-                    n_ctx=c.Hyperparameters.CONTEXT_SIZE,
-                    flash_attn=True,
-                    use_mlock=True,
-                    n_threads=8,
-                    seed=int(time.time() * 1000) % (2**31),
-                )
+                try:
+                    llm = Llama(
+                        model_path=c.Hyperparameters.MODEL_PATH,
+                        n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
+                        verbose=False,
+                        n_ctx=c.Hyperparameters.CONTEXT_SIZE,
+                        flash_attn=True,
+                        use_mlock=True,
+                        n_threads=8,
+                        seed=int(time.time() * 1000) % (2**31),
+                    )
+                except Exception as error:
+                    print(f"The model would not load: {error}")
+                    print("Playing offline. Run `uv run doctor` for what this machine is missing.")
+                    _available = False
+                    return None
                 llm_queue = LLMRequestQueue()
                 llm_queue.start()
     return llm_queue
@@ -224,7 +238,8 @@ def get_llm_queue():
 def get_llm_tasks():
     if not model_available():
         return []
-    return get_llm_queue().get_active_tasks()
+    active = get_llm_queue()
+    return active.get_active_tasks() if active else []
 
 
 def llm_busy() -> bool:
@@ -236,18 +251,18 @@ def llm_busy() -> bool:
 
 
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
-    if not model_available():
+    active = get_llm_queue() if model_available() else None
+    if active is None:
         return offline.answer(log, prompt, system_prompt)
-    return get_llm_queue().generate_response(prompt, system_prompt, log, max_tokens=max_tokens, raw=raw)
+    return active.generate_response(prompt, system_prompt, log, max_tokens=max_tokens, raw=raw)
 
 
 def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None, stop=None, poll=False):
-    if not model_available():
+    active = get_llm_queue() if model_available() else None
+    if active is None:
         yield from offline.stream(log, prompt, system_prompt)
         return
-    yield from get_llm_queue().generate_response_stream(
-        prompt, system_prompt, log, max_tokens=max_tokens, stop=stop, poll=poll
-    )
+    yield from active.generate_response_stream(prompt, system_prompt, log, max_tokens=max_tokens, stop=stop, poll=poll)
 
 
 def generate_response_internal(prompt, system_prompt, category, max_tokens=None, raw=False):

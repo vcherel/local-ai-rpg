@@ -44,7 +44,7 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 ### rpg_ai
 - `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session; the loading screen waits for the model, or for the music pads when there is none
 - `src/rpg_ai/fetch_model.py`: `uv run fetch-model`, the only thing that downloads the weights into `models/`, resumable, with a progress bar
-- `src/rpg_ai/doctor.py`: `uv run doctor`, what this machine can run (python, pygame, GPU and VRAM, whether the binding reaches the GPU, the model file) and the exact command for whatever it cannot
+- `src/rpg_ai/doctor.py`: `uv run doctor`, what this machine can run (python, pygame, GPU, VRAM and compute capability, whether the binding reaches the GPU, the model file) and the exact command for whatever it cannot; last of all `check_generation`, one token asked for in a subprocess because a card that refuses the work aborts from C rather than raising, with `_cuda_failure` turning what the backend said into what to do about it
 
 ### game
 - `src/game/game.py`: `Game`, the main loop, input handling and state orchestration; `_build_action_tables` holds the three tables a press or a click is answered from (`key_actions`, `dock_actions`, `interact_actions`), `_interact` is the one E (the prompt itself is `interactions.py`), `_swap_hands` is key 1 and `_use_bomb` is G, `_sweep_loot` the loot magnet, `save_data` the one path to disk, `_respawn` (with `_scatter_death_drop`, the coins and the things a death leaves on the ground) and `_sleep_until_dawn` the two things that move the player without walking, `_music_context` what the score is told the world is doing, `_pay_blood_price` (K) what buying a turned settlement back costs, `_read_board`/`_take_notice` the notice board and the quest it hands to whoever posted it
@@ -101,7 +101,7 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 - `src/game/entities/stats.py`: `Stats`, use-based progression (xp, training, derived bonuses, magic and swimming), queueing `pending_levelups`
 
 ### llm
-- `src/llm/llm_request_queue.py`: `LLMRequestQueue`, all LLM calls serialised onto a worker thread, interactive categories first; `generate_response_queued` / `generate_response_stream_queued`, `poll=True` for the main thread, `llm_busy()`; `model_available()` is the one answer to whether there is a model at all, and every public call falls through to `offline.py` when there is not
+- `src/llm/llm_request_queue.py`: `LLMRequestQueue`, all LLM calls serialised onto a worker thread, interactive categories first; `generate_response_queued` / `generate_response_stream_queued`, `poll=True` for the main thread, `llm_busy()`; `model_available()` is the one answer to whether there is a model at all, and every public call falls through to `offline.py` when there is not, weights that will not load included (`get_llm_queue` returns None and answers False from then on)
 - `src/llm/offline.py`: what the game answers with when no model is loaded, one local answer per LLM category (`ANSWERS`), plus the banks the names, the dialogue and the lore are composed from
 - `src/llm/dialogue_manager.py`: `DialogueManager`, the NPC dialogue window: streaming replies, the merchant Shop button and purse, end-of-conversation detection, quest analysis on close
 - `src/llm/quest_system.py`: `QuestSystem`, conversation analysis into quests, one `_build_*` per type and one completion hook per type, reward coins clamped into `QUEST_COIN_BANDS`

@@ -24,14 +24,15 @@ def run_loading_screen(screen, clock):
     here rather than under the live village behind the title.
     """
     ready = threading.Event()
-
-    if model_available():
-        label, work = "Loading AI model...", get_llm_queue
-    else:
-        label, work = "Preparing...", get_music().await_pads
+    label = "Loading AI model..." if model_available() else "Preparing..."
 
     def load():
-        work()
+        # A model that will not load answers False from here on, and this is an offline
+        # session after all: the pads are what it waits out instead, as it would have.
+        if model_available():
+            get_llm_queue()
+        if not model_available():
+            get_music().await_pads()
         ready.set()
 
     threading.Thread(target=load, daemon=True).start()
