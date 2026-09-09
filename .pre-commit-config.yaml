@@ -5,3 +5,23 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  # There is no pytest suite; `scripts/verify/` is what a change here is checked with, so
+  # that is what the push runs. Only the two that answer for any change: `refs.py` catches a
+  # file truncated by a bad write and a call left behind by a deleted method, `smoke.py`
+  # runs the world for a while and looks at what it is left as. The ones that need a
+  # baseline or an eye on them (render_diff, frame_profile, shots) stay manual.
+  - repo: local
+    hooks:
+      - id: verify-refs
+        name: every module parses, every self.x() resolves
+        entry: uv run python scripts/verify/refs.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: verify-smoke
+        name: the world still makes sense after 900 frames
+        entry: uv run python scripts/verify/smoke.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

@@ -117,6 +117,21 @@ Then `uv run game` as before. The title screen says which of the two modes you a
 GTX 1650's 4GB of VRAM. Swap in a bigger model or a higher quant by dropping another GGUF in `models/`, at the cost
 of VRAM and speed.
 
+## Working on it
+
+There is no test suite. A change is checked by running the world headless instead: `scripts/verify/`
+stands a real game up on SDL's dummy drivers with the model stubbed and a virtual clock, so
+nothing here opens a window or needs a GPU.
+
+```bash
+uv run python scripts/verify/refs.py         # every module parses, every self.x() resolves
+uv run python scripts/verify/smoke.py        # 900 frames, then look at what the world is left as
+uv run python scripts/verify/render_diff.py  # this tree against HEAD, pixel by pixel
+```
+
+The first two run on every push. `scripts/verify/README.md` says what the rest are for and
+what makes a run reproducible.
+
 ## License
 
 MIT.
