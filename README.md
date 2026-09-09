@@ -15,11 +15,15 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 
 </div>
 
+## What there is to do
+
 - Conversations with villagers using a local LLM
 - NPCs can give quests
 - Full combat system
 - Loot with rarities and stats evolution
 - An endless generated world
+
+## A few parts of the game
 
 <table>
 <tr>
@@ -32,7 +36,7 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 </tr>
 <tr>
 <td width="50%"><img src="assets/inventory.png" alt="Screenshot"></td>
-<td width="50%"></td>
+<td width="50%"><img src="assets/shop.png" alt="Screenshot"></td>
 </tr>
 </table>
 

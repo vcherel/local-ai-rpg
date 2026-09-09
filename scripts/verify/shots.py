@@ -39,6 +39,7 @@ DEEP_WILDS = (21000, 15200)
 # Names for whatever was generated while the frames ran, in place of the stub's sentence.
 VILLAGE_NAMES = ("Ashford", "Redmoor", "Hollowfen", "Greystile", "Larkhollow")
 NPC_NAME = "Maren the Cooper"
+MERCHANT_NAME = "Ivo the Peddler"
 BOSS_NAME = "Vashek, the Sunken Crown"
 
 CONVERSATION = (
@@ -155,6 +156,41 @@ def shoot_talk(game, clock, out):
     tidy(game)
     save(game, out, "talk")
     game.dialogue_manager.close()
+
+
+# A shelf worth drawing, since the stub answers a shop prompt with the world context and a
+# real one is a dozen calls away. Every ware is priced and named here; the rarity, the bonus
+# and the final price are still the shop's own rolls (`NPC.add_stock`).
+SHOP_STOCK = (
+    ("Iron Longsword", "weapon", 90),
+    ("Yew Hunting Bow", "weapon", 110),
+    ("Studded Leather", "armor", 75),
+    ("Oak Buckler", "shield", 55),
+    ("Copper Bracelet", "accessory", 65),
+    ("Throwing Bomb", "bomb", 40),
+    ("Healing Potion", "potion", 18),
+    ("Mana Draught", "potion", 22),
+    ("Quiver of Arrows", "ammo", 30),
+)
+
+
+def shoot_shop(game, clock, out):
+    """A merchant's shelf, the counter the loot economy is spent at. The stub model answers
+    a shop prompt with the world context, so the wares are written here and only their
+    rarity, their bonus and their price are rolled, exactly as a real shop's are."""
+    settle(game, clock, STARTING_TOWN, 60)
+    merchant = min(game.world.npcs, key=lambda n: math.dist((n.x, n.y), (game.player.x, game.player.y)), default=None)
+    if merchant is None:
+        return
+    merchant.is_merchant = True
+    merchant.name = MERCHANT_NAME
+    merchant.set_shop([{"name": name, "item_type": kind, "price": price} for name, kind, price in SHOP_STOCK])
+    game.shop_menu.open(merchant, game.player, game.world.items, game.world)
+    game.active_menu = True
+    tidy(game)
+    save(game, out, "shop")
+    game.shop_menu.close()
+    game.active_menu = False
 
 
 def shoot_fight(game, clock, out, cursor):
@@ -278,6 +314,7 @@ def main():
 
     shoot_village(game, clock, args.out)
     shoot_talk(game, clock, args.out)
+    shoot_shop(game, clock, args.out)
     shoot_fight(game, clock, args.out, cursor)
     shoot_boss(game, clock, args.out, cursor)
     shoot_cave(game, clock, args.out)
