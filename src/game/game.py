@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from functools import partial
 from typing import TYPE_CHECKING
 
 import pygame
@@ -15,7 +16,7 @@ from core.impact_fx import get_impacts
 from core.music import get_music
 from core.particles import get_particles
 from core.screen_fx import draw_blood_veil, get_banner, get_flash, get_hitstop, get_trap_fx, get_vignette
-from core.settings import get_settings
+from core.settings import get_settings, move_keys
 from core.swing_arcs import get_swings
 from game.entities.items import Item, rarity_color, roll_rarity
 from game.entities.player import Player
@@ -43,9 +44,10 @@ if TYPE_CHECKING:
     from core.save import SaveSystem
 
 
-# The keys a player mashes to work a leg out of a bear trap: the same ones they walk with,
-# since that is what a body pinned in the grass would be trying to do with them.
-_STRUGGLE_KEYS = (pygame.K_z, pygame.K_w, pygame.K_s, pygame.K_SPACE)
+# The potion quickbar, in the order `Potions.QUICK_KEYS` labels it on the HUD. Read as
+# keycodes rather than as typed characters, since the number row carries no digit unshifted
+# on every layout.
+_POTION_KEYS = (pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5)
 
 
 class Game(GameInteractions):
@@ -174,6 +176,7 @@ class Game(GameInteractions):
         # The whole key map as one table. `HelpMenu.CONTROLS` is what tells the player about it.
         self.key_actions = {
             pygame.K_1: self._swap_hands,
+            **{key: partial(self._drink_quick_potion, i) for i, key in enumerate(_POTION_KEYS)},
             pygame.K_g: self._use_bomb,
             pygame.K_e: self._interact,
             pygame.K_b: self._trade_nearby,
@@ -305,17 +308,12 @@ class Game(GameInteractions):
         self.world.handle_attack(self.player, self.dialogue_manager.quest_system)
 
     def _handle_key(self, event):
-        """One in-world key press. The potion quickbar's letters are checked first because
-        they read the key rather than name it; everything else is a plain key looked up in
-        `self.key_actions`."""
-        # A movement key pressed while the jaws are on the player is a struggle rather than
-        # a step: the trap takes the seconds back one press at a time.
-        if event.key in _STRUGGLE_KEYS and self._struggle():
+        """One in-world key press: a plain key looked up in `self.key_actions`."""
+        # A movement key (or Space) pressed while the jaws are on the player is a struggle
+        # rather than a step: the trap takes the seconds back one press at a time, and what
+        # a body pinned in the grass mashes is the keys it walks with.
+        if (event.key in move_keys() or event.key == pygame.K_SPACE) and self._struggle():
             return
-        if event.unicode.lower() in c.Potions.QUICK_KEYS:
-            self._drink_quick_potion(c.Potions.QUICK_KEYS.index(event.unicode.lower()))
-            return
-
         action = self.key_actions.get(event.key)
         if action is not None:
             action()
@@ -1048,7 +1046,7 @@ class Game(GameInteractions):
         # rather than the whole game stuttering.
         gameplay_dt = get_hitstop().apply(dt)
         in_water = self.world.water_at(self.player.x, self.player.y)
-        self.player.move(self.camera.get_pos(), gameplay_dt, self.world.blocked, in_water)
+        self.player.move(gameplay_dt, self.world.blocked, in_water)
         self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
         self._pop_levelups()
         # A building's interior is just its own footprint; re-derive which one (if any) the

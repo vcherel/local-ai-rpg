@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pygame
+
 from core.constants.ui import Screen
 
 
@@ -287,3 +289,21 @@ class Affinity:
 
     # Shop buy/sell price swing between MIN and MAX affinity, on top of bartering.
     MAX_PRICE_SWING: float = 0.15
+
+
+@dataclass(frozen=True)
+class Controls:
+    """The four keys that walk, north west south east, per keyboard layout.
+
+    Two rows rather than one set holding both, because the letters a layout puts under the
+    walking hand are the letters another layout wants for something else: accepting all of
+    them would spend Q on a sidestep for everybody. Which row is live is a preference
+    (`settings.azerty`), toggled in the pause menu.
+    """
+
+    QWERTY: tuple = (pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d)
+    AZERTY: tuple = (pygame.K_z, pygame.K_q, pygame.K_s, pygame.K_d)
+
+    # What each row is called on the button and in the help screen.
+    QWERTY_LABEL: str = "W A S D"
+    AZERTY_LABEL: str = "Z Q S D"

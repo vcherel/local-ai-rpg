@@ -50,7 +50,7 @@ from core.constants.combat import (
     weapon_look,
 )
 from core.constants.items import QUEST_COIN_BANDS, Affixes, LootBox, Potions, Quests, Rarity, RarityTier
-from core.constants.player import STAT_LABELS, Affinity, Death, Magic, Milestones, Player, Stats
+from core.constants.player import STAT_LABELS, Affinity, Controls, Death, Magic, Milestones, Player, Stats
 from core.constants.ui import TARGET_FPS, Colors, Fonts, Hyperparameters, Minimap, Music, Screen
 from core.constants.villages import Amends, Board, Notoriety, Raid, Villages
 from core.constants.world import (
@@ -94,6 +94,7 @@ __all__ = [
     "Charge",
     "Colors",
     "Combat",
+    "Controls",
     "Creeper",
     "Crime",
     "CritterKind",

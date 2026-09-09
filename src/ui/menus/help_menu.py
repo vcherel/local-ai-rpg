@@ -1,6 +1,7 @@
 import pygame
 
 import core.constants as c
+from core.settings import move_keys
 from ui import widgets
 from ui.menus.base_menu import HEADER_HEIGHT, BaseMenu
 
@@ -15,10 +16,11 @@ LINE_HEIGHT = 26
 ROW_GAP = 8
 BOTTOM_MARGIN = 46
 
+# `{move}` is filled in with whichever four keys are walking (Keys, in the pause menu), so
+# this list stays the one written record of the key map on either layout.
 CONTROLS = [
-    ("W / Z", "Move forward (aim with mouse)"),
-    ("S", "Move backward"),
-    ("W Z S Space", "Mash to pull free of a bear trap"),
+    ("{move}", "Walk north, west, south and east; the mouse aims"),
+    ("{move}, Space", "Mash to pull free of a bear trap"),
     ("Shift", "Run"),
     ("Left Click", "Use the weapon in hand one (swing it or fire it)"),
     ("Right Click", "Use the weapon in hand two"),
@@ -30,7 +32,7 @@ CONTROLS = [
     ("F", "Equip the last picked-up upgrade"),
     ("G", "Throw or lay the bomb in the bomb slot"),
     ("1", "Swap your two weapons over, hand one to hand two"),
-    ("Q R T Y", "Drink the potion in that quickbar slot"),
+    ("2 3 4 5", "Drink the potion in that quickbar slot"),
     ("E", "In the bag or a shop: equip the best of everything carried"),
     ("S / U", "In a shop: sell every valuable / every unused piece of gear"),
     ("I", "Inventory"),
@@ -52,6 +54,7 @@ class HelpMenu(BaseMenu):
         super().__init__(screen, width=2 * COLUMN_WIDTH + GUTTER + 40, height=HEADER_HEIGHT + 200)
         self._columns = None
         self._key_width = 0
+        self._laid_out_for = None
 
     def handle_event(self, event) -> bool:
         if not self.active:
@@ -70,14 +73,17 @@ class HelpMenu(BaseMenu):
         every control was taller than the screen, so the panel was cut off at the top and the
         bottom; two columns is what makes the whole map fit on any screen the game runs at.
         Done here rather than in __init__ because the fonts are only loaded once the game has
-        started."""
-        if self._columns is not None:
+        started, and again whenever the walking keys change under it."""
+        move = c.Controls.AZERTY_LABEL if move_keys() == c.Controls.AZERTY else c.Controls.QWERTY_LABEL
+        if self._columns is not None and self._laid_out_for == move:
             return
+        self._laid_out_for = move
 
-        self._key_width = max(c.Fonts.heading.size(key)[0] for key, _ in CONTROLS)
+        controls = [(key.format(move=move), description) for key, description in CONTROLS]
+        self._key_width = max(c.Fonts.heading.size(key)[0] for key, _ in controls)
         max_width = COLUMN_WIDTH - self._key_width - COLUMN_GAP
 
-        rows = [(key, widgets.wrap_text(description, c.Fonts.text, max_width)) for key, description in CONTROLS]
+        rows = [(key, widgets.wrap_text(description, c.Fonts.text, max_width)) for key, description in controls]
         heights = [len(lines) * LINE_HEIGHT + ROW_GAP for _, lines in rows]
 
         # Break where the first column has taken up half the total, so neither column is

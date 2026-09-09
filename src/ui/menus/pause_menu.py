@@ -16,19 +16,21 @@ class PauseMenu(BaseMenu):
     toggle_key = pygame.K_p
 
     def __init__(self, screen):
-        super().__init__(screen, width=360, height=360)
+        super().__init__(screen, width=360, height=416)
         self.save_button_rect = None
         self.music_button_rect = None
         self.sound_button_rect = None
+        self.layout_button_rect = None
         self.quit_button_rect = None
 
-    def _button_rects(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect]:
+    def _button_rects(self) -> tuple[pygame.Rect, ...]:
         x = (self.width - BUTTON_WIDTH) // 2
         save = pygame.Rect(x, self.content_top + 8, BUTTON_WIDTH, BUTTON_HEIGHT)
         music = pygame.Rect(x, save.bottom + BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT)
         sound = pygame.Rect(x, music.bottom + BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT)
-        quit_rect = pygame.Rect(x, sound.bottom + BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT)
-        return save, music, sound, quit_rect
+        layout = pygame.Rect(x, sound.bottom + BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT)
+        quit_rect = pygame.Rect(x, layout.bottom + BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT)
+        return save, music, sound, layout, quit_rect
 
     @staticmethod
     def _toggle_music():
@@ -42,6 +44,13 @@ class PauseMenu(BaseMenu):
         `SoundManager.play` reads the preference itself, so nothing here has to reach into
         the mixer."""
         get_settings().toggle("sound")
+        play_sound("pickup")
+
+    @staticmethod
+    def _toggle_layout():
+        """Which four keys walk. A button rather than a key of its own, because the player
+        it is for is the one who has just found that none of the four move them."""
+        get_settings().toggle("azerty")
         play_sound("pickup")
 
     def handle_event(self, event, on_save=None, on_quit=None) -> bool:
@@ -59,11 +68,14 @@ class PauseMenu(BaseMenu):
                     on_save()
                 self.close()
             elif self.music_button_rect and self.music_button_rect.collidepoint(rel):
-                # The two buttons here that do not end the pause: hearing what they did is
-                # the point, and closing the menu on one would hide the label that changed.
+                # The three buttons here that do not end the pause: seeing or hearing what
+                # they did is the point, and closing the menu on one would hide the label
+                # that changed.
                 self._toggle_music()
             elif self.sound_button_rect and self.sound_button_rect.collidepoint(rel):
                 self._toggle_sound()
+            elif self.layout_button_rect and self.layout_button_rect.collidepoint(rel):
+                self._toggle_layout()
             elif self.quit_button_rect and self.quit_button_rect.collidepoint(rel):
                 self.close()
                 if on_quit:
@@ -82,7 +94,13 @@ class PauseMenu(BaseMenu):
         surface = self.create_menu_surface("Paused")
 
         rects = self._button_rects()
-        self.save_button_rect, self.music_button_rect, self.sound_button_rect, self.quit_button_rect = rects
+        (
+            self.save_button_rect,
+            self.music_button_rect,
+            self.sound_button_rect,
+            self.layout_button_rect,
+            self.quit_button_rect,
+        ) = rects
         menu_x, menu_y = self.get_centered_position()
         mouse_x, mouse_y = pygame.mouse.get_pos()
 
@@ -109,6 +127,16 @@ class PauseMenu(BaseMenu):
             c.Fonts.button,
             hovered=sound_hovered,
             text_color=c.Colors.WHITE if sound_on else c.Colors.MUTED,
+        )
+
+        azerty = bool(get_settings().get("azerty"))
+        layout_hovered = self.layout_button_rect.collidepoint(mouse_x - menu_x, mouse_y - menu_y)
+        widgets.draw_button(
+            surface,
+            self.layout_button_rect,
+            f"Keys: {c.Controls.AZERTY_LABEL if azerty else c.Controls.QWERTY_LABEL}",
+            c.Fonts.button,
+            hovered=layout_hovered,
         )
 
         quit_hovered = self.quit_button_rect.collidepoint(mouse_x - menu_x, mouse_y - menu_y)

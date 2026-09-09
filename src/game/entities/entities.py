@@ -16,8 +16,8 @@ class Gait:
     Advanced by the ground actually covered rather than by the clock, which is the whole
     trick: a rooted thing, a monster wading a river, a villager pinned against a wall and a
     corpse all stop animating for free, and nothing needs to be told how fast it is going.
-    One number in (where it is now), one number out (how far through the stride it is,
-    -1 to 1), so the arms, the legs and the bob all read the same walk.
+    One point in (where it is now), one number out (how far through the stride it is,
+    -1 to 1), so the legs and the bob read the same walk.
     """
 
     def __init__(self, x, y):
@@ -437,17 +437,17 @@ def _body_sprite(key, gear):
     if sprite is not None:
         _SPRITE_CACHE.move_to_end(key)
         return sprite
-    size, color, attack_progress, attack_hand, _, arm_swing = key
-    sprite = _paint_body(size, color, attack_progress, attack_hand, gear, arm_swing)
+    size, color, attack_progress, attack_hand, _ = key
+    sprite = _paint_body(size, color, attack_progress, attack_hand, gear)
     _SPRITE_CACHE[key] = sprite
     if len(_SPRITE_CACHE) > _SPRITE_CACHE_MAX:
         _SPRITE_CACHE.popitem(last=False)
     return sprite
 
 
-def _paint_body(size, color, attack_progress, attack_hand, gear, arm_swing):
-    """The drawing itself: the circle, what it is wearing, its two arms wherever the stride
-    and the swing have put them, and whatever each hand holds, all facing up the surface."""
+def _paint_body(size, color, attack_progress, attack_hand, gear):
+    """The drawing itself: the circle, what it is wearing, its two arms wherever the swing
+    has put them, and whatever each hand holds, all facing up the surface."""
     border_thickness = 2
     arm_radius = size // 3.5
     extra_space = arm_radius * 2
@@ -483,15 +483,15 @@ def _paint_body(size, color, attack_progress, attack_hand, gear, arm_swing):
         pygame.draw.circle(char_surf, c.Colors.BLACK, (cx, cy), arm_radius)
         pygame.draw.circle(char_surf, color, (cx, cy), arm_radius - border_thickness)
 
-    # Forward is up in the sprite's own space, so a stride carries one arm up the surface
-    # and the other down it. Opposite arms, like anything that walks on two legs.
+    # The arms hang where they are put: the walk is the bob and nothing else. An arm on a
+    # body this size can carry two or three pixels of stride, which is a nub twitching next
+    # to a weapon sweeping the width of the sprite, and that read as one arm waving rather
+    # than as anybody walking. Only a swing moves an arm.
     left_arm_x = padding + arm_radius + distance_arm
     left_arm_y = arm_y
     if attack_hand == "left":
         left_arm_x += int(attack_progress * 15)
         left_arm_y -= int(attack_progress * 15)
-    else:
-        left_arm_y -= arm_swing
     draw_arm(left_arm_x, left_arm_y)
 
     right_arm_x = base_width + padding - arm_radius - distance_arm
@@ -499,8 +499,6 @@ def _paint_body(size, color, attack_progress, attack_hand, gear, arm_swing):
     if attack_hand == "right":
         right_arm_x -= int(attack_progress * 15)
         right_arm_y -= int(attack_progress * 15)
-    else:
-        right_arm_y += arm_swing
     draw_arm(right_arm_x, right_arm_y)
 
     # The shield is worn on the offhand side of the body rather than held, so it goes on
@@ -535,17 +533,15 @@ def draw_human(
     walk: float = 0.0,
 ):
     """`walk` is how far through the stride this body is (game/entities/entities.py `Gait`):
-    the arms swing fore and aft with it and the whole sprite lifts a little at each step, so
-    a person crossing a field reads as walking rather than sliding. The arm mid attack keeps
-    its swing: what it is doing matters more than where it is in its stride."""
-    # The stride is stepped to whole pixels of arm swing and a swing to a sixteenth of its
-    # arc, so a street of people is a handful of sprites rather than one per body per frame.
-    # Both steps are finer than the animation they carry, and both are what the sprite is
-    # drawn from as well as what it is keyed on: nothing is drawn away from where it was
-    # asked to be, it is asked for in whole steps.
-    arm_swing = round(walk * c.Entities.GAIT_ARM)
+    the whole sprite lifts a little at each step, so a person crossing a field reads as
+    walking rather than sliding. It is the one thing a walk does to the body; the arms hang
+    where they are and only a swing moves one."""
+    # A swing is stepped to a sixteenth of its arc, so a street of people is a handful of
+    # sprites rather than one per body per frame. The step is finer than the animation it
+    # carries, and it is what the sprite is drawn from as well as what it is keyed on:
+    # nothing is drawn away from where it was asked to be, it is asked for in whole steps.
     attack_progress = round(attack_progress * _ATTACK_STEPS) / _ATTACK_STEPS if attack_hand else 0.0
-    key = (size, color, attack_progress, attack_hand, _gear_key(gear), arm_swing)
+    key = (size, color, attack_progress, attack_hand, _gear_key(gear))
     char_surf = _body_sprite(key, gear)
 
     if angle != 0:

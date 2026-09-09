@@ -12,12 +12,18 @@ import json
 import os
 import tempfile
 
+import core.constants as c
+
 PATH = "./saves/settings.json"
 
 DEFAULTS = {
     "music": True,
     # Every sound effect the game makes, apart from the music, which has its own switch.
     "sound": True,
+    # Which keyboard the four walking keys are read off: AZERTY puts Z Q S D under the
+    # hand where QWERTY puts W A S D. Toggled in the pause menu, since a player on the
+    # wrong one cannot walk to a menu that is anywhere else.
+    "azerty": False,
     # Hold every nearby villager's vision cone up instead of only showing it over something
     # worth stealing (V in game).
     "cones": False,
@@ -76,3 +82,12 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
     return _settings
+
+
+def move_keys() -> tuple:
+    """The four walking keys, north west south east, off the layout the player picked.
+
+    One reader for everything that has to know which keys walk: the movement itself and
+    what the help screen says are the same answer.
+    """
+    return c.Controls.AZERTY if get_settings().get("azerty") else c.Controls.QWERTY

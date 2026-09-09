@@ -14,6 +14,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.particles import get_particles
 from core.screen_fx import get_vignette
+from core.settings import move_keys
 from core.text_fx import draw_outlined_text
 from game.entities.entities import Entity, step_along
 from game.entities.items import (
@@ -237,7 +238,7 @@ class Player(PlayerBonuses, Entity):
         reach_y = self.y - math.cos(self.orientation) * distance
         return (reach_x, reach_y)
 
-    def move(self, camera_pos, dt, blocked=None, in_water=False):
+    def move(self, dt, blocked=None, in_water=False):
         keys = pygame.key.get_pressed()
 
         self._update_guard(keys, dt)
@@ -253,28 +254,27 @@ class Player(PlayerBonuses, Entity):
         if in_water:
             actual_speed *= self.stats.swim_multiplier()
 
-        forward = keys[pygame.K_z] or keys[pygame.K_w]
+        # Walking is in world space and has nothing to do with where the mouse is: the four
+        # keys are north, west, south and east, off whichever layout the player picked in
+        # the pause menu.
+        north, west, south, east = move_keys()
+        dx = float(keys[east]) - float(keys[west])
+        dy = float(keys[south]) - float(keys[north])
         # Caught in a bear trap: still aiming, still swinging, still being hit, just not
         # going anywhere until the jaws let go.
-        moving = (forward or keys[pygame.K_s]) and not self.rooted
+        moving = bool(dx or dy) and not self.rooted
 
         if moving:
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-
-            world_mouse_x = mouse_x - c.Screen.ORIGIN_X + camera_pos[0]
-            world_mouse_y = mouse_y - c.Screen.ORIGIN_Y + camera_pos[1]
-
-            dx = world_mouse_x - self.x
-            dy = world_mouse_y - self.y
+            # A diagonal is a direction, not two steps: the pair is normalised so holding
+            # two keys is never faster than holding one.
             dist = math.hypot(dx, dy)
+            dx /= dist
+            dy /= dist
 
-            if dist != 0:
-                dx /= dist
-                dy /= dist
-
-            speed = actual_speed if forward else -actual_speed / 1.5
             move_factor = dt * c.TARGET_FPS / 1000.0
-            step_along(self, dx * speed * move_factor, dy * speed * move_factor, blocked, c.Player.SIZE / 2)
+            step_along(
+                self, dx * actual_speed * move_factor, dy * actual_speed * move_factor, blocked, c.Player.SIZE / 2
+            )
 
             # Running is what trains speed; plain walking does not. Swimming is trained by
             # the only thing anyone ever learns it from: being in the water.

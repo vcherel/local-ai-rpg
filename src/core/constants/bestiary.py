@@ -172,17 +172,19 @@ class Entities:
     # The walk cycle (game/entities/entities.py `Gait`), shared by the player, the villagers,
     # the monsters and the animals. Advanced by the ground actually covered rather than by
     # the clock, so a slowed, rooted or dead-stopped thing never moonwalks: one full cycle
-    # per GAIT_STRIDE pixels, arms and legs carried GAIT_ARM/GAIT_LEG at the ends of it, the
-    # body lifting GAIT_BOB off the ground at each stride. Movement under GAIT_DEADZONE a
-    # frame is standing still, and the swing eases in and out at GAIT_EASE rather than
-    # snapping, so stopping settles instead of freezing mid-step.
+    # per GAIT_STRIDE pixels, legs carried GAIT_LEG at the ends of it, the body lifting
+    # GAIT_BOB off the ground at each stride. Movement under GAIT_DEADZONE a frame is
+    # standing still, and the cycle eases in and out at GAIT_EASE rather than snapping, so
+    # stopping settles instead of freezing mid-step.
     # A stride is long and the amplitudes are small on purpose: a short stride at a high
     # amplitude is read as shaking rather than as walking, since the whole sprite is only a
     # few dozen pixels across and every offset lands on a whole pixel when it is blitted.
+    # A humanoid's arms are exempt entirely: an arm on a body this size can carry two or
+    # three pixels, which next to a weapon sweeping the sprite's whole width reads as one
+    # arm waving rather than as anybody walking. What a person's walk is, is the bob.
     GAIT_STRIDE: float = 64.0
     GAIT_DEADZONE: float = 0.35
     GAIT_EASE: float = 0.12
-    GAIT_ARM: float = 3.0
     GAIT_BOB: float = 1.2
     GAIT_LEAN_DEG: float = 1.6
     # How far a quadruped's feet carry fore and aft over a stride, in fractions of its own

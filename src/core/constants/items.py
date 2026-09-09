@@ -127,10 +127,10 @@ class Potions:
         "stoneskin": (172, 172, 188),
     }
 
-    # Potions the player can drink straight from the HUD. The number row went to the four
-    # weapon positions, so the quickbar sits on the letters under the movement hand instead.
+    # Potions the player can drink straight from the HUD. They sit on the number row beside
+    # the hand swap, since the letters around the movement block are the movement block.
     QUICK_SLOTS: int = 4
-    QUICK_KEYS: tuple = ("q", "r", "t", "y")
+    QUICK_KEYS: tuple = ("2", "3", "4", "5")
 
 
 @dataclass(frozen=True)
