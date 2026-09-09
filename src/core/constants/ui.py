@@ -118,6 +118,12 @@ class Colors:
 
 @dataclass(frozen=True)
 class Hyperparameters:
+    # The one place the weights are named. The game plays without them (llm/offline.py);
+    # `fetch-model` puts them here and `doctor` reports on what it finds.
+    MODEL_PATH: str = "models/Qwen2.5-7B-Instruct-Q2_K.gguf"
+    MODEL_URL: str = (
+        "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q2_K.gguf"
+    )
     GPU_LAYERS: int = -1
     CONTEXT_SIZE: int = 8192
     MAX_TOKENS: int = 200

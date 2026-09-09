@@ -8,7 +8,9 @@ A 2D open-world RPG where all AI runs locally. NPCs generate dialogue via an LLM
 uv run game
 ```
 
-Requires CUDA drivers and the model at `models/Qwen2.5-7B-Instruct-Q2_K.gguf`. See README for setup.
+Plays with no model at all (`llm/offline.py`). AI dialogue wants CUDA drivers, a hand built
+`llama-cpp-python` and the model at `models/Qwen2.5-7B-Instruct-Q2_K.gguf`: `uv run fetch-model`
+downloads it, `uv run doctor` says what a machine is missing. See README for setup.
 
 ## Design notes
 
@@ -32,7 +34,9 @@ How a change here is checked, all headless and none of them loading the model. `
 - `scripts/verify/shots.py`: the README's pictures, the same harness posed into six scenes (village, a conversation, a fight, a boss rising, a walked cave, the bag); not a check, the one way the front page is regenerated
 
 ### rpg_ai
-- `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session
+- `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session; the loading screen waits for the model, or for the music pads when there is none
+- `src/rpg_ai/fetch_model.py`: `uv run fetch-model`, the only thing that downloads the weights into `models/`, resumable, with a progress bar
+- `src/rpg_ai/doctor.py`: `uv run doctor`, what this machine can run (python, pygame, GPU and VRAM, whether the binding reaches the GPU, the model file) and the exact command for whatever it cannot
 
 ### game
 - `src/game/game.py`: `Game`, the main loop, input handling and state orchestration; `_build_action_tables` holds the three tables a press or a click is answered from (`key_actions`, `dock_actions`, `interact_actions`), `_interact` is the one E (the prompt itself is `interactions.py`), `_swap_hands` is key 1 and `_use_bomb` is G, `_sweep_loot` the loot magnet, `save_data` the one path to disk, `_respawn` (with `_scatter_death_drop`, the coins and the things a death leaves on the ground) and `_sleep_until_dawn` the two things that move the player without walking, `_music_context` what the score is told the world is doing, `_pay_blood_price` (K) what buying a turned settlement back costs, `_read_board`/`_take_notice` the notice board and the quest it hands to whoever posted it
@@ -86,7 +90,8 @@ How a change here is checked, all headless and none of them loading the model. `
 - `src/game/entities/stats.py`: `Stats`, use-based progression (xp, training, derived bonuses, magic and swimming), queueing `pending_levelups`
 
 ### llm
-- `src/llm/llm_request_queue.py`: `LLMRequestQueue`, all LLM calls serialised onto a worker thread, interactive categories first; `generate_response_queued` / `generate_response_stream_queued`, `poll=True` for the main thread, `llm_busy()`
+- `src/llm/llm_request_queue.py`: `LLMRequestQueue`, all LLM calls serialised onto a worker thread, interactive categories first; `generate_response_queued` / `generate_response_stream_queued`, `poll=True` for the main thread, `llm_busy()`; `model_available()` is the one answer to whether there is a model at all, and every public call falls through to `offline.py` when there is not
+- `src/llm/offline.py`: what the game answers with when no model is loaded, one local answer per LLM category (`ANSWERS`), plus the banks the names, the dialogue and the lore are composed from
 - `src/llm/dialogue_manager.py`: `DialogueManager`, the NPC dialogue window: streaming replies, the merchant Shop button and purse, end-of-conversation detection, quest analysis on close
 - `src/llm/quest_system.py`: `QuestSystem`, conversation analysis into quests, one `_build_*` per type and one completion hook per type, reward coins clamped into `QUEST_COIN_BANDS`
 - `src/llm/merchant_system.py`: `generate_shop_inventories`, one batched call stocking every merchant in a town, with a local fallback per shop
@@ -143,6 +148,7 @@ How a change here is checked, all headless and none of them loading the model. `
 The short version. `docs/design/` explains each of these.
 
 - The LLM runs on a background thread via `LLMRequestQueue`. Never call `llama_cpp` directly from the main thread.
+- The model is optional and the game is whole without it. `llama-cpp-python` is not a dependency (the wheel PyPI resolves to is CPU only and fails silently) and neither are the weights: `model_available()` decides once per session, and with no model every call in the queue is answered by `llm/offline.py`, one local answer per category. A new LLM call is a new row there, not a new place that assumes a model.
 - A settlement is asked of the model only once the player walks up to it (`WorldStreaming._prepare_settlements_near`, `Villages.PREPARE_DISTANCE`): its name, its shops' stock and the next villager's name are prepared there and nowhere else. Generating a village is not a reason to spend a call on it, and neither is loading a save.
 - The world's lore is guarded rather than trusted (`parse_world_context`): an answer with no sentence in it is asked again, and then shown as nothing at all. Only lore the model actually wrote is written to the save; `World.FALLBACK_CONTEXT` is what the other prompts quote when there is none, and it is never displayed.
 - A frame builds at most `World.CHUNK_LOADS_PER_FRAME` steps of chunk, nearest first, and stops starting them once it has spent `World.CHUNK_BUILD_BUDGET_MS`, except on ground the player could walk onto (`World.CHUNK_URGENT_RADIUS`). A chunk is two steps, its ground and then its wilderness, because a settlement and a wood in one update is what a border crossing is felt as. `prepare` is the exception on both counts, because nothing is on screen yet.

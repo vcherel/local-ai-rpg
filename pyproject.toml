@@ -8,12 +8,18 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "pygame>=2.6.1",
-    "llama-cpp-python>=0.3.16",
     "numpy>=2.0",
 ]
 
+# llama-cpp-python is deliberately not listed, as a dependency or as an extra. It has to be
+# compiled against the local CUDA toolkit, and the wheel PyPI would resolve to is CPU only
+# and fails silently: it loads, it answers, and it is too slow to hold a conversation with.
+# So it is installed by hand (see the README) and the game plays without it, with
+# `llm/offline.py` writing the dialogue.
 [project.scripts]
 game = "rpg_ai.__main__:main"
+doctor = "rpg_ai.doctor:main"
+fetch-model = "rpg_ai.fetch_model:main"
 
 [dependency-groups]
 dev = [

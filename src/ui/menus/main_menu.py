@@ -5,6 +5,7 @@ import sys
 import pygame
 
 import core.constants as c
+from llm.llm_request_queue import model_available
 from ui import widgets
 from ui.menus.menu_scene import MenuScene
 
@@ -81,6 +82,20 @@ class MainMenu:
 
         self.draw_button(self.new_game_button, "New Game", mouse_pos, pressed)
         self.draw_button(self.continue_button, "Continue", mouse_pos, pressed)
+        self._draw_mode()
+
+    def _draw_mode(self):
+        """Which of the two ways this install is running, under the buttons. Playing with no
+        weights is a supported mode rather than a broken one, so it says what it is and what
+        turns it on instead of leaving the player to wonder why nobody improvises."""
+        if model_available():
+            line = "Local model loaded"
+            color = c.Colors.ACCENT
+        else:
+            line = "No model: villagers speak from a written bank. Run 'uv run fetch-model' for AI dialogue."
+            color = c.Colors.MUTED
+        text = c.Fonts.small.render(line, True, color)
+        self.screen.blit(text, ((c.Screen.WIDTH - text.get_width()) // 2, self.continue_button.bottom + 28))
 
 
 def run_main_menu(screen, clock) -> str:

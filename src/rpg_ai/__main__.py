@@ -8,22 +8,30 @@ from core.audio import get_audio
 from core.music import get_music
 from core.save import SaveSystem
 from game.game import Game
-from llm.llm_request_queue import get_llm_queue
+from llm.llm_request_queue import get_llm_queue, model_available
 from ui.loading_indicator import LoadingIndicator
 from ui.menus.main_menu import run_main_menu
 
 
 def run_loading_screen(screen, clock):
-    """Load the LLM model on a background thread while drawing a spinner.
+    """Draw a spinner until the session's slow start-up work is done.
 
-    Constructing the Llama object pulls the 7B model into VRAM and blocks for
-    several seconds; doing it on a worker thread lets the main thread keep the
-    window responsive instead of showing a frozen void.
+    With a model, that is the Llama object pulling the 7B into VRAM, which blocks for
+    several seconds; doing it on a worker thread lets the main thread keep the window
+    responsive instead of showing a frozen void. Without one there is still the music to
+    wait for: the pads are rendered on a thread and this is the one screen with nothing on
+    it to stutter, so an install with no weights waits out the few hundred milliseconds
+    here rather than under the live village behind the title.
     """
     ready = threading.Event()
 
+    if model_available():
+        label, work = "Loading AI model...", get_llm_queue
+    else:
+        label, work = "Preparing...", get_music().await_pads
+
     def load():
-        get_llm_queue()
+        work()
         ready.set()
 
     threading.Thread(target=load, daemon=True).start()
@@ -43,7 +51,7 @@ def run_loading_screen(screen, clock):
         screen.fill(c.Colors.MENU_BACKGROUND)
         indicator.draw_spinner(18, c.Colors.ACCENT)
 
-        text = c.Fonts.title.render("Loading AI model...", True, c.Colors.WHITE)
+        text = c.Fonts.title.render(label, True, c.Colors.WHITE)
         screen.blit(text, (cx - text.get_width() // 2, cy + 30))
 
         pygame.display.flip()

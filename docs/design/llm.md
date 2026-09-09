@@ -3,6 +3,20 @@
 The model runs on a background thread via `LLMRequestQueue`. Never call `llama_cpp` directly from
 the main thread.
 
+The model is optional. `llama-cpp-python` has to be compiled against the local CUDA toolkit and
+the weights are three gigabytes, which between them are more than someone who only wants to see
+the game will do, so neither is a dependency: `model_available()` answers once per session (the
+binding importable, the file at `Hyperparameters.MODEL_PATH` on disk) and with no model every
+public call in the queue is served by `llm/offline.py` instead. That module is one local answer
+per category rather than a branch at each of the nine call sites, and the categories whose
+failure the game already survives (a quest analysis that found nothing, a shop the model did not
+stock, a death taunt) answer with an empty string and fall through to the fallbacks written for a
+model that answered badly. What offline mode has to write itself is what the game cannot do
+without: the greeting and the reply in the dialogue box, an NPC's name, a settlement's name, the
+world's opening lore. `fetch-model` is the only thing that downloads the weights and `doctor`
+is what explains a machine that has them but cannot use them, both deliberately outside the game
+so nothing large or slow ever happens because somebody pressed play.
+
 Calls are served in priority order: the categories in `INTERACTIVE_CATEGORIES` (the dialogue the
 player is waiting on) go ahead of background work, so quest analysis queued as one conversation
 closes does not hold up the next NPC's greeting. Ties break on arrival.

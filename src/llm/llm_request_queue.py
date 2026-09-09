@@ -1,14 +1,15 @@
+import importlib.util
 import itertools
+import os
 import queue
 import re
 import threading
 import time
 from queue import PriorityQueue, Queue
 
-from llama_cpp import Llama
-
 import core.constants as c
 from core import llm_log
+from llm import offline
 
 CHAR_FILTER = str.maketrans("", "", '"«»')
 
@@ -179,14 +180,34 @@ llm = None
 _init_lock = threading.Lock()
 
 
+_available = None
+
+
+def model_available() -> bool:
+    """Whether this install can run a model at all: the binding built and the weights on
+    disk. False is a supported way to play (`llm/offline.py`), not an error, so nothing
+    here raises and nothing prints; `doctor` is what explains what is missing.
+
+    Answered once and kept: this is read on the frame path (`get_llm_tasks`), and neither
+    the package nor the weights arrive part way through a session."""
+    global _available
+    if _available is None:
+        _available = importlib.util.find_spec("llama_cpp") is not None and os.path.isfile(c.Hyperparameters.MODEL_PATH)
+    return _available
+
+
 def get_llm_queue():
     global llm_queue, llm
     if llm_queue is None:
         with _init_lock:
             # Double-check pattern
             if llm_queue is None:  # double-checked after acquiring the lock
+                # Imported here rather than at the top of the module: llama-cpp-python is an
+                # optional dependency, and a clone without it still plays.
+                from llama_cpp import Llama
+
                 llm = Llama(
-                    model_path="./models/Qwen2.5-7B-Instruct-Q2_K.gguf",
+                    model_path=c.Hyperparameters.MODEL_PATH,
                     n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
                     verbose=False,
                     n_ctx=c.Hyperparameters.CONTEXT_SIZE,
@@ -201,6 +222,8 @@ def get_llm_queue():
 
 
 def get_llm_tasks():
+    if not model_available():
+        return []
     return get_llm_queue().get_active_tasks()
 
 
@@ -213,10 +236,15 @@ def llm_busy() -> bool:
 
 
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
+    if not model_available():
+        return offline.answer(log, prompt, system_prompt)
     return get_llm_queue().generate_response(prompt, system_prompt, log, max_tokens=max_tokens, raw=raw)
 
 
 def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None, stop=None, poll=False):
+    if not model_available():
+        yield from offline.stream(log, prompt, system_prompt)
+        return
     yield from get_llm_queue().generate_response_stream(
         prompt, system_prompt, log, max_tokens=max_tokens, stop=stop, poll=poll
     )

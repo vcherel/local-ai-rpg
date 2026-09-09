@@ -23,6 +23,7 @@ from __future__ import annotations
 import queue
 import random
 import threading
+import time
 
 import numpy as np
 import pygame
@@ -234,6 +235,16 @@ class MusicPlayer:
     def ready(self) -> bool:
         """Whether anything at all can be played yet, which is what the menus ask."""
         return bool(self._pads)
+
+    def await_pads(self, timeout_s: float = 20.0):
+        """Block until every pad asked for has been rendered, or until the timeout.
+
+        Only the loading screen calls this, and only when there is no model to wait for
+        instead: the worker is doing array arithmetic in Python, and the frame it would be
+        doing it under is the live village behind the title screen."""
+        deadline = time.monotonic() + timeout_s
+        while len(self._pads) < len(self._wanted) and time.monotonic() < deadline:
+            time.sleep(0.02)
 
     # ------------------------------------------------------------------ playing
 
