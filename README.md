@@ -9,6 +9,7 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
 <img src="https://img.shields.io/badge/engine-pygame-1f8b4c" alt="pygame">
 <img src="https://img.shields.io/badge/LLM-Qwen2.5--7B%20(local)-8a3ffc" alt="Local LLM">
+<a href="https://hub.docker.com/r/vcherel/rpg-ai"><img src="https://img.shields.io/badge/docker-vcherel%2Frpg--ai-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
 
 <img src="assets/village.png" alt="Screenshot" width="100%">
@@ -42,7 +43,28 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 
 ## Play it
 
-Two commands, any OS, no compiler and nothing to download but the repo.
+Two ways in, both of them the whole game with the AI turned off: villagers speak from a
+written bank of lines, and quests come off the notice boards. Everything else, the world,
+the fighting, the loot, is the real thing.
+
+### One file, nothing installed
+
+For any Linux desktop with Docker. Download **[play.sh](https://raw.githubusercontent.com/vcherel/local-ai-rpg/main/scripts/container/play.sh)**
+and run it:
+
+```bash
+chmod +x play.sh
+./play.sh
+```
+
+That is the whole thing. It pulls [`vcherel/rpg-ai`](https://hub.docker.com/r/vcherel/rpg-ai)
+the first time, once and never again, then starts the game in a window. Saves go in a
+`saves/` folder beside the script, so deleting the folder leaves nothing behind. No Python,
+no compiler, no weights.
+
+### From the source
+
+Two commands, any OS, nothing to download but the repo.
 
 ```bash
 git clone https://github.com/vcherel/local-ai-rpg.git
@@ -53,10 +75,6 @@ uv run game
 
 (`uv` is the Python package manager this uses. It installs its own Python:
 `curl -LsSf https://astral.sh/uv/install.sh | sh`.)
-
-That gives you the whole game with the AI turned off: villagers speak from a written bank of
-lines, and quests come off the notice boards. Everything else, the world, the fighting, the
-loot, is the real thing.
 
 ## Turn the AI on
 

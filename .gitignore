@@ -8,3 +8,4 @@ saves
 /stats*
 logs
 dist/
+.env

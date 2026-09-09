@@ -37,8 +37,9 @@ How a change here is checked, all headless and none of them loading the model. `
 How the game is handed to somebody who will not install it. Offline only: no CUDA, no llama-cpp-python, no weights.
 - `Dockerfile`: the image; the locked pygame and numpy through `uv sync`, the project itself never installed (its wheel carries only `rpg_ai`) but run off `src` on `PYTHONPATH`, plus the X and font packages SDL loads at runtime
 - `.dockerignore`: what never goes in (the weights, the saves, the dialogue logs, the README's screenshots)
-- `scripts/container/build.sh`: builds the image and writes `dist/`, the archive and the run script to send
-- `scripts/container/play.sh`: what the other machine runs: the X socket and its cookie, the pulse socket if there is one, and a saves directory outside the container
+- `scripts/container/build.sh`: builds the image, and nothing else: what is handed out is the Docker Hub tag, never a file
+- `scripts/container/push.sh`: publishes it to `vcherel/rpg-ai` (`:offline` and `:latest`), logging in with the token in `.env`
+- `scripts/container/play.sh`: the one file another machine needs: it pulls the image the first time, then the X socket and its cookie, the pulse socket if there is one, and a saves directory outside the container
 
 ### rpg_ai
 - `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session; the loading screen waits for the model, or for the music pads when there is none
