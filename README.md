@@ -9,7 +9,6 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
 <img src="https://img.shields.io/badge/engine-pygame-1f8b4c" alt="pygame">
 <img src="https://img.shields.io/badge/LLM-Qwen2.5--7B%20(local)-8a3ffc" alt="Local LLM">
-<a href="https://hub.docker.com/r/vcherel/rpg-ai"><img src="https://img.shields.io/badge/docker-vcherel%2Frpg--ai-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
 
 <img src="assets/village.png" alt="Screenshot" width="100%">
@@ -43,46 +42,23 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 
 ## Play it
 
-Two ways in, both of them the whole game with the AI turned off: villagers speak from a
-written bank of lines, and quests come off the notice boards. Everything else, the world,
-the fighting, the loot, is the real thing.
+The game with the AI on, which is the way it is meant to be played: villagers answer what
+you actually type, and quests are written out of the conversation. It needs Linux, an NVIDIA
+GPU with 4GB of VRAM or more (a GTX 1650 is enough), and CUDA drivers. Setup is five steps
+and takes about ten minutes, most of it a compile and a download.
 
-### One file, nothing installed
+**1. The repo**
 
-For any Linux desktop with Docker. Download **[play.sh](https://raw.githubusercontent.com/vcherel/local-ai-rpg/main/scripts/container/play.sh)**
-and run it:
-
-```bash
-chmod +x play.sh
-./play.sh
-```
-
-That is the whole thing. It pulls [`vcherel/rpg-ai`](https://hub.docker.com/r/vcherel/rpg-ai)
-the first time, once and never again, then starts the game in a window. Saves go in a
-`saves/` folder beside the script, so deleting the folder leaves nothing behind. No Python,
-no compiler, no weights.
-
-### From the source
-
-Two commands, any OS, nothing to download but the repo.
+`uv` is the Python package manager this uses, and it installs its own Python:
+`curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
 ```bash
 git clone https://github.com/vcherel/local-ai-rpg.git
 cd local-ai-rpg
 uv sync
-uv run game
 ```
 
-(`uv` is the Python package manager this uses. It installs its own Python:
-`curl -LsSf https://astral.sh/uv/install.sh | sh`.)
-
-## Turn the AI on
-
-For villagers who actually answer what you type, and quests written out of the conversation,
-the game needs a model on your own machine. Linux, an NVIDIA GPU with 4GB of VRAM or more (a
-GTX 1650 is enough), and CUDA drivers.
-
-**1. System packages**
+**2. System packages**
 
 A compiler and the maths libraries, needed to build the piece that runs the model.
 
@@ -91,7 +67,7 @@ sudo apt update
 sudo apt install -y build-essential cmake python3.12-dev libomp-dev libopenblas-dev
 ```
 
-**2. llama-cpp-python, built for your GPU**
+**3. llama-cpp-python, built for your GPU**
 
 This is what runs the model. The version on PyPI is CPU only and fails quietly, slow and
 never touching the card, so it is compiled here instead, which takes a few minutes.
@@ -103,7 +79,7 @@ CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE
 uv pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
-**3. The model** (~2.9GB)
+**4. The model** (~2.9GB)
 
 The weights themselves, one file, downloaded into `models/`.
 
@@ -111,7 +87,7 @@ The weights themselves, one file, downloaded into `models/`.
 uv run fetch-model
 ```
 
-**4. Check it**
+**5. Check it**
 
 Says what this machine has, and the exact command for whatever is missing. The failures
 worth catching are a build that never reaches the GPU, a model too big for the VRAM and a
@@ -129,7 +105,27 @@ uv run doctor
 [  ok  ] Model: models/Qwen2.5-7B-Instruct-Q2_K.gguf, 2.8GB
 ```
 
-Then `uv run game` as before. The title screen says which of the two modes you are in.
+Then play:
+
+```bash
+uv run game
+```
+
+The title screen says whether the model is loaded.
+
+## Play it without the AI
+
+No GPU, no CUDA, Windows or a Mac: the game runs anywhere Python does, and it is the whole
+game with the AI turned off. Villagers speak from a written bank of lines and quests come off
+the notice boards. Everything else, the world, the fighting, the loot, is the real thing.
+Skip every step above but the first, and run it:
+
+```bash
+git clone https://github.com/vcherel/local-ai-rpg.git
+cd local-ai-rpg
+uv sync
+uv run game
+```
 
 ## The model
 
