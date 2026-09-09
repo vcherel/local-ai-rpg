@@ -10,7 +10,6 @@ the two tables are the before and after.
 import argparse
 import os
 import sys
-import traceback
 from collections import Counter
 from pathlib import Path
 
@@ -54,8 +53,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:
-        traceback.print_exc()
-        sys.exit(1)
+    sys.exit(main())

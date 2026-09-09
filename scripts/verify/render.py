@@ -14,7 +14,6 @@ framed on the same ground when the spawn point itself moves for an unrelated rea
 
 import argparse
 import sys
-import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -68,8 +67,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:
-        traceback.print_exc()
-        sys.exit(1)
+    sys.exit(main())
