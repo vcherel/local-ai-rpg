@@ -126,6 +126,17 @@ class Hyperparameters:
     )
     GPU_LAYERS: int = -1
     CONTEXT_SIZE: int = 8192
+    # What a card too small for the two above is cut back to, and how much of it is left
+    # alone for the compute buffers and the fragmentation between them (`llm/fit.py`).
+    # A short conversation still reads as a conversation; an abort mid-village does not.
+    # The reserve is on top of an overestimate and not beside one: the whole file is
+    # counted as going onto the card when some of it never does (170MB of a Q2_K 7B stays
+    # in host memory), so a number near what the compute buffers actually measure leaves
+    # the slack that overestimate already provides, rather than doubling it and talking a
+    # card that fits out of a context it would have run.
+    MIN_CONTEXT_SIZE: int = 2048
+    CONTEXT_STEP: int = 1024
+    VRAM_RESERVE_MB: int = 256
     MAX_TOKENS: int = 200
     # NPC replies are asked to be one short sentence; capping them keeps a rambling
     # answer from outgrowing the dialogue box and from stalling the queue for everyone.

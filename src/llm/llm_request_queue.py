@@ -9,7 +9,7 @@ from queue import PriorityQueue, Queue
 
 import core.constants as c
 from core import llm_log
-from llm import offline
+from llm import fit, offline, preflight
 
 CHAR_FILTER = str.maketrans("", "", '"«»')
 
@@ -196,14 +196,50 @@ def model_available() -> bool:
     return _available
 
 
+def _load_model(Llama):
+    """The model, on the largest settings this card takes, or None if it takes none.
+
+    The settings are worked out rather than tried out (`llm/fit.py`): a launch may not
+    spend a model load proving that a model loads. The rungs below the first are walked
+    only by a machine whose load actually refused for room, which is a few seconds of
+    allocation that was going to fail either way, and never happens on a card with space.
+    """
+    rungs = fit.ladder()
+    for step, loading in enumerate(rungs):
+        try:
+            model = Llama(
+                model_path=c.Hyperparameters.MODEL_PATH,
+                n_gpu_layers=loading.n_gpu_layers,
+                verbose=False,
+                n_ctx=loading.n_ctx,
+                flash_attn=True,
+                use_mlock=True,
+                n_threads=8,
+                seed=int(time.time() * 1000) % (2**31),
+            )
+        except Exception as error:
+            if step + 1 < len(rungs) and preflight.out_of_memory(str(error)):
+                continue
+            print(f"The model would not load: {error}")
+            print("Playing offline. Run `uv run doctor` for what this machine is missing.")
+            return None
+        if step:
+            print(f"Sizing the model to this card: {loading.note}.")
+        return model
+    return None
+
+
 def get_llm_queue():
     """The queue, or None when the weights would not load.
 
     A refused load is a session that plays from the written bank, not a session that ends:
     `model_available()` is answered False from here on, so every call falls through to
-    `offline.py` exactly as a clone with no weights does. What it cannot cover is the card
-    aborting mid-generation, which is a C abort() and takes the process with it whatever
-    this does; `uv run doctor` asks for a token up front to catch that one instead.
+    `offline.py` exactly as a clone with no weights does.
+
+    The card aborting mid-generation cannot be caught: it is a C abort() and takes this
+    process with it whatever Python does. What can be known about it beforehand costs
+    nothing to ask (`preflight.blocking_warning`), so it is asked here, and a build that
+    was compiled for somebody else's GPU never gets to load at all.
     """
     global llm_queue, llm, _available
     if llm_queue is None:
@@ -214,20 +250,17 @@ def get_llm_queue():
                 # optional dependency, and a clone without it still plays.
                 from llama_cpp import Llama
 
-                try:
-                    llm = Llama(
-                        model_path=c.Hyperparameters.MODEL_PATH,
-                        n_gpu_layers=c.Hyperparameters.GPU_LAYERS,
-                        verbose=False,
-                        n_ctx=c.Hyperparameters.CONTEXT_SIZE,
-                        flash_attn=True,
-                        use_mlock=True,
-                        n_threads=8,
-                        seed=int(time.time() * 1000) % (2**31),
-                    )
-                except Exception as error:
-                    print(f"The model would not load: {error}")
-                    print("Playing offline. Run `uv run doctor` for what this machine is missing.")
+                warning = preflight.blocking_warning()
+                if warning:
+                    print(f"This machine will not generate: {warning}")
+                    said = preflight.advice(warning)
+                    print(said if said else "Run `uv run doctor` for what this machine is missing.")
+                    print("Playing offline: villagers speak from the written bank.")
+                    _available = False
+                    return None
+
+                llm = _load_model(Llama)
+                if llm is None:
                     _available = False
                     return None
                 llm_queue = LLMRequestQueue()

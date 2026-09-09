@@ -100,10 +100,19 @@ uv run doctor
 ```
 
 ```
-[  ok  ] GPU: NVIDIA GeForce GTX 1650, 4096 MiB
+[  ok  ] GPU: NVIDIA GeForce GTX 1650, 4096 MiB, compute 7.5
 [  ok  ] llama-cpp-python: 0.3.31, GPU offload available
+[  ok  ] Build target: compiled for this card (7.5)
 [  ok  ] Model: models/Qwen2.5-7B-Instruct-Q2_K.gguf, 2.8GB
+[  ok  ] Room: 3706 MiB free, 2876 of weights and 448 of KV cache for 8192
+[  ok  ] Generation: the model answered, 8192 of context
 ```
+
+A `Build target` line naming a card other than yours is the one failure worth knowing by
+sight: rebuild step 3 and it goes away. The game checks that one itself at every launch,
+since it costs nothing, and plays offline rather than dying on it. `Room` needs nothing
+doing either: a card without space for the whole context is given a shorter one and the
+game says so as it starts.
 
 Then play:
 

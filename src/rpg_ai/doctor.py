@@ -4,57 +4,23 @@ The failures worth a script are the quiet ones. A CPU-only build of llama-cpp-py
 and answers and is merely too slow to talk to; a model that half fits VRAM is unusable while
 looking fine on paper; a build compiled for another card passes every check that does not
 run a kernel and then aborts on the first token. Each of those is a line here rather than an
-evening, the last one because the report asks for a token itself.
+evening: the card is measured against the model before anything is loaded, the build is
+asked which GPUs it carries kernels for, and last of all a token is asked for in a
+subprocess, since that answer is the only conclusive one.
+
+The verdict of that last check is what the game reads too (`llm/preflight.py`), so running
+this report is also how a machine that has been fixed says so.
 """
 
-import contextlib
 import importlib.util
 import os
 import shutil
-import subprocess
 import sys
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 import core.constants as c
-
-# `native` rather than a number: a build carrying one card's cubins and no other loads,
-# allocates, reports offload available and then aborts on the first kernel launch, which is
-# a healthy-looking install that cannot answer. nvcc reads the card that is in the machine,
-# so the command is copied rather than edited. Only a CUDA older than 11.5 needs the number,
-# which is why `check_gpu` reads it off the card and `build_hint` prints it underneath.
-BUILD_COMMAND = (
-    'CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc '
-    '-DCMAKE_CUDA_ARCHITECTURES={arch}" uv pip install llama-cpp-python --force-reinstall --no-cache-dir'
-)
-
-# What nvidia-smi said this card's compute capability is, once anything has asked.
-_compute_cap = ""
-
-
-def build_hint() -> str:
-    hint = BUILD_COMMAND.format(arch="native")
-    if _compute_cap:
-        hint += f"\n        (`native` is this card's {_compute_cap}. A CUDA older than 11.5 wants that number instead.)"
-    return hint
-
-
-# One load and one token, on the settings the game itself uses. A CUDA failure is an abort()
-# from C: it cannot be caught, only survived by not being in the process it kills.
-PROBE = """
-import sys
-from llama_cpp import Llama
-
-llm = Llama(
-    model_path=sys.argv[1],
-    n_gpu_layers=int(sys.argv[2]),
-    n_ctx=int(sys.argv[3]),
-    flash_attn=True,
-    verbose=False,
-)
-llm("Hi", max_tokens=1)
-"""
-PROBE_TIMEOUT_S = 300
+from llm import fit, preflight
 
 OK = "  ok  "
 WARN = " warn "
@@ -83,73 +49,51 @@ def check_pygame():
         line(OK, "pygame", pygame.version.ver)
 
 
-def _smi(fields: str) -> str | None:
-    """One nvidia-smi query, or None if it would not answer."""
-    try:
-        done = subprocess.run(
-            ["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (subprocess.SubprocessError, OSError):
-        return None
-    return done.stdout.strip() if done.returncode == 0 else None
-
-
 def check_gpu():
     """What the driver says is here. No GPU is not a failure: it is the slow mode."""
     if shutil.which("nvidia-smi") is None:
         line(WARN, "GPU", "no nvidia-smi", "Without an NVIDIA GPU the model runs on the CPU, far slower.")
         return
-    global _compute_cap
-    out = _smi("name,memory.total")
+    out = fit.smi("name,memory.total")
     if out is None:
         line(WARN, "GPU", "nvidia-smi failed")
         return
 
-    # Asked for on its own: an old driver answers the name and the memory and refuses this
-    # field, and losing the number is worth less than losing the line it goes on.
-    caps = (_smi("compute_cap") or "").splitlines()
-    _compute_cap = caps[0].strip().replace(".", "") if caps else ""
-
+    caps = (fit.smi("compute_cap") or "").splitlines()
     for index, card in enumerate(filter(None, out.splitlines())):
         name, _, memory = card.partition(",")
         vram = int("".join(ch for ch in memory if ch.isdigit()) or 0)
         cap = caps[index].strip() if index < len(caps) else ""
-        detail = f"{name.strip()}, {vram} MiB" + (f", compute {cap}" if cap else "")
-        if vram >= 3500:
-            line(OK, "GPU", detail)
-        else:
-            line(WARN, "GPU", detail, "Under 4GB: the model will not fully fit in VRAM.")
+        line(OK, "GPU", f"{name.strip()}, {vram} MiB" + (f", compute {cap}" if cap else ""))
 
 
-def check_binding() -> bool:
+def check_build() -> bool:
     """The one that matters. A build with no GPU offload is the silent failure.
 
-    True means the next check is worth its minutes: the binding is here and reaches a card."""
+    True means the next checks are worth their minutes: the binding is here, it reaches a
+    card, and it carries kernels for the card it reached. That last one is cheap, since the
+    build says so itself, and it is the difference between a five minute diagnosis and a
+    sentence: a build made for another GPU leaves the driver to translate its PTX, and a
+    driver older than the toolkit that wrote it refuses, aborting on the first kernel.
+    """
     if importlib.util.find_spec("llama_cpp") is None:
         line(
             WARN,
             "llama-cpp-python",
             "not installed",
-            f"The game plays offline without it. To build it:\n        {build_hint()}",
+            f"The game plays offline without it. To build it:\n        {preflight.build_hint()}",
         )
         return False
+    info = preflight.system_info()
     try:
-        # Importing the binding starts the CUDA backend, which writes its own banner to
-        # stderr from C. That is the report's own output stream, so it is held shut for the
-        # length of the import: what the backend found is said here, in one line.
-        with open(os.devnull, "w") as quiet, contextlib.redirect_stderr(quiet):
-            stderr_fd = os.dup(2)
-            os.dup2(quiet.fileno(), 2)
-            try:
-                import llama_cpp
-            finally:
-                os.dup2(stderr_fd, 2)
-                os.close(stderr_fd)
+        import llama_cpp
     except Exception as error:
-        line(BAD, "llama-cpp-python", f"installed but will not load ({error})", f"Rebuild it:\n        {build_hint()}")
+        line(
+            BAD,
+            "llama-cpp-python",
+            f"installed but will not load ({error})",
+            f"Rebuild it:\n        {preflight.build_hint()}",
+        )
         return False
 
     if not llama_cpp.llama_supports_gpu_offload():
@@ -157,10 +101,23 @@ def check_binding() -> bool:
             BAD,
             "llama-cpp-python",
             f"{llama_cpp.__version__}, CPU only",
-            f"This build answers, but too slowly to talk to. Rebuild it:\n        {build_hint()}",
+            f"This build answers, but too slowly to talk to. Rebuild it:\n        {preflight.build_hint()}",
         )
         return False
     line(OK, "llama-cpp-python", f"{llama_cpp.__version__}, GPU offload available")
+
+    warning = preflight.arch_warning()
+    if warning:
+        line(
+            BAD,
+            "Build target",
+            warning,
+            f"It will abort on the first token. Rebuild it here:\n        {preflight.build_hint()}",
+        )
+        return False
+    archs = preflight.build_archs(info)
+    if archs:
+        line(OK, "Build target", "compiled for this card (" + ", ".join(f"{a // 10}.{a % 10}" for a in archs) + ")")
     return True
 
 
@@ -174,7 +131,7 @@ def check_model() -> bool:
         line(
             BAD,
             "Model",
-            f"{path}, only {size / (1 << 20):.0f}MB",
+            f"{path}, only {size / (1 << 30):.1f}GB",
             "Looks truncated. Delete it and run `uv run fetch-model`.",
         )
         return False
@@ -182,58 +139,41 @@ def check_model() -> bool:
     return True
 
 
-def _cuda_failure(stderr: str) -> tuple[str, str]:
-    """What the backend said, and what to do about it.
+def check_room() -> None:
+    """What the card has, against what the full context wants. A reading, not a verdict.
 
-    llama.cpp prints `CUDA error: <what>` and then aborts, so the reason is one line in a
-    page of backtrace. Two of them have an answer worth printing; the rest are quoted as
-    they came.
+    The estimate is worth printing and is not worth obeying: what a machine actually runs
+    is settled by the check below, which asks the card rather than the arithmetic.
     """
-    reported = next((ln.partition(":")[2].strip() for ln in stderr.splitlines() if ln.startswith("CUDA error:")), "")
-    if "no kernel image" in reported:
-        return reported, f"This build was compiled for a different GPU. Rebuild it here:\n        {build_hint()}"
-    if "out of memory" in reported:
-        return reported, (
-            "The card has less free VRAM than the model and its context need. Close what else\n"
-            f"        is using the GPU, or lower Hyperparameters.CONTEXT_SIZE (now {c.Hyperparameters.CONTEXT_SIZE})."
-        )
-    if reported:
-        return reported, "The card refused the work. `nvidia-smi` will say whether the driver is healthy."
-    return "", ""
+    free = fit.free_vram_mb()
+    if free is None:
+        return
+    want = c.Hyperparameters.CONTEXT_SIZE
+    shape = fit.model_shape(c.Hyperparameters.MODEL_PATH)
+    weights = os.path.getsize(c.Hyperparameters.MODEL_PATH) / fit.MB
+    line(OK, "Room", f"{free} MiB free, {weights:.0f} of weights and {shape.kv_mb(want):.0f} of KV cache for {want}")
 
 
 def check_generation() -> None:
-    """The only check that runs a kernel, and the one this report used to be missing.
+    """The only check that runs a kernel, and the conclusive one.
 
     Everything above can pass on a build that dies the first time the game asks for a line
     of dialogue: the weights load, the VRAM is taken, offload is reported available, and the
     failure waits for the first token. So one is asked for here, in a subprocess, because a
-    CUDA error is an abort() from C that would take this report down with it.
+    CUDA error is an abort() from C that would take this report down with it. A card that
+    refuses for room is asked again smaller, which is the one failure that ends in a
+    working game rather than in a rebuild. The answer is written where the game reads it,
+    and asked again every time this runs.
     """
     print("        (loading the model, this takes a moment)")
-    probe = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            PROBE,
-            c.Hyperparameters.MODEL_PATH,
-            str(c.Hyperparameters.GPU_LAYERS),
-            str(c.Hyperparameters.CONTEXT_SIZE),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=PROBE_TIMEOUT_S,
-    )
-    if probe.returncode == 0:
-        line(OK, "Generation", "the model answered")
+    verdict = preflight.verify(again=True)
+    if verdict.ok and not verdict.loading.trimmed:
+        line(OK, "Generation", f"the model answered, {verdict.loading.n_ctx} of context")
         return
-
-    reported, fix = _cuda_failure(probe.stderr)
-    if reported:
-        line(BAD, "Generation", f"CUDA error: {reported}", fix)
+    if verdict.ok:
+        line(WARN, "Generation", f"the model answered, {verdict.loading.note}", "Memory, not the build: it plays on.")
         return
-    last = next((ln for ln in reversed(probe.stderr.splitlines()) if ln.strip()), "no output")
-    line(BAD, "Generation", f"the model would not answer ({last})", "The game plays offline meanwhile.")
+    line(BAD, "Generation", verdict.reason, preflight.advice(verdict.reason) or "The game plays offline meanwhile.")
 
 
 def main() -> int:
@@ -241,13 +181,12 @@ def main() -> int:
     check_python()
     check_pygame()
     check_gpu()
-    binding = check_binding()
+    build = check_build()
     model = check_model()
-    if binding and model:
-        try:
+    if model:
+        check_room()
+        if build:
             check_generation()
-        except subprocess.TimeoutExpired:
-            line(WARN, "Generation", f"no answer within {PROBE_TIMEOUT_S}s", "The card or the disk is very slow.")
     print("\nThe game runs either way: `uv run game`. Without a model, villagers speak from a written bank.")
     return 0
 
