@@ -101,17 +101,7 @@ class BuildingArt:
         self._draw_door(screen, camera)
 
         windows = self.window_rects()
-        lamps = self._lit_windows(darkness)
-        for idx, window in enumerate(windows):
-            self._draw_window(
-                screen,
-                camera,
-                window,
-                idx in self.broken_windows,
-                f"{self.id}:window:{idx}",
-                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
-                lit=darkness if idx in lamps else 0.0,
-            )
+        self._draw_windows(screen, camera, windows, darkness, self._lit_windows(darkness))
         self._draw_extras(screen, camera, srect.inflate(-16, -16), windows, style)
 
         if self.kind == "shop":
@@ -328,7 +318,7 @@ class BuildingArt:
                 px, py = camera.world_to_screen(world_pile.left, world_pile.top)
                 pile = pygame.Rect(round(px), round(py), world_pile.width, world_pile.height)
                 # Struck like any other prop with hit points, so it flinches, flashes and
-                # splits as it is worked down (`WorldCombat._chop_woodpile`).
+                # splits as it is worked down (`WorldBreaking._chop_woodpile`).
                 fx = get_damage_fx()
                 key = self.woodpile_key()
                 pile = pile.move(fx.offset(key))
@@ -473,15 +463,7 @@ class BuildingArt:
         pygame.draw.rect(screen, c.Buildings.FLOOR_COLOR, to_screen(self.door_rect()))
         self._draw_door(screen, camera)
 
-        for idx, window in enumerate(self.window_rects()):
-            self._draw_window(
-                screen,
-                camera,
-                window,
-                idx in self.broken_windows,
-                f"{self.id}:window:{idx}",
-                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
-            )
+        self._draw_windows(screen, camera, self.window_rects(), 0.0, frozenset())
 
         layout = self.interior_layout()
         rug_screen = to_screen(layout["rug"])
@@ -648,6 +630,26 @@ class BuildingArt:
             awake = random.Random(f"lamps:{self.id}").random() < frac
             self._lamps = frozenset(range(len(self.window_rects()))) if awake else frozenset()
         return self._lamps
+
+    def _draw_windows(self, screen, camera: Camera, windows, darkness: float, lamps):
+        """Every window of this building, with its own state: whether it is broken, how much
+        of it is left and whether there is a lamp behind it.
+
+        One method for the facade and for the cutaway because the two differ in nothing but
+        the lamps: a room the player is standing in is lit by being stood in, so the cutaway
+        passes no lamps at all and the same loop draws it. Written twice, a pane that gained
+        a state in one pass kept the old look in the other, which is a house whose windows
+        change as you walk through its door."""
+        for idx, window in enumerate(windows):
+            self._draw_window(
+                screen,
+                camera,
+                window,
+                idx in self.broken_windows,
+                f"{self.id}:window:{idx}",
+                self.window_hp.get(idx, c.Buildings.WINDOW_HP) / c.Buildings.WINDOW_HP,
+                lit=darkness if idx in lamps else 0.0,
+            )
 
     @staticmethod
     def _draw_window(
