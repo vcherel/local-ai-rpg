@@ -1,0 +1,11 @@
+models/
+saves/
+logs/
+assets/
+docs/
+scripts/
+.git/
+.claude/
+.ruff_cache/
+**/__pycache__/
+CLAUDE.md

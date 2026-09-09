@@ -33,6 +33,13 @@ How a change here is checked, all headless and none of them loading the model. `
 - `scripts/verify/spawn_rates.py`: what `pick_monster_kind` rolls per distance band, as a table to put beside the one from before the change
 - `scripts/verify/shots.py`: the README's pictures, the same harness posed into seven scenes (village, a conversation, a merchant's shelf, a fight, a boss rising, a walked cave, the bag); not a check, the one way the front page is regenerated
 
+### Container
+How the game is handed to somebody who will not install it. Offline only: no CUDA, no llama-cpp-python, no weights.
+- `Dockerfile`: the image; the locked pygame and numpy through `uv sync`, the project itself never installed (its wheel carries only `rpg_ai`) but run off `src` on `PYTHONPATH`, plus the X and font packages SDL loads at runtime
+- `.dockerignore`: what never goes in (the weights, the saves, the dialogue logs, the README's screenshots)
+- `scripts/container/build.sh`: builds the image and writes `dist/`, the archive and the run script to send
+- `scripts/container/play.sh`: what the other machine runs: the X socket and its cookie, the pulse socket if there is one, and a saves directory outside the container
+
 ### rpg_ai
 - `src/rpg_ai/__main__.py`: entry point; Pygame and LLM queue setup, main menu to game loop, a fresh `SaveSystem` per session; the loading screen waits for the model, or for the music pads when there is none
 - `src/rpg_ai/fetch_model.py`: `uv run fetch-model`, the only thing that downloads the weights into `models/`, resumable, with a progress bar
