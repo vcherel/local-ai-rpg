@@ -193,7 +193,7 @@ seen.
 Because it is the one that cannot be walked round. Every door starts shut and is part of
 the wall shell while it is (`Building._wall_segments`), the player opens and shuts it with
 E, and a chaser that ends up on the wrong side either lets itself in (a villager,
-`World.open_door_for`: it is their street) or beats it down (`WorldCombat.bash_doors`,
+`World.open_door_for`: it is their street) or beats it down (`WorldBreaking.bash_doors`,
 several swings, audible, permanent once through). Nothing else about the world may become
 breakable to let a monster take a shortcut: if a monster cannot reach the player, the
 answer is navigation, not demolition.
@@ -252,7 +252,7 @@ there is a gate on every side and `_detour_corner` routes round the wall already
 nothing is ever unable to reach anything. What a gate answers is a question the wall
 created: `World._work_gates` shuts a settlement's gates while it is angry at the player,
 which is when the player is inside a town that wants them dead, and
-`WorldCombat._hit_gate` / `bash_gates` let them hack their way out (or a pack beat its way
+`WorldBreaking._hit_gate` / `bash_gates` let them hack their way out (or a pack beat its way
 in) on the same hit-point pool a front door uses. `gate_broken` is persisted, `gate_hp` is
 not, exactly as a door does it.
 
