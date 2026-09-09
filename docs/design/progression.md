@@ -51,7 +51,12 @@ A killed villager's purse is an `Item` of type `"coins"` holding its amount in `
 dropped where the body fell and credited (through `gain_coins`, so the coin-find accessory still
 applies) only when somebody walks into it; it never enters the inventory and leaves the master
 item list the moment it is taken. That is what lets an uncredited kill still leave money lying
-there, and it is the shape any new coin drop should take rather than another instant credit.
+there, and it is the shape every coin drop takes rather than an instant credit.
+
+A smashed container is the same thing: `WorldBreaking._break_loot` credits nothing, it lays a
+purse and whatever else came out on the ground (in the room's `dropped_items` for a crate
+indoors, in `world.items` for a barrel or a cache outside) and the walk over the wreckage is
+what collects it. A break the player never walks back to is a break they were not paid for.
 
 ## An item's icon is derived, never stored as a decision
 

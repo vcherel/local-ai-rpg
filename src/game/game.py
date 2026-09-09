@@ -590,10 +590,7 @@ class Game(GameInteractions):
             # never carried, so it leaves the master item list rather than sitting in the
             # save as something picked up.
             self.world.items.remove(item)
-            self.player.gain_coins(item.quantity)
-            self.loot_notification.show(f"+{item.quantity} coins", c.Colors.ACCENT)
-            play_sound("pickup")
-            self._pickup_burst(item)
+            self._take_purse(item)
             return
         if item.item_type == "lootbox":
             self._open_lootbox(item)
@@ -633,9 +630,20 @@ class Game(GameInteractions):
             )
             play_sound("level_up")
 
+    def _take_purse(self, purse: Item):
+        """Credit a purse walked over, wherever it was lying. The caller has already taken it
+        off whatever list held it."""
+        self.player.gain_coins(purse.quantity)
+        self.loot_notification.show(f"+{purse.quantity} coins", c.Colors.ACCENT)
+        play_sound("pickup")
+        self._pickup_burst(purse)
+
     def _pickup_dropped_item(self, item: Item):
         self.interior.dropped_items.remove(item)
         item.picked_up = True
+        if item.item_type == "coins":
+            self._take_purse(item)
+            return
         # If ammo merges into a stack, register the item purely so a saved inventory
         # id can still find it after reload; it never renders or drops again.
         if self.player.add_item(item) is item:
