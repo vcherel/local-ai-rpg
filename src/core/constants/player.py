@@ -54,6 +54,13 @@ class Player:
     # two answers chosen before it started.
     HANDS: int = 2
 
+    # Every equip slot, by the name it is saved and read under. The two hands come first,
+    # then the bomb: those three are what a click or a key spends directly. Both the entity
+    # (`game.entities.player`, whose `equipped` dict is keyed on exactly these) and the HUD
+    # paper-doll (`ui.widgets`) read this one list rather than each restating the names.
+    HAND_SLOTS: tuple = ("weapon_main", "weapon_off")
+    EQUIP_SLOTS: tuple = (*HAND_SLOTS, "bomb", "offhand", "armor", "accessory", "ammo")
+
 
 @dataclass(frozen=True)
 class Magic:

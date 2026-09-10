@@ -35,6 +35,10 @@ class BearTrap:
         self.y = y
         self.chunk = (int(chunk[0]), int(chunk[1]))
         self.sprung = sprung
+        # Set only on the session-only traps laid in a tunnel (`WorldPlaces._lay_old_traps`),
+        # so they can be cleared with the tunnel and kept out of the save. None on every
+        # trap streamed from a surface chunk.
+        self.tunnel_id: str | None = None
 
     @property
     def id(self) -> str:

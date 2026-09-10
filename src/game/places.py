@@ -412,7 +412,7 @@ class WorldPlaces:
         self.critters = [cr for cr in self.critters if cr.camp_id != tunnel.id]
         # The old traps go with them: session-only, tagged with the tunnel, laid again from
         # scratch on the next descent.
-        self.traps = [t for t in self.traps if getattr(t, "tunnel_id", None) != tunnel.id]
+        self.traps = [t for t in self.traps if t.tunnel_id != tunnel.id]
         warden = next((b for b in self.bosses if b.camp_id == tunnel.id), None)
         if warden is not None:
             # Whatever the model called it while the player was down there is kept, so it is
@@ -536,7 +536,7 @@ class WorldPlaces:
         """Bear traps left in the corridors by whoever came down here before. Tagged with
         the tunnel like the garrison is, so they clear with it and are never saved: a
         session-only hazard on ground the player has to walk."""
-        if any(getattr(t, "tunnel_id", None) == tunnel.id for t in self.traps):
+        if any(t.tunnel_id == tunnel.id for t in self.traps):
             return
         for x, y in tunnel.floor_spots(rng.randint(*c.Tunnels.OLD_TRAPS), rng, c.Tunnels.ENTRANCE_CLEARANCE):
             trap = BearTrap(x, y, tunnel.chunk)

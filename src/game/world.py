@@ -590,7 +590,7 @@ class World(
         for trap in self.traps:
             # A tunnel's old traps are session-only, like its garrison: never saved, laid
             # again on the next descent.
-            if trap.sprung and not getattr(trap, "tunnel_id", None):
+            if trap.sprung and not trap.tunnel_id:
                 snapshot[trap.id] = True
         return snapshot
 

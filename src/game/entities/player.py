@@ -37,14 +37,10 @@ if TYPE_CHECKING:
 # either hand, and what a click does is decided by the archetype of whatever is in that
 # hand, so a bow on the left fires and a sword on the right swings. An empty hand is a real
 # choice too, and means bare hands. A bomb is not one of the two: it is spent rather than
-# wielded, so it has a slot of its own and a key of its own.
-HAND_SLOTS = ("weapon_main", "weapon_off")
-WEAPON_SLOT_NAMES = HAND_SLOTS
-
-# Every equip slot the player has, in the order the save writes them. `Player.equipped`
-# is a dict on exactly these keys holding the id of what is in each, so a slot is read and
-# written by its own name everywhere instead of through an attribute looked up off a table.
-EQUIP_SLOT_NAMES = (*WEAPON_SLOT_NAMES, "bomb", "offhand", "armor", "accessory", "ammo")
+# wielded, so it has a slot of its own and a key of its own. The names live in
+# `core.constants` so the HUD paper-doll reads the same list; `equipped` is keyed on them.
+HAND_SLOTS = c.Player.HAND_SLOTS
+EQUIP_SLOT_NAMES = c.Player.EQUIP_SLOTS
 
 # Held down to raise the shield. A hold rather than a toggle, so blocking is something
 # you do for the blow you saw coming instead of a stance you leave switched on.
@@ -212,7 +208,7 @@ class Player(PlayerBonuses, Entity):
         # Rampage (legendary weapon affix): landed-hit counter per hand, session-only. The
         # streak belongs to the hand rather than to the weapon in it, so swapping the two
         # over starts the count again.
-        self._rampage_streak = dict.fromkeys(WEAPON_SLOT_NAMES, 0)
+        self._rampage_streak = dict.fromkeys(HAND_SLOTS, 0)
 
         # Potion buffs: {effect: {"until": wall-clock seconds, "magnitude": float}}.
         # Wall-clock for the same reason as above, so quitting doesn't bank buff time.
@@ -306,8 +302,6 @@ class Player(PlayerBonuses, Entity):
             if pygame.time.get_ticks() - self.last_damage_ms >= c.Player.REGEN_DELAY_MS:
                 regen += self.passive_regen_rate() + (0.0 if moving else self.regen_still_bonus())
             self.hp = min(self.hp + regen * dt, self.max_hp)
-
-    # --- shield and guard ------------------------------------------------------
 
     # --- mana ------------------------------------------------------------------
 

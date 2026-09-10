@@ -205,7 +205,7 @@ class WorldStreaming:
         self._deindex_scenery(leaving)
         # A trap is rebuilt from its chunk seed like everything else here; only the fact
         # that one has already shut is worth carrying away with it.
-        self.traps = [t for t in self.traps if t.chunk not in chunks or getattr(t, "tunnel_id", None)]
+        self.traps = [t for t in self.traps if t.chunk not in chunks or t.tunnel_id]
         dropped = set()
         for poi in self.pois:
             if self._chunk_of(poi.x, poi.y) not in chunks:

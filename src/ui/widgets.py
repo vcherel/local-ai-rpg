@@ -16,27 +16,29 @@ import core.constants as c
 if TYPE_CHECKING:
     from game.entities.items import Item
 
-# The equip slots as the UI shows them: (Player equip slot, caption, ghost glyph drawn when
-# empty). Shared by the HUD strip and the inventory paper-doll so the two can't disagree.
+# The slot names come from `core.constants` (`Player.equipped` is keyed on the same list).
 # The two weapon hands come first, then the bomb: those three are what a button or a key
 # spends directly, and they are drawn as their own row.
-WEAPON_SLOTS = ("weapon_main", "weapon_off")
+WEAPON_SLOTS = c.Player.HAND_SLOTS
 ACTION_SLOTS = (*WEAPON_SLOTS, "bomb")
 
 # What the player presses or clicks to use each of them, drawn on the slot so the strip
 # says what to do with what it shows. The UI's own copy of the key map `Game.key_actions`
-# holds, the way EQUIP_SLOTS restates the slot names.
+# holds.
 SLOT_KEYS = {"weapon_main": "L", "weapon_off": "R", "bomb": "G"}
 
-EQUIP_SLOTS = (
-    ("weapon_main", "Left click", "sword"),
-    ("weapon_off", "Right click", "bow"),
-    ("bomb", "Bomb", "bomb"),
-    ("offhand", "Shield", "shield"),
-    ("armor", "Armor", "cuirass"),
-    ("accessory", "Trinket", "gem"),
-    ("ammo", "Ammo", "arrow"),
-)
+# Caption and ghost glyph (drawn when the slot is empty) per slot, in constants order, so
+# the HUD strip and the inventory paper-doll agree with each other and with the save.
+_SLOT_LOOK = {
+    "weapon_main": ("Left click", "sword"),
+    "weapon_off": ("Right click", "bow"),
+    "bomb": ("Bomb", "bomb"),
+    "offhand": ("Shield", "shield"),
+    "armor": ("Armor", "cuirass"),
+    "accessory": ("Trinket", "gem"),
+    "ammo": ("Ammo", "arrow"),
+}
+EQUIP_SLOTS = tuple((slot, *_SLOT_LOOK[slot]) for slot in c.Player.EQUIP_SLOTS)
 
 
 def draw_panel(
