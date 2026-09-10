@@ -77,6 +77,9 @@ class SaveSystem:
         - death_taunts: Mocking death-screen lines written ahead of need, not yet used (list[str])
         - buffs: Active potion buffs, {effect: {"until": wall-clock seconds, "magnitude": float}}
         - daynight_elapsed_ms: Elapsed time within the current day/night cycle (float)
+        - greeter_timer: Seconds left before the starting-town greeter sets off to offer
+          the first quest, kept so quitting before hearing them out does not lose it. The
+          greeter themselves is the NPC carrying `is_greeter` in `npcs` (float)
     """
 
     def __init__(self, filename="./saves/save.json"):

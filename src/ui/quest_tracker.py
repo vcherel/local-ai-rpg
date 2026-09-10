@@ -9,6 +9,7 @@ from ui import widgets
 
 if TYPE_CHECKING:
     from game.quest import Quest
+    from game.record import Record
     from llm.quest_system import QuestSystem
 
 
@@ -81,20 +82,27 @@ class QuestTracker:
 
         return False
 
-    def draw(self, quest_system: QuestSystem, top: int):
+    def draw(self, quest_system: QuestSystem, top: int, record: Record | None = None):
         """`top` is where the minimap's own strips ended (Minimap.content_bottom), not a
         fixed offset: the clock and the village name under the map change height, and the
-        card used to be laid straight over them."""
+        card used to be laid straight over them.
+
+        Never blank: with no quest in hand the card is replaced by one slim line pointing
+        the player at a notice board, and the quest-tally milestone always hangs below,
+        so there is a visible goal whether or not an errand is running."""
+        right = c.Screen.WIDTH - 10
         active_quests = quest_system.active_quests
+
         if not active_quests:
             self.chip_rects = []
+            bottom = self._draw_idle_pill(right, top)
+            self._draw_milestone_chip(right, bottom + self.CHIP_GAP, record)
             return
 
-        right = c.Screen.WIDTH - 10
-
         if self.collapsed:
-            self._draw_collapsed_pill(right, top, len(active_quests))
+            bottom = self._draw_collapsed_pill(right, top, len(active_quests))
             self.chip_rects = []
+            self._draw_milestone_chip(right, bottom + self.CHIP_GAP, record)
             return
 
         tracked = self._resolve_tracked(active_quests)
@@ -119,7 +127,9 @@ class QuestTracker:
             self.chip_rects.append((chip_rect, quest))
             chip_y += self.CHIP_HEIGHT + self.CHIP_GAP
 
-    def _draw_collapsed_pill(self, right: int, top: int, count: int):
+        self._draw_milestone_chip(right, chip_y, record)
+
+    def _draw_collapsed_pill(self, right: int, top: int, count: int) -> int:
         text = c.Fonts.button.render(f"Quests ({count})", True, c.Colors.WHITE)
         width = text.get_width() + 44
         rect = pygame.Rect(right - width, top, width, 30)
@@ -127,6 +137,31 @@ class QuestTracker:
         self.screen.blit(text, (rect.x + 12, rect.centery - text.get_height() // 2))
         self.collapse_button_rect = rect
         self._draw_chevron(pygame.Rect(rect.right - 26, rect.y + 7, 18, 18), expanded=False)
+        return rect.bottom
+
+    def _draw_idle_pill(self, right: int, top: int) -> int:
+        """One slim line when no errand is running: the tracker is never blank, and the
+        arrow the HUD draws is meanwhile pointing at the nearest notice board."""
+        self.collapse_button_rect = pygame.Rect(0, 0, 0, 0)
+        text = c.Fonts.small.render("No task. Find a notice board.", True, c.Colors.MUTED)
+        rect = pygame.Rect(right - (text.get_width() + 24), top, text.get_width() + 24, 26)
+        widgets.draw_panel(self.screen, rect)
+        self.screen.blit(text, (rect.x + 12, rect.centery - text.get_height() // 2))
+        return rect.bottom
+
+    def _draw_milestone_chip(self, right: int, y: int, record: Record | None):
+        """The quest tally as a goal: how many handed in, and the next one that pays a
+        cache. Drawn under whatever the tracker showed above, small and muted."""
+        if record is None:
+            return
+        progress = record.next_quest_reward()
+        if progress is None:
+            return
+        done, target, rarity = progress
+        text = c.Fonts.small.render(f"Quests {done}/{target} to a {rarity} cache", True, c.Colors.MUTED)
+        rect = pygame.Rect(right - (text.get_width() + 24), y, text.get_width() + 24, 24)
+        widgets.draw_panel(self.screen, rect)
+        self.screen.blit(text, (rect.x + 12, rect.centery - text.get_height() // 2))
 
     def _draw_chevron(self, rect: pygame.Rect, expanded: bool):
         cx, cy = rect.center

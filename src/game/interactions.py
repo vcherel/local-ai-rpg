@@ -208,6 +208,8 @@ class GameInteractions:
             # One model serves the whole game and the call already running cannot be
             # cut short, so a conversation opened now would sit on an empty box.
             label = f"{npc.name} is busy..." if npc.name else "Busy..."
+        elif npc.is_greeter and not npc.has_active_quest:
+            label = f"E: hear {npc.name} out" if npc.name else "E: hear them out"
         else:
             label = f"E: talk to {npc.name}" if npc.name else "E: talk"
         hint = "B: trade" if npc.is_merchant else ""

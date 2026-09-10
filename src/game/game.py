@@ -1129,6 +1129,10 @@ class Game(GameInteractions):
             quest_target = (self.world.death_drop["x"], self.world.death_drop["y"])
         else:
             quest_target = self.world.quest_target(self.dialogue_manager.quest_tracker.tracked, self.player)
+            # Nothing else claims the arrow: point it at the nearest notice board, the one
+            # place the player with no task can pick one up.
+            if quest_target is None and not self.dialogue_manager.quest_system.active_quests:
+                quest_target = self.world.nearest_board_pos(self.player.x, self.player.y)
         self.game_renderer.draw_world(
             self.camera, self.world, self.player, self.interior, None if self.active_menu else self.interaction
         )
@@ -1175,7 +1179,9 @@ class Game(GameInteractions):
         self.dialogue_manager.draw()
         if not self.active_menu:
             self.dialogue_manager.quest_tracker.draw(
-                self.dialogue_manager.quest_system, self.game_renderer.minimap.content_bottom + 10
+                self.dialogue_manager.quest_system,
+                self.game_renderer.minimap.content_bottom + 10,
+                self.record,
             )
             self.loot_notification.draw()
         self.inventory_menu.draw(self.player)

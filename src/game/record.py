@@ -60,6 +60,16 @@ class Record:
         self._persist()
         return reached
 
+    def next_quest_reward(self) -> tuple[int, int, str] | None:
+        """The next quest milestone the player is working towards, as
+        (quests handed in, target count, reward rarity), or None once the last one
+        has paid. What the HUD chip reads so the tally is a goal rather than a
+        number nobody looks at."""
+        for count, rarity in c.Milestones.QUESTS:
+            if count not in self.paid["quests"]:
+                return self.quests_done, count, rarity
+        return None
+
     def taunt_pool(self) -> tuple:
         """Every canned death-screen line the player has unlocked. The first tier is there
         from the first death; each milestone passed adds the next one."""

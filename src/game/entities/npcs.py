@@ -44,6 +44,9 @@ class NPC(Entity):
         # True for an NPC spawned to hold a recover_stolen quest's item; shows a marker
         # so the player can spot them without already knowing where to look.
         self.is_thief = False
+        # The one villager, on a new world only, who walks over and offers the first quest
+        # (`WorldVillagers._update_greeter`). Cleared the moment they have handed it over.
+        self.is_greeter = False
         self.shop_items: list[Item] = []
         self.shop_prices: dict[str, int] = {}
         self.shop_ready = False
@@ -376,6 +379,7 @@ class NPC(Entity):
             "is_archer": self.is_archer,
             "defence_tier": self.defence_tier,
             "is_thief": self.is_thief,
+            "is_greeter": self.is_greeter,
             # Absolute wall clock, like the rest cooldowns: quitting while a village is
             # angry must not be a way of waiting the anger out.
             "hostile_until": self.hostile_until,
@@ -400,6 +404,7 @@ class NPC(Entity):
         npc.is_merchant = data["is_merchant"]
         npc.is_guard = data.get("is_guard", False)
         npc.is_archer = data.get("is_archer", False)
+        npc.is_greeter = data.get("is_greeter", False)
         npc.defence_tier = data.get("defence_tier", 0)
         if npc.is_guard:
             # A guard holds their post rather than strolling the street, on a reload as

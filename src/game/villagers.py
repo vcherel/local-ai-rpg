@@ -43,6 +43,10 @@ class WorldVillagers:
         villager only ever fights one thing at a time, and defending the settlement comes
         first: a monster in the street is more pressing than a grudge."""
         indoors = self.building_at(player.x, player.y) is not None
+        if self._greeter_pending:
+            self._designate_greeter(player)
+        if self.greeter is not None and self.greeter_timer > 0:
+            self.greeter_timer = max(0.0, self.greeter_timer - dt / 1000.0)
         self._keep_curfew(player)
         self._restock_merchants()
         fight, flee = self.militia_orders()
@@ -124,8 +128,55 @@ class WorldVillagers:
                     self._npc_sleeps(npc, home, player, dt, shut=id(home) in all_home)
                     continue
 
+            if npc.is_greeter and self._update_greeter(npc, player, dt):
+                continue
+
             self._wake_up(npc)
             self._npc_walks(npc, player, dt, mob, crowd, indoors)
+
+    def _update_greeter(self, npc: NPC, player: Player, dt) -> bool:
+        """The starting-town villager closing the distance to offer the first quest.
+
+        Walks over once the delay has run and stops a short way off, waiting there with
+        the prompt up (`GameInteractions._offer_npc` gives it the wording). Returns True
+        while it is handling the walk, False before the delay has run or once they have a
+        quest to their name: the quest is granted when the player hears them out
+        (`DialogueManager.close`), and that is what stands them down."""
+        if npc.quest is not None:
+            npc.is_greeter = False
+            self.greeter = None
+            return False
+        if self.greeter_timer > 0:
+            return False
+        # A wall is not something a villager paths around (`chase_waypoint` only knows
+        # buildings), so the greeter closes in when the player is on the home settlement's
+        # grounds, or near it and in plain sight, and otherwise wanders as normal until
+        # they come into town.
+        home = self.village_at(npc.x, npc.y)
+        on_grounds = home is not None and home.distance_to_point(player.get_pos()) <= home.grounds_radius
+        if not on_grounds:
+            if npc.distance_to_point(player.get_pos()) > c.Onboarding.GREET_APPROACH_RANGE:
+                return False
+            if not self.line_of_sight(npc.x, npc.y, player.x, player.y):
+                return False
+        goal = (player.x, player.y)
+        if npc.distance_to_point(goal) <= c.Onboarding.GREET_STOP_DISTANCE:
+            # Arrived: stand where they are and face the player, waiting to be heard out.
+            # Run without a walk of any kind so the wander does not drift them off the spot.
+            npc.orientation = math.atan2(player.y - npc.y, player.x - npc.x) + math.pi / 2
+            return True
+        self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*goal))
+        waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2)
+        npc.update(
+            player,
+            dt,
+            self.blocked,
+            waypoint,
+            refuge=goal,
+            refuge_reach=c.Onboarding.GREET_STOP_DISTANCE,
+            terrain_mult=self.terrain_speed(npc.x, npc.y),
+        )
+        return True
 
     def _keep_curfew(self, player: Player):
         """The settlement's night starting and ending: the bell, the hour every villager's

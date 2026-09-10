@@ -441,11 +441,17 @@ class DialogueManager:
 
         log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
 
+        # The greeter's first quest is not the model's to find in the words: hearing them
+        # out at all is accepting it, so it is granted here and now, and the analysis that
+        # would otherwise run over the same conversation is skipped.
+        greeter_intro = self._grant_greeter_quest()
+
         # A conversation the player never answered can't hold a quest they accepted, so it
         # isn't worth an analysis: that call would only make the next NPC's greeting wait
         # behind it for nothing.
         player_spoke = any(msg["role"] == "user" for msg in self.conversation.messages)
-        if player_spoke and not self.current_npc.has_active_quest and not self.current_npc.is_merchant:
+        npc = self.current_npc
+        if player_spoke and not greeter_intro and not npc.has_active_quest and not npc.is_merchant:
             self.pending_quest_analysis = True
 
         self._execute_pending_actions(log_path)
@@ -457,6 +463,27 @@ class DialogueManager:
         self.ui.reset()
         self.conversation_ended = False
         self.pending_quest_completion = None
+
+    def _grant_greeter_quest(self) -> bool:
+        """Hand the player the first quest when they hear the starting-town greeter out.
+
+        Built locally from `World.intro_offer` rather than read out of the conversation,
+        so it lands the same with a model, without one, or if the player closed the box
+        without a word. Returns whether this was the greeter."""
+        npc = self.current_npc
+        if not npc.is_greeter or npc.has_active_quest:
+            return npc.is_greeter
+        world = self.quest_system.world
+        village = world.village_at(npc.x, npc.y) if world is not None else None
+        if village is not None:
+            self.quest_system.create_quest_from_analysis(npc, world.intro_offer(village), self._npc_name_generator)
+        if npc.quest is not None:
+            npc.is_greeter = False
+            if world is not None:
+                world.greeter = None
+            self.quest_tracker.notify_new_quest(npc.quest)
+            play_sound("quest_new")
+        return True
 
     def _execute_pending_actions(self, log_path):
         # Snapshot the conversation now: close() clears it right after this returns,

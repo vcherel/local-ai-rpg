@@ -678,3 +678,24 @@ class Board:
     BOARD_COLOR: tuple = (152, 118, 74)
     SEAM_COLOR: tuple = (118, 88, 52)
     NOTICE_COLOR: tuple = (232, 226, 208)
+
+
+@dataclass(frozen=True)
+class Onboarding:
+    """The first minutes of a new game. A player dropped into an open world with no
+    prompt does not know it wants anything of them, so one villager in the starting town
+    walks over and offers a first errand in fiction (`World.intro_offer`).
+
+    New world only, and never on a reload: a session that has already run had its chance.
+    """
+
+    # Seconds of play before the greeter sets off, so the quest does not land the instant
+    # the world appears, and how close they come before they stop and offer it.
+    GREET_DELAY_S: float = 20.0
+    GREET_STOP_DISTANCE: float = 70.0
+    # The greeter only closes in when the player is this near and in plain sight: a wall
+    # is not something a villager paths around, so out past it they wait rather than
+    # grind along it. The prompt is there the moment the player walks back into town.
+    GREET_APPROACH_RANGE: float = 700.0
+    # The starter errand: a handful of the weakest thing seen near town, thinned out.
+    INTRO_KILL_COUNT: int = 3

@@ -500,6 +500,14 @@ class WorldSocial:
                 return village
         return None
 
+    def nearest_board_pos(self, x: float, y: float) -> tuple[float, float] | None:
+        """Where the closest settlement's notice board stands, for the idle quest arrow: a
+        player with no task is sent to the one place that hands them out."""
+        boards = [v.board_pos() for v in self.villages]
+        if not boards:
+            return None
+        return min(boards, key=lambda p: math.hypot(p[0] - x, p[1] - y))
+
     def board_offers(self, village: Village) -> list[dict]:
         """What is pinned to this settlement's board right now, rolled here and kept on the
         village until the board is worth walking back to (`Board.REFRESH_S`).
@@ -527,6 +535,28 @@ class WorldSocial:
                 rolled.setdefault(offer["title"], offer)
         village.notices = list(rolled.values())
         return village.notices
+
+    def intro_offer(self, village: Village) -> dict:
+        """The first quest of a new game, offered by the greeter who walks up to the player
+        (`WorldVillagers._update_greeter`). A gentle hunt in the villager's own voice: a
+        few of the weakest thing seen near town. Built as the same `{has_quest, ...}`
+        reading a conversation would have produced, so nothing downstream knows it is
+        special."""
+        center = c.World.WORLD_SIZE // 2
+        monster = pick_monster_kind(math.hypot(village.x - center, village.y - center))
+        count = c.Onboarding.INTRO_KILL_COUNT
+        return {
+            "has_quest": True,
+            "quest_type": "kill_mob",
+            "quest_description": (
+                f"{monster.name}s have been coming out of the wilds near our homes. "
+                f"Put down {count} of them and there is coin in it for you."
+            ),
+            "item_name": "",
+            "monster_hint": monster.name,
+            "kill_count": str(count),
+            "reward_item": "",
+        }
 
     def _roll_notice(self, village: Village) -> dict | None:
         """One notice: a hunt, a camp to empty or a thing to bring back, whichever the world

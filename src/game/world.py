@@ -263,6 +263,13 @@ class World(
         # `WorldStreaming._prepare_settlements_near`. Nothing here is urgent to the frame.
         self._prepare_timer = 0.0
 
+        # The starting-town villager who walks over and offers the first quest, and the
+        # countdown before they set off (`WorldVillagers._update_greeter`). Set only on a
+        # new world; None once the quest has been handed over or on any reload.
+        self.greeter: NPC | None = None
+        self.greeter_timer = 0.0
+        self._greeter_pending = False
+
         # Throttles persist_world: several generation threads finishing at once would
         # otherwise each serialise the entire world back to disk.
         self._persist_lock = threading.Lock()
@@ -347,6 +354,11 @@ class World(
         for village in self.villages:
             if village.defended and not any(npc.is_guard and village.contains_point(npc.x, npc.y) for npc in self.npcs):
                 self._post_guards(village)
+        # The starting-town greeter, if the player quit before hearing them out: pick them
+        # back up off the saved flag so the first quest still finds its way over.
+        self.greeter = next((npc for npc in self.npcs if npc.is_greeter and not npc.has_active_quest), None)
+        if self.greeter is not None:
+            self.greeter_timer = self.save_system.load("greeter_timer", 0.0)
         self._light_windows()
 
     def _light_windows(self):
@@ -381,6 +393,21 @@ class World(
             self._new_monster(*self._random_coords_away_from_spawn()) for _ in range(c.World.ROAMING_CAP_NEAR)
         ]
         self._spawn_landmark_boss()
+        # The greeter is chosen on the first frame instead of here: the player has not been
+        # placed in the world yet, and it should be whoever is nearest to where they spawn.
+        self._greeter_pending = True
+
+    def _designate_greeter(self, player):
+        """Pick the villager who walks over and offers the first quest: someone on foot,
+        not a merchant and not on the wall, nearest to where the player came into the
+        world so the walk is short and does not cross the settlement wall."""
+        self._greeter_pending = False
+        candidates = [npc for npc in self.npcs if not npc.is_merchant and not npc.is_guard and not npc.is_archer]
+        if not candidates:
+            return
+        self.greeter = min(candidates, key=lambda npc: npc.distance_to_point(player.get_pos()))
+        self.greeter.is_greeter = True
+        self.greeter_timer = c.Onboarding.GREET_DELAY_S
 
     def _populate_npcs(self, buildings: list[Building], village: Village | None = None):
         """Fill one village with people: a merchant standing at each shop, and a villager or
@@ -610,6 +637,7 @@ class World(
             "death_drop": self.death_drop,
             "explored": [f"{gx}:{gy}" for gx, gy in sorted(self.explored)],
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
+            "greeter_timer": self.greeter_timer,
         }
 
     # ------------------------------------------------------------------ building lookups
