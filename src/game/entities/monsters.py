@@ -102,6 +102,11 @@ class Monster(Entity):
         # its eyes are barely lit.
         self.revealed = not kind.disguise
         self.lunge_until_ms = 0
+        # Part of a tunnel's garrison sleeps where it was posted (set by WorldPlaces): like a
+        # disguise it notices nothing and does nothing until the player is close, it is hit,
+        # or a noise in the dark brings it up (`wake`). Sneaking past one is the reward for
+        # being the only thing down there carrying a light.
+        self.dormant = False
         # Where it patrols around while nobody has been seen, and the stroll it does it
         # with. A monster standing exactly where it spawned until something walks into its
         # detection ring is a trap waiting to be sprung rather than a thing living out here.
@@ -164,6 +169,14 @@ class Monster(Entity):
         somewhere stays a garrison rather than wandering off its own camp."""
         self.home = (x, y)
         self.wander.radius = radius
+
+    def wake(self):
+        """Come up off a dormant posting: eyes open, and it moves and swings from here like
+        anything else. No lunge and no burst, unlike a husk: it was only asleep."""
+        if not self.dormant:
+            return
+        self.dormant = False
+        self.aggro = True
 
     def reveal(self):
         """Drop the villager it was wearing. The whole of this kind is this moment: the body
@@ -485,6 +498,15 @@ class Monster(Entity):
         if not self.revealed:
             if dist < c.Husk.REVEAL_RANGE + target.size / 2:
                 self.reveal()
+            self.update_attack_anim(dt)
+            return 0
+
+        # Asleep at its post: same idea as a disguise, woken by the player getting close or
+        # by a hit already landed. A noise in the dark wakes it too, through `wake` called
+        # from WorldPlaces.
+        if self.dormant:
+            if dist < c.Tunnels.WAKE_RADIUS + target.size / 2 or self.hp < self.kind.hp:
+                self.wake()
             self.update_attack_anim(dt)
             return 0
 

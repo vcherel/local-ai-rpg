@@ -142,6 +142,22 @@ class Tunnel:
         # none: a cellar under a village is not an expedition.
         self.vault = self.rooms[-1] if kind != "well" and len(self.rooms) > 1 else None
 
+        # Pockets of bad air, one per room that rolls for one and never in the shaft room.
+        # Pure arithmetic off the layout, like everything else about where a place is.
+        self.gas: list[tuple[float, float, float]] = []
+        for i, room in enumerate(self.rooms):
+            if i == 0:
+                continue
+            grng = random.Random(f"gas:{self.id}:{i}")
+            if grng.random() < c.Tunnels.GAS_ROOM_CHANCE:
+                self.gas.append(
+                    (
+                        grng.uniform(room.left + 60, room.right - 60),
+                        grng.uniform(room.top + 60, room.bottom - 60),
+                        grng.uniform(*c.Tunnels.GAS_RADIUS),
+                    )
+                )
+
         # --- session-only mood, rebuilt every descent -------------------------------------
         # None of this is saved: how frightening the dark is on this trip is not something a
         # save should carry, only how much of the garrison is left is. `menace` is the one
@@ -351,9 +367,52 @@ class Tunnel:
         for rect in self._floor:
             screen.fill(c.Tunnels.FLOOR_COLOR, self._to_screen(camera, rect))
 
-        for room in self.rooms:
+        for i, room in enumerate(self.rooms):
             self._draw_rubble(screen, camera, room)
+            if i:
+                # Not the first room: the shaft is the one place the dark should be empty.
+                self._draw_remains(screen, camera, room, i)
+        self._draw_gas(screen, camera)
         self._draw_shaft(screen, camera)
+
+    def _draw_gas(self, screen: pygame.Surface, camera: Camera):
+        """The bad-air pockets, a faint sickly haze low on the floor. Drawn under the dark
+        like everything else here, so it is only seen once the lantern is on it."""
+        now = pygame.time.get_ticks()
+        for j, (gx, gy, gr) in enumerate(self.gas):
+            sx, sy = camera.world_to_screen(gx, gy)
+            breath = 0.85 + 0.15 * math.sin(now * 0.001 + j)
+            haze = pygame.Surface((round(gr * 2), round(gr * 2)), pygame.SRCALPHA)
+            pygame.draw.circle(haze, (110, 140, 100, round(38 * breath)), (round(gr), round(gr)), round(gr))
+            screen.blit(haze, (sx - gr, sy - gr))
+
+    def _draw_remains(self, screen: pygame.Surface, camera: Camera, room: pygame.Rect, index: int):
+        """Bones and a dropped pack or two: whoever came down here before and stayed. Seeded
+        per room so it holds still, purely drawn (the one purse on the ground is a real item
+        placed by `WorldPlaces`), and kept sparse so a room still reads as a room."""
+        rng = random.Random(f"remains:{self.id}:{index}")
+        bone = (196, 190, 176)
+        for _ in range(rng.randint(*c.Tunnels.REMAINS_PER_ROOM)):
+            x = rng.uniform(room.left + 40, room.right - 40)
+            y = rng.uniform(room.top + 40, room.bottom - 40)
+            sx, sy = camera.world_to_screen(x, y)
+            if rng.random() < 0.4:
+                pygame.draw.rect(screen, (74, 58, 44), (sx - 9, sy - 7, 18, 14), border_radius=3)
+                pygame.draw.line(screen, (50, 38, 28), (sx - 9, sy), (sx + 9, sy), 2)
+            else:
+                for _ in range(rng.randint(3, 6)):
+                    a = rng.uniform(0, math.pi)
+                    ln = rng.uniform(5, 12)
+                    ox, oy = rng.uniform(-10, 10), rng.uniform(-8, 8)
+                    pygame.draw.line(
+                        screen,
+                        bone,
+                        (sx + ox - math.cos(a) * ln, sy + oy - math.sin(a) * ln),
+                        (sx + ox + math.cos(a) * ln, sy + oy + math.sin(a) * ln),
+                        2,
+                    )
+                if rng.random() < 0.5:
+                    pygame.draw.circle(screen, bone, (round(sx), round(sy)), 4)
 
     @staticmethod
     def _to_screen(camera: Camera, rect: pygame.Rect) -> pygame.Rect:

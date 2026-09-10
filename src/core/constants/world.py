@@ -497,6 +497,8 @@ class Tunnels:
     # The bats that live in a cave, woken as a swarm the first time anyone walks in. Not a
     # fight so much as the cave objecting to being entered.
     BATS: tuple = (4, 7)
+    # And the pale crawlers that flee the light: harmless, placed a few per cave.
+    CRAWLERS: tuple = (3, 6)
     # And what guards a vault, in a cave whose mouth stands at least this far from the world
     # centre: a warden, which is an ordinary boss placed in the dark. This is the one boss
     # in the game that is somewhere rather than roaming, so it is the one the player can go
@@ -567,9 +569,18 @@ class Tunnels:
     # leave. Count per tunnel, laid on the floor clear of the shaft.
     OLD_TRAPS: tuple = (1, 3)
 
-    # What a cave has lying about: bones, a dropped pack, somebody who got this far. Seeded
-    # per room, drawn as scenery, and a few of them worth searching.
+    # A pocket of bad air in some rooms: standing in it chills the player (thin, cold,
+    # airless), so a room can be somewhere to cross quickly rather than fight in. Session
+    # arithmetic off the room, never a threat that follows.
+    GAS_ROOM_CHANCE: float = 0.35
+    GAS_RADIUS: tuple = (110, 200)
+    GAS_CHILL_MS: int = 1400
+    GAS_CHILL_FACTOR: float = 0.62
+
+    # What a tunnel has lying about: bones, a dropped pack, somebody who got this far.
+    # Seeded per room and drawn by the tunnel; one of them left a purse on the ground.
     REMAINS_PER_ROOM: tuple = (1, 3)
+    REMAINS_COINS: tuple = (18, 55)
 
 
 @dataclass(frozen=True)

@@ -561,7 +561,9 @@ class World(
         a trap comes back from its chunk seed, so this is the whole of what needs saving."""
         snapshot = dict(self.trap_state)
         for trap in self.traps:
-            if trap.sprung:
+            # A tunnel's old traps are session-only, like its garrison: never saved, laid
+            # again on the next descent.
+            if trap.sprung and not getattr(trap, "tunnel_id", None):
                 snapshot[trap.id] = True
         return snapshot
 

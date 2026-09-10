@@ -952,6 +952,23 @@ CRITTER_KINDS: tuple[CritterKind, ...] = (
     ),
     # The one animal that lives underground. `weight=0` keeps it out of the wilderness roll:
     # a bat is placed, by the cave it belongs to, and never met in a field.
+    # The other thing that lives in a cave: a pale crawler that wants nothing to do with the
+    # light. `weight=0`, placed by the cave; passive, so its whole answer is to bolt, and it
+    # bolts from a long way off, which is what makes movement at the edge of the lantern
+    # almost always nothing and never certainly nothing.
+    CritterKind(
+        "cave crawler",
+        (150, 140, 150),
+        11,
+        6,
+        weight=0,
+        group=(2, 4),
+        hit_radius_mult=0.8,
+        wander_speed=0.7,
+        sprint_mult=3.4,
+        stamina_ms=2600,
+        flee_distance=340,
+    ),
     CritterKind(
         "bat",
         (92, 78, 96),

@@ -19,15 +19,16 @@ Delete it once every box is ticked.
 ## Batch 3: unseen pressure and feedback (root: threats give no warning in the dark)
 - [x] "Something is watching" vignette (`screen_fx.DreadVignette`) held at `Tunnel.pressure` when the warden is unseen but close
 - [x] Screen shake on a distant rockfall sound
-- [ ] Bat swarm behaviour: a cloud that crosses the room and briefly fills the screen, chip damage only
-- [ ] Skittering non-hostile cave critter that flees the light (new `CRITTER_KINDS` row, temperament if needed)
+- [x] Bat swarm on cave entry: a cloud of dark flecks crosses the light, screech + flutter + shake (cosmetic startle)
+- [x] Skittering non-hostile "cave crawler" that bolts from the player (passive, flee_distance 340)
 
 ## Batch 4: what is down there (root: the cave is empty between fights)
-- [ ] Remains as scenery: bones, a dropped pack, a dead adventurer with a little loot, room-seeded
-- [ ] Husk / disguised monster posing as a corpse or rubble pile, unmasks for the player only
-- [ ] Sleeping garrison: some tunnel guards start dormant (no vision cone), wake on light or noise within a short radius
-- [ ] Cave hazard table: a pit (fall + damage), a gas pocket (existing chill/weakness status), a ceiling rockfall telegraphed by a shadow
+- [x] Remains as scenery: bones and a dropped pack drawn per room (`Tunnel._draw_remains`), one fallen purse placed as a real item
+- [x] Sleeping garrison: `Monster.dormant`, a fraction of the tunnel roll, wakes on proximity, a hit, or a rumble nearby (covers "looks like scenery until it moves")
+- [x] Gas pocket hazard: room-seeded `Tunnel.gas` zones, chill the player, drawn as a sickly haze
+- [x] Old bear traps in the corridors (`_lay_old_traps`, session-only, tagged with the tunnel)
 
-## Batch 5: structural dread (root: the cave has no stakes beyond the fight)
-- [ ] Collapsing entrance (rare): the shaft is blocked on entry and the player walks to a second exit added to the vault room
-- [ ] Old bear traps / snares left in corridors by whoever came before (reuse `BearTrap`)
+## Deferred: two real subsystems with a design fork (asked Valentin)
+- [ ] Pit hazard: fall through to a lower room. Needs a floor-level concept the tunnel does not have.
+- [ ] Collapsing entrance: shaft blocked on entry, second exit at the vault. Needs a second way out and the pathing for it.
+- [ ] Dedicated husk "corpse/rubble" disguise art (only if the dormant guard is not enough)

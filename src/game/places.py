@@ -14,6 +14,7 @@ from game.entities.critter import Critter
 from game.entities.items import Item, roll_rarity
 from game.entities.npcs import NPC
 from game.entities.poi import PointOfInterest, pois_for_chunk
+from game.entities.traps import BearTrap
 from game.entities.tunnel import Tunnel, has_tunnel
 from game.entities.village import Village
 from game.entities.village_sites import village_site
@@ -333,6 +334,14 @@ class WorldPlaces:
         """Walk in through a cave mouth, into the same dark a well leads down to."""
         cx, cy = (int(part) for part in poi.id.split(":"))
         self._go_underground(player, self.tunnel_at((cx, cy), "cave"))
+        # The cave objecting to being walked into: the bats coming up off the walls as a
+        # cloud that crosses the light before it scatters. Cosmetic, over in a second.
+        get_particles().spawn_burst(
+            player.x, player.y, (58, 48, 62), count=40, speed=9, life=900, size=4, gravity=-0.05
+        )
+        play_sound("bat_flutter")
+        play_sound("bat_screech")
+        get_shake().add(c.Tunnels.RUMBLE_SHAKE * 0.5)
         if self.notify:
             self.notify("You duck under the rock and into the dark", (170, 160, 200))
 
@@ -401,6 +410,9 @@ class WorldPlaces:
         a flag on the tunnel (`warden_alive`) exactly as the garrison is held as a count."""
         self.monsters = [m for m in self.monsters if m.camp_id != tunnel.id]
         self.critters = [cr for cr in self.critters if cr.camp_id != tunnel.id]
+        # The old traps go with them: session-only, tagged with the tunnel, laid again from
+        # scratch on the next descent.
+        self.traps = [t for t in self.traps if getattr(t, "tunnel_id", None) != tunnel.id]
         warden = next((b for b in self.bosses if b.camp_id == tunnel.id), None)
         if warden is not None:
             # Whatever the model called it while the player was down there is kept, so it is
@@ -427,6 +439,16 @@ class WorldPlaces:
         tunnel = self.underground
         if tunnel is None:
             return
+        # Bad air: standing in a pocket keeps the player chilled and puffs at their feet.
+        for gx, gy, gr in tunnel.gas:
+            if math.hypot(player.x - gx, player.y - gy) < gr:
+                player.chill(c.Tunnels.GAS_CHILL_MS, c.Tunnels.GAS_CHILL_FACTOR)
+                if random.random() < 0.15:
+                    get_particles().spawn_burst(
+                        player.x, player.y, (120, 150, 110), count=3, speed=1.5, life=700, size=3
+                    )
+                break
+
         warden_dist = self._warden_distance(tunnel, player)
         if tunnel.update_atmosphere(dt, player, warden_dist):
             play_sound("cave_groan")
@@ -446,6 +468,10 @@ class WorldPlaces:
             else:
                 play_sound("cave_rumble")
                 get_shake().add(c.Tunnels.RUMBLE_SHAKE)
+                # A fall that loud brings the nearest sleepers up.
+                for m in self.monsters:
+                    if m.camp_id == tunnel.id and m.dormant and m.distance_to_point(player.get_pos()) < 700:
+                        m.wake()
 
         # The warden breathing where the light does not reach it yet.
         tunnel.breath_timer -= dt
@@ -485,16 +511,37 @@ class WorldPlaces:
             # Held to the room it was put in: a garrison that roamed the whole tunnel would
             # be found by walking rather than by looking.
             guard.post_at(x, y, c.Tunnels.CORRIDOR_WIDTH)
+            # Some of them are asleep where they were posted: a still shape in the dark that
+            # only becomes a fight if the player wakes it.
+            guard.dormant = rng.random() < c.Tunnels.SLEEPER_FRACTION
             self.monsters.append(guard)
 
         if not tunnel.hoard_placed:
             tunnel.hoard_placed = True
             luck = self._tunnel_luck(tunnel)
-            for x, y in tunnel.floor_spots(random.randint(*c.Tunnels.HOARD), rng, c.Tunnels.ENTRANCE_CLEARANCE):
+            spots = tunnel.floor_spots(random.randint(*c.Tunnels.HOARD), rng, c.Tunnels.ENTRANCE_CLEARANCE)
+            for i, (x, y) in enumerate(spots):
                 self.items.append(Item(x, y, "Lootbox", "lootbox", rarity=roll_rarity(luck=luck)))
+                # One of them is somebody who got this far and no further: their purse on the
+                # ground beside the box, the rest of them drawn as bones by the tunnel.
+                if i == 0:
+                    coins = rng.randint(*c.Tunnels.REMAINS_COINS)
+                    self.items.append(Item(x + 34, y + 8, "Purse", "coins", rarity="common", quantity=coins))
 
+        self._lay_old_traps(tunnel, rng)
         self._populate_cave(tunnel, rng)
         self.tunnel_state[tunnel.id] = tunnel.state()
+
+    def _lay_old_traps(self, tunnel: Tunnel, rng: random.Random):
+        """Bear traps left in the corridors by whoever came down here before. Tagged with
+        the tunnel like the garrison is, so they clear with it and are never saved: a
+        session-only hazard on ground the player has to walk."""
+        if any(getattr(t, "tunnel_id", None) == tunnel.id for t in self.traps):
+            return
+        for x, y in tunnel.floor_spots(rng.randint(*c.Tunnels.OLD_TRAPS), rng, c.Tunnels.ENTRANCE_CLEARANCE):
+            trap = BearTrap(x, y, tunnel.chunk)
+            trap.tunnel_id = tunnel.id
+            self.traps.append(trap)
 
     @staticmethod
     def _tunnel_distance(tunnel: Tunnel) -> float:
@@ -527,6 +574,12 @@ class WorldPlaces:
         for x, y in tunnel.floor_spots(random.randint(*c.Tunnels.BATS), rng, c.Tunnels.ENTRANCE_CLEARANCE):
             bat = Critter(x, y, c.CRITTER_KINDS_BY_NAME["bat"], home=(x, y), camp_id=tunnel.id)
             self.critters.append(bat)
+
+        # And the crawlers that want no part of the light: harmless, but they bolt from a
+        # long way off, so a shape moving at the edge of the lantern is usually one of these.
+        for x, y in tunnel.floor_spots(rng.randint(*c.Tunnels.CRAWLERS), rng, c.Tunnels.ENTRANCE_CLEARANCE):
+            crawler = Critter(x, y, c.CRITTER_KINDS_BY_NAME["cave crawler"], home=(x, y), camp_id=tunnel.id)
+            self.critters.append(crawler)
 
         if tunnel.warden_alive is None:
             tunnel.warden_alive = self._tunnel_distance(tunnel) >= c.Tunnels.WARDEN_MIN_DISTANCE
