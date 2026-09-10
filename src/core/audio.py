@@ -69,10 +69,32 @@ _SOUND_SPECS = {
     "mine_blast": ([(150, 0.06), (90, 0.10), (55, 0.20)], 0.42, "square"),
     # A creeper bursting: wetter than a grenade, closer to `gore` than to a crate breaking.
     "creeper_blast": ([(260, 0.04), (150, 0.06), (300, 0.03), (90, 0.14)], 0.40, "noise"),
+    # The dark under the world making itself heard. A drip: a bright bead into a low pool,
+    # quiet enough to be at the edge of hearing.
+    "cave_drip": ([(2400, 0.015), (900, 0.05), (480, 0.13)], 0.10, "sine"),
+    # Rock settling somewhere back in the tunnel: no transient, just a low body that fades.
+    "cave_groan": ([(72, 0.30), (56, 0.42), (64, 0.22)], 0.13, "sine"),
+    # A fall somewhere far off, felt in the floor as much as heard. Shakes the ground it
+    # reaches the player through.
+    "cave_rumble": ([(92, 0.24), (60, 0.40), (44, 0.52)], 0.24, "noise"),
+    # Wings in the dark: a clatter of short noise bursts as a bat crosses or closes.
+    "bat_flutter": ([(320, 0.02), (620, 0.015), (280, 0.02), (540, 0.015), (250, 0.03)], 0.16, "noise"),
+    # And its call, a thin screech pitched near the top of hearing.
+    "bat_screech": ([(2700, 0.02), (3200, 0.015), (2300, 0.03)], 0.13, "noise"),
+    # The warden breathing where the light does not reach yet: the lowest, slowest sound in
+    # the game, so a boss that waits is heard as a weight before it is seen.
+    "warden_breath": ([(46, 0.55), (38, 0.75)], 0.22, "noise"),
+    # A ceiling giving way where a shadow just fell: grit, then the slab landing.
+    "rockfall": ([(1400, 0.02), (300, 0.06), (110, 0.16), (60, 0.22)], 0.42, "noise"),
 }
 
 
-def _synth(segments, volume, wave) -> array.array:
+def _synth(segments, volume, wave, name="") -> array.array:
+    # A local RNG seeded from the effect's name: the hiss in a noise wave has to be the same
+    # every launch, and drawing it from the global `random` at startup shifted every seeded
+    # roll made after it (the spawn search, a village's people) by however many samples the
+    # sound table cost.
+    rng = random.Random(f"sfx:{name}")
     samples = array.array("h")
     for freq, duration in segments:
         count = int(SAMPLE_RATE * duration)
@@ -84,7 +106,7 @@ def _synth(segments, volume, wave) -> array.array:
             elif wave == "noise":
                 # Band-limited only by the tone it is mixed with: the frequency sets a dull
                 # body under the hiss, so a splatter still has a pitch to it.
-                shape = math.sin(2 * math.pi * freq * t) * 0.35 + random.uniform(-1.0, 1.0) * 0.65
+                shape = math.sin(2 * math.pi * freq * t) * 0.35 + rng.uniform(-1.0, 1.0) * 0.65
             else:
                 shape = math.sin(2 * math.pi * freq * t)
             value = int(shape * envelope * volume * 32767)
@@ -100,7 +122,7 @@ class SoundManager:
             return
         try:
             for name, (segments, volume, wave) in _SOUND_SPECS.items():
-                samples = _synth(segments, volume, wave)
+                samples = _synth(segments, volume, wave, name)
                 self.sounds[name] = pygame.mixer.Sound(buffer=samples.tobytes())
         except Exception as e:
             print(f"Audio init failed, sound disabled: {e}")

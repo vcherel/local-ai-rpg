@@ -100,6 +100,39 @@ class HurtVignette:
             surface.blit(overlay, (0, 0))
 
 
+class DreadVignette:
+    """A cold, dark edge closing in when something is watching from past the light.
+
+    Unlike `HurtVignette` this is not a decaying trigger: it is held at whatever the tunnel
+    says the pressure is right now (`Tunnel.pressure`, the unseen warden's nearness), so it
+    tightens as the player walks towards the thing and lets go as they back off. Drawn only
+    underground; a step of alpha and a slow breath, nothing that reads as being hit."""
+
+    def __init__(self):
+        self._overlay = Overlay(40)
+
+    def _paint(self, overlay, amount):
+        w, h = c.Screen.WIDTH, c.Screen.HEIGHT
+        border = round(80 + 220 * amount)
+        for step in range(6):
+            t = (step + 1) / 6
+            pygame.draw.rect(
+                overlay,
+                (10, 9, 14, int(30 * amount * t)),
+                (0, 0, w, h),
+                round(border * (1 - step / 8)),
+                border_radius=round(30 * t),
+            )
+
+    def draw(self, surface, pressure: float):
+        if pressure <= 0.0:
+            return
+        pulse = 0.8 + 0.2 * math.sin(pygame.time.get_ticks() / 1100)
+        overlay = self._overlay.surface(pressure * pulse, self._paint)
+        if overlay is not None:
+            surface.blit(overlay, (0, 0))
+
+
 class ScreenFlash:
     """A full-screen wash of colour, blown out at once and fading fast.
 
@@ -314,6 +347,7 @@ _veil = Overlay(24)
 
 _hitstop = None
 _vignette = None
+_dread = None
 _flash = None
 _trap_fx = None
 _banner = None
@@ -331,6 +365,13 @@ def get_vignette() -> HurtVignette:
     if _vignette is None:
         _vignette = HurtVignette()
     return _vignette
+
+
+def get_dread() -> DreadVignette:
+    global _dread
+    if _dread is None:
+        _dread = DreadVignette()
+    return _dread
 
 
 def get_flash() -> ScreenFlash:

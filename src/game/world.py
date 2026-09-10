@@ -1007,6 +1007,10 @@ class World(
         # Not in the surface branch below: a death underground leaves its drop in the tunnel
         # it happened in, and walking back down to it is how it is rubbed out.
         self._clear_reached_death_drop(player)
+        if self.underground is not None:
+            # The dark's own mood: the lantern's flicker and dim, the down draught, the
+            # noises off. None of it moves anything in the world.
+            self._update_cave_mood(player, dt)
         if self.underground is None:
             self._sync_chunks(player)
             self.events.update(dt, player, quest_system, npc_name_generator)

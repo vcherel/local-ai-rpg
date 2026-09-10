@@ -15,7 +15,15 @@ from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.music import get_music
 from core.particles import get_particles
-from core.screen_fx import draw_blood_veil, get_banner, get_flash, get_hitstop, get_trap_fx, get_vignette
+from core.screen_fx import (
+    draw_blood_veil,
+    get_banner,
+    get_dread,
+    get_flash,
+    get_hitstop,
+    get_trap_fx,
+    get_vignette,
+)
 from core.settings import get_settings, move_keys
 from core.swing_arcs import get_swings
 from game.entities.items import Item, rarity_color, roll_rarity
@@ -1104,7 +1112,9 @@ class Game(GameInteractions):
             self._combat_until = now + c.Music.COMBAT_HOLD_MS
         if now < self._combat_until:
             return "combat"
-        if self.world.underground is None and self.world.village_at(player.x, player.y) is not None:
+        if self.world.underground is not None:
+            return "underground"
+        if self.world.village_at(player.x, player.y) is not None:
             return "village"
         return "night" if self.world.daynight.darkness > 0.5 else "day"
 
@@ -1137,6 +1147,10 @@ class Game(GameInteractions):
         # Underground or not: a blood night is on the world, and the tunnel is world space.
         draw_blood_veil(self.screen, self.world.events.blood_intensity)
         get_vignette().draw(self.screen)
+        # The dark leaning in when the warden is close but still unlit. Underground only, and
+        # held at the tunnel's own pressure rather than decaying like a hit.
+        if self.world.underground is not None:
+            get_dread().draw(self.screen, self.world.underground.pressure)
         # Over the sky and the vignette, under the HUD: a blast's wash and a trap's jaws are
         # things happening to the world, not readouts.
         get_flash().draw(self.screen)

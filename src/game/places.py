@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import core.constants as c
 from core.audio import play_sound
+from core.camera import get_shake
 from core.particles import get_particles
 from game.entities.boss import Boss
 from game.entities.critter import Critter
@@ -406,6 +407,64 @@ class WorldPlaces:
             # the same named thing standing over the vault on the next descent.
             tunnel.warden_name = warden.display_name
         self.bosses = [b for b in self.bosses if b.camp_id != tunnel.id]
+
+    def _warden_distance(self, tunnel: Tunnel, player: Player) -> float | None:
+        """How far the warden standing over this cave's vault is, or None when there is
+        none. The one thing down here whose whereabouts the dark's mood reads."""
+        if not tunnel.warden_alive:
+            return None
+        warden = next((b for b in self.bosses if b.camp_id == tunnel.id), None)
+        return None if warden is None else warden.distance_to_point(player.get_pos())
+
+    def _update_cave_mood(self, player: Player, dt: float):
+        """The dark objecting to being walked through: the lantern's flicker and slow dim,
+        the down draught that puts it out, and the noises off (a drip, rock settling, a fall
+        felt in the floor, wings, the warden breathing past the light). All session-only and
+        all read off `Tunnel.menace`, which climbs with depth and with the warden's nearness.
+
+        Nothing here is a threat. It is the reason a cave is somewhere the player wants to be
+        out of, which is what makes the walk to the vault cost something."""
+        tunnel = self.underground
+        if tunnel is None:
+            return
+        warden_dist = self._warden_distance(tunnel, player)
+        if tunnel.update_atmosphere(dt, player, warden_dist):
+            play_sound("cave_groan")
+            get_shake().add(c.Tunnels.RUMBLE_SHAKE * 0.5)
+
+        # The noises off, on a clock that runs quicker the deeper in the player is.
+        tunnel.ambient_timer -= dt
+        if tunnel.ambient_timer <= 0:
+            lo, hi = c.Tunnels.AMBIENT_GAP_S
+            gap = lo + (hi - lo) * (1.0 - 0.6 * tunnel.menace)
+            tunnel.ambient_timer = gap * 1000.0 * random.uniform(0.7, 1.3)
+            roll = random.random()
+            if roll < 0.6:
+                play_sound("cave_drip")
+            elif roll < 0.85:
+                play_sound("cave_groan")
+            else:
+                play_sound("cave_rumble")
+                get_shake().add(c.Tunnels.RUMBLE_SHAKE)
+
+        # The warden breathing where the light does not reach it yet.
+        tunnel.breath_timer -= dt
+        if tunnel.pressure > 0.3 and tunnel.breath_timer <= 0:
+            tunnel.breath_timer = random.uniform(2600, 4200)
+            play_sound("warden_breath")
+
+        # Wings, when a bat is near enough to be heard crossing.
+        tunnel.bat_timer -= dt
+        if tunnel.bat_timer <= 0:
+            near = min(
+                (cr.distance_to_point(player.get_pos()) for cr in self.critters if cr.camp_id == tunnel.id),
+                default=9e9,
+            )
+            if near < 320:
+                tunnel.bat_timer = random.uniform(700, 1600)
+                play_sound("bat_flutter" if random.random() < 0.7 else "bat_screech")
+            else:
+                tunnel.bat_timer = 900.0
 
     def _populate_tunnel(self, tunnel: Tunnel):
         """What is waiting down there: the survivors of its garrison, its hoard the first

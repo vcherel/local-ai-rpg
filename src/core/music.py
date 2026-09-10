@@ -104,6 +104,20 @@ CONTEXTS = {
             ((0, 6, 11), (-4, 1, 6), (-7, 0, 5), (0, 6, 11)),
         ),
     },
+    # Under the world: the lowest and slowest pad there is, almost no upper partials and
+    # barely swelling, held so quiet it is felt rather than heard. A cave is somewhere the
+    # music stops keeping the player company.
+    "underground": {
+        "root": 61.7,
+        "brightness": 0.28,
+        "breath": 0.05,
+        "chord_s": 6.0,
+        "volume": 0.6,
+        "sets": (
+            ((0, 1, 6), (-2, 0, 5), (-5, -1, 2), (0, 1, 6)),
+            ((0, 2, 3), (-4, -1, 1), (-7, -2, 0), (0, 2, 3)),
+        ),
+    },
     # The night the whole world is seen through red: the night pad, sharpened and sped up.
     "blood": {
         "root": 87.3,

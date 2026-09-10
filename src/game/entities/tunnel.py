@@ -19,7 +19,12 @@ def has_tunnel(chunk: tuple[int, int]) -> bool:
     return random.Random(f"tunnel:{int(chunk[0])},{int(chunk[1])}").random() < c.Tunnels.CHANCE
 
 
-_LANTERN_MASK: pygame.Surface | None = None
+# The lantern gradient at full size, and the small stack it is scaled up from. The light
+# is no longer one fixed circle: it flickers and slowly dims, so it is scaled per frame to
+# whatever the tunnel says it is throwing right now, keyed on the radius in coarse steps so
+# a steady light costs one dict lookup.
+_LANTERN_SMALL: pygame.Surface | None = None
+_LANTERN_BY_RADIUS: dict[int, pygame.Surface] = {}
 # The dark itself, kept for the life of the process and refilled each frame. A fresh
 # screen-sized alpha surface every frame is an allocation the size of the window for
 # something whose contents never change but for where the light is cut out of it.
@@ -33,27 +38,32 @@ def _distance_to_rect(rect: pygame.Rect, x: float, y: float) -> float:
     return math.hypot(dx, dy)
 
 
-def _lantern_mask() -> pygame.Surface:
-    """The player's light as one continuous gradient, built once and kept.
+def _lantern_mask(radius: int | None = None) -> pygame.Surface:
+    """The player's light as one continuous gradient at `radius` pixels, built once per
+    coarse radius and kept.
 
     Drawn small and then scaled up: circles on an alpha surface overwrite rather than blend,
     so any stack of them is a set of steps, and the scale up interpolates those steps into a
     ramp. Alpha runs from clear at the middle to full dark at the radius, squared so the
-    light holds its ground close in and gives out quickly at the edge.
+    light holds its ground close in and gives out quickly at the edge. The radius is
+    quantised to 16px, so the flicker only ever picks a mask that is already scaled.
     """
-    global _LANTERN_MASK
-    if _LANTERN_MASK is not None:
-        return _LANTERN_MASK
+    global _LANTERN_SMALL
+    if _LANTERN_SMALL is None:
+        steps = 48
+        small = pygame.Surface((steps * 2, steps * 2), pygame.SRCALPHA)
+        small.fill((0, 0, 0, c.Tunnels.DARKNESS))
+        for step in range(steps, 0, -1):
+            alpha = round(c.Tunnels.DARKNESS * (step / steps) ** 2)
+            pygame.draw.circle(small, (0, 0, 0, alpha), (steps, steps), step)
+        _LANTERN_SMALL = small
 
-    steps = 48
-    small = pygame.Surface((steps * 2, steps * 2), pygame.SRCALPHA)
-    small.fill((0, 0, 0, c.Tunnels.DARKNESS))
-    for step in range(steps, 0, -1):
-        alpha = round(c.Tunnels.DARKNESS * (step / steps) ** 2)
-        pygame.draw.circle(small, (0, 0, 0, alpha), (steps, steps), step)
-    size = c.Tunnels.LIGHT_RADIUS * 2
-    _LANTERN_MASK = pygame.transform.smoothscale(small, (size, size))
-    return _LANTERN_MASK
+    want = c.Tunnels.LIGHT_RADIUS if radius is None else max(16, round(radius / 16) * 16)
+    cached = _LANTERN_BY_RADIUS.get(want)
+    if cached is None:
+        cached = pygame.transform.smoothscale(_LANTERN_SMALL, (want * 2, want * 2))
+        _LANTERN_BY_RADIUS[want] = cached
+    return cached
 
 
 class Tunnel:
@@ -132,6 +142,24 @@ class Tunnel:
         # none: a cellar under a village is not an expedition.
         self.vault = self.rooms[-1] if kind != "well" and len(self.rooms) > 1 else None
 
+        # --- session-only mood, rebuilt every descent -------------------------------------
+        # None of this is saved: how frightening the dark is on this trip is not something a
+        # save should carry, only how much of the garrison is left is. `menace` is the one
+        # number the rest read, `light_scale` what the lantern actually throws this frame
+        # once the flicker and the slow dimming are in it, `blackout` the beat a down
+        # draught has it out, `pressure` how hard the unseen warden leans on the vignette.
+        self.menace = 0.0
+        self.light_scale = 1.0
+        self.blackout = 0.0
+        self.pressure = 0.0
+        self.time_in = 0.0
+        self._blackout_gap = 0.0
+        self._blackout_room = -1
+        self._flicker = 0.0
+        self.ambient_timer = 0.0
+        self.breath_timer = 0.0
+        self.bat_timer = 0.0
+
     @property
     def id(self) -> str:
         # A well's tunnel keeps the id it has always had, so a save made before there were
@@ -207,6 +235,61 @@ class Tunnel:
 
     def contains_point(self, x: float, y: float) -> bool:
         return any(rect.collidepoint(x, y) for rect in self._floor)
+
+    def room_index_at(self, x: float, y: float) -> int:
+        """Which room the point is in, or -1 in a corridor or in rock. Used to roll the
+        down-draught per room the player walks into rather than per frame."""
+        for i, room in enumerate(self.rooms):
+            if room.collidepoint(x, y):
+                return i
+        return -1
+
+    def update_atmosphere(self, dt: float, player, warden_dist: float | None):
+        """Everything about how the dark feels right now, folded into the handful of numbers
+        the renderer reads. Session-only and recomputed every frame the player is down here.
+
+        `menace` climbs with depth from the shaft and with how close the warden is, well
+        past the light so it is felt before it is seen. The lantern flickers harder and
+        dims slower the higher it runs, and never quite recovers until the player is back
+        near the way out. A down draught is rolled once per room walked into, seeded from
+        the room so a cave that put the light out here last time does it again."""
+        self.time_in += dt
+        px, py = player.x, player.y
+        d_shaft = math.hypot(px - self.entrance[0], py - self.entrance[1])
+
+        depth = min(1.0, d_shaft / c.Tunnels.MENACE_DEPTH_PACES)
+        warden01 = 0.0
+        if warden_dist is not None:
+            warden01 = max(0.0, 1.0 - warden_dist / c.Tunnels.MENACE_WARDEN_RANGE)
+        self.menace = max(depth * 0.6, warden01)
+
+        # The slow dim: worst deep in after a long time down, eased off near the shaft.
+        held = min(1.0, self.time_in / (c.Tunnels.DIM_FULL_S * 1000.0))
+        near_out = max(0.0, 1.0 - d_shaft / c.Tunnels.DIM_RECOVER_PACES)
+        dim = 1.0 - (1.0 - c.Tunnels.DIM_FLOOR) * held * (1.0 - near_out)
+
+        # The flicker: a cheap wander, two sines beating against each other, deep as menace.
+        now = pygame.time.get_ticks()
+        wander = 0.5 + 0.5 * math.sin(now * 0.011) * math.sin(now * 0.037 + 1.3)
+        amount = c.Tunnels.FLICKER_MIN + (c.Tunnels.FLICKER_MAX - c.Tunnels.FLICKER_MIN) * self.menace
+        self.light_scale = max(0.2, dim * (1.0 - amount * wander))
+
+        self.blackout = max(0.0, self.blackout - dt)
+        self._blackout_gap = max(0.0, self._blackout_gap - dt)
+        room = self.room_index_at(px, py)
+        started = False
+        if room >= 0 and room != self._blackout_room:
+            self._blackout_room = room
+            if self._blackout_gap <= 0 and room != 0:
+                roll = random.Random(f"blackout:{self.id}:{room}").random()
+                if roll < c.Tunnels.BLACKOUT_CHANCE:
+                    self.blackout = c.Tunnels.BLACKOUT_MS
+                    self._blackout_gap = c.Tunnels.BLACKOUT_MIN_GAP_S * 1000.0
+                    started = True
+
+        lit = c.Tunnels.LIGHT_RADIUS * self.light_scale
+        self.pressure = warden01 if (warden_dist is not None and warden_dist > lit * 1.1) else 0.0
+        return started
 
     def at_exit(self, x: float, y: float) -> bool:
         return math.hypot(x - self.entrance[0], y - self.entrance[1]) <= c.Tunnels.EXIT_RADIUS
@@ -325,7 +408,11 @@ class Tunnel:
         overlay = _DARK_OVERLAY
         overlay.fill((0, 0, 0, c.Tunnels.DARKNESS))
         x, y = camera.world_to_screen(player.x, player.y)
-        light = _lantern_mask()
+        # What the lantern is throwing this frame: the slow dim and the flicker are already
+        # in `light_scale`, and a down draught collapses it to almost nothing for a beat.
+        scale = self.light_scale * (0.12 if self.blackout > 0 else 1.0)
+        radius = round(c.Tunnels.LIGHT_RADIUS * scale)
+        light = _lantern_mask(radius)
         area = light.get_rect(center=(x, y))
         # Taking the lower of the two alphas cuts the light out of the dark: inside the
         # radius the gradient wins, outside it the mask is already full dark and nothing
@@ -335,3 +422,41 @@ class Tunnel:
             overlay.blit(light, area, special_flags=pygame.BLEND_RGBA_MIN)
         overlay.set_clip(None)
         screen.blit(overlay, (0, 0))
+        self._draw_omens(screen, camera, player, radius)
+
+    def _draw_omens(self, screen: pygame.Surface, camera: Camera, player, lit_radius: int):
+        """Shapes in the dark just past the light: a pair of eyes, a hunched outline. Almost
+        all of them are nothing, they hold still in world space while the camera moves, and
+        they are drawn over the darkness rather than cut out of it, so the light never falls
+        on one to prove it is not there. Seeded per room, so the same corner of the same
+        cave is watched on every descent."""
+        room = self.room_index_at(player.x, player.y)
+        if room < 0:
+            return
+        rect = self.rooms[room]
+        rng = random.Random(f"omen:{self.id}:{room}")
+        now = pygame.time.get_ticks()
+        count = rng.randint(*c.Tunnels.OMEN_PER_ROOM)
+        for i in range(count):
+            ox = rng.uniform(rect.left + 30, rect.right - 30)
+            oy = rng.uniform(rect.top + 30, rect.bottom - 30)
+            dist = math.hypot(ox - player.x, oy - player.y)
+            # Only in the band that is dark but near: on the light and it would be a real
+            # thing, far off and it is not glimpsed at all.
+            if dist < lit_radius * 0.9 or dist > lit_radius * 2.1:
+                continue
+            period = c.Tunnels.OMEN_FADE_MS * rng.uniform(1.6, 3.4)
+            phase = (now + i * 900) % period / period
+            glow = math.sin(phase * math.pi)
+            if glow < 0.45:
+                continue
+            alpha = round(70 * (glow - 0.45) / 0.55)
+            sx, sy = camera.world_to_screen(ox, oy)
+            shape = pygame.Surface((28, 36), pygame.SRCALPHA)
+            if rng.random() < 0.5:
+                for cx in (10, 18):
+                    pygame.draw.circle(shape, (170, 150, 120, min(255, alpha * 2)), (cx, 18), 2)
+            else:
+                pygame.draw.ellipse(shape, (8, 8, 10, alpha), (5, 2, 18, 24))
+                pygame.draw.ellipse(shape, (8, 8, 10, alpha), (3, 18, 22, 16))
+            screen.blit(shape, shape.get_rect(center=(sx, sy)))

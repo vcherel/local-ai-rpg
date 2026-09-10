@@ -517,6 +517,60 @@ class Tunnels:
     ROCK_COLOR: tuple = (30, 27, 24)
     LADDER_COLOR: tuple = (126, 92, 56)
 
+    # --- the cave objecting to being in it -----------------------------------------------
+    # Menace is one number the tunnel carries, 0 at the shaft and climbing with depth and
+    # with how close the warden is: the flicker, the pressure vignette and how often the
+    # dark makes a noise all read it, so a cave gets worse the further in the player goes.
+    MENACE_DEPTH_PACES: float = 1400.0
+    # The warden pulls menace to full from this far off, well past the light, so it is felt
+    # as a weight in the dark before it is ever seen.
+    MENACE_WARDEN_RANGE: int = 1500
+
+    # The lantern is never quite steady: a per-frame wander on its radius, deeper the higher
+    # the menace, so the edge of the light breathes and nothing at it holds still.
+    FLICKER_MIN: float = 0.055
+    FLICKER_MAX: float = 0.16
+
+    # The longer the player is down here the less the lantern throws, bottoming out at this
+    # share of its reach after DIM_FULL_S, and recovering within DIM_RECOVER_PACES of the
+    # shaft: a way out that gets harder to find the longer it is put off.
+    DIM_FLOOR: float = 0.62
+    DIM_FULL_S: float = 150.0
+    DIM_RECOVER_PACES: float = 240.0
+
+    # A down draught puts the lantern out for a beat. Rolled per room the player walks into
+    # (seeded from the room, so the same room behaves the same way on a second descent) and
+    # never twice inside BLACKOUT_MIN_GAP_S.
+    BLACKOUT_CHANCE: float = 0.28
+    BLACKOUT_MS: float = 900.0
+    BLACKOUT_MIN_GAP_S: float = 40.0
+
+    # How often the dark makes a noise (a drip, rock settling, a distant fall), in seconds,
+    # scaled down towards the low end as menace climbs.
+    AMBIENT_GAP_S: tuple = (2.5, 9.0)
+    # A distant rockfall also shakes the ground it is heard through.
+    RUMBLE_SHAKE: int = 6
+
+    # Shapes past the edge of the light: mostly nothing, a few of them a pair of eyes or a
+    # hunched outline, seeded per room so they hold still while the camera moves. The one
+    # thing drawn in the dark rather than cut out of it.
+    OMEN_PER_ROOM: tuple = (2, 5)
+    OMEN_FADE_MS: float = 2600.0
+
+    # Some of a tunnel's garrison is asleep where it was posted: no vision cone, no chase,
+    # until light or a noise closer than WAKE_RADIUS brings it up. A quiet approach past a
+    # sleeper is the reward for carrying the one light in the place.
+    SLEEPER_FRACTION: float = 0.4
+    WAKE_RADIUS: int = 240
+
+    # Old bear traps left in the corridors by whoever came down here before and did not
+    # leave. Count per tunnel, laid on the floor clear of the shaft.
+    OLD_TRAPS: tuple = (1, 3)
+
+    # What a cave has lying about: bones, a dropped pack, somebody who got this far. Seeded
+    # per room, drawn as scenery, and a few of them worth searching.
+    REMAINS_PER_ROOM: tuple = (1, 3)
+
 
 @dataclass(frozen=True)
 class Traps:
