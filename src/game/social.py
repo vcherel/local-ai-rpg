@@ -9,10 +9,13 @@ notices pinned to a board, and the militia orders an angry town acts on as one.
 
 from __future__ import annotations
 
+import itertools
 import math
 import random
 import time
 from typing import TYPE_CHECKING
+
+import pygame
 
 import core.constants as c
 from core.audio import play_sound
@@ -831,6 +834,18 @@ class WorldSocial:
         # for them, and would put the thing down before they ever met one.
         arrived = [m for m in self.monsters if m.revealed] + [boss for boss in self.bosses if boss.rising <= 0]
         intruders = [m for m in arrived if self.village_at(m.x, m.y, c.Villages.DEFEND_MARGIN) is not None]
+        # Whatever is beating on a gate is at the wall rather than inside it, and it is
+        # answered all the same: the guard is posted on that gate to meet exactly this, and
+        # a wolf clawing at the leaf while the watch stood a stride away inside it was a
+        # watch that was not one. The mark outlives the last blow by a moment, so the
+        # answer does not lapse between one swing and the next.
+        now = pygame.time.get_ticks()
+        assailants = [
+            body
+            for body in itertools.chain(self.monsters, self.critters)
+            if body.gate_bash_ms >= 0 and now - body.gate_bash_ms <= c.Villages.GATE_ALARM_MS
+        ]
+        intruders += [body for body in assailants if body not in intruders]
         # Somebody being bitten is its own fight, so the loop is still walked with nothing on
         # anyone's grounds: what is chewing on a farmer out in a field is nobody's intruder.
         if not intruders and not any(npc.threatened_by is not None for npc in self.npcs):

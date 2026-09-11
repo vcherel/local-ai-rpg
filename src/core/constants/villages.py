@@ -263,6 +263,9 @@ class Villages:
     MILITIA_FRACTION_BY_TIER: tuple = (0.35, 0.5, 0.65)
     DEFEND_MARGIN: float = 300.0
     DEFEND_RADIUS: float = 620.0
+    # How long after its last blow on a gate an attacker outside the wall is still what
+    # the militia goes out to meet (`WorldSocial.militia_orders`).
+    GATE_ALARM_MS: int = 4000
     # How many of the nearest villagers a monster asks whether it can actually see before
     # settling for the player. Sight is walked step by step and monsters are the long list.
     MONSTER_PREY_TRIES: int = 3

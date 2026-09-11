@@ -83,6 +83,8 @@ class Monster(Entity):
         self.attack_ready_ms = 0
         # Earliest tick this one may swing at a closed door again (World.bash_door).
         self.next_bash_ms = 0
+        # When it last beat on a settlement's gate, which is what turns the guard out.
+        self.gate_bash_ms = -1
         # Charger state (kind.charge): when the current windup/rush ends, the heading it
         # committed to, and the earliest tick it may line up another one.
         self.charge_windup_until_ms = 0

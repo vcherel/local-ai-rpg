@@ -256,6 +256,16 @@ which is when the player is inside a town that wants them dead, and
 in) on the same hit-point pool a front door uses. `gate_broken` is persisted, `gate_hp` is
 not, exactly as a door does it.
 
+A gate leaned shut for the night answers no weapon of the player's, who pushes it open
+instead, but it is the same wall to whatever chased them up to it: a monster or an animal
+that has turned on the player beats on the shut leaf (`bash_gates`, `shut_too`) rather than
+standing against it until dawn, and every blow marks the attacker (`gate_bash_ms`). The
+mark is what turns the guard out: `WorldSocial.militia_orders` counts whatever beat on a
+gate within `Villages.GATE_ALARM_MS` as an intruder, the militia within reach go to meet it,
+letting themselves through their own gate on the way (`_npc_fights` works it exactly as the
+walk to the player does), and the blow on an animal lands as any unaimed one does,
+`by_player=False` throughout.
+
 Shutting a town takes a real escalation, not one cross word. One villager turning (a caught
 thief, most often) is a fight, and its gates stay open through it: a settlement bars itself
 only once it holds a grudge (somebody was killed here) or `Villages.BAR_GATES_MOB` of its

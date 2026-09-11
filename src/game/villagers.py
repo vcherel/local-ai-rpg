@@ -11,6 +11,7 @@ from core.audio import play_sound
 from game.blow import Blow
 from game.entities.boss import Boss
 from game.entities.buildings import Building
+from game.entities.critter import Critter
 from game.entities.npcs import NPC
 from game.entities.projectile import ARROW_COLOR, STONE_COLOR, Projectile
 from game.navigation import Point
@@ -289,8 +290,15 @@ class WorldVillagers:
         return prices[max(0, min(tier, len(prices) - 1))]
 
     def _npc_fights(self, npc: NPC, enemy, player: Player, dt, quest_system: QuestSystem, defenders: list):
-        """One villager's frame spent meeting whatever the settlement sent them at."""
-        waypoint = self.chase_waypoint(npc, enemy, c.Entities.NPC_SIZE / 2)
+        """One villager's frame spent meeting whatever the settlement sent them at.
+
+        Their own gate is worked on the way, exactly as it is on the way to the player: what
+        they were sent at may be beating on the far side of it, and a guard who held the
+        leaf shut between themselves and the thing they were posted against was the whole
+        of why an animal could stand at a gate all night."""
+        radius = c.Entities.NPC_SIZE / 2
+        self.pass_gate_for(npc, radius, enemy)
+        waypoint = self.chase_waypoint(npc, enemy, radius)
         damage = npc.update(
             player,
             dt,
@@ -302,6 +310,11 @@ class WorldVillagers:
             crowd=defenders,
         )
         if not damage:
+            return
+        # An animal at the gate is nothing the player set on the town: the blow lands as
+        # any unaimed one does, with nothing owed to the player for it.
+        if isinstance(enemy, Critter):
+            self._hurt_bystander(enemy, damage, player, quest_system)
             return
         # A militia's swing lands on whatever they were sent at, and a boss is kept on its
         # own list: handing the wrong list here would take a dying boss off nothing at all.

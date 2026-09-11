@@ -63,6 +63,10 @@ class Critter(Statuses):
         self.hostile = kind.temperament == "predator" or bool(camp_id)
         self.last_attack_ms = 0
         self.lunge_until_ms = 0
+        # The clock a shut gate is beaten on (`WorldBreaking.bash_gates`), and when it last
+        # was: the settlement answers whatever is at its gate (`WorldSocial.militia_orders`).
+        self.next_bash_ms = 0
+        self.gate_bash_ms = -1
         # Fleeing: the heading it committed to, when the sprint started, and (when wounded)
         # how long it keeps running whatever the distance to the player.
         self.flee_heading: float | None = None

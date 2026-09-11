@@ -10,6 +10,7 @@ while it holds, and only the blow that empties the pool pays anything.
 
 from __future__ import annotations
 
+import itertools
 import math
 import random
 from typing import TYPE_CHECKING
@@ -23,6 +24,7 @@ from core.particles import get_particles
 from core.screen_fx import get_hitstop
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
+from game.entities.critter import Critter
 from game.entities.items import Item, rarity_color
 from game.entities.poi import PointOfInterest
 from game.loot import break_crate, open_poi_cache
@@ -310,15 +312,17 @@ class WorldBreaking:
             return None
         return building
 
-    def _gate_in_reach(self, pos, reach: float):
-        """The barred gate a blow at `pos` lands on, as (village, index), or None.
+    def _gate_in_reach(self, pos, reach: float, shut_too: bool = False):
+        """The gate a blow at `pos` lands on, as (village, index), or None.
 
-        Barred and not merely shut: a gate closed for the night has no beam across it and
-        opens to a press from either side, so hacking one down would be work nobody has any
-        reason to do. Only the wall a settlement puts between itself and you answers a
-        weapon."""
+        Barred and not merely shut, for a blow of the player's: a gate closed for the night
+        has no beam across it and opens to a press from either side, so hacking one down
+        would be work nobody has any reason to do. Only the wall a settlement puts between
+        itself and you answers a weapon. `shut_too` is the chaser's reading: a wolf does
+        not know what a press is, and a leaf leaned shut for the night is a wall to it
+        until it has clawed through."""
         for village in self._village_solids_by_chunk.get(self._chunk_of(*pos), ()):
-            if not village.barred:
+            if not village.barred and not (shut_too and village.shut_for_night):
                 continue
             index = village.gate_at(pos[0], pos[1], reach)
             if index is not None:
@@ -326,7 +330,7 @@ class WorldBreaking:
         return None
 
     def _hit_gate(self, village, index: int, damage: int, angle: float = 0.0):
-        """Land a blow on a barred gate, and put it through once it has taken enough. The
+        """Land a blow on a shut gate, and put it through once it has taken enough. The
         one part of a wall that ever gives: a settlement that has shut you out (or in) can
         be answered with a weapon rather than only with a walk round to the next side."""
         gate = village.defences()["gates"][index]
@@ -361,7 +365,8 @@ class WorldBreaking:
             self.notify("The gate gives way", c.Colors.WHITE)
 
     def _bashers(self, player: Player):
-        """Every monster close enough to be held up by something and off its bash cooldown.
+        """Everything close enough to be held up by something and off its bash cooldown: the
+        monsters, and the animals that have turned on the player.
 
         The loop both `bash_doors` and `bash_gates` are: the same box cull and the same
         clock, written once. What is actually in the way, and the blow it takes, is the
@@ -369,46 +374,54 @@ class WorldBreaking:
         has been found to swing at.
         """
         now = pygame.time.get_ticks()
-        for monster in self.monsters:
+        hunters = [critter for critter in self.critters if critter.hostile and critter.kind.damage > 0]
+        for chaser in itertools.chain(self.monsters, hunters):
             # Cheap box test first: only something already on the player can be held up by
             # anything between them, and this runs over every monster alive every frame.
-            if (
-                abs(monster.x - player.x) > c.World.DETECTION_RANGE
-                or abs(monster.y - player.y) > c.World.DETECTION_RANGE
-            ):
+            if abs(chaser.x - player.x) > c.World.DETECTION_RANGE or abs(chaser.y - player.y) > c.World.DETECTION_RANGE:
                 continue
-            if now >= monster.next_bash_ms:
-                yield monster
+            if now >= chaser.next_bash_ms:
+                yield chaser
 
     @staticmethod
-    def _wind_up_bash(monster):
-        """Put a monster on its bash cooldown with its arm coming round.
+    def _wind_up_bash(chaser):
+        """Put a monster or an animal on its bash cooldown with its blow coming round.
 
-        A leaf is bashed on its own cadence rather than on the monster's swing clock, so
-        this is the animation only: no wind-up to read and no blow to land."""
-        monster.next_bash_ms = pygame.time.get_ticks() + c.Buildings.DOOR_BASH_COOLDOWN_MS
-        monster.start_attack_anim()
+        A leaf is bashed on its own cadence rather than on the attacker's swing clock, so
+        this is the animation only: no wind-up to read and no blow to land. An animal has
+        no arm to bring round, so it is its lunge."""
+        now = pygame.time.get_ticks()
+        chaser.next_bash_ms = now + c.Buildings.DOOR_BASH_COOLDOWN_MS
+        if isinstance(chaser, Critter):
+            chaser.lunge_until_ms = now + c.Wildlife.GATE_LUNGE_MS
+        else:
+            chaser.start_attack_anim()
 
     def bash_gates(self, player: Player, damage_mult: float = 1.0):
-        """Let a monster shut out by a barred gate beat on it, exactly as it would a door.
+        """Let a monster or an animal shut out by a gate beat on it, exactly as it would a
+        door.
 
         A gate is barred because the settlement has turned on the player, which is also when
         a pack is most likely to be standing at it: the wall is not breakable, the way round
         is a long one, and the leaf across the gap is the one thing in the way that answers a
-        swing."""
-        for monster in self._bashers(player):
-            hit = self._gate_in_reach((monster.x, monster.y), c.Buildings.DOOR_BASH_REACH)
+        swing. A gate leaned shut for the night is the same wall to whatever chased the
+        player up to it, and it is beaten on the same way rather than stood against until
+        dawn; every blow marks the attacker (`gate_bash_ms`), which is what turns the guard
+        out to meet it (`WorldSocial.militia_orders`)."""
+        for chaser in self._bashers(player):
+            hit = self._gate_in_reach((chaser.x, chaser.y), c.Buildings.DOOR_BASH_REACH, shut_too=True)
             if hit is None:
                 continue
             village, index = hit
             # Only if it is actually what stands between them: inside looking out, or the
             # other way about, either side of the line the gateway is cut in.
-            if not village.gate_between(index, monster.x, monster.y, player.x, player.y):
+            if not village.gate_between(index, chaser.x, chaser.y, player.x, player.y):
                 continue
-            self._wind_up_bash(monster)
+            self._wind_up_bash(chaser)
+            chaser.gate_bash_ms = pygame.time.get_ticks()
             rect = village.defences()["gates"][index]["rect"]
-            angle = math.atan2(rect.centery - monster.y, rect.centerx - monster.x)
-            self._hit_gate(village, index, round(monster.kind.damage * damage_mult), angle)
+            angle = math.atan2(rect.centery - chaser.y, rect.centerx - chaser.x)
+            self._hit_gate(village, index, round(chaser.kind.damage * damage_mult), angle)
 
     def bash_doors(self, player: Player, damage_mult: float = 1.0):
         """Let every monster held up at a shut door beat on it.

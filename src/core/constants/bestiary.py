@@ -1002,6 +1002,8 @@ class Wildlife:
     loads or as they roam. What each species does with the player is in `CritterKind`.
     """
 
+    # How long an animal's lunge at a shut gate is drawn (`WorldBreaking._wind_up_bash`).
+    GATE_LUNGE_MS: int = 180
     COUNT: int = 25
     RESPAWN_INTERVAL_MS: int = 800
     # Kept above the screen's half-diagonal (~1006px) so an animal is never seen popping
