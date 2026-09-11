@@ -344,10 +344,16 @@ The walk home ends in a bed and not in the middle of the floor (`_npc_sleeps`,
 `_turn_in`). Each household is dealt its own beds once (`_bed_for`, the people who live here
 in a fixed order against the beds in a fixed order), so the same person has the same bed
 every night and two of them never climb into one; a cottage has a single bed and a tavern
-three or four. A household is never dealt more people than the room was furnished for in
-the first place (`World._populate_npcs` caps the roll at the beds the layout actually fit,
-since a second bed is skipped when there is no wall left for it), and whoever a room still
-has none for lies down on its floor (`_bed_down`) rather than standing in it until dawn.
+three or four. Only the people who will sleep there are counted: a guard's post is beside
+somebody's house and their night is spent on it, and dealing them a bed was a resident on
+the floor beside an empty one. A household is never dealt more people than the room was
+furnished for in the first place (`World._populate_npcs` caps the roll at the beds the
+layout actually fit), and whoever a room still has none for lies down on its floor
+(`_bed_down`) rather than standing in it until dawn. A house always fits at least one bed:
+the layout scans the whole floor once stepping a piece out of the way has failed
+(`_RoomSpace._scan_clear`), and a room too small for a bed and a rug gives up the rug.
+Nothing stands on the strip of floor a window pane lies over (`Buildings.WINDOW_CLEAR`),
+so a table is never drawn across the glass.
 
 Either way they are drawn asleep rather than drawn stopped. From overhead an idle sprite on
 a mattress is somebody standing on the furniture, so the covers are the tell: cloth from the
@@ -362,8 +368,17 @@ is skipped by `unstick` and `unwedge` for as long as they are in bed, the same e
 tower archer has from being walked off their roof, and *anything* to do at all (dawn, a
 mob, a monster in the street) puts them on their feet first, where the ordinary `unstick`
 is what steps them off the mattress. The walk itself stops beside the bed (`_bedside`, the
-foot of it, nudged to standable ground because a room is furnished before anybody is asked
-to cross it), never on it.
+foot of it or failing that either side, and only a spot a body can actually walk to from
+the middle of the room, because a room is furnished before anybody is asked to cross it and
+the gap between a bed and a table can be clear floor nothing can get into), never on it.
+The middle of a room is itself asked for rather than assumed (`_room_spot`): a shop's
+counter can stand across its centre, and a merchant sent there for the night pressed
+against it until dawn.
+
+Whoever is shut inside a building whose street they belong on lets themselves out
+(`_lets_self_out`): the door is theirs from the inside whatever the hour or the roll says
+of it from the street, so a villager the bell or the player shut a door on walks to it and
+opens it rather than grinding at the wall towards a wander target outside.
 
 The player sees it from the other side: a bed with somebody in it is not a bed to sleep in
 (`World.bed_taken`), so the prompt names the sleeper and the key refuses. Which bed is free

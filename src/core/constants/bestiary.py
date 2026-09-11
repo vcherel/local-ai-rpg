@@ -47,8 +47,11 @@ class Entities:
     # How much clearance that search asks for, as a multiple of the body's own radius: a
     # corner is legal ground, so a spot is only worth moving to if it has room around it.
     WEDGE_CLEARANCE: float = 1.7
-    # NPCs stop wandering and face the player when he gets this close.
-    NPC_WANDER_PAUSE_DISTANCE: int = 120
+    # A villager looks up at the player coming this close (`NPC._glancing`): a glance held
+    # for the first span, then nothing for the second however long the player stands there.
+    NPC_GLANCE_DISTANCE: int = 120
+    NPC_GLANCE_S: tuple = (1.2, 2.5)
+    NPC_GLANCE_GAP_S: tuple = (10.0, 25.0)
     # How long a villager keeps looking down the shot they just took (`NPC.aim_at`), rather
     # than being turned back to face their own footsteps by the next frame of wandering.
     NPC_AIM_HOLD_MS: int = 700

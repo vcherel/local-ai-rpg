@@ -386,6 +386,8 @@ class Buildings:
     WINDOW_H: int = 20
     WINDOW_Y_FROM_BOTTOM: int = 45
     WINDOW_X_FROM_DOOR: int = 40
+    # How much floor is kept clear of furniture round the strip a pane lies over.
+    WINDOW_CLEAR: int = 8
     # How far short of the pane a blow may land and still put it through, measured to the
     # glass itself rather than to the middle of it (`WorldBreaking._find_window_in_reach`).
     WINDOW_HIT_RADIUS: int = 18

@@ -466,9 +466,10 @@ class BuildingArt:
         self._draw_windows(screen, camera, self.window_rects(), 0.0, frozenset())
 
         layout = self.interior_layout()
-        rug_screen = to_screen(layout["rug"])
-        pygame.draw.ellipse(screen, (170, 90, 80), rug_screen)
-        pygame.draw.ellipse(screen, (120, 60, 55), rug_screen, 3)
+        if layout["rug"] is not None:
+            rug_screen = to_screen(layout["rug"])
+            pygame.draw.ellipse(screen, (170, 90, 80), rug_screen)
+            pygame.draw.ellipse(screen, (120, 60, 55), rug_screen, 3)
 
         for rect, kind in layout["solids"]:
             self._draw_furniture(screen, to_screen(rect), kind, rect)

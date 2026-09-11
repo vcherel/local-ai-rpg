@@ -57,6 +57,9 @@ class _RoomSpace:
         # corridor in from the door, and the neck between the two halves of an L.
         self.keep_clear = keep_clear
         self.solids: list = []
+        # The rug in the middle, kept clear of furniture, and given up by a house that has
+        # no room for both it and a bed (`Building._lay_out_house`).
+        self.rug: pygame.Rect | None = None
         self.beds: list[pygame.Rect] = []
         self.crates: list[pygame.Rect] = []
         self.chest: pygame.Rect | None = None
@@ -70,11 +73,30 @@ class _RoomSpace:
         room is measured for one piece at a time, and in a narrow one the measurements
         overlap. Returns where the piece actually ended up, or None if there was nowhere for
         it to go."""
-        placed = self._nudge_clear(rect)
+        placed = self._nudge_clear(rect) or self._scan_clear(rect)
         if placed is None:
             return None
         self.solids.append((placed, kind))
         return placed
+
+    def _scan_clear(self, rect: pygame.Rect) -> pygame.Rect | None:
+        """Anywhere on the floor a piece this size can stand, walked row by row from the
+        back wall, once stepping it out of the way has failed.
+
+        The step is greedy and a small room hems it in: a bed shoved off the rug lands on
+        the window strip, off that onto the corridor, and after a few of those it gives up,
+        which was a house with no bed in it and a household on the floor. A bed anywhere
+        beats no bed. Clearance from the other pieces is asked for first and waived
+        second, since a piece up against another is still a piece in the room."""
+        for margin in (40, 0):
+            for y in range(rect.top, self.floor.bottom - rect.height - 10, 10):
+                for x in range(self.floor.left + 10, self.floor.right - rect.width - 10, 10):
+                    spot = pygame.Rect(x, y, rect.width, rect.height)
+                    if self.on_floor(spot) and all(
+                        not spot.colliderect(other.inflate(margin, margin)) for other, _kind in self.solids
+                    ):
+                        return spot
+        return None
 
     def _nudge_clear(self, rect: pygame.Rect) -> pygame.Rect | None:
         """The same piece, moved off whatever it is standing in, by the shortest step that
@@ -824,11 +846,22 @@ class Building(BuildingArt):
         rug = pygame.Rect(0, 0, 130, 80)
         rug.center = (round(floor.centerx), round(floor.centery - 25))
         keep_clear = [door_path, rug]
+        # The windows either side of the door sit a little way in from the outer face of
+        # the wall, which puts the pane over the first strip of floor inside it: a table
+        # dropped against the front wall was drawn across the window. Each pane's strip
+        # of floor is kept clear like the corridor, with a little room round it.
+        wall = c.Buildings.WALL_THICKNESS
+        pane_top = floor.bottom + wall - c.Buildings.WINDOW_Y_FROM_BOTTOM
+        for offset in self._window_offsets():
+            pane = pygame.Rect(0, pane_top, c.Buildings.WINDOW_W, floor.bottom - pane_top)
+            pane.centerx = round(floor.centerx + offset)
+            keep_clear.append(pane.inflate(c.Buildings.WINDOW_CLEAR * 2, c.Buildings.WINDOW_CLEAR * 2))
         if opening is not None:
             # The way through to the wing, kept clear exactly as the way in from the door
             # is: a table dropped in the neck of an L walls half the building off.
             keep_clear.append(opening.clip(floor).inflate(c.Buildings.WING_NECK_CLEAR, c.Buildings.WING_NECK_CLEAR))
         space = _RoomSpace(rng, floors, keep_clear)
+        space.rug = rug
 
         if self.kind == "house":
             self._lay_out_house(space)
@@ -858,7 +891,7 @@ class Building(BuildingArt):
             "crates": [place(crate) for crate in space.crates],
             "props": [(place(rect), kind) for rect, kind in props],
             "chest": place(space.chest) if space.chest is not None else None,
-            "rug": place(rug),
+            "rug": place(space.rug) if space.rug is not None else None,
         }
         return self._layout
 
@@ -874,8 +907,19 @@ class Building(BuildingArt):
         # person and a house with one bed in it was a household standing about on the floor
         # all night (`World._bed_for` deals what there is). The second is fitted if there is
         # room for it and skipped if there is not, like every other stick of furniture.
-        for x in (bed_x, floor.right - 90 if bed_left else floor.left + 20):
+        bed_slots = (bed_x, floor.right - 90 if bed_left else floor.left + 20)
+        for x in bed_slots:
             house_bed = space.add(pygame.Rect(x, floor.top + 15, 70, 100), "bed")
+            if house_bed:
+                space.beds.append(house_bed)
+        if not space.beds:
+            # A room the rug and the ways through it leave no bed-sized floor in: the rug
+            # goes rather than the bed, since a house is a place somebody sleeps before it
+            # is a place with a rug in it, and a household on the floor beside nothing was
+            # what a small house came to.
+            space.keep_clear.remove(space.rug)
+            space.rug = None
+            house_bed = space.add(pygame.Rect(bed_slots[0], floor.top + 15, 70, 100), "bed")
             if house_bed:
                 space.beds.append(house_bed)
         space.add(pygame.Rect(round(floor.centerx - 50), floor.top + 6, 100, 22), "shelf")

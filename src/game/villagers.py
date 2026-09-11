@@ -325,7 +325,7 @@ class WorldVillagers:
         The way round a wall is handed in as a waypoint and not as the destination: a corner
         is a step, and somebody who arrives at one stops on it."""
         door = isinstance(shelter, Building)
-        goal = (shelter.x, shelter.interior_rect().centery) if door else (shelter.x, shelter.y)
+        goal = self._room_spot(shelter, c.Entities.NPC_SIZE / 2) if door else (shelter.x, shelter.y)
         if door:
             self.open_door_for(npc)
         self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*goal))
@@ -473,7 +473,7 @@ class WorldVillagers:
         who has walked home to sleep does: standing in the room until dawn was a household
         that had come home and then decided against the night."""
         radius = c.Entities.NPC_SIZE / 2
-        inside = (home.x, home.interior_rect().centery)
+        inside = self._room_spot(home, radius)
         door = home.door_rect()
         # The one light anybody carries, and it is carried for exactly as long as the walk
         # takes: a street at curfew is a handful of lamps converging on their own doors and
@@ -535,32 +535,99 @@ class WorldVillagers:
             # Ordered by the doorstep each of them was stood up on rather than by anything
             # about the objects: it is a coordinate the settlement's own layout decided, so
             # the same person gets the same bed in every process as well as every night.
-            residents = sorted((one for one in self.npcs if self._home_for(one) is home), key=lambda one: one.home)
+            # Only the people who will sleep here count: a guard's post is beside somebody's
+            # house and their night is spent on it, and a bed dealt to them was a resident
+            # on the floor beside an empty one.
+            residents = sorted(
+                (one for one in self.npcs if not one.is_guard and not one.is_archer and self._home_for(one) is home),
+                key=lambda one: one.home,
+            )
             beds = home.interior_layout()["beds"]
+            taken = [one.bed for one in residents if one is not npc and one.bed is not None]
             index = residents.index(npc)
-            npc.bed = beds[index] if index < len(beds) else None
+            wanted = beds[index] if index < len(beds) else None
+            if wanted is None or wanted in taken:
+                # Somebody dealt earlier, off a household that has since lost a member, holds
+                # that one: any bed nobody sleeps in will do.
+                wanted = next((bed for bed in beds if bed not in taken), None)
+            npc.bed = wanted
         if npc.bed is not None and npc.bed not in home.interior_layout()["beds"]:
             # Broken up while they were out. A pile of splinters is not a bed, and it drops
             # out of the layout the moment it comes apart (`Building.damage_prop_at`).
             npc.bed = None
         return npc.bed
 
+    def _room_spot(self, home: Building, radius: float) -> tuple:
+        """Somewhere in the middle of a room a body can actually stand and walk in to: the
+        farthest point along the line from just inside the door to the room's centre that
+        is still clear of the furniture. The centre itself is the obvious place to walk to
+        and the wrong one in a shop, where the counter stands across it: a merchant sent
+        there for the night pressed against their own counter until dawn, which from the
+        street read as somebody walking into a wall."""
+        room = home.interior_rect()
+        nx, ny = home.outward()
+        door = home.door_rect()
+        depth = c.Buildings.WALL_THICKNESS + radius
+        start = (door.centerx - nx * depth, door.centery - ny * depth)
+        dx, dy = room.centerx - start[0], room.centery - start[1]
+        steps = max(1, int(math.hypot(dx, dy) / (radius / 2)))
+        spot = start
+        for i in range(1, steps + 1):
+            t = i / steps
+            point = (start[0] + dx * t, start[1] + dy * t)
+            if self.blocked(point[0], point[1], radius):
+                break
+            spot = point
+        return spot
+
     def _bedside(self, home: Building, bed, radius: float) -> tuple:
-        """The floor at the foot of a bed: where somebody stands to get into it.
+        """The floor beside a bed: where somebody stands to get into it.
 
         A bed is furniture, so it is solid, so the walk home ends beside it rather than on
-        it. Off the head-to-foot axis and towards the middle of the room, since the head of
-        a bed is against a wall whichever way the house is turned."""
+        it. The foot of it first, off the head-to-foot axis and towards the middle of the
+        room, since the head of a bed is against a wall whichever way the house is turned;
+        then either long side. A room is furnished before anybody is asked to walk across
+        it, so the foot of a bed can have the table standing on it, and the gap left
+        between the two can be legal floor a body cannot get into: a spot that is clear
+        but not walkable from the middle of the room is what had a villager standing
+        against their own table until dawn (`_walkable_between`). Any side that can be
+        reached will do, since getting in only asks to be up against the bed."""
         room = home.interior_rect()
+        middle = self._room_spot(home, radius)
+        gap = radius + 4
         if bed.height >= bed.width:
             side = 1.0 if room.centery >= bed.centery else -1.0
-            spot = (bed.centerx, bed.centery + side * (bed.height / 2 + radius + 4))
+            spots = [
+                (bed.centerx, bed.centery + side * (bed.height / 2 + gap)),
+                (bed.left - gap, bed.centery),
+                (bed.right + gap, bed.centery),
+            ]
         else:
             side = 1.0 if room.centerx >= bed.centerx else -1.0
-            spot = (bed.centerx + side * (bed.width / 2 + radius + 4), bed.centery)
-        # A room is furnished before anybody is asked to walk across it, so the foot of a bed
-        # can have the table standing on it. Somewhere near it will do.
-        return self.free_spot_near(spot[0], spot[1], radius, rings=2)
+            spots = [
+                (bed.centerx + side * (bed.width / 2 + gap), bed.centery),
+                (bed.centerx, bed.top - gap),
+                (bed.centerx, bed.bottom + gap),
+            ]
+        found = None
+        for spot in spots:
+            found = self.free_spot_near(spot[0], spot[1], radius, rings=2)
+            if self._walkable_between(found, middle, radius):
+                return found
+        return found
+
+    def _walkable_between(self, start, end, radius: float) -> bool:
+        """Whether a body of `radius` can walk the straight line from `start` to `end`.
+        `line_of_sight` asks the same question of a point; this asks it of a body, which is
+        the difference between a gap a bolt passes and one a villager does."""
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        distance = math.hypot(dx, dy)
+        steps = max(1, int(distance / (radius / 2)))
+        for i in range(1, steps + 1):
+            t = i / steps
+            if self.blocked(start[0] + dx * t, start[1] + dy * t, radius):
+                return False
+        return True
 
     @staticmethod
     def _rect_reach(npc: NPC, rect) -> float:
@@ -597,12 +664,41 @@ class WorldVillagers:
         npc.asleep = True
         npc.wander.interrupt()
 
+    def _lets_self_out(self, npc: NPC, player: Player, dt) -> bool:
+        """Somebody shut inside a building whose street they belong on walks to the door
+        and opens it, whatever bars it. Returns whether this frame was spent doing so.
+
+        A wander picks its spots round the doorstep outside, so a villager whose door was
+        shut behind them (the bell, a fright they ran indoors from, the player closing it)
+        used to pick one after another and grind against the wall between. A door is
+        theirs from the inside whatever the hour or the roll says of it from the street:
+        the beam is lifted, not broken, exactly as `open_door_for` lifts it for a chase."""
+        room = self.building_at(npc.x, npc.y)
+        if room is None or not room.door_closed or room.contains_point(*npc.home):
+            return False
+        radius = c.Entities.NPC_SIZE / 2
+        self.open_door_for(npc)
+        out = room.door_front()
+        npc.update(
+            player,
+            dt,
+            self.blocked,
+            self.chase_waypoint(npc, Point(*out), radius),
+            refuge=out,
+            refuge_reach=radius,
+            face_player=False,
+            terrain_mult=self.terrain_speed(npc.x, npc.y),
+        )
+        return True
+
     def _npc_walks(self, npc: NPC, player: Player, dt, mob: dict, crowd: list, indoors: bool):
         """One villager's frame spent hunting the player, or spent on their own street."""
         # Only an angry villager actually closing on the player needs a route round the
         # houses; everyone else is wandering and steers for itself.
         chasing = id(npc) in mob
         radius = c.Entities.NPC_SIZE / 2
+        if not chasing and self._lets_self_out(npc, player, dt):
+            return
         if chasing:
             self.open_door_for(npc)
             self.pass_gate_for(npc, radius, player)

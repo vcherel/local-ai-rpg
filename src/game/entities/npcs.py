@@ -163,6 +163,10 @@ class NPC(Entity):
         # happened to stop, and dropped again the moment they walk.
         self._watch_from: float | None = None
         self._watch_phase = 0.0
+        # The glance they give the player walking past (`_glancing`): when it ends, and
+        # when they will look up again.
+        self._glance_until = 0.0
+        self._glance_next = 0.0
 
     @property
     def hostile(self) -> bool:
@@ -546,11 +550,7 @@ class NPC(Entity):
             self._run_to(refuge, dt, blocked, refuge_reach, waypoint, pace)
             return 0
 
-        if (
-            face_player
-            and not self.hostile
-            and self.distance_to_point(player.get_pos()) < (c.Entities.NPC_WANDER_PAUSE_DISTANCE)
-        ):
+        if face_player and not self.hostile and self._glancing(player):
             # atan2(dy, dx) measures from the x-axis; sprites face up, so rotate a quarter turn
             self.orientation = math.atan2(player.y - self.y, player.x - self.x) + math.pi / 2
             return 0
@@ -566,6 +566,23 @@ class NPC(Entity):
         elif self.is_guard:
             self._keep_watch()
         return 0
+
+    def _glancing(self, player: Player) -> bool:
+        """Whether this one is looking at the player right now: a glance, not a stare.
+
+        Somebody walking past gets looked at for a moment (`Entities.NPC_GLANCE_S`) and
+        then ignored for a good while (`NPC_GLANCE_GAP_S`), whether or not they are still
+        standing there. A street where everyone turns and holds the look for as long as
+        the player is in reach is a street of mannequins; one where a head comes up and
+        goes back down is people with something else to do."""
+        now = time.time()
+        if now < self._glance_until:
+            return True
+        if now < self._glance_next or self.distance_to_point(player.get_pos()) >= c.Entities.NPC_GLANCE_DISTANCE:
+            return False
+        self._glance_until = now + random.uniform(*c.Entities.NPC_GLANCE_S)
+        self._glance_next = self._glance_until + random.uniform(*c.Entities.NPC_GLANCE_GAP_S)
+        return True
 
     def _keep_watch(self):
         """A stopped guard's head turning across their post.

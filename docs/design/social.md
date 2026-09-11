@@ -66,7 +66,11 @@ unclipped, because nothing clips the rule either: a cone that reaches the player
 pale is a villager the walls have already answered. The prompt names whoever is currently
 watching, so waiting for a back to be turned is still the mechanic. Its price is that a
 villager stops turning to greet the player while the player is inside a building
-(`face_player`), since a cone that always points at you is not a cone.
+(`face_player`), since a cone that always points at you is not a cone. Outside one, the
+look is a glance and never a stare (`NPC._glancing`): somebody walking past is looked at
+for a moment (`Entities.NPC_GLANCE_S`) and then ignored for a good while
+(`NPC_GLANCE_GAP_S`) however long the player stands there, because a street where every
+head turns and holds is a street of mannequins.
 
 Escalation is the player's own doing: swinging back at whoever caught them lands in
 `_resolve_npc_hit` like any other blow and turns the whole village. No other path may turn a
