@@ -12,6 +12,7 @@ from __future__ import annotations
 import itertools
 import math
 import random
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,7 @@ from game.entities.boss import Boss
 from game.entities.monsters import pick_monster_kind
 from game.entities.npcs import NPC
 from game.navigation import Point
+from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
     from game.entities.buildings import Building
@@ -548,7 +550,8 @@ class WorldSocial:
 
         Rolled once and kept for the session: the same offer is what the greeter is told to
         talk about and what is granted when the box closes, so the errand they describe is
-        the errand that lands."""
+        the errand that lands. The wording starts as a plain line and is written over by
+        `_word_intro_offer` once the model has put it in the world's own terms."""
         if self._intro_offer is not None:
             return self._intro_offer
         center = c.World.WORLD_SIZE // 2
@@ -566,7 +569,38 @@ class WorldSocial:
             "kill_count": str(count),
             "reward_item": "",
         }
+        threading.Thread(target=self._word_intro_offer, args=(self._intro_offer,), daemon=True).start()
         return self._intro_offer
+
+    def _word_intro_offer(self, offer: dict):
+        """Have the model say the first errand in the world's own terms: a coastal city's
+        greeter should not talk about the wilds behind the hamlet. The facts are fixed
+        (the creature and the count, since the quest is built from them) and only the
+        wording is asked for; an answer that drops either is not used, and the plain line
+        the offer started with stands. With no model, `offline.py` answers nothing and
+        that line is what the greeter says."""
+        monster, count = offer["monster_hint"], offer["kill_count"]
+        # The lore is written on its own thread at the start of a new game; the errand is
+        # rolled on the first frame, so it waits for the world before asking about it.
+        for _ in range(c.Onboarding.INTRO_LORE_WAIT_S * 10):
+            if self.context:
+                break
+            time.sleep(0.1)
+        system_prompt = (
+            "You write what a villager says in an RPG. Reply with the villager's words only, "
+            "one or two short sentences, no quotes, no name, no other text."
+        )
+        prompt = (
+            f"World: {self.context}\n"
+            f"A villager of the starting town asks a newcomer to kill {count} {monster}s that "
+            f"have been coming too close to where people live, for a few coins. Write the "
+            f"request so it fits this world, naming the creature ({monster}) and the number "
+            f"({count}) exactly."
+        )
+        text = (generate_response_queued(prompt, system_prompt, "Intro errand") or "").strip().strip('"')
+        text = " ".join(text.split())
+        if monster.lower() in text.lower() and count in text and len(text) <= c.Onboarding.INTRO_LINE_MAX_CHARS:
+            offer["quest_description"] = text
 
     def _roll_notice(self, village: Village) -> dict | None:
         """One notice: a hunt, a camp to empty or a thing to bring back, whichever the world

@@ -173,6 +173,16 @@ event; a settlement already hostile is never raided, because a town that wants t
 dead is not a town they can save; and a raider is out of the roaming population cap
 (`Monster.raid_key`) and never saved, so a raid is a night rather than a permanent siege.
 
+## The first quest is worded off the lore
+
+The greeter's errand (`WorldSocial.intro_offer`) is rolled locally, the creature and the
+count fixed since the quest is built from them, and its wording is the one thing asked of
+the model (`_word_intro_offer`, on the walk over): a coastal city's greeter talking about
+the wilds behind the hamlet was a first line that contradicted the lore the player had
+just read. The answer is guarded like the lore itself: one that drops the creature or the
+count, or runs past `Onboarding.INTRO_LINE_MAX_CHARS`, is not used, and the plain line the
+offer started with stands, as it does with no model at all.
+
 ## A notice board is quests without the model
 
 Every quest in the game comes out of a conversation the model wrote and then read back

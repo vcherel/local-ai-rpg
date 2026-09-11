@@ -276,6 +276,9 @@ ANSWERS = {
     "Boss naming": _boss_name,
     "Context generation": _pick(WORLDS),
     "Event flavor text": _pick(LORE_LINES),
+    # The greeter's errand is worded off the lore; with none, the plain line it was rolled
+    # with stands (`WorldSocial._word_intro_offer`).
+    "Intro errand": lambda *_: "",
 }
 
 

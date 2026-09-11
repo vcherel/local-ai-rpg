@@ -706,6 +706,11 @@ class Onboarding:
     GREET_APPROACH_RANGE: float = 700.0
     # The starter errand: a handful of the weakest thing seen near town, thinned out.
     INTRO_KILL_COUNT: int = 3
+    # The longest wording of that errand the model is allowed: past this it has written a
+    # speech, and the plain line is what the quest shows.
+    INTRO_LINE_MAX_CHARS: int = 220
+    # How long the wording waits for the lore to exist before asking with none.
+    INTRO_LORE_WAIT_S: int = 120
     # What the greeter calls out over their head for the length of the walk over and the
     # wait after it, so somebody crossing the plaza towards the player reads as somebody
     # with something to say rather than somebody following them. One per greeter, rolled

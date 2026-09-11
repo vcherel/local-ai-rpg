@@ -410,6 +410,11 @@ class World(
         self.greeter = min(candidates, key=lambda npc: npc.distance_to_point(player.get_pos()))
         self.greeter.is_greeter = True
         self.greeter_timer = c.Onboarding.GREET_DELAY_S
+        # Rolled now rather than when the box opens, so the model has the walk over to put
+        # the errand into the world's own words.
+        village = self.village_at(self.greeter.x, self.greeter.y)
+        if village is not None:
+            self.intro_offer(village)
 
     def _populate_npcs(self, buildings: list[Building], village: Village | None = None):
         """Fill one village with people: a merchant standing at each shop, and a villager or
