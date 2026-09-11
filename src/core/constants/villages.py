@@ -374,6 +374,10 @@ class Villages:
     BEDTIME_SPREAD_MS: tuple = (0.0, 55000.0)
     # Whoever lives over the tavern keeps the latest hours in the settlement.
     TAVERN_LATE_MS: float = 40000.0
+    # And the walk home is a walk: this share of the running speed a villager flees at,
+    # a little over the wander's stroll. At full pace the whole street bolted for its doors
+    # as if something was behind it.
+    HOME_WALK_PACE: float = 0.55
     # A settlement with a wall puts somebody on the tavern door after dark and charges for
     # the room. A hamlet with no wall has no one to spare, which is what makes a bed free
     # out on the border and paid for in a town.
@@ -699,3 +703,13 @@ class Onboarding:
     GREET_APPROACH_RANGE: float = 700.0
     # The starter errand: a handful of the weakest thing seen near town, thinned out.
     INTRO_KILL_COUNT: int = 3
+    # What the greeter calls out over their head for the length of the walk over and the
+    # wait after it, so somebody crossing the plaza towards the player reads as somebody
+    # with something to say rather than somebody following them. One per greeter, rolled
+    # off their name.
+    HAILS: tuple = (
+        "You there! A word, if you have a moment.",
+        "Traveller! Wait, I need a hand with something.",
+        "Stranger, hold on. I have work if you want it.",
+        "Hey! You look like you can handle yourself.",
+    )

@@ -269,6 +269,8 @@ class World(
         self.greeter: NPC | None = None
         self.greeter_timer = 0.0
         self._greeter_pending = False
+        # The errand they offer, rolled once by `intro_offer` and kept for the session.
+        self._intro_offer: dict | None = None
 
         # Throttles persist_world: several generation threads finishing at once would
         # otherwise each serialise the entire world back to disk.

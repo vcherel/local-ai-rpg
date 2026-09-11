@@ -49,6 +49,10 @@ DIALOGUE_STOPS = ["Player:", "player:"]
 
 # A bracketed fill-in the model left in a reply ("[amount] coins", "{item}"). Never
 # something an NPC says out loud, so it is cut from what reaches the screen.
+# The words that introduce the greeter's errand in their prompt. `offline.py` reads the
+# quoted line after them back out, so the model-less greeter says the same thing.
+GREETER_TASK = "the errand is:"
+
 PLACEHOLDER_RE = re.compile(r"\s*[\[{][^\]}]{0,60}[\]}]")
 
 
@@ -202,6 +206,18 @@ class DialogueManager:
 
         if npc.has_active_quest:
             system_prompt += self._quest_lines(npc.quest, quest_complete)
+        elif npc.is_greeter and (offer := self._greeter_offer(npc)) is not None:
+            # The greeter has one thing to say and it is decided already: the errand
+            # `_grant_greeter_quest` hands over when the box closes. Told to the model in
+            # full so what they talk about is what lands, rather than a task of their own
+            # invention followed by a different one in the tracker.
+            system_prompt += (
+                f"You walked over to the player, a newcomer, to ask for their help with one thing: {GREETER_TASK} "
+                f'"{offer["quest_description"]}" '
+                "Open with that request in your own words, and stick to it: do not invent any other "
+                "task, item or reward. If they accept or agree, thank them and tell them to come back "
+                "when it is done. "
+            )
         else:
             system_prompt += (
                 "You may have needs or problems. "
@@ -464,6 +480,12 @@ class DialogueManager:
         self.conversation_ended = False
         self.pending_quest_completion = None
 
+    def _greeter_offer(self, npc: NPC) -> dict | None:
+        """The first quest as `World.intro_offer` rolled it, off the greeter's own town."""
+        world = self.quest_system.world
+        village = world.village_at(npc.x, npc.y) if world is not None else None
+        return world.intro_offer(village) if village is not None else None
+
     def _grant_greeter_quest(self) -> bool:
         """Hand the player the first quest when they hear the starting-town greeter out.
 
@@ -473,14 +495,14 @@ class DialogueManager:
         npc = self.current_npc
         if not npc.is_greeter or npc.has_active_quest:
             return npc.is_greeter
-        world = self.quest_system.world
-        village = world.village_at(npc.x, npc.y) if world is not None else None
-        if village is not None:
-            self.quest_system.create_quest_from_analysis(npc, world.intro_offer(village), self._npc_name_generator)
+        offer = self._greeter_offer(npc)
+        if offer is not None:
+            self.quest_system.create_quest_from_analysis(npc, offer, self._npc_name_generator)
         if npc.quest is not None:
             npc.is_greeter = False
-            if world is not None:
-                world.greeter = None
+            npc.hailing = False
+            if self.quest_system.world is not None:
+                self.quest_system.world.greeter = None
             self.quest_tracker.notify_new_quest(npc.quest)
             play_sound("quest_new")
         return True

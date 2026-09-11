@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import random
 import time
+import zlib
 from typing import TYPE_CHECKING
 
 import pygame
@@ -47,6 +48,13 @@ class NPC(Entity):
         # The one villager, on a new world only, who walks over and offers the first quest
         # (`WorldVillagers._update_greeter`). Cleared the moment they have handed it over.
         self.is_greeter = False
+        # Whether the greeter is on their way over or waiting to be heard out right now,
+        # which is when the hail is drawn over their head. Set each frame by
+        # `_update_greeter` and never saved: it is the walk, not the role.
+        self.hailing = False
+        # Off where they were stood up rather than off the shared RNG, so adding a line to
+        # the bank never moves a critter rolled after them.
+        self.hail = c.Onboarding.HAILS[zlib.crc32(f"{x:.0f},{y:.0f}".encode()) % len(c.Onboarding.HAILS)]
         self.shop_items: list[Item] = []
         self.shop_prices: dict[str, int] = {}
         self.shop_ready = False
@@ -499,6 +507,7 @@ class NPC(Entity):
         terrain_mult: float = 1.0,
         standoff: float = 0.0,
         crowd=None,
+        pace: float = 1.0,
     ):
         """One frame of this villager's life, returning the damage their swing just landed
         on `target` (0 for none) so the world can resolve it: the same villager can be
@@ -518,7 +527,11 @@ class NPC(Entity):
         throw something from the back of the crowd.
 
         `crowd` is everyone else in the same fight, so a mob presses in as a ring rather
-        than stacking on the one spot nearest the player."""
+        than stacking on the one spot nearest the player.
+
+        `pace` is how fast the run to `refuge` is taken, as a share of the running speed:
+        somebody heading home for the night walks there, somebody heading for a door with
+        a monster behind them does not."""
         dt *= terrain_mult
         if crowd:
             push_apart(self, crowd, c.Entities.NPC_SIZE / 2, lambda _other: c.Entities.NPC_SIZE / 2, blocked)
@@ -530,7 +543,7 @@ class NPC(Entity):
         if target is not None:
             return self._hunt(target, dt, blocked, waypoint, standoff)
         if refuge is not None:
-            self._run_to(refuge, dt, blocked, refuge_reach, waypoint)
+            self._run_to(refuge, dt, blocked, refuge_reach, waypoint, pace)
             return 0
 
         if (
@@ -586,7 +599,7 @@ class NPC(Entity):
         step_towards(self, angle, speed, blocked, radius)
         return angle
 
-    def _run_to(self, refuge, dt, blocked=None, reach: float | None = None, waypoint=None):
+    def _run_to(self, refuge, dt, blocked=None, reach: float | None = None, waypoint=None, pace: float = 1.0):
         """A villager with no stomach for the fight, making for the nearest door. They stop
         once they are on the spot rather than jittering on it.
 
@@ -598,12 +611,14 @@ class NPC(Entity):
         as it is for somebody hunting (`_hunt`). Arriving at the corner of a house is no
         reason to stand on it while the door is still round the other side: measured against
         the corner instead of against the refuge, a routed villager froze in the street and a
-        villager walking home froze on the corner of their own house."""
+        villager walking home froze on the corner of their own house.
+
+        `pace` is the share of the running speed the walk is taken at."""
         if waypoint is None and self.distance_to_point(refuge) <= (
             c.Entities.NPC_ATTACK_RANGE if reach is None else reach
         ):
             return
-        self.orientation = self._step_towards(waypoint or refuge, dt, blocked) + math.pi / 2
+        self.orientation = self._step_towards(waypoint or refuge, dt, blocked, pace) + math.pi / 2
 
     def _ring_point(self, target, standoff: float, blocked=None) -> tuple:
         """The spot this one is trying to hold: its own bearing around the target, at
@@ -806,6 +821,24 @@ class NPC(Entity):
             )
             screen.blit(glyph, rect)
 
+    def _draw_hail(self, screen: pygame.Surface, x: float, y: float):
+        """A speech bubble over the greeter's head with their hail in it, tailed down to
+        them. Drawn for the length of the walk over and the wait after it: without it a
+        villager crossing the plaza straight at the player and stopping in front of them
+        was somebody following them, not somebody with something to say."""
+        text = c.Fonts.small.render(self.hail, True, c.Colors.BLACK)
+        pad = 8
+        box = text.get_rect().inflate(pad * 2, pad * 2)
+        box.midbottom = (round(x), round(y - c.Entities.NPC_SIZE // 2 - 34))
+        box.left = max(6, min(box.left, screen.get_width() - box.width - 6))
+        tail = [(x - 6, box.bottom - 1), (x + 6, box.bottom - 1), (x, box.bottom + 9)]
+        pygame.draw.polygon(screen, c.Colors.WHITE, tail)
+        pygame.draw.rect(screen, c.Colors.WHITE, box, border_radius=8)
+        pygame.draw.polygon(screen, c.Colors.BLACK, tail, 1)
+        pygame.draw.rect(screen, c.Colors.BLACK, box, 1, border_radius=8)
+        pygame.draw.rect(screen, c.Colors.WHITE, (x - 5, box.bottom - 2, 11, 2))
+        screen.blit(text, (box.left + pad, box.top + pad))
+
     @staticmethod
     def _draw_white_flag(screen: pygame.Surface, x: float, y: float):
         """The one cue that says this one has yielded, and the reason it is not a badge: an
@@ -849,6 +882,9 @@ class NPC(Entity):
 
         if self.surrendered:
             self._draw_white_flag(screen, screen_x, screen_y)
+
+        if self.hailing:
+            self._draw_hail(screen, screen_x, screen_y)
 
         badge = self._badge()
         if badge is not None:

@@ -541,11 +541,17 @@ class WorldSocial:
         (`WorldVillagers._update_greeter`). A gentle hunt in the villager's own voice: a
         few of the weakest thing seen near town. Built as the same `{has_quest, ...}`
         reading a conversation would have produced, so nothing downstream knows it is
-        special."""
+        special.
+
+        Rolled once and kept for the session: the same offer is what the greeter is told to
+        talk about and what is granted when the box closes, so the errand they describe is
+        the errand that lands."""
+        if self._intro_offer is not None:
+            return self._intro_offer
         center = c.World.WORLD_SIZE // 2
         monster = pick_monster_kind(math.hypot(village.x - center, village.y - center))
         count = c.Onboarding.INTRO_KILL_COUNT
-        return {
+        self._intro_offer = {
             "has_quest": True,
             "quest_type": "kill_mob",
             "quest_description": (
@@ -557,6 +563,7 @@ class WorldSocial:
             "kill_count": str(count),
             "reward_item": "",
         }
+        return self._intro_offer
 
     def _roll_notice(self, village: Village) -> dict | None:
         """One notice: a hunt, a camp to empty or a thing to bring back, whichever the world

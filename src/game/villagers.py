@@ -142,6 +142,7 @@ class WorldVillagers:
         while it is handling the walk, False before the delay has run or once they have a
         quest to their name: the quest is granted when the player hears them out
         (`DialogueManager.close`), and that is what stands them down."""
+        npc.hailing = False
         if npc.quest is not None:
             npc.is_greeter = False
             self.greeter = None
@@ -160,6 +161,7 @@ class WorldVillagers:
             if not self.line_of_sight(npc.x, npc.y, player.x, player.y):
                 return False
         goal = (player.x, player.y)
+        npc.hailing = True
         if npc.distance_to_point(goal) <= c.Onboarding.GREET_STOP_DISTANCE:
             # Arrived: stand where they are and face the player, waiting to be heard out.
             # Run without a walk of any kind so the wander does not drift them off the spot.
@@ -510,6 +512,7 @@ class WorldVillagers:
                 refuge_reach=radius,
                 terrain_mult=self.terrain_speed(npc.x, npc.y),
                 face_player=False,
+                pace=c.Villages.HOME_WALK_PACE,
             )
         if shut and home.contains_point(npc.x, npc.y) and not home.door_broken:
             # In for the night, and the door shut behind them, but only once everybody who
@@ -614,14 +617,17 @@ class WorldVillagers:
         standoff = 0.0 if through_door or (chasing and indoors) else mob.get(id(npc), 0.0)
         # A villager turns to greet the player in the street, but not through the wall of a
         # house they are standing in: a vision cone that always points at the player is not a
-        # cone, and the whole of stealing is choosing a moment nobody is looking.
+        # cone, and the whole of stealing is choosing a moment nobody is looking. Nor once
+        # the bell has rung: whoever is still out is finishing their evening before their
+        # own hour comes, and a street of people stopped dead and staring until each of them
+        # turned for home was what that wait looked like.
         damage = npc.update(
             player,
             dt,
             self.blocked,
             waypoint,
             target=player if chasing else None,
-            face_player=not indoors,
+            face_player=not indoors and not (self.curfew_on and not npc.is_guard),
             terrain_mult=self.terrain_speed(npc.x, npc.y),
             standoff=standoff,
             crowd=None if through_door else (crowd if chasing else None),

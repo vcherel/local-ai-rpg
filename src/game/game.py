@@ -1195,7 +1195,9 @@ class Game(GameInteractions):
         # The arrow again, over the open panel this time: where the player is being sent is
         # exactly what they are checking their bag and their quests against, so a menu hides
         # the HUD and slides the arrow round itself instead of taking it away.
-        if self.active_menu:
+        # Not over the opening lore though: an arrow on a black screen with nothing else
+        # drawn points at nothing the player can name yet.
+        if self.active_menu and not self.context_window.intro:
             self.game_renderer.draw_offscreen_indicators(self.camera, quest_target, self._open_panels())
         # The world coming up out of the black the opening lore was written on. Last of all,
         # so it covers the HUD as well: nothing should be readable before the world.

@@ -14,6 +14,7 @@ replies to, so the same villager asked the same thing says the same thing.
 """
 
 import random
+import re
 
 GREETINGS = (
     "Well met. You have the look of someone who walked a long way to get here.",
@@ -24,6 +25,13 @@ GREETINGS = (
     "Careful past the treeline. Things come out of it after dark.",
     "You can sleep at the tavern if you have the coin for it.",
     "Say your piece, I have bread in the oven.",
+)
+
+GREETER_REPLIES = (
+    "Come back when it is done and there is coin waiting.",
+    "They are not far. Past the treeline, mostly.",
+    "Mind yourself out there. We need you back in one piece.",
+    "That is all I ask. The rest of us have work to do.",
 )
 
 MERCHANT_GREETINGS = (
@@ -204,8 +212,17 @@ def _npc_is_merchant(system_prompt: str) -> bool:
     return "a merchant in an RPG" in system_prompt
 
 
+# The greeter's errand, quoted in their prompt after `dialogue_manager.GREETER_TASK`.
+GREETER_TASK_RE = re.compile(r'the errand is: "([^"]+)"')
+
+
 def _dialogue(prompt: str, system_prompt: str, first: bool) -> str:
     rng = _rng(prompt, system_prompt)
+    # The greeter says the errand they walked over with, not a line off the bank: their
+    # quest is granted whatever they said, so what they said had better be it.
+    errand = GREETER_TASK_RE.search(system_prompt)
+    if errand is not None:
+        return errand.group(1) if first else rng.choice(GREETER_REPLIES)
     if _npc_is_merchant(system_prompt):
         bank = MERCHANT_GREETINGS if first else MERCHANT_REPLIES
     else:
