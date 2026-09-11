@@ -25,7 +25,7 @@ from core.screen_fx import get_hitstop
 from game.entities.breakables import Breakable
 from game.entities.buildings import Building
 from game.entities.critter import Critter
-from game.entities.items import Item, rarity_color
+from game.entities.items import Item
 from game.entities.poi import PointOfInterest
 from game.loot import break_crate, open_poi_cache
 
@@ -480,25 +480,22 @@ class WorldBreaking:
             shape="shard",
         )
 
-    def _break_loot(self, x, y, coins, loot_item, label: str, place_item):
-        """Spill what a smashed container held onto the ground near (x, y) via `place_item`
-        and toast the result. Nothing is credited here: the coins are laid down as a purse
-        like any other drop, so everything a break pays is walked over to be collected."""
-        spilled, spoken, color = [], [], c.Colors.WHITE
+    def _break_loot(self, x, y, coins, loot_item, place_item):
+        """Spill what a smashed container held onto the ground near (x, y) via `place_item`.
+        Nothing is credited here and nothing is announced: the coins are laid down as a
+        purse like any other drop, so everything a break pays is walked over to be
+        collected, and the pickup is the one toast it gets. A second one at the break said
+        the same thing a moment earlier and sat over the item names as they were gathered."""
+        spilled = []
         if coins > 0:
             spilled.append(Item(x, y, "Purse", "coins", rarity="common", quantity=coins))
-            spoken.append(f"{coins} coins")
         if loot_item is not None:
             spilled.append(loot_item)
-            spoken.append(f"a {loot_item.rarity} {loot_item.name}")
-            color = rarity_color(loot_item.rarity)
         for item in spilled:
             item.x = x + random.uniform(-20, 20)
             item.y = y + random.uniform(-20, 20)
             item.start_pop_anim(x, y)
             place_item(item)
-        if self.notify:
-            self.notify(f"{label}: {' and '.join(spoken)} spilled" if spoken else label, color)
 
     def _break_prop(self, player: Player, building: Building, rect, kind: str):
         """Take a piece of furniture apart: splinters, and for the two kinds that hold wares
@@ -517,8 +514,7 @@ class WorldBreaking:
         if kind not in c.Buildings.FURNITURE_LOOT:
             return
         coins, loot_item = break_crate()
-        label = "Crate smashed" if kind == "crate" else "Shelf cleared"
-        self._break_loot(rect.centerx, rect.centery, coins, loot_item, label, building.dropped_items.append)
+        self._break_loot(rect.centerx, rect.centery, coins, loot_item, building.dropped_items.append)
 
     def _hit_poi(self, player: Player, poi: PointOfInterest, damage: int, angle: float = 0.0):
         """Work at a ruins pile or a camp cache. It takes several blows to force one open,
@@ -546,8 +542,7 @@ class WorldBreaking:
         poi.looted = True
         self._break_effects(poi.x, poi.y, (150, 140, 120), 20)
         coins, loot_item = open_poi_cache(player.loot_luck())
-        label = {"camp": "Camp cache", "farmstead": "Farmstead searched"}.get(poi.kind, "Ruins searched")
-        self._break_loot(poi.x, poi.y, coins, loot_item, label, self.items.append)
+        self._break_loot(poi.x, poi.y, coins, loot_item, self.items.append)
 
     def _hit_breakable(
         self, player: Player, breakable: Breakable, damage: int, quest_system: QuestSystem, angle: float = 0.0
@@ -590,4 +585,4 @@ class WorldBreaking:
 
         self._break_effects(breakable.x, breakable.y, (150, 110, 70), 18)
         coins, loot_item = break_crate()
-        self._break_loot(breakable.x, breakable.y, coins, loot_item, "Barrel smashed", self.items.append)
+        self._break_loot(breakable.x, breakable.y, coins, loot_item, self.items.append)

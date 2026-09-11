@@ -57,6 +57,9 @@ A smashed container is the same thing: `WorldBreaking._break_loot` credits nothi
 purse and whatever else came out on the ground (in the room's `dropped_items` for a crate
 indoors, in `world.items` for a barrel or a cache outside) and the walk over the wreckage is
 what collects it. A break the player never walks back to is a break they were not paid for.
+Nothing is announced at the break either: the pickup is the one toast the loot gets, since
+a second one at the moment of the smash said the same thing and sat over the item names
+as they were gathered.
 
 ## An item's icon is derived, never stored as a decision
 
@@ -158,7 +161,9 @@ the player anything to do about it.
 
 Now nothing dying takes is destroyed. A rolled share of the purse (`Death.COIN_LOSS_RANGE`) and a
 handful of the things carried (`Death.DROP_ITEMS`, equipped gear included) are laid on the ground
-where the body fell by `Game._scatter_death_drop`, the spot is pinned on the minimap
+where the body fell by `Game._scatter_death_drop` (each thing thrown out on its own bearing,
+dealt evenly round the body within `Death.DROP_SCATTER`, so the drop is a burst across the
+ground rather than a heap at the feet), the spot is pinned on the minimap
 (`World.death_drop`), and the one offscreen arrow points at it until the player has walked back.
 The walk is the cost. Everything laid down joins `world.items`, because that list is what an id
 in a save or a quest resolves through and a dropped item the bag no longer holds would otherwise

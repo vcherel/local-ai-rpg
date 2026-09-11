@@ -958,24 +958,32 @@ class Game(GameInteractions):
 
     def _scatter_death_drop(self, x: float, y: float, coins: int, items: list):
         """Lay what dying took on the ground where it happened: one purse for the coins and
-        whatever fell out of the bag, scattered a little so it reads as a body's worth of
-        things rather than a pile, and the spot pinned for the walk back.
+        whatever fell out of the bag, thrown out on every side so it reads as a body's
+        worth of things burst across the ground rather than a pile, and the spot pinned
+        for the walk back.
+
+        Each thing gets its own bearing, dealt evenly round the body and jittered, and its
+        own distance within `Death.DROP_SCATTER`: the purse and three items land at four
+        points of the compass rather than in one heap at the feet.
 
         Everything laid down joins `world.items` if it is not already there: that list is
         what an id in a save or a quest resolves through, and an item the bag no longer
         holds would otherwise be lost on the next reload."""
-        for item in items:
-            item.x = x + random.uniform(-c.Death.DROP_SCATTER, c.Death.DROP_SCATTER)
-            item.y = y + random.uniform(-c.Death.DROP_SCATTER, c.Death.DROP_SCATTER)
+        dropped = list(items)
+        if coins > 0:
+            dropped.append(Item(x, y, "Purse", "coins", rarity="common", quantity=coins))
+        low, high = c.Death.DROP_SCATTER
+        start = random.uniform(0, 2 * math.pi)
+        for index, item in enumerate(dropped):
+            angle = start + 2 * math.pi * index / len(dropped) + random.uniform(-0.4, 0.4)
+            reach = random.uniform(low, high)
+            item.x = x + math.cos(angle) * reach
+            item.y = y + math.sin(angle) * reach
             item.picked_up = False
             item.magnet_speed = 0.0
             item.start_pop_anim(x, y - c.Player.SIZE)
             if item not in self.world.items:
                 self.world.items.append(item)
-        if coins > 0:
-            purse = Item(x, y, "Purse", "coins", rarity="common", quantity=coins)
-            purse.start_pop_anim(x, y - c.Player.SIZE)
-            self.world.items.append(purse)
         # Pinned whether or not anything fell: where the last death happened is worth
         # knowing on its own, and a player who died carrying nothing is exactly the one who
         # needs to find their way back to the fight that killed them.

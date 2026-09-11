@@ -114,9 +114,9 @@ class Death:
     # How many things fall out of the bag with it. Anything carried can go, equipped
     # included: a weapon left lying in the wilds is what makes the walk back matter.
     DROP_ITEMS: tuple = (1, 3)
-    # How far the drop scatters around the spot, so it reads as things falling rather than
-    # as one pile.
-    DROP_SCATTER: float = 26.0
+    # How far each dropped thing is thrown from the body, on its own bearing, so the drop
+    # reads as things burst across the ground rather than as one pile.
+    DROP_SCATTER: tuple = (40.0, 90.0)
     DEBUFF_DURATION_S: float = 180.0
     DEBUFF_DAMAGE_MULT: float = 0.6
     DEBUFF_SPEED_MULT: float = 0.85
