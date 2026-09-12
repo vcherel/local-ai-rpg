@@ -908,7 +908,7 @@ class Scenery:
 
 
 @dataclass(frozen=True)
-class Fog:
+class Explored:
     """Explored-ground memory behind the minimap (World.explored).
 
     The world is remembered as a coarse grid of cells, revealed around the player as they

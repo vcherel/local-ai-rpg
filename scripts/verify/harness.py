@@ -63,12 +63,6 @@ class SyncThread:
         if self._target is not None:
             self._target(*self._args, **self._kwargs)
 
-    def join(self, _timeout=None):
-        return None
-
-    def is_alive(self):
-        return False
-
 
 class _StubStream:
     def __init__(self, text):

@@ -53,7 +53,7 @@ class PauseMenu(BaseMenu):
         get_settings().toggle("azerty")
         play_sound("pickup")
 
-    def handle_event(self, event, on_save=None, on_quit=None) -> bool:
+    def handle_event(self, event, on_save, on_quit) -> bool:
         if not self.active:
             return False
 
@@ -64,8 +64,7 @@ class PauseMenu(BaseMenu):
             menu_x, menu_y = self.get_centered_position()
             rel = (event.pos[0] - menu_x, event.pos[1] - menu_y)
             if self.save_button_rect and self.save_button_rect.collidepoint(rel):
-                if on_save:
-                    on_save()
+                on_save()
                 self.close()
             elif self.music_button_rect and self.music_button_rect.collidepoint(rel):
                 # The three buttons here that do not end the pause: seeing or hearing what
@@ -78,8 +77,7 @@ class PauseMenu(BaseMenu):
                 self._toggle_layout()
             elif self.quit_button_rect and self.quit_button_rect.collidepoint(rel):
                 self.close()
-                if on_quit:
-                    on_quit()
+                on_quit()
             else:
                 # Click anywhere else resumes.
                 self.close()

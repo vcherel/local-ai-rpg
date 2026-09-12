@@ -50,8 +50,9 @@ from core.constants.combat import (
     weapon_look,
 )
 from core.constants.items import QUEST_COIN_BANDS, Affixes, LootBox, Potions, Quests, Rarity, RarityTier
+from core.constants.llm import Hyperparameters
 from core.constants.player import STAT_LABELS, Affinity, Controls, Death, Magic, Milestones, Player, Stats
-from core.constants.ui import TARGET_FPS, Colors, Fonts, Hyperparameters, Minimap, Music, Screen
+from core.constants.ui import TARGET_FPS, Colors, Fonts, Minimap, Music, Screen
 from core.constants.villages import Amends, Board, Notoriety, Onboarding, Raid, Villages
 from core.constants.world import (
     Breakables,
@@ -59,7 +60,7 @@ from core.constants.world import (
     Crime,
     DayNight,
     Events,
-    Fog,
+    Explored,
     PointsOfInterest,
     Scenery,
     Traps,
@@ -104,9 +105,9 @@ __all__ = [
     "Decals",
     "Entities",
     "Events",
+    "Explored",
     "Explosion",
     "Flank",
-    "Fog",
     "Fonts",
     "Husk",
     "Hyperparameters",

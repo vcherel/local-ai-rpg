@@ -59,7 +59,7 @@ class SaveSystem:
         - underground: The tunnel the player was standing in when the game was saved and the
           spot to put them back at, or None on the surface:
           {"id": "tunnel:cx:cy", "return": [x, y]} (dict | None)
-        - explored: Grid cells the player has walked through, as "gx:gy" strings (Fog.CELL
+        - explored: Grid cells the player has walked through, as "gx:gy" strings (Explored.CELL
           wide). The minimap draws these and blacks out everything else (list[str])
         - village_strikes: How much patience each settlement has left with the player, by
           village key and by what the player did:

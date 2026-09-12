@@ -329,7 +329,7 @@ class World(
         # quitting is not a way of starting again with a clean name.
         self.deeds = self.save_system.load("notoriety", [])
         self.tunnel_state = self.save_system.load("tunnels", {})
-        # Grid cells the player has walked through (Fog.CELL wide), the memory the minimap
+        # Grid cells the player has walked through (Explored.CELL wide), the memory the minimap
         # draws; everything outside it stays black.
         self.explored = {
             tuple(int(part) for part in key.split(":")) for key in self.save_system.load("explored", []) if ":" in key

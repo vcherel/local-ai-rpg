@@ -15,7 +15,7 @@ and what let a prompt point at something other than what the key did.
 small zoom. Anything that would let the player scout from the HUD instead of walking (monster
 dots, a full-screen map, zoom) is a deliberate omission, not a missing feature.
 
-Underground the same memory is kept on a finer grid (`Fog.TUNNEL_CELL`, `World.fog_cell`)
+Underground the same memory is kept on a finer grid (`Explored.TUNNEL_CELL`, `World.fog_cell`)
 and only as far as the lantern reaches, and only over floor: rock is not somewhere the
 player has been. So a cave draws itself room by room as it is walked, the map is scaled to
 hold the whole dug-out (`Minimap.TUNNEL_RANGE`), and the one mark on it is the way back

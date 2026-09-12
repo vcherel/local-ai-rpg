@@ -112,7 +112,7 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 - `src/llm/death_taunts.py`: `DeathTauntGenerator`, the death-screen line, written ahead of need and buffered like names
 
 ### core
-- `src/core/constants/`: all game constants in one flat namespace (`import core.constants as c`), split into `ui.py`, `player.py`, `combat.py`, `bestiary.py`, `world.py`, `villages.py` and `items.py`, so a constant is filed by what it tunes. `Fonts` is the one name rebound at runtime by `__main__`
+- `src/core/constants/`: all game constants in one flat namespace (`import core.constants as c`), split into `ui.py`, `player.py`, `combat.py`, `bestiary.py`, `world.py`, `villages.py`, `items.py` and `llm.py`, so a constant is filed by what it tunes. `Fonts` is the one name rebound at runtime by `__main__`
 - `src/core/save.py`: `SaveSystem`, atomic thread-safe JSON saving; the key list at the top is the record of what the save owns
 - `src/core/settings.py`: `Settings`, the preferences that outlive a playthrough (music on/off, sound on/off, which keyboard walks), written to `saves/settings.json`; `move_keys()` is the one reader of the four walking keys
 - `src/core/camera.py`: `Camera` world-to-screen translation plus `ScreenShake`/`get_shake`

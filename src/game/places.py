@@ -870,7 +870,7 @@ class WorldPlaces:
         and a much finer one underground, where the whole place would otherwise be a single
         cell. Both are cells of the same world grid, so the tunnels sit in their own far-off
         corner of it and nothing has to know which kind a saved cell was."""
-        return c.Fog.TUNNEL_CELL if self.underground is not None else c.Fog.CELL
+        return c.Explored.TUNNEL_CELL if self.underground is not None else c.Explored.CELL
 
     def is_explored(self, x, y) -> bool:
         """True once the player has walked close enough to this spot for the map to remember it."""
@@ -887,7 +887,7 @@ class WorldPlaces:
         of a smear over the middle of them."""
         tunnel = self.underground
         cell = self.fog_cell
-        radius = c.Fog.TUNNEL_REVEAL_RADIUS if tunnel is not None else c.Fog.REVEAL_RADIUS
+        radius = c.Explored.TUNNEL_REVEAL_RADIUS if tunnel is not None else c.Explored.REVEAL_RADIUS
         here = (int(player.x // cell), int(player.y // cell))
         if here == self._last_reveal_cell:
             return
