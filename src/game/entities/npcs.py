@@ -107,11 +107,6 @@ class NPC(Entity):
         # once they are back on their feet they run for a door like anyone else, which is
         # what stops a surrender being a farmer kneeling on a loop.
         self.yielded = False
-        # Where this one stood last frame, and how long they have meant to move without
-        # managing it: what says a body is wedged in a corner it is standing on legally
-        # (`WorldNavigation.unwedge`). Session-only, like everything else about a step.
-        self.wedge_spot: tuple | None = None
-        self.wedge_ms = 0.0
         # Whether this one takes up arms when a monster walks into their settlement, rolled
         # off their home so the same house always sends the same person out. Cached because
         # it is asked every frame.
@@ -819,9 +814,7 @@ class NPC(Entity):
         A body under covers is asleep; a body under covers with something coming off it is
         asleep from across the room, which is where the player usually is when they want to
         know whether the house is down for the night."""
-        font = getattr(c.Fonts, "small", None)
-        if font is None:
-            return
+        font = c.Fonts.small
         now = time.time() + (self.x + self.y) * 0.01
         for index in range(3):
             phase = (now / 2.4 + index / 3) % 1.0

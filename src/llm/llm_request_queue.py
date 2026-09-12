@@ -313,7 +313,7 @@ def generate_response_internal(prompt, system_prompt, category, max_tokens=None,
     )
     duration = time.monotonic() - start
 
-    generated_text = _strip_unsupported_glyphs(response.get("choices", [{}])[0].get("text", "").strip())
+    generated_text = _strip_unsupported_glyphs(response["choices"][0]["text"].strip())
 
     if not raw:
         generated_text = generated_text.translate(CHAR_FILTER).strip("\n")
@@ -355,7 +355,7 @@ def generate_response_stream_internal(prompt, system_prompt, category, max_token
     accumulated_text = ""
     usage = {}
     for output in stream:
-        new_token = output.get("choices", [{}])[0].get("text", "")
+        new_token = output["choices"][0]["text"]
         usage = output.get("usage", usage)
 
         # Skip the blank line the model sometimes opens with, so the first real token

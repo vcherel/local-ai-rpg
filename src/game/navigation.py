@@ -119,13 +119,13 @@ class WorldNavigation:
         the reason it walked in there.
         """
         spot = (body.x, body.y)
-        last = getattr(body, "wedge_spot", None)
+        last = body.wedge_spot
         body.wedge_spot = spot
         moved = math.hypot(spot[0] - last[0], spot[1] - last[1]) if last is not None else math.inf
         if not wants_move or moved > c.Entities.WEDGE_STEP or body.rooted or body.staggered:
             body.wedge_ms = 0.0
             return False
-        body.wedge_ms = getattr(body, "wedge_ms", 0.0) + dt
+        body.wedge_ms += dt
         if body.wedge_ms < c.Entities.WEDGE_MS:
             return False
         body.wedge_ms = 0.0

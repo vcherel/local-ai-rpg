@@ -39,6 +39,8 @@ def pick_monster_kind(distance_from_center: float) -> c.MonsterKind:
 class Monster(Entity):
     # Bosses shrug off knockback; a plain monster does not.
     knockback_immune = False
+    # What a mine goes off for. Villagers and animals answer per body; a monster always is.
+    hostile = True
 
     def __init__(self, x, y, kind: c.MonsterKind = c.MONSTER_KINDS[0]):
         super().__init__(x, y, kind.color, kind.size, kind.hp, kind.hp)

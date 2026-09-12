@@ -115,7 +115,7 @@ class WorldExplosives:
                     body
                     for group in (self.monsters, self.bosses, self.npcs, self.critters)
                     for body in group
-                    if getattr(body, "hostile", True)
+                    if body.hostile
                 ]
                 fired = bomb.triggered_by(hostile)
             if not fired:

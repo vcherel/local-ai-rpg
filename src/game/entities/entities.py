@@ -81,6 +81,11 @@ class Statuses:
     # pulse in unison.
     _status_next_ms = 0
     last_damage_ms = 0
+    # Where this body stood last frame, and how long it has meant to move without managing
+    # it: what says it is wedged in a corner it is standing on legally
+    # (`WorldNavigation.unwedge`). Session-only, like everything else about a step.
+    wedge_spot: tuple | None = None
+    wedge_ms = 0.0
 
     def root(self, duration_ms: int):
         now = pygame.time.get_ticks()
