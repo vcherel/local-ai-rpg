@@ -10,7 +10,7 @@ from core.decals import get_decals
 from core.floating_text import get_floating_text
 from core.impact_fx import get_impacts
 from core.particles import get_particles
-from core.settings import get_settings
+from core.settings import get_settings, move_keys
 from core.swing_arcs import get_swings
 from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import POTION_EFFECT_LABELS, rarity_color
@@ -487,7 +487,9 @@ class GameRenderer:
     def _draw_struggle_keys(self, top: int):
         """The keys to mash, drawn as chips under the struggle bar and pulsing so they read
         as an instruction rather than as a readout."""
-        keys = ("W", "S", "Space")
+        # The north and south keys off the live layout, so an AZERTY player is told Z.
+        north, _west, south, _east = move_keys()
+        keys = (pygame.key.name(north).upper(), pygame.key.name(south).upper(), "Space")
         pulse = 0.6 + 0.4 * math.sin(pygame.time.get_ticks() / 110.0)
         chips = [c.Fonts.small.render(key, True, c.Colors.WHITE) for key in keys]
         tail = c.Fonts.small.render("to break free", True, c.Colors.WHITE)

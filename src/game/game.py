@@ -1007,8 +1007,6 @@ class Game(GameInteractions):
 
     def save_data(self):
         # NPC names persist themselves as they're generated/consumed; nothing to do here.
-        # Building interiors are just world space now, so the player's and monsters'
-        # positions are always plain world coordinates, indoors or out.
         self.save_system.update("player", self.player.to_dict())
         self.player.save_stats()
         self.save_system.update("inventory", [item.id for item in self.player.inventory])
