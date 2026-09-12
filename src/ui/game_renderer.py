@@ -465,17 +465,24 @@ class GameRenderer:
         while. Not a prompt, so it never competes with the one on-screen interaction."""
         if not player.rooted:
             return
+        bottom = self._draw_effort_bar(player.root_progress, c.Traps.PLATE_COLOR, c.Traps.JAW_COLOR, "Caught!")
+        # What to actually do about it. A bar draining on its own says "wait"; the keys say
+        # the seconds are the player's to take back, which is the whole of how a trap works.
+        self._draw_struggle_keys(bottom + 8)
+
+    def _draw_effort_bar(self, progress: float, plate: tuple, fill: tuple, label: str) -> int:
+        """The one bar drawn over the player's head for something they are doing rather
+        than something being done to them: a trap's hold being worked loose, a gate's beam
+        coming up. Answers with the bar's bottom edge, for whatever hangs under it."""
         width, height = 90, 9
         x = c.Screen.ORIGIN_X - width // 2
         y = c.Screen.ORIGIN_Y - c.Player.SIZE - 34
         pygame.draw.rect(self.screen, (24, 22, 20), (x - 2, y - 2, width + 4, height + 4), border_radius=3)
-        pygame.draw.rect(self.screen, c.Traps.PLATE_COLOR, (x, y, width, height))
-        pygame.draw.rect(self.screen, c.Traps.JAW_COLOR, (x, y, round(width * player.root_progress), height))
-        label = c.Fonts.small.render("Caught!", True, c.Colors.WHITE)
-        self.screen.blit(label, label.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
-        # What to actually do about it. A bar draining on its own says "wait"; the keys say
-        # the seconds are the player's to take back, which is the whole of how a trap works.
-        self._draw_struggle_keys(y + height + 8)
+        pygame.draw.rect(self.screen, plate, (x, y, width, height))
+        pygame.draw.rect(self.screen, fill, (x, y, round(width * min(1.0, progress)), height))
+        text = c.Fonts.small.render(label, True, c.Colors.WHITE)
+        self.screen.blit(text, text.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
+        return y + height
 
     def _draw_struggle_keys(self, top: int):
         """The keys to mash, drawn as chips under the struggle bar and pulsing so they read
@@ -504,14 +511,7 @@ class GameRenderer:
         actually started, so a gate they are only standing at is only a prompt."""
         if progress <= 0:
             return
-        width, height = 90, 9
-        x = c.Screen.ORIGIN_X - width // 2
-        y = c.Screen.ORIGIN_Y - c.Player.SIZE - 34
-        pygame.draw.rect(self.screen, (24, 22, 20), (x - 2, y - 2, width + 4, height + 4), border_radius=3)
-        pygame.draw.rect(self.screen, (58, 52, 44), (x, y, width, height))
-        pygame.draw.rect(self.screen, c.Villages.GATE_LEAF, (x, y, round(width * min(1.0, progress)), height))
-        label = c.Fonts.small.render("Lifting the bar...", True, c.Colors.WHITE)
-        self.screen.blit(label, label.get_rect(center=(c.Screen.ORIGIN_X, y - 12)))
+        self._draw_effort_bar(progress, (58, 52, 44), c.Villages.GATE_LEAF, "Lifting the bar...")
 
     def _draw_witness_cones(self, camera: Camera, world: World, player: Player):
         """What every villager who could catch the player stealing can actually see, drawn on

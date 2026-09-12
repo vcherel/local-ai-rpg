@@ -298,20 +298,41 @@ def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None,
     yield from active.generate_response_stream(prompt, system_prompt, log, max_tokens=max_tokens, stop=stop, poll=poll)
 
 
+def _sampling(prompt, system_prompt, max_tokens, stop=()) -> dict:
+    """The one set of arguments both generate paths hand the model."""
+    return {
+        "prompt": _format_prompt(prompt, system_prompt),
+        "max_tokens": max_tokens,
+        "temperature": c.Hyperparameters.TEMPERATURE,
+        "repeat_penalty": c.Hyperparameters.REPETITION_PENALTY,
+        "stop": ["<|im_end|>", "<|im_start|>", *stop],
+    }
+
+
+def _log(category, system_prompt, prompt, response, start, max_tokens, streaming, usage):
+    llm_log.log_call(
+        category=category,
+        system_prompt=system_prompt,
+        prompt=prompt,
+        response=response,
+        duration=time.monotonic() - start,
+        model_path=llm.model_path,
+        max_tokens=max_tokens,
+        temperature=c.Hyperparameters.TEMPERATURE,
+        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
+        streaming=streaming,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+    )
+
+
 def generate_response_internal(prompt, system_prompt, category, max_tokens=None, raw=False):
     max_tokens = max_tokens or c.Hyperparameters.MAX_TOKENS
     start = time.monotonic()
 
     # No llm.reset(): keeping the KV cache lets llama_cpp skip re-evaluating the
     # shared prefix (system prompt + prior turns) on each call.
-    response = llm(
-        prompt=_format_prompt(prompt, system_prompt),
-        max_tokens=max_tokens,
-        temperature=c.Hyperparameters.TEMPERATURE,
-        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        stop=["<|im_end|>", "<|im_start|>"],
-    )
-    duration = time.monotonic() - start
+    response = llm(**_sampling(prompt, system_prompt, max_tokens))
 
     generated_text = _strip_unsupported_glyphs(response["choices"][0]["text"].strip())
 
@@ -320,22 +341,7 @@ def generate_response_internal(prompt, system_prompt, category, max_tokens=None,
         if "\n" in generated_text:
             generated_text = generated_text.split("\n", 1)[0].strip()
 
-    usage = response.get("usage", {})
-    llm_log.log_call(
-        category=category,
-        system_prompt=system_prompt,
-        prompt=prompt,
-        response=generated_text,
-        duration=duration,
-        model_path=llm.model_path,
-        max_tokens=max_tokens,
-        temperature=c.Hyperparameters.TEMPERATURE,
-        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        streaming=False,
-        prompt_tokens=usage.get("prompt_tokens"),
-        completion_tokens=usage.get("completion_tokens"),
-    )
-
+    _log(category, system_prompt, prompt, generated_text, start, max_tokens, False, response.get("usage", {}))
     return generated_text
 
 
@@ -343,14 +349,7 @@ def generate_response_stream_internal(prompt, system_prompt, category, max_token
     # See generate_response_internal: skip reset() to reuse the cached prefix.
     max_tokens = max_tokens or c.Hyperparameters.MAX_TOKENS
     start = time.monotonic()
-    stream = llm(
-        prompt=_format_prompt(prompt, system_prompt),
-        max_tokens=max_tokens,
-        temperature=c.Hyperparameters.TEMPERATURE,
-        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        stream=True,
-        stop=["<|im_end|>", "<|im_start|>", *list(stop or [])],
-    )
+    stream = llm(**_sampling(prompt, system_prompt, max_tokens, stop or ()), stream=True)
 
     accumulated_text = ""
     usage = {}
@@ -374,19 +373,5 @@ def generate_response_stream_internal(prompt, system_prompt, category, max_token
 
         yield _strip_unsupported_glyphs(accumulated_text).translate(CHAR_FILTER)
 
-    duration = time.monotonic() - start
-    accumulated_text = _strip_unsupported_glyphs(accumulated_text)
-    llm_log.log_call(
-        category=category,
-        system_prompt=system_prompt,
-        prompt=prompt,
-        response=accumulated_text.translate(CHAR_FILTER),
-        duration=duration,
-        model_path=llm.model_path,
-        max_tokens=max_tokens,
-        temperature=c.Hyperparameters.TEMPERATURE,
-        repeat_penalty=c.Hyperparameters.REPETITION_PENALTY,
-        streaming=True,
-        prompt_tokens=usage.get("prompt_tokens"),
-        completion_tokens=usage.get("completion_tokens"),
-    )
+    response = _strip_unsupported_glyphs(accumulated_text).translate(CHAR_FILTER)
+    _log(category, system_prompt, prompt, response, start, max_tokens, True, usage)

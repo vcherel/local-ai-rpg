@@ -79,6 +79,13 @@ ACCESSORY_KEYWORDS = {
 WEAPON_COLOR = (220, 140, 40)
 ARMOR_COLOR = (100, 180, 220)
 ACCESSORY_COLOR = (230, 200, 60)
+
+
+def _jitter(color: tuple) -> tuple:
+    """One piece of gear's own shade of its family's colour, so a bag of swords is not one sword drawn nine times."""
+    return tuple(max(0, min(255, v + random.randint(-20, 20))) for v in color)
+
+
 LOOTBOX_COLOR = (150, 100, 50)
 AMMO_COLOR = (180, 140, 90)
 VALUABLE_COLOR = (235, 205, 80)
@@ -539,13 +546,13 @@ class Item:
         # Rolled before the colour: a valuable's metal follows the shape its name gave it.
         self.shape = icon_shape(item_type, name)
         if item_type == "weapon":
-            self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in WEAPON_COLOR)
+            self.color = _jitter(WEAPON_COLOR)
         elif item_type in ("armor", "shield"):
-            self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ARMOR_COLOR)
+            self.color = _jitter(ARMOR_COLOR)
         elif item_type == "accessory":
             if self.accessory_flavor is None:
                 self.accessory_flavor = roll_accessory_flavor(self.rarity)
-            self.color = tuple(max(0, min(255, v + random.randint(-20, 20))) for v in ACCESSORY_COLOR)
+            self.color = _jitter(ACCESSORY_COLOR)
         elif item_type == "lootbox":
             self.color = LOOTBOX_COLOR
         elif item_type == "coins":

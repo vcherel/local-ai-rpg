@@ -73,13 +73,14 @@ class WorldVillagers:
                 # (`_loose_arrows`), so the frame is run with nothing to walk to.
                 npc.update(player, dt, self.blocked, face_player=False)
                 continue
+            engaged = id(npc) in mob or id(npc) in fight or id(npc) in flee
             if npc.asleep:
                 # In bed, which is a piece of furniture and so a solid: the other body in a
                 # settlement exempt from being put back on open ground, for the same reason
                 # the archer on the roof is. Anything at all to do (dawn, a fight, a monster
                 # in the street) has them out of it first, and the `unstick` below is what
                 # puts their feet on the floor.
-                if self.curfew_on and not (id(npc) in mob or id(npc) in fight or id(npc) in flee):
+                if self.curfew_on and not engaged:
                     # Given the frame anyway, with their own spot as the place to go, so
                     # anger still cools overnight and nothing else moves them.
                     npc.update(player, dt, self.blocked, refuge=(npc.x, npc.y), face_player=False)
@@ -101,9 +102,7 @@ class WorldVillagers:
                 npc,
                 c.Entities.NPC_SIZE / 2,
                 dt,
-                wants_move=bool(
-                    id(npc) in mob or id(npc) in fight or id(npc) in flee or going_home or npc.wander.target is not None
-                ),
+                wants_move=engaged or going_home or npc.wander.target is not None,
             )
             enemy = fight.get(id(npc))
             # The orders were worked out once for the whole street, so the neighbour who
