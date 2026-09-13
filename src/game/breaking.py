@@ -118,10 +118,33 @@ class WorldBreaking:
                 self._smash_boulder(player, wild, arch, prop_damage, blow)
             return
 
+        # The door and the pane beside it are the two things on a facade a blow can land
+        # on, so the nearer of the two takes it: a swing at the leaf is not a swing at the
+        # window a step to its side.
+        door_hit = self._door_in_reach(pos, hit_radius)
         window_hit = self._find_window_in_reach(pos, hit_radius)
+        if door_hit is not None and (window_hit is None or door_hit[0] <= window_hit[0]):
+            self._hit_door(door_hit[1], prop_damage, blow, player)
+            return
         if window_hit is not None:
-            building, idx, window = window_hit
+            _dist, building, idx, window = window_hit
             self._hit_window(player, building, idx, window, prop_damage, blow)
+
+    def _door_in_reach(self, pos, hit_radius):
+        """The shut door a swing at `pos` lands on, as (distance, building), or None.
+        Measured to the leaf itself for the same reason a window is measured to its pane."""
+        px, py = pos
+        best = None
+        for building in self.buildings_in_range(px, py, c.World.CHUNK_SIZE):
+            if not building.door_closed:
+                continue
+            door = building.door_rect()
+            near_x = min(max(px, door.left), door.right)
+            near_y = min(max(py, door.top), door.bottom)
+            dist = math.hypot(px - near_x, py - near_y)
+            if dist < hit_radius + c.Buildings.DOOR_HIT_RADIUS and (best is None or dist < best[0]):
+                best = (dist, building)
+        return best
 
     def _woodpile_in_reach(self, pos, hit_radius: float):
         """The stack of firewood a swing at `pos` lands on, or None. The one exterior extra
@@ -262,7 +285,7 @@ class WorldBreaking:
 
     def _find_window_in_reach(self, pos, hit_radius):
         """Nearest unbroken window (on any non-landmark building) a swing reaches, as
-        (building, index, rect), or None.
+        (distance, building, index, rect), or None.
 
         Measured to the pane rather than to the middle of it. A window is three times as
         wide as it is deep and sits a wall's depth back from the face the player is stood
@@ -281,7 +304,7 @@ class WorldBreaking:
                 dist = math.hypot(px - near_x, py - near_y)
                 if dist < hit_radius + c.Buildings.WINDOW_HIT_RADIUS and (best is None or dist < best[0]):
                     best = (dist, building, idx, window)
-        return None if best is None else (best[1], best[2], best[3])
+        return best
 
     def _hit_window(self, player: Player, building: Building, idx: int, window, damage: int, angle: float = 0.0):
         """Crack a window, and shatter it once it has taken enough."""
@@ -439,12 +462,17 @@ class WorldBreaking:
             angle = math.atan2(door.centery - monster.y, door.centerx - monster.x)
             self._hit_door(building, round(monster.kind.damage * damage_mult), angle)
 
-    def _hit_door(self, building: Building, damage: int, angle: float = 0.0):
-        """Land a blow on a shut door, and put it through once it has taken enough."""
+    def _hit_door(self, building: Building, damage: int, angle: float = 0.0, player: Player | None = None):
+        """Land a blow on a shut door, and put it through once it has taken enough.
+
+        `player` is set when it was the player's own swing: putting somebody's door in
+        is vandalism like putting their window in, answered by whoever saw it."""
         door = building.door_rect()
         if not building.damage_door(damage):
             self._prop_chip(door.centerx, door.centery, c.Buildings.DOOR_COLOR, "crate_break", building.door_key, angle)
             return
+        if player is not None:
+            self.report_crime(door.centerx, door.centery, player)
         get_shake().add(c.Combat.DECOR_BREAK_SHAKE)
         play_sound("crate_break")
         get_particles().spawn_burst(

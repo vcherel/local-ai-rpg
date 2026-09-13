@@ -206,9 +206,12 @@ only true if it can be read off the door: `BuildingArt._draw_lock` puts a hasp a
 across the leaf, in pale iron so it survives the night tint on the darkest thing on the
 facade. A street the player has to learn by walking into every door is a street they learn
 once and then resent. A locked door
-is deliberately not a tougher door: no lockpicking, no key, nothing to grind at. The way in is
-the window beside it, which the player already knew how to break and which until now did nothing
-at all.
+is deliberately not a tougher door: no lockpicking, no key. There are two ways in and both are
+noisy. The window beside it, which the player already knew how to break and which until now did
+nothing at all, and the leaf itself: a shut door takes the player's swing like any other
+hit-point pool (`WorldBreaking._door_in_reach`, the nearer of the leaf and the pane taking the
+blow), off the same `DOOR_HP` a monster beats it down through, so bare hands are a long while
+about it and a hammer is not, and the hole is permanent as it is when a monster made it.
 
 That is what makes the two halves one change. A shattered pane is cut out of the wall shell
 (`Building.window_gaps`, subtracted in `_wall_segments` exactly as the opening between the two
@@ -218,8 +221,8 @@ through would be a lie told by the drawing. Once inside, they throw the bar off 
 (`Building.unlock`, persisted): a house broken into is never a room they have to leave the way
 they came.
 
-Breaking somebody's window in front of them is vandalism, answered by whoever saw it on the same
-per-offence ladder that wrecking their furniture is (`World.report_crime`). Out of sight of the
+Breaking somebody's window or their door in front of them is vandalism, answered by whoever saw
+it on the same per-offence ladder that wrecking their furniture is (`World.report_crime`). Out of sight of the
 street it costs nothing, which is the point: which window of which house is a decision.
 
 ## A town is walled and the wall is one thing

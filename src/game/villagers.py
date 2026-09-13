@@ -98,11 +98,15 @@ class WorldVillagers:
             # one rescue written for a body pinned on a corner was switched off for exactly
             # the walk that pins them there.
             going_home = id(npc) not in mob and self._turning_in(npc)
+            # The greeter's walk over is one more: `hailing` is set by `_update_greeter`
+            # below and read here a frame late, which is fine. Only the walk counts, since
+            # the wait at the end of it is standing still on purpose.
+            greeting = npc.hailing and npc.distance_to_point(player.get_pos()) > c.Onboarding.GREET_STOP_DISTANCE
             self.unwedge(
                 npc,
                 c.Entities.NPC_SIZE / 2,
                 dt,
-                wants_move=engaged or going_home or npc.wander.target is not None,
+                wants_move=engaged or going_home or greeting or npc.wander.target is not None,
             )
             enemy = fight.get(id(npc))
             # The orders were worked out once for the whole street, so the neighbour who
@@ -167,6 +171,9 @@ class WorldVillagers:
             # Run without a walk of any kind so the wander does not drift them off the spot.
             npc.orientation = math.atan2(player.y - npc.y, player.x - npc.x) + math.pi / 2
             return True
+        # Their own door and their own gate open for them: a greeter whose timer ran out
+        # while they were indoors used to walk to the leaf and stand against it.
+        self.open_door_for(npc)
         self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*goal))
         waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2)
         npc.update(

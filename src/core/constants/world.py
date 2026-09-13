@@ -343,10 +343,14 @@ class Buildings:
 
     # Every door starts shut and blocks the doorway like any other wall. The player opens
     # and closes it with E; a monster that cannot reach the player through it beats it
-    # down over several blows, and a door once broken is a hole for good.
+    # down over several blows, and a door once broken is a hole for good. A shut door the
+    # player swings at takes the same pool (`WorldBreaking._swing_at_scenery`), so a barred
+    # one gives way to bare hands after a good many punches, measured to the leaf like a
+    # window is to its pane.
     DOOR_HP: int = 55
     DOOR_BASH_REACH: int = 46
     DOOR_BASH_COOLDOWN_MS: int = 900
+    DOOR_HIT_RADIUS: int = 18
     DOOR_COLOR: tuple = (96, 68, 44)
 
     # Thickness of the wall shell drawn/collided around a building's footprint; the

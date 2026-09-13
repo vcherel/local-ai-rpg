@@ -716,8 +716,8 @@ class Onboarding:
     # with something to say rather than somebody following them. One per greeter, rolled
     # off their name.
     HAILS: tuple = (
-        "You there! A word, if you have a moment.",
-        "Traveller! Wait, I need a hand with something.",
-        "Stranger, hold on. I have work if you want it.",
-        "Hey! You look like you can handle yourself.",
+        "Newcomer! I have a job for you, and coin in it.",
+        "Traveller, wait. I need a hand with something.",
+        "You there! There is paid work here, if you want it.",
+        "Hey! Got a moment? I have something to ask you.",
     )
