@@ -111,7 +111,7 @@ class ShopMenu(BaseMenu):
     # --- bulk selling ---------------------------------------------------------
 
     def _valuables(self) -> list[Item]:
-        return [item for item in self.player.inventory if item.item_type == "misc"]
+        return [item for item in self.player.inventory if item.item_type == "misc" and not item.quest_bound]
 
     def _unused_gear(self) -> list[Item]:
         """Equippable items the player is neither wearing nor carrying in one of their four
@@ -235,6 +235,9 @@ class ShopMenu(BaseMenu):
 
     def _sell(self, index: int):
         item = self.player.inventory[index]
+        # Somebody is waiting on this one; the row says so instead of pricing it.
+        if item.quest_bound:
+            return
         price = self._sell_price(item)
         # A stack sells one unit per click, so parting with a spare arrow or potion
         # doesn't hand the merchant the whole stack for a single item's price.
@@ -329,7 +332,17 @@ class ShopMenu(BaseMenu):
             index = self.sell_scroll + row
             price = self._sell_price(item)
             equipped = item.id in equipped_ids
-            self._draw_row(surface, sx, row, item, price, self.hovered_sell == index, (255, 180, 80), equipped=equipped)
+            self._draw_row(
+                surface,
+                sx,
+                row,
+                item,
+                price,
+                self.hovered_sell == index,
+                (255, 180, 80),
+                enabled=not item.quest_bound,
+                equipped=equipped,
+            )
         self._draw_scrollbar(surface, sx + pw + 4, len(sell_items), self.sell_scroll)
         self._draw_bulk_buttons(surface)
         self._draw_auto_equip_button(surface)
@@ -446,6 +459,8 @@ class ShopMenu(BaseMenu):
             sub = c.Fonts.small.render(stat, True, c.Colors.MUTED)
         elif item.item_type == "potion":
             sub = c.Fonts.small.render(potion_description(item), True, c.Colors.MUTED)
+        elif item.quest_bound:
+            sub = c.Fonts.small.render("someone is waiting for this", True, c.Colors.MUTED)
         elif item.item_type == "misc":
             sub = c.Fonts.small.render("valuable", True, c.Colors.MUTED)
 
@@ -461,5 +476,7 @@ class ShopMenu(BaseMenu):
         if tag is not None and sub_x + tag.get_width() < r.right - PRICE_COLUMN:
             surface.blit(tag, (sub_x, r.y + 30))
 
+        if item.quest_bound:
+            return
         price_surf = c.Fonts.text.render(f"{price}g", True, price_color)
         surface.blit(price_surf, (r.right - price_surf.get_width() - 8, r.centery - price_surf.get_height() // 2))

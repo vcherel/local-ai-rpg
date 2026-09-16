@@ -37,6 +37,7 @@ from game.gore import WorldGore
 from game.navigation import WorldNavigation
 from game.places import WorldPlaces
 from game.projectiles import WorldProjectiles
+from game.quest import COUNTED_QUEST_TYPES
 from game.shops import WorldShops
 from game.social import WorldSocial
 from game.spawning import WorldSpawning
@@ -971,7 +972,7 @@ class World(
             return (recipient.x, recipient.y) if recipient else None
 
         ready_to_hand_in = (quest.item is not None and quest.item in player.inventory) or (
-            quest.quest_type in ("kill_mob", "clear_camp", "deliver") and quest.kills_done >= quest.kill_count
+            quest.quest_type in COUNTED_QUEST_TYPES and quest.kills_done >= quest.kill_count
         )
         if ready_to_hand_in:
             return (giver.x, giver.y) if giver else None

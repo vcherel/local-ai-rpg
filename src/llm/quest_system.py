@@ -44,6 +44,14 @@ class QuestSystem:
         self.on_complete = None
 
     @staticmethod
+    def _quest_item(x: float, y: float, name: str) -> Item:
+        """The one thing a quest turns on, made the same way wherever it appears: a plain
+        valuable by every other measure, marked so the shop will not take it."""
+        item = Item(x, y, name)
+        item.quest_bound = True
+        return item
+
+    @staticmethod
     def _strip_article(name: str) -> str:
         name = name.strip()
         for article in ["the ", "a ", "an ", "some "]:
@@ -236,7 +244,7 @@ class QuestSystem:
         # The parcel is handed over as the quest is given, so the player is carrying it
         # from the first step: a delivery is a walk, not a hunt for the thing to deliver.
         item_name = self._strip_article(quest_info["item_name"])
-        parcel = Item(self.player.x, self.player.y, item_name)
+        parcel = self._quest_item(self.player.x, self.player.y, item_name)
         parcel.picked_up = True
         if self.player.add_item(parcel) is parcel:
             self.items.append(parcel)
@@ -272,7 +280,7 @@ class QuestSystem:
         if not quest_info.get("item_name"):
             return None
         item_name = self._strip_article(quest_info["item_name"])
-        quest_item = Item(*self._target_spot(npc), item_name)
+        quest_item = self._quest_item(*self._target_spot(npc), item_name)
         self.items.append(quest_item)
         return Quest(
             item_name=item_name,
@@ -305,7 +313,7 @@ class QuestSystem:
             if quest.quest_type == "kill_mob":
                 quest.kills_done += 1
             elif quest.quest_type == "loot_mob" and quest.item is None:
-                dropped_item = Item(x, y, quest.item_name)
+                dropped_item = self._quest_item(x, y, quest.item_name)
                 quest.item = dropped_item
         return dropped_item
 
@@ -329,7 +337,7 @@ class QuestSystem:
                 continue
             if quest.target_building_id != building_id:
                 continue
-            stolen = Item(self.player.x, self.player.y, quest.item_name)
+            stolen = self._quest_item(self.player.x, self.player.y, quest.item_name)
             stolen.picked_up = True
             quest.item = stolen
             if self.player.add_item(stolen) is stolen:
@@ -355,23 +363,32 @@ class QuestSystem:
         return None
 
     def on_npc_killed(self, npc: NPC) -> Item | None:
-        """Drop the stolen item this NPC was carrying, if they're the thief of an active quest."""
+        """Drop the stolen item this NPC was carrying, if they're the thief of an active quest.
+
+        A parcel addressed to them is undeliverable from here on, so the quest it belongs to
+        is dropped from its giver rather than left in the log pointing at nobody."""
+        for quest in list(self.active_quests):
+            if quest.quest_type != "deliver" or quest.recipient_npc_name != npc.name:
+                continue
+            if quest.kills_done < quest.kill_count:
+                giver = next((other for other in self.npcs if other.quest is quest), None)
+                if giver is not None:
+                    self.remove_quest(giver)
         for quest in self.active_quests:
             if quest.quest_type == "recover_stolen" and quest.thief_npc_name == npc.name and quest.item is None:
-                dropped_item = Item(npc.x, npc.y, quest.item_name)
+                dropped_item = self._quest_item(npc.x, npc.y, quest.item_name)
                 quest.item = dropped_item
                 return dropped_item
         return None
 
-    def extract_and_give_reward(self, last_message: str, quest: Quest) -> int:
-        """Pay out the coins for a quest just handed in. The figure the NPC named is their
+    def promised_reward(self, last_message: str, quest: Quest) -> int:
+        """The coins a quest just handed in is worth. The figure the NPC named is their
         word and is honoured, but it is clamped into the band its quest type is worth
         (`coin_band`) rather than trusted: the model has no sense of the economy and would
-        send the player across the map for three coins."""
+        send the player across the map for three coins. Read here, paid in
+        `complete_quest`, so the payout goes through the one gate that pays once."""
         floor, ceiling = coin_band(quest)
-        reward = min(max(self._promised_coins(last_message), floor), ceiling)
-        self.player.add_coins(reward)
-        return reward
+        return min(max(self._promised_coins(last_message), floor), ceiling)
 
     def _promised_coins(self, last_message: str) -> int:
         """The number of coins the NPC's parting line actually names, or 0 if it names none."""
@@ -442,7 +459,9 @@ class QuestSystem:
 
     def complete_quest(self, npc: NPC):
         quest = npc.quest
-        if not quest:
+        # Paid once. The hand-in runs on a worker and the same NPC can be talked to again
+        # before it lands, so this is the one gate every payout goes through.
+        if not quest or quest.is_completed:
             return
 
         if quest.quest_type in COUNTED_QUEST_TYPES:
@@ -465,6 +484,8 @@ class QuestSystem:
             if quest.item is not None and quest.item is not handed_in and quest.item in self.items:
                 self.items.remove(quest.item)
 
+        if quest.reward_coins:
+            self.player.add_coins(quest.reward_coins)
         reward_item = self._reward_item(quest, npc)
         if reward_item is not None:
             reward_item.picked_up = True

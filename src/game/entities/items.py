@@ -572,6 +572,10 @@ class Item:
         # Weapons and armour carry rolled special effects; everything else stays {}.
         self.affixes = roll_affixes(item_type, self.rarity)
         self.picked_up = False
+        # Whether a quest is waiting on this exact thing (a parcel, a fetched relic, the
+        # stolen goods). Set by `QuestSystem._quest_item` and read by the shop, which
+        # refuses to buy it: a delivery sold for seven coins is a quest that can never end.
+        self.quest_bound = False
         # Set by start_pop_anim for items that should hop out of a source (a smashed
         # crate, say) and settle into place instead of just appearing.
         self.pop_start_ms = None
@@ -627,6 +631,7 @@ class Item:
             "color": list(self.color),
             "shape": self.shape,
             "picked_up": self.picked_up,
+            "quest_bound": self.quest_bound,
         }
 
     @classmethod
@@ -652,6 +657,7 @@ class Item:
         # Restore saved effects rather than the fresh ones __init__ rolled; old saves have none.
         item.affixes = data.get("affixes", {})
         item.picked_up = data["picked_up"]
+        item.quest_bound = data.get("quest_bound", False)
         return item
 
     def draw(self, surface: pygame.Surface, camera: Camera = None, x=None, y=None):

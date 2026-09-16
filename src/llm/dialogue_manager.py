@@ -154,6 +154,11 @@ class DialogueManager:
 
         self.pending_quest_analysis = False
         self.pending_quest_completion = None
+        # The quests whose hand-in is still being paid out on a worker, by id. A hand-in
+        # waits on the model for the coins the NPC named, and the box can be opened and
+        # closed again on the same NPC in that time: without this the second conversation
+        # queued a second payout, and the quest was paid, rewarded and counted twice.
+        self._completing: set[int] = set()
         self.quest_tracker = QuestTracker(screen)
         self.shop_requested = False
         self.shop_button_rect: pygame.Rect | None = None
@@ -262,7 +267,7 @@ class DialogueManager:
                 if quest.reward_item_name
                 else " in coins"
             )
-            # The band the payout is clamped into anyway (QuestSystem.extract_and_give_reward),
+            # The band the payout is clamped into anyway (QuestSystem.promised_reward),
             # told to the NPC so the figure they say out loud is the figure the player is paid.
             low, high = coin_band(quest)
             return (
@@ -290,7 +295,7 @@ class DialogueManager:
         delivered_quest = self.quest_system.on_delivery(npc)
 
         quest_complete = False
-        if npc.has_active_quest:
+        if npc.has_active_quest and id(npc.quest) not in self._completing:
             quest = npc.quest
             if quest.quest_type in COUNTED_QUEST_TYPES:
                 quest_complete = quest.kills_done >= quest.kill_count
@@ -516,6 +521,7 @@ class DialogueManager:
 
         # Quest completion first (uses conversation context for rewards)
         if self.pending_quest_completion:
+            self._completing.add(id(self.pending_quest_completion.quest))
             threading.Thread(
                 target=self._execute_quest_completion,
                 args=(self.pending_quest_completion, last_msg, log_path),
@@ -598,10 +604,14 @@ class DialogueManager:
                     play_sound("quest_new")
 
     def _execute_quest_completion(self, npc: NPC, last_msg, log_path):
-        if last_msg and npc.quest:
-            reward = self.quest_system.extract_and_give_reward(last_msg["content"], npc.quest)
-            npc.quest.reward_coins = reward
-            dialogue_log.append_section(log_path, "Quest completion", f"Reward: {reward} coins")
+        quest = npc.quest
+        try:
+            if last_msg and quest:
+                reward = self.quest_system.promised_reward(last_msg["content"], quest)
+                quest.reward_coins = reward
+                dialogue_log.append_section(log_path, "Quest completion", f"Reward: {reward} coins")
 
-        self.quest_system.complete_quest(npc)
-        play_sound("quest_complete")
+            self.quest_system.complete_quest(npc)
+            play_sound("quest_complete")
+        finally:
+            self._completing.discard(id(quest))
