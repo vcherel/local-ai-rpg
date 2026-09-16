@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from core import mainthread
 from core.audio import play_sound
 from core.camera import Camera, get_shake
 from core.decals import get_decals
@@ -1063,6 +1064,9 @@ class Game(GameInteractions):
 
     def _update_frame(self):
         """One step of the world. Only runs with no menu open, which is what pausing is."""
+        # Whatever the workers finished since last frame lands first, so a quest a model
+        # just wrote exists before anything this frame looks for it.
+        mainthread.drain()
         dt = self.clock.get_time()
         # A heavy hit freezes gameplay motion for a few frames without slowing the camera
         # shake/particles/damage numbers below, so the impact reads as a freeze-frame

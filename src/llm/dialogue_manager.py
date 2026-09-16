@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
-from core import dialogue_log
+from core import dialogue_log, mainthread
 from core.audio import play_sound
 from core.utils import ConversationHistory
 from game.entities.item_icons import draw_shape_with_border
@@ -593,24 +593,40 @@ class DialogueManager:
         )
 
     def _execute_quest_analysis(self, npc: NPC, conversation_text: str, log_path):
-        if conversation_text:
-            quest_info = self.quest_system.analyze_conversation_for_quest(conversation_text)
-            dialogue_log.append_section(log_path, "Quest analysis", json.dumps(quest_info, ensure_ascii=False))
-            if quest_info["has_quest"]:
-                self.quest_system.create_quest_from_analysis(npc, quest_info, self._npc_name_generator)
-                quest = npc.quest
-                if quest:
-                    self.quest_tracker.notify_new_quest(quest)
-                    play_sound("quest_new")
+        """The worker's half: the model reads the conversation. What it found is built into
+        the world on the main thread (`_land_quest`), since building one spawns items, a
+        thief or a boss into lists the frame is walking."""
+        if not conversation_text:
+            return
+        quest_info = self.quest_system.analyze_conversation_for_quest(conversation_text)
+        dialogue_log.append_section(log_path, "Quest analysis", json.dumps(quest_info, ensure_ascii=False))
+        if quest_info["has_quest"]:
+            mainthread.post(self._land_quest, npc, quest_info)
+
+    def _land_quest(self, npc: NPC, quest_info: dict):
+        self.quest_system.create_quest_from_analysis(npc, quest_info, self._npc_name_generator)
+        quest = npc.quest
+        if quest:
+            self.quest_tracker.notify_new_quest(quest)
+            play_sound("quest_new")
 
     def _execute_quest_completion(self, npc: NPC, last_msg, log_path):
+        """The worker's half: the coins the NPC's parting line named, which may cost a model
+        call. The payout itself (`_pay_out`) is main-thread work, and the quest stays marked
+        as completing until it has actually run there."""
         quest = npc.quest
         try:
             if last_msg and quest:
                 reward = self.quest_system.promised_reward(last_msg["content"], quest)
                 quest.reward_coins = reward
                 dialogue_log.append_section(log_path, "Quest completion", f"Reward: {reward} coins")
+        except Exception:
+            self._completing.discard(id(quest))
+            raise
+        mainthread.post(self._pay_out, npc, quest)
 
+    def _pay_out(self, npc: NPC, quest):
+        try:
             self.quest_system.complete_quest(npc)
             play_sound("quest_complete")
         finally:

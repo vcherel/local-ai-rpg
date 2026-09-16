@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import core.constants as c
+from core import mainthread
 from core.screen_fx import get_banner
 from core.utils import parse_response_quest_analysis
 from game.entities.items import Item
@@ -256,7 +257,7 @@ class EventSystem:
         )
         self.notify(text or "Whispers speak of treasure hidden nearby...", c.Colors.YELLOW)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
-        self._spawn_treasure(player, "The treasure appears, right where the whispers pointed")
+        mainthread.post(self._spawn_treasure, player, "The treasure appears, right where the whispers pointed")
 
     # ------------------------------------------------------------------ blood night
 
@@ -285,7 +286,7 @@ class EventSystem:
         text = self._generate_lore_line("In one short ominous sentence, warn that a night of blood is coming soon.")
         self.notify(text or "Something dark is coming with the night...", c.Colors.RED)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
-        self._start_blood_night(player)
+        mainthread.post(self._start_blood_night, player)
 
     # ------------------------------------------------------------------ boss
 
@@ -309,7 +310,7 @@ class EventSystem:
         )
         self.notify(text or "The ground trembles with something monstrous...", c.Colors.BOSS_BAR)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
-        self._spawn_boss_event(player, "{name} has risen, and it hungers")
+        mainthread.post(self._spawn_boss_event, player, "{name} has risen, and it hungers")
 
     # ------------------------------------------------------------------ rumors
 
@@ -326,7 +327,7 @@ class EventSystem:
         )
         whisper = text or f"someone speaks of {label} out in the wilds"
         self.notify(f"Rumour: {whisper} (marked on your map)", RUMOR_COLOR)
-        self.world.mark_rumor(x, y, label)
+        mainthread.post(self.world.mark_rumor, x, y, label)
 
     def _generate_prophetic_rumor(self, player: Player):
         text = self._generate_lore_line(
@@ -338,6 +339,9 @@ class EventSystem:
             RUMOR_COLOR,
         )
         time.sleep(random.uniform(*c.Events.PROPHECY_DELAY_RANGE_S))
+        mainthread.post(self._spawn_prophesied_treasure, player)
+
+    def _spawn_prophesied_treasure(self, player: Player):
         self._spawn_treasure(player, "The rumor was true: treasure glints somewhere out there", mark="the treasure")
 
     # ------------------------------------------------------------------ village crisis
@@ -377,6 +381,13 @@ class EventSystem:
         )
         response = generate_response_queued(prompt, system_prompt, "Village crisis", raw=True)
         quest_info = parse_response_quest_analysis(response)
+        mainthread.post(self._land_crisis, quest_system, npc, quest_info, npc_name_generator)
+
+    def _land_crisis(self, quest_system: QuestSystem, npc: NPC, quest_info: dict, npc_name_generator):
+        # Asked again on the main thread: somebody else may have given them a task, or
+        # turned them, while the model was writing this one.
+        if npc.has_active_quest or not npc.can_talk or npc not in self.world.npcs:
+            return
         quest_system.create_quest_from_analysis(npc, quest_info, npc_name_generator)
         if npc.quest:
             self.notify(f"{npc.name} has an urgent problem, seek them out", c.Colors.YELLOW)

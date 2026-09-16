@@ -30,3 +30,11 @@ class Hyperparameters:
     DIALOGUE_MAX_TOKENS: int = 120
     TEMPERATURE: float = 0.8
     REPETITION_PENALTY: float = 1.2
+    # Names are written ahead of the villager who will wear one. How many are kept ready
+    # (one was a freeze on the second unnamed villager in a row, since `get_name` waits on
+    # the model when the buffer is empty), how many of the ones already used the prompt is
+    # reminded of (every one ever used was a prompt that grew for the whole playthrough),
+    # and how many times a duplicate is asked again before it is made distinct by hand.
+    NAME_BUFFER: int = 3
+    NAME_PROMPT_RECENT: int = 40
+    NAME_RETRIES: int = 2
