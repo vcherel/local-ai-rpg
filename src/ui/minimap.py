@@ -294,7 +294,7 @@ class Minimap:
         Its own strip rather than a suffix on the name: the panel is 180 pixels wide, and a
         countdown appended to a name ate the name it was appended to. A grudge (somebody was
         killed here) has no countdown to show, and never will."""
-        angry = [npc for npc in world.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
+        angry = [npc for npc in world.villagers_of(village) if npc.hostile]
         if not angry:
             return None
         if any(npc.grudge for npc in angry):

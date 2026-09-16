@@ -784,6 +784,11 @@ class WorldPlaces:
         for npc in self.npcs:
             if npc.hostile_until:
                 npc.hostile_until = max(0.0, npc.hostile_until - seconds)
+            # A night slept through is a delivery closer: the merchant's clock is one of
+            # those deadlines too, and waiting a restock out in the tavern is the one
+            # thing a bed is for besides healing.
+            if npc.restock_at:
+                npc.restock_at = max(0.0, npc.restock_at - seconds)
 
     def _check_poi_discovery(self, player: Player):
         """The one-time line a landmark gives up the first time the player walks to it: a

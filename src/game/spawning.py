@@ -228,7 +228,7 @@ class WorldSpawning:
             key = f"{village.chunk[0]}:{village.chunk[1]}"
             wanted = random.Random(f"dogs{key}").randint(*c.Wildlife.VILLAGE_DOGS)
             living = [cr for cr in self.critters if cr.village_key == key]
-            hostile = any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y))
+            hostile = any(npc.hostile for npc in self.villagers_of(village))
             size = c.CRITTER_KINDS_BY_NAME["dog"].size / 2
             for _ in range(wanted - len(living)):
                 # A dog lives in the street, not in the tavern: the spot is rolled again

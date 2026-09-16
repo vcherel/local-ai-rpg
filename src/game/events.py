@@ -345,10 +345,10 @@ class EventSystem:
     def _village_angry(self, npc: NPC) -> bool:
         """Whether the settlement this one lives in has turned on the player. One furious
         neighbour is enough: the quest would send the player into a street that attacks them."""
-        village = self.world.village_at(npc.x, npc.y)
+        village = self.world.village_at(*npc.home)
         if village is None:
             return False
-        return any(other.hostile for other in self.world.npcs if village.contains_point(other.x, other.y))
+        return any(other.hostile for other in self.world.villagers_of(village))
 
     def _generate_crisis(self, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         # Nobody who wants the player dead asks them for a favour, and neither does anyone

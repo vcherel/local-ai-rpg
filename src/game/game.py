@@ -113,6 +113,7 @@ class Game(GameInteractions):
         self.game_renderer = GameRenderer(self.screen)
 
         self.player = Player(self.save_system, self.save_system.load("coins", 0))
+        self.player.world_items = self.world.items
         # A new game spawns at the fixed world centre, which the starting town's grid often
         # covers, so the player would start standing in a wall. Applied to a loaded position
         # too, which frees a save left stuck inside one, and it looks past the walls: a save

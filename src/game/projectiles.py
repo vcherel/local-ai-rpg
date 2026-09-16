@@ -61,8 +61,7 @@ class WorldProjectiles:
                 return
             ammo.quantity -= 1
             if ammo.quantity <= 0:
-                player.unequip_if_equipped(ammo)
-                player.inventory.remove(ammo)
+                player.discard(ammo)
 
         player.spend_hand(hand, now, arch.cooldown_ms, arch.swing_mult)
         # Hand one is the right arm on the sprite, hand two the left: the arm that comes up

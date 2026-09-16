@@ -444,7 +444,11 @@ class World(
             # nobody lives in is a house, but not one this is allowed to make.
             beds = max(1, len(home.interior_layout()["beds"]))
             for _ in range(min(random.randint(*per_home), beds)):
-                npc = NPC(door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
+                # Scattered about the doorstep and then stepped clear of whatever is solid
+                # there: the scatter is not along the door's own outward, so it could put
+                # somebody inside the shut leaf, standing in the door for the first frame.
+                spot = (door_x + random.randint(-80, 80), door_y + random.randint(0, 80))
+                npc = NPC(*self.free_spot_near(*spot, c.Entities.NPC_SIZE / 2))
                 npc.home = (door_x, door_y)
                 self._set_toughness(npc, village)
                 self.npcs.append(npc)

@@ -132,6 +132,10 @@ class Player(PlayerBonuses, Entity):
 
         self.save_system: SaveSystem = save_system
         self.inventory = []
+        # The world's master item list, given by `Game` once the world exists. What a
+        # spent stack is taken off as it leaves the bag: an empty quiver left there was in
+        # every save and walked by the loot magnet every frame for the rest of the run.
+        self.world_items: list = []
         self.coins = coins
 
         # Earliest tick at which each hand may act again, and the current weapon's
@@ -546,6 +550,15 @@ class Player(PlayerBonuses, Entity):
         ammo = self.ready_ammo()
         return ammo.quantity if ammo else 0
 
+    def discard(self, item):
+        """Take an item out of the game for good: off its slot, off the bar, out of the
+        bag and out of the world's list. The one path a used-up stack leaves by."""
+        self.unequip_if_equipped(item)
+        if item in self.inventory:
+            self.inventory.remove(item)
+        if item in self.world_items:
+            self.world_items.remove(item)
+
     def spend_one(self, item) -> bool:
         """Use one off a stack, clearing the slot it was held in once the last one is gone.
         False when there was nothing left to spend, which is how a click on an empty hand
@@ -554,9 +567,7 @@ class Player(PlayerBonuses, Entity):
             return False
         item.quantity -= 1
         if item.quantity <= 0:
-            self.unequip_if_equipped(item)
-            if item in self.inventory:
-                self.inventory.remove(item)
+            self.discard(item)
         return True
 
     def equipped_ids(self) -> dict:
@@ -778,11 +789,8 @@ class Player(PlayerBonuses, Entity):
             label = f"{POTION_EFFECT_LABELS[effect].capitalize()} {round(duration)}s"
 
         item.quantity -= 1
-        if item.quantity <= 0 and item in self.inventory:
-            self.inventory.remove(item)
-            if item.id in self.potion_bar:
-                self.potion_bar[self.potion_bar.index(item.id)] = None
-                self._save_potion_bar()
+        if item.quantity <= 0:
+            self.discard(item)
 
         play_sound("potion_drink")
         get_particles().spawn_burst(self.x, self.y, item.color, count=14, speed=3, life=450, size=4, gravity=0.25)

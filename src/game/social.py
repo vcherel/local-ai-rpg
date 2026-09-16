@@ -45,6 +45,18 @@ class WorldSocial:
             return None, [npc]
         return village, [other for other in self.npcs if village.contains_point(other.x, other.y)]
 
+    def villagers_of(self, village: Village) -> list[NPC]:
+        """Everyone who lives in this settlement, wherever they are standing right now.
+
+        By the home they were dealt rather than by where their feet are: an engaged villager
+        chases out to `Entities.NPC_HOSTILE_RANGE`, well past the grounds, and read by
+        position the militia standing over the player's body outside the wall were not the
+        village's at all. That left them with their grudge when the town forgave, the gates
+        barred, and nothing quoted under the minimap while the mob was at the player's
+        heels. Anything that asks what a settlement as a whole holds against the player
+        asks this; what a crowd in the street can see is still asked by position."""
+        return [npc for npc in self.npcs if village.contains_point(*npc.home)]
+
     def _strike_key(self, npc: NPC) -> str:
         """Whose patience is being spent. A settlement keeps one ledger for all of its
         people; a camper or a wandering merchant out in the wilds keeps their own, since
@@ -264,9 +276,7 @@ class WorldSocial:
             )
         if village is None:
             return None
-        for npc in self.npcs:
-            if not village.contains_point(npc.x, npc.y):
-                continue
+        for npc in self.villagers_of(village):
             npc.grudge = False
             npc.hostile_until = 0.0
             npc.affinity = max(npc.affinity, c.Affinity.FORGIVEN)
@@ -340,7 +350,7 @@ class WorldSocial:
         more than a border hamlet. Rounded (`Amends.ROUNDING`), because a price is a figure
         somebody says out loud."""
         price = c.Amends.BASE + c.Amends.PER_TIER * village.tier
-        if any(npc.grudge for npc in self.npcs if village.contains_point(npc.x, npc.y)):
+        if any(npc.grudge for npc in self.villagers_of(village)):
             price *= c.Amends.GRUDGE_MULT
         step = c.Amends.ROUNDING
         return int(round(price / step) * step)
@@ -356,7 +366,7 @@ class WorldSocial:
         village = self.village_at(x, y, c.Villages.DEFEND_MARGIN)
         if village is None:
             return None
-        if not any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y)):
+        if not any(npc.hostile for npc in self.villagers_of(village)):
             return None
         return village, self.blood_price(village)
 
@@ -406,7 +416,7 @@ class WorldSocial:
             return False
         if village.distance_to_point((player.x, player.y)) > c.Raid.MAX_DISTANCE:
             return False
-        if any(npc.hostile for npc in self.npcs if village.contains_point(npc.x, npc.y)):
+        if any(npc.hostile for npc in self.villagers_of(village)):
             return False
 
         key = f"{village.chunk[0]}:{village.chunk[1]}"

@@ -823,7 +823,7 @@ class WorldVillagers:
         are after the player at once, so a caught thief costs the player a fight and not the
         way out of town."""
         for village in self.villages:
-            angry = [npc for npc in self.npcs if npc.hostile and village.contains_point(npc.x, npc.y)]
+            angry = [npc for npc in self.villagers_of(village) if npc.hostile]
             # The houses first, since every settlement has doors and only some have gates.
             self._bar_doors(village, bool(angry), player)
             if not village.defended:

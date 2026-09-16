@@ -7,10 +7,10 @@
 - [x] Quest items are never sold: not by Sell valuables, not by a click on the row
 
 ## Batch 2: world state
-- [ ] `pacify_village`, `amends_at`, `blood_price` count a settlement's own people, not whoever stands on its grounds
-- [ ] A spent stack (potion, bomb, quiver) leaves `world.items` when it leaves the bag
-- [ ] `pass_time` moves the merchants' restock clocks with the other wall-clock deadlines
-- [ ] A villager is never stood up in a shut door leaf on the first frame
+- [x] `pacify_village`, `amends_at`, `blood_price` count a settlement's own people, not whoever stands on its grounds
+- [x] A spent stack (potion, bomb, quiver) leaves `world.items` when it leaves the bag
+- [x] `pass_time` moves the merchants' restock clocks with the other wall-clock deadlines
+- [x] A villager is never stood up in a shut door leaf on the first frame
 
 ## Batch 3: threads
 - [ ] Background LLM work hands its world mutations back to the main thread (quest analysis, quest completion, events with a presage, crisis)
