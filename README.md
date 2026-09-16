@@ -79,6 +79,9 @@ CMAKE_ARGS="-DGGML_CUDA=1 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE
 uv pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
+It is installed by hand and not listed in `pyproject.toml`, so a plain `uv sync` removes it
+again as an extraneous package. In this repo, sync with `uv sync --inexact`.
+
 **4. The model** (~2.9GB)
 
 The weights themselves, one file, downloaded into `models/`.

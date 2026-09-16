@@ -10,7 +10,8 @@ uv run game
 
 Plays with no model at all (`llm/offline.py`). AI dialogue wants CUDA drivers, a hand built
 `llama-cpp-python` and the model at `models/Qwen2.5-7B-Instruct-Q2_K.gguf`: `uv run fetch-model`
-downloads it, `uv run doctor` says what a machine is missing. See README for setup.
+downloads it, `uv run doctor` says what a machine is missing. See README for setup. The binding is
+installed by hand and unlocked, so never run a plain `uv sync` here: it strips it. Use `uv sync --inexact`.
 
 ## Design notes
 
