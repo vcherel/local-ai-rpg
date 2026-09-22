@@ -81,8 +81,6 @@ class EventSystem:
         self.cooldown = random.uniform(*c.Events.INTERVAL_RANGE_MS)
         self._trigger_random_event(player, quest_system, npc_name_generator)
 
-    # ------------------------------------------------------------------ scheduling
-
     def _trigger_random_event(self, player: Player, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
         if self.world.context is None:
             return  # World lore isn't ready yet; every event either quotes it or needs a settled world.
@@ -146,8 +144,6 @@ class EventSystem:
         prompt = f"World: {self.world.context}\n{instruction}"
         text = generate_response_queued(prompt, system_prompt, "Event flavor text") or ""
         return text.strip().strip('"').split("\n")[0]
-
-    # ------------------------------------------------------------------ wandering merchant
 
     def _road_point_near(self, player: Player, min_dist, max_dist):
         """Somewhere on a road within the band around the player, or None if no road runs
@@ -235,8 +231,6 @@ class EventSystem:
         self.wandering_merchant = None
         self.merchant_guard = None
 
-    # ------------------------------------------------------------------ treasure cache
-
     def _spawn_treasure(self, player: Player, message: str | None = None, mark: str = ""):
         pos = self._point_near_player(
             player, c.Events.TREASURE_MIN_DIST, c.Events.TREASURE_MAX_DIST, c.Entities.ITEM_SIZE / 2
@@ -258,8 +252,6 @@ class EventSystem:
         self.notify(text or "Whispers speak of treasure hidden nearby...", c.Colors.YELLOW)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
         mainthread.post(self._spawn_treasure, player, "The treasure appears, right where the whispers pointed")
-
-    # ------------------------------------------------------------------ blood night
 
     def _start_blood_night(self, player: Player | None = None):
         self.blood_night_timer = c.Events.BLOOD_NIGHT_DURATION_MS
@@ -288,8 +280,6 @@ class EventSystem:
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
         mainthread.post(self._start_blood_night, player)
 
-    # ------------------------------------------------------------------ boss
-
     def _spawn_boss_event(self, player: Player, message: str | None = None):
         if self.world.wild_bosses() >= self.world.boss_cap(player):
             return
@@ -311,8 +301,6 @@ class EventSystem:
         self.notify(text or "The ground trembles with something monstrous...", c.Colors.BOSS_BAR)
         time.sleep(random.uniform(*c.Events.PRESAGE_DELAY_RANGE_S))
         mainthread.post(self._spawn_boss_event, player, "{name} has risen, and it hungers")
-
-    # ------------------------------------------------------------------ rumors
 
     def _generate_rumor(self, player: Player):
         """A rumour is a lead, not decoration: it names somewhere the player has never walked
@@ -343,8 +331,6 @@ class EventSystem:
 
     def _spawn_prophesied_treasure(self, player: Player):
         self._spawn_treasure(player, "The rumor was true: treasure glints somewhere out there", mark="the treasure")
-
-    # ------------------------------------------------------------------ village crisis
 
     def _village_angry(self, npc: NPC) -> bool:
         """Whether the settlement this one lives in has turned on the player. One furious

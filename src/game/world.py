@@ -43,6 +43,7 @@ from game.social import WorldSocial
 from game.spawning import WorldSpawning
 from game.streaming import WorldStreaming
 from game.villagers import WorldVillagers
+from game.witnesses import WorldWitnesses
 
 if TYPE_CHECKING:
     from core.save import SaveSystem
@@ -64,6 +65,7 @@ class World(
     WorldPlaces,
     WorldShops,
     WorldSocial,
+    WorldWitnesses,
     WorldNavigation,
     WorldVillagers,
 ):
@@ -78,8 +80,9 @@ class World(
     (game/streaming.py) generates the endless map around the player and names what it
     finds, `WorldPlaces` (game/places.py) is what the player can do at a place once they
     reach it (camps, fires, shrines, tunnels, directions), `WorldSocial` (game/social.py)
-    is what a settlement thinks of them and does about it (witnesses, warnings, anger,
-    amends, notoriety, raids, the notice board), `WorldNavigation`
+    is what a settlement thinks of them and does about it (warnings, anger, amends,
+    notoriety, raids, the notice board), `WorldWitnesses` (game/witnesses.py) is who
+    sees a crime and what they do about it, `WorldNavigation`
     (game/navigation.py) is how anything gets from where it is to where it wants to be,
     `WorldSpawning` (game/spawning.py) keeps the ground around the player populated and
     runs what is standing on it,
@@ -325,7 +328,7 @@ class World(
         self.village_strikes = self._load_strikes(self.save_system.load("village_strikes", {}))
         # Settlements that would not be talked down, until when (`WorldSocial.refuse_parley`);
         # the witnesses still deciding what to do about what they saw, and the ones waiting
-        # to be paid to forget it (`WorldSocial.catch_thief`). All session-only.
+        # to be paid to forget it (`WorldWitnesses.catch_thief`). All session-only.
         self.parleys_refused: dict[str, float] = {}
         self.witnesses: list = []
         self.hushers: list = []
@@ -657,8 +660,6 @@ class World(
             "daynight_elapsed_ms": self.daynight.elapsed_ms,
             "greeter_timer": self.greeter_timer,
         }
-
-    # ------------------------------------------------------------------ building lookups
 
     def _index_buildings(self):
         """Bucket every building (and every village well) by the chunks it reaches, so a

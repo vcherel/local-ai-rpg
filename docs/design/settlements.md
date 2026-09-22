@@ -263,7 +263,7 @@ A gate leaned shut for the night answers no weapon of the player's, who pushes i
 instead, but it is the same wall to whatever chased them up to it: a monster or an animal
 that has turned on the player beats on the shut leaf (`bash_gates`, `shut_too`) rather than
 standing against it until dawn, and every blow marks the attacker (`gate_bash_ms`). The
-mark is what turns the guard out: `WorldSocial.militia_orders` counts whatever beat on a
+mark is what turns the guard out: `WorldVillagers.militia_orders` counts whatever beat on a
 gate within `Villages.GATE_ALARM_MS` as an intruder, the militia within reach go to meet it,
 letting themselves through their own gate on the way (`_npc_fights` works it exactly as the
 walk to the player does), and the blow on an animal lands as any unaimed one does,
@@ -423,7 +423,7 @@ facing sweeps across it (`NPC._keep_watch`, on the clock rather than stepped, ph
 their own post so two on one gate are never in step).
 
 Only the facing, never the position. What a vision cone is for is telling the player which
-way somebody is looking (`WorldSocial.can_see`), so a guard whose head moves is a guard
+way somebody is looking (`WorldWitnesses.can_see`), so a guard whose head moves is a guard
 whose cone can be waited out, which is a better answer than a guard who cannot see at all.
 
 ## How well defended a settlement is is one number

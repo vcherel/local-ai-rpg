@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import math
 import random
 from typing import TYPE_CHECKING
@@ -31,7 +32,7 @@ class WorldVillagers:
     from `_update_npcs` once a frame, and the rest of the class is world state and lookups.
 
     A settlement acts as a settlement rather than as a crowd of individuals, so the orders
-    are worked out for everyone at once (`_mob_orders`, `WorldSocial.militia_orders`) and
+    are worked out for everyone at once (`_mob_orders`, `militia_orders`) and
     each villager is then walked through the one they were given.
     """
 
@@ -338,7 +339,7 @@ class WorldVillagers:
         simply spent running.
 
         `shelter` is a building when there is one to get behind and a bare point when there
-        is not (`WorldSocial._refuge_for`): a rout in a field is still a rout, and it ends
+        is not (`_refuge_for`): a rout in a field is still a rout, and it ends
         in open ground rather than in a doorway.
 
         The way round a wall is handed in as a waypoint and not as the destination: a corner
@@ -971,3 +972,88 @@ class WorldVillagers:
             if across < c.Villages.FRIENDLY_LANE_WIDTH:
                 return False
         return True
+
+    def militia_orders(self) -> tuple[dict, dict]:
+        """What each villager is doing about the monsters inside their settlement: who is
+        going to meet one, and who is running for a door.
+
+        Two dicts keyed by `id(npc)`: the monster to fight, and the building to hide in. A
+        settlement is not a crowd of identical people, so the roll is per villager and made
+        once from their home (`NPC.is_militia`): the same house always sends the same person
+        out, and the rest bolt. Worked out once a frame for the whole world rather than per
+        NPC, since the intruders are the short list and the villagers are the long one."""
+        fight: dict = {}
+        flee: dict = {}
+        # A boss on the grounds is an intruder like any other, and the one that counts most:
+        # a settlement that went about its day around a thing twice the size of its gate
+        # read as the world forgetting to look. It carries its own, wider radii, because a
+        # boss is a reason to run from further off than a wolf is.
+        # Anything still in a disguise is not on this list either: a village that turned out
+        # its militia on a husk nobody has seen through would be doing the player's looking
+        # for them, and would put the thing down before they ever met one.
+        arrived = [m for m in self.monsters if m.revealed] + [boss for boss in self.bosses if boss.rising <= 0]
+        intruders = [m for m in arrived if self.village_at(m.x, m.y, c.Villages.DEFEND_MARGIN) is not None]
+        # Whatever is beating on a gate is at the wall rather than inside it, and it is
+        # answered all the same: the guard is posted on that gate to meet exactly this, and
+        # a wolf clawing at the leaf while the watch stood a stride away inside it was a
+        # watch that was not one. The mark outlives the last blow by a moment, so the
+        # answer does not lapse between one swing and the next.
+        now = pygame.time.get_ticks()
+        assailants = [
+            body
+            for body in itertools.chain(self.monsters, self.critters)
+            if body.gate_bash_ms >= 0 and now - body.gate_bash_ms <= c.Villages.GATE_ALARM_MS
+        ]
+        intruders += [body for body in assailants if body not in intruders]
+        # Somebody being bitten is its own fight, so the loop is still walked with nothing on
+        # anyone's grounds: what is chewing on a farmer out in a field is nobody's intruder.
+        if not intruders and not any(npc.threatened_by is not None for npc in self.npcs):
+            return fight, flee
+
+        for npc in self.npcs:
+            if npc.hostile:
+                # Already coming for the player: the monster is the least of their problems.
+                continue
+            # Anybody something has actually bitten fights back, militia roll or not and
+            # wherever they are standing: the roll decides who walks towards a fight, not
+            # who defends themselves in one. They break like anyone else once they are cut
+            # down far enough (`NPC.routed`), so a farmer swings, loses and runs for a door
+            # rather than dying on the spot or never lifting a hand.
+            threat = npc.threat
+            if threat is not None:
+                if not npc.routed:
+                    fight[id(npc)] = threat
+                    continue
+                refuge = self._refuge_for(npc, threat)
+                if refuge is not None:
+                    flee[id(npc)] = refuge
+                    continue
+            if not intruders:
+                continue
+            nearest = min(intruders, key=lambda m: npc.distance_to_point((m.x, m.y)))
+            distance = npc.distance_to_point((nearest.x, nearest.y))
+            boss = isinstance(nearest, Boss)
+            if npc.is_militia and not npc.routed:
+                if distance <= (c.Villages.BOSS_DEFEND_RADIUS if boss else c.Villages.DEFEND_RADIUS):
+                    fight[id(npc)] = nearest
+            elif distance <= (c.Villages.BOSS_PANIC_RADIUS if boss else c.Villages.PANIC_RADIUS):
+                refuge = self._refuge_for(npc, nearest)
+                if refuge is not None:
+                    flee[id(npc)] = refuge
+        return fight, flee
+
+    def _refuge_for(self, npc: NPC, threat=None) -> Building | Point | None:
+        """Where this one breaks for: the nearest building they can get behind a door of, or
+        open ground away from `threat` when there is no door within reach.
+
+        Any door will do; a frightened person takes the nearest one, not their own. The
+        second answer is what a rout in a field is: with no shelter this used to give back
+        nothing at all, and the caller fell straight through to the ordinary orders, so a
+        farmer cut to nothing out in the open turned round and fought on at full aggression.
+        A rout has to end in something, and running is the something."""
+        shelters = [b for b in self.buildings_near(npc.x, npc.y) if b.has_door and not b.door_broken]
+        nearest = min(shelters, key=lambda b: npc.distance_to_point((b.x, b.y)), default=None)
+        if nearest is not None or threat is None:
+            return nearest
+        angle = math.atan2(npc.y - threat.y, npc.x - threat.x)
+        return Point(npc.x + math.cos(angle) * c.Villages.ROUT_RUN, npc.y + math.sin(angle) * c.Villages.ROUT_RUN)

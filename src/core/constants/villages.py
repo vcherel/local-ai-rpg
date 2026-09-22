@@ -264,7 +264,7 @@ class Villages:
     DEFEND_MARGIN: float = 300.0
     DEFEND_RADIUS: float = 620.0
     # How long after its last blow on a gate an attacker outside the wall is still what
-    # the militia goes out to meet (`WorldSocial.militia_orders`).
+    # the militia goes out to meet (`WorldVillagers.militia_orders`).
     GATE_ALARM_MS: int = 4000
     # How many of the nearest villagers a monster asks whether it can actually see before
     # settling for the player. Sight is walked step by step and monsters are the long list.
@@ -605,7 +605,7 @@ class Raid:
     The wall, the militia split, the gates and the tower archers already exist and are only
     ever answered by whatever wandered in on its own. A raid points a wave at a village on
     purpose: the monsters are stood up outside its grounds and left to walk in, so every
-    order the settlement gives itself (`WorldSocial.militia_orders`) is the one it always
+    order the settlement gives itself (`WorldVillagers.militia_orders`) is the one it always
     gave. What is new is the reason to stand in the street and fight for a place that is not
     yours, which is the only thing in the game that raises a whole village's opinion at once.
     """

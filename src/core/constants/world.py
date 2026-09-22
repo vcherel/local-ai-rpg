@@ -267,12 +267,12 @@ class Crime:
     THEFT_ANGER_S: float = 180.0
     # Sleeping in a bed is not an instant somebody either saw or missed: it is a night, and
     # a settlement's people come and go through one. So the bed is answered by who is near
-    # it by morning rather than by who was looking at it (`WorldSocial.squatter_witness`),
+    # it by morning rather than by who was looking at it (`WorldWitnesses.squatter_witness`),
     # which is what makes a tavern room something taken rather than something free.
     SQUAT_WITNESS_RADIUS: float = 620.0
 
     # What somebody who catches the player does about it is theirs to decide
-    # (`WorldSocial.catch_thief`): tell, look away, or ask to be paid to forget it. Getting
+    # (`WorldWitnesses.catch_thief`): tell, look away, or ask to be paid to forget it. Getting
     # caught is still the cones and nothing else; what follows is the witness's character.
     # How long they stand there deciding, with a "?" over them, before it lands anyway.
     WITNESS_THINK_MS: int = 2500

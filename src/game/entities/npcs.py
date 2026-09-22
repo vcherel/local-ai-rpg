@@ -171,7 +171,7 @@ class NPC(Entity):
         self.discount = 0.0
         self.haggled = False
         # Having caught the player at something, what they are still making up their mind
-        # about (`WorldSocial.catch_thief`): the decision on its thread, the offence, and
+        # about (`WorldWitnesses.catch_thief`): the decision on its thread, the offence, and
         # when they stop waiting on it. Then, if they chose to be paid to forget it, the
         # price and when they tell anyway. All session-only, like every fight.
         self.pondering = None
@@ -607,7 +607,7 @@ class NPC(Entity):
         their own post, so two of them on one gate are never in step.
 
         It is only ever the facing, never the position: what the cone is for is telling the
-        player which way somebody is looking (`WorldSocial.can_see`), and a guard whose head
+        player which way somebody is looking (`WorldWitnesses.can_see`), and a guard whose head
         moves is a guard whose cone can be waited out."""
         if self._watch_from is None:
             self._watch_from = self.orientation

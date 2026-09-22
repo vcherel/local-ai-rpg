@@ -257,8 +257,6 @@ class Village(VillageArt):
             points.append((px, py))
         return points
 
-    # ------------------------------------------------------------------ gates
-
     def gate_closed(self, index: int) -> bool:
         """True while this gateway is shut: a wall to anything trying to walk through it.
         A gate is shut either because the settlement wants somebody out (`barred`) or
@@ -481,8 +479,6 @@ class Village(VillageArt):
     def gate_health(self, index: int) -> float:
         """How much of this gate is left, as a fraction, for the cracks drawn over it."""
         return self.gate_hp.get(index, c.Villages.GATE_HP) / c.Villages.GATE_HP
-
-    # ------------------------------------------------------------------ terrain
 
     def spike_hit(self, x, y, radius: float) -> bool:
         """Whether a body standing here is in the stakes outside the wall."""

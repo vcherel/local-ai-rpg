@@ -179,7 +179,6 @@ def _draw_nocked_arrow(sprite, hand_pos, size, nock):
     pygame.draw.polygon(sprite, BONE, [(tip[0] - 3, tip[1] + 7), (tip[0] + 3, tip[1] + 7), tip])
 
 
-# --------------------------------------------------------------------------- silhouettes
 # Each takes the sprite surface, the body centre, the base size, the creature's colour, the
 # current breath (-1..1) and the `hand` placement helper, and returns the anchors the shared
 # code needs back: where the hands ended up (for a weapon) and where the eyes go.

@@ -224,8 +224,6 @@ class MusicPlayer:
             for variant in range(len(row["sets"])):
                 self._request(context, variant)
 
-    # ------------------------------------------------------------------ rendering
-
     def _worker(self):
         while True:
             key = self._requests.get()
@@ -259,8 +257,6 @@ class MusicPlayer:
         deadline = time.monotonic() + timeout_s
         while len(self._pads) < len(self._wanted) and time.monotonic() < deadline:
             time.sleep(0.02)
-
-    # ------------------------------------------------------------------ playing
 
     def _play(self, key):
         """Bring `key` in on the free channel and start the other one fading out."""

@@ -293,8 +293,6 @@ class WorldPlaces:
             size=3,
         )
 
-    # ------------------------------------------------------------------ under the well
-
     def well_in_reach(self, player: Player) -> Village | None:
         """The village well the player is standing at, or None. Every settlement has one and
         every one of them can be looked down; only some of them go anywhere."""

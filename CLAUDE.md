@@ -50,6 +50,7 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 ### game
 - `src/game/game.py`: `Game`, the main loop, input handling and the key/dock/interact action tables
 - `src/game/interactions.py`: `Interaction` and `GameInteractions`, the single E prompt on screen
+- `src/game/sleeping.py`: `GameSleep`, a night in a bed: its prompt, its refusals and the fade to morning
 - `src/game/world.py`: `World`, the shared state (entity lists, buildings, saving) and the per-frame `update`
 - `src/game/combat.py`: `WorldCombat`, every blow against a body and its aftermath
 - `src/game/breaking.py`: `WorldBreaking`, blows against the built world (scenery, props, windows, doors)
@@ -57,13 +58,14 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 - `src/game/explosives.py`: `WorldExplosives`, bombs, creepers, and the one `explode`
 - `src/game/projectiles.py`: `WorldProjectiles`, everything in flight
 - `src/game/places.py`: `WorldPlaces`, camps, campfires, shrines, wells, caves and tunnels
-- `src/game/social.py`: `WorldSocial`, witnesses, warnings, anger, amends, notoriety, raids, notice boards
+- `src/game/social.py`: `WorldSocial`, warnings, anger, amends, notoriety, raids, notice boards
+- `src/game/witnesses.py`: `WorldWitnesses`, sight, crime witnesses, reports and hush money
 - `src/game/bosses.py`: `WorldBosses`, where and how often a boss is stood up, quest bosses
 - `src/game/shops.py`: `WorldShops`, merchant stock and restocking
 - `src/game/streaming.py`: `WorldStreaming`, chunk load/unload and the scenery indexes
 - `src/game/spawning.py`: `WorldSpawning`, population caps and safe placement
 - `src/game/navigation.py`: `WorldNavigation`, line of sight, walls, chase waypoints and detours
-- `src/game/villagers.py`: `WorldVillagers`, every villager's frame: mob orders, fighting, fleeing, curfew
+- `src/game/villagers.py`: `WorldVillagers`, every villager's frame: mob and militia orders, fighting, fleeing, curfew
 - `src/game/blow.py`: `Blow`, how one blow landed, the value every damage path passes
 - `src/game/events.py`: `EventSystem`, random world events (merchant, treasure, blood night, rumours, crisis)
 - `src/game/quest.py`: `Quest` dataclass and its serialisation
@@ -173,7 +175,7 @@ Engineering rules that apply to every change. The game design rules are in the R
 - `src/` is the package root; all imports are relative to it (e.g. `import core.constants as c`).
 - Verify before committing, always through `scripts/verify/`: `refs.py` and `smoke.py` after any multi-file change, `render_diff.py` after anything that draws, `frame_profile.py` on both sides of a performance claim. Report what they printed rather than that they passed. There is no pytest suite: `refs.py` and `smoke.py` are what the pre-push hook runs, so a push is the one place they are not optional.
 - Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it. To self-check a rendering change, a throwaway script that renders to an offscreen `Surface` is fine, with `SDL_VIDEODRIVER=dummy` set before `pygame.init()`.
-- `World` is one class split across files by mixin (`world.py` state, `combat.py` blows against a body, `breaking.py` blows against the built world, `explosives.py` blasts, `projectiles.py` what is in flight, `streaming.py` the map, `places.py` what happens at a place, `social.py` what a settlement thinks of the player, `bosses.py` standing one up, `shops.py` the shelves, `navigation.py` getting there, `spawning.py` keeping the ground populated, `villagers.py` what a villager does with their frame). They share the same entity lists; pick the file by what you are changing, not by defaulting to `world.py`.
+- `World` is one class split across files by mixin (`world.py` state, `combat.py` blows against a body, `breaking.py` blows against the built world, `explosives.py` blasts, `projectiles.py` what is in flight, `streaming.py` the map, `places.py` what happens at a place, `social.py` what a settlement thinks of the player, `witnesses.py` who saw the player do it, `bosses.py` standing one up, `shops.py` the shelves, `navigation.py` getting there, `spawning.py` keeping the ground populated, `villagers.py` what a villager does with their frame). They share the same entity lists; pick the file by what you are changing, not by defaulting to `world.py`.
 - The map is endless and deterministic, what stands on it is generated on demand and kept. Anything regenerated from a chunk seed must stay a pure function of `(cx, cy)`, with player changes in `World.poi_state`. Villages are the exception and go through `World._ensure_village`. A building is named off its settlement's chunk and its slot, never off a fresh uuid, since its wing and its roof are rolled from that name and its wing is what its neighbour is shoved off: a random name is what used to lay the same seed's houses down in different places in each process.
 - Exactly one interaction prompt is on screen at a time, drawn from `Game.current_interaction`.
 - A playthrough goes in the save, a preference goes in `core/settings.py`: New game wipes one and must not touch the other.

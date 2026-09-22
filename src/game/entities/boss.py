@@ -87,8 +87,6 @@ class Boss(Monster):
         # each of the others. None rolls them evenly, as every boss did before.
         self.leaning: str | None = None
 
-    # ------------------------------------------------------------------ identity / save
-
     @property
     def counts_against_cap(self) -> bool:
         """Whether this one is part of what the wilds hold around the player (`World.boss_cap`).
@@ -147,8 +145,6 @@ class Boss(Monster):
         if data.get("enraged"):
             boss._apply_enrage_stats()
         return boss
-
-    # ------------------------------------------------------------------ per-frame update
 
     def update_boss(self, world: World, player: Player, dt, quest_system: QuestSystem):
         dist = self.distance_to_point((player.x, player.y))
@@ -286,8 +282,6 @@ class Boss(Monster):
         if world.notify:
             world.notify(f"{self.name} enrages!", c.Colors.BOSS_BAR_ENRAGED)
 
-    # ------------------------------------------------------------------ abilities
-
     def _use_ability(self, world: World, player: Player):
         # Don't restart a slam that's already telegraphing.
         options = [a for a in self.template.abilities if not (a == "slam" and self.slam_windup > 0)]
@@ -419,8 +413,6 @@ class Boss(Monster):
             radius = round(summon["kind"].size * (0.5 + progress * 0.6))
             pygame.draw.circle(screen, (18, 14, 20), (x, y), radius)
             pygame.draw.circle(screen, self.template.aura, (x, y), radius, max(1, round(2 + progress * 3)))
-
-    # ------------------------------------------------------------------ drawing
 
     def draw_rise(self, screen, camera: Camera):
         """The ground opening and something climbing out of it. The same language a summons

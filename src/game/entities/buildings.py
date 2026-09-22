@@ -775,8 +775,6 @@ class Building(BuildingArt):
         building.door_broken = data.get("door_broken", False)
         return building
 
-    # ------------------------------------------------------------------ interior
-
     def interior_rect(self) -> pygame.Rect:
         """The main room's walkable floor, in world coordinates: the block the facade hangs
         on, inset by the wall shell. A wing is a second floor beside it (`interior_rects`)."""

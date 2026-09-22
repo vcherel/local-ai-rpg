@@ -430,7 +430,7 @@ class WorldBreaking:
         swing. A gate leaned shut for the night is the same wall to whatever chased the
         player up to it, and it is beaten on the same way rather than stood against until
         dawn; every blow marks the attacker (`gate_bash_ms`), which is what turns the guard
-        out to meet it (`WorldSocial.militia_orders`)."""
+        out to meet it (`WorldVillagers.militia_orders`)."""
         for chaser in self._bashers(player):
             hit = self._gate_in_reach((chaser.x, chaser.y), c.Buildings.DOOR_BASH_REACH, shut_too=True)
             if hit is None:

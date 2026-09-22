@@ -174,8 +174,6 @@ class Scenery:
         off_rail = abs(across - (c.Scenery.BRIDGE_WIDTH + rail) / 2)
         return math.hypot(off_end, off_rail) < radius + rail / 2
 
-    # ------------------------------------------------------------------ shape
-
     def _roll_shape(self) -> dict:
         # Seeded on the family rather than on the kind: the three layers of one pond are one
         # shape drawn three times, so all three have to roll the same lobes.
@@ -287,8 +285,6 @@ class Scenery:
     def _roll_bridge(self, rng: random.Random) -> dict:
         planks = [(t, rng.uniform(-2, 2)) for t in range(-4, 5)]
         return {"angle": self.angle, "planks": planks}
-
-    # ------------------------------------------------------------------ drawing
 
     def draw(self, screen: pygame.Surface, camera: Camera, alpha: int = 255):
         """`alpha` under 255 is a canopy with something standing under it: the tree is drawn

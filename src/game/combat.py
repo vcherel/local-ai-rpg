@@ -739,7 +739,7 @@ class WorldCombat:
         which is the one thing no clock ever runs out on."""
         if npc.dead:
             return True
-        # Whatever bit them is what they turn round and swing at (`WorldSocial.militia_orders`).
+        # Whatever bit them is what they turn round and swing at (`WorldVillagers.militia_orders`).
         # Only ever something the player did not do: the player's own blows are answered by
         # the village as a whole, on the ladder below, and not by one farmer taking a swing.
         if not blow.by_player and blow.source is not None:

@@ -241,8 +241,6 @@ class DecalSystem:
         self._prints: dict = {}
         self._sides: dict = {}
 
-    # ------------------------------------------------------------------ splats
-
     def spawn(
         self,
         x,
@@ -387,8 +385,6 @@ class DecalSystem:
                     angle=angle,
                 )
 
-    # ------------------------------------------------------------------ footprints
-
     @staticmethod
     def _cell(x, y) -> tuple[int, int]:
         size = c.Decals.WET_CELL
@@ -436,8 +432,6 @@ class DecalSystem:
             prints[key] = last
             sides[key] = side
         self._soles, self._prints, self._sides = soles, prints, sides
-
-    # ------------------------------------------------------------------ frame
 
     def update(self, dt):
         alive = []

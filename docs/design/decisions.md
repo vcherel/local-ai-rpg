@@ -37,7 +37,7 @@ random stream, so a decision made or not made never shifts a seeded roll of the 
   villager answers; `PLEAS_NEEDED` good ones stand the whole settlement down
   (`WorldSocial.stand_down`), one bad one or running out of lines ends it, and so does
   closing the box, since the world stands still while it is open.
-- **The witness** (`WorldSocial.catch_thief`). Being seen is still the cones alone. What the
+- **The witness** (`WorldWitnesses.catch_thief`). Being seen is still the cones alone. What the
   witness does is theirs: raise the alarm (the ladder, as before), look away, or demand a
   bribe (`Crime.HUSH_*`, paid with E, told anyway if it does not come). They stand with a
   "?" over them for at most `Crime.WITNESS_THINK_MS`; a model too busy to answer in time is

@@ -349,8 +349,6 @@ class Tunnel:
             spots.append(spot)
         return spots
 
-    # ------------------------------------------------------------------ drawing
-
     def draw(self, screen: pygame.Surface, camera: Camera):
         """The rock, then the floor cut out of it. Drawn as two passes over the same
         rectangles rather than as outlines: an outline would draw a wall across every
