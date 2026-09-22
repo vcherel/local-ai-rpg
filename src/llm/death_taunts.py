@@ -73,8 +73,8 @@ class DeathTauntGenerator:
         self.persist()
         if not taunt:
             # A reply that came back with nothing in it (the stream cut at a leading line
-            # break, the model answered with punctuation) used to re-arm immediately and
-            # never fill the buffer, so one bad generation turned into a call every few
+            # break, the model answered with punctuation) must not re-arm immediately: it would
+            # never fill the buffer, so one bad generation would turn into a call every few
             # seconds for the rest of the session, in front of everything the player was
             # actually waiting on. The canned lines are there for exactly this: leave the
             # buffer as it is and let the next death ask again.

@@ -68,13 +68,13 @@ _GENERIC_SOURCE_NAMES = {
 def _damage_source_name(source) -> str:
     """What to call whatever just hit the player, on the death screen. A boss goes by its
     full title, a villager by their name, anything else by its species. An arrow goes by
-    its shooter (`source_name`) rather than by nothing at all, which used to leave the death
+    its shooter (`source_name`) rather than by nothing at all, which would leave the death
     screen blaming whatever last touched the player in melee; damage with no attacker behind
     it (a shrine's curse, a burn) names nobody and leaves the last one.
 
     Anything that *is* an attacker always answers with something, even when it has no name:
-    a nameless villager returning "" used to leave the last name standing, so the death
-    screen blamed the dog the player had fought earlier for a blow the farmer landed."""
+    a nameless villager returning "" would leave the last name standing, so the death
+    screen would blame the dog the player fought earlier for a blow the farmer landed."""
     if source is None:
         return ""
     if isinstance(source, str):
@@ -309,7 +309,7 @@ class Player(PlayerBonuses, Entity):
 
     def spend_mana(self, amount: int) -> bool:
         """Pay for a cast. False (and nothing spent) if the pool is short, which is the whole
-        of what stops a staff being the free weapon it used to be."""
+        of what stops a staff being a free weapon."""
         if amount <= 0:
             return True
         if self.mana < amount:

@@ -84,8 +84,8 @@ class QuestTracker:
 
     def draw(self, quest_system: QuestSystem, top: int, record: Record | None = None):
         """`top` is where the minimap's own strips ended (Minimap.content_bottom), not a
-        fixed offset: the clock and the village name under the map change height, and the
-        card used to be laid straight over them.
+        fixed offset: the clock and the village name under the map change height, and a
+        fixed offset would lay the card straight over them.
 
         Never blank: with no quest in hand the card is replaced by one slim line pointing
         the player at a notice board, and the quest-tally milestone always hangs below,

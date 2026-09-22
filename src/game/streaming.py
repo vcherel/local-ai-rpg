@@ -53,7 +53,7 @@ class WorldStreaming:
 
         What grows on top of that ground is left to `_grow_chunk` on a frame of its own. A
         settlement, a landmark, a wood and a band of traps in one update is what a border
-        crossing used to be felt as, and the wilderness is the half that can wait: a tree
+        crossing would be felt as, and the wilderness is the half that can wait: a tree
         two chunks away arriving a frame later is nothing anyone can see."""
         cx, cy = chunk
         size = c.World.CHUNK_SIZE
@@ -227,9 +227,9 @@ class WorldStreaming:
         """Keep the ground around the player in step with where they are: queue what has
         come into range, drop what has left it, and build a frame's worth of the queue.
 
-        Crossing a border used to build the whole edge that came into range on that one
-        frame, which is a village, its landmark, a wood and a band of traps in a single
-        update, and it is felt every time. What is queued here is two chunks away in the
+        Building the whole edge that comes into range on the frame of a border crossing
+        would be a village, its landmark, a wood and a band of traps in a single update, and
+        it would be felt every time. What is queued here is two chunks away in the
         direction of travel, so the frames after the crossing are ample time to build it.
         """
         chunk = self._chunk_of(player.x, player.y)
@@ -292,10 +292,10 @@ class WorldStreaming:
     def prepare(self, player: Player):
         """Build the ground the player is about to open their eyes on, before they can move.
 
-        Chunk streaming used to happen on the first frame after the opening lore was
-        dismissed, which is the worst possible moment for it: the player takes control into a
-        freeze while a ring of chunks generates its wilderness, its landmarks and its traps,
-        and then watches trees pop in around them. The generation is the same work either
+        Streaming on the first frame after the opening lore is dismissed is the worst
+        possible moment for it: the player would take control into a freeze while a ring of
+        chunks generates its wilderness, its landmarks and its traps, and then watch trees
+        pop in around them. The generation is the same work either
         way, so it is done here instead, while nothing is on screen but black.
 
         The whole ring at once, budget ignored: this is the one moment in the game with
@@ -355,7 +355,7 @@ class WorldStreaming:
         What a piece blocks is what decides where it is looked for, so a tree felled or a
         boulder broken open has to leave the cells the trunk reached into as it stops being
         something to walk around. Otherwise the stump goes on stopping the player until the
-        chunk itself leaves, which is what a felled tree used to do until the next border."""
+        chunk itself leaves."""
         self._deindex_scenery((item,))
         change()
         self._index_scenery((item,))
@@ -405,9 +405,9 @@ class WorldStreaming:
         """Ask the model for what a settlement the player is walking up to is about to need:
         its name, its merchants' stock, and a name in the buffer for whoever they talk to.
 
-        All three used to be asked for the moment a village existed, and every one of them
-        again on every load, so a world the player had wandered through cost a call per town
-        and per shop for towns they never entered and shops they never opened. Nothing here
+        Asking for all three the moment a village exists, and again on every load, would
+        cost a call per town and per shop for towns the player never enters and shops they
+        never open. Nothing here
         is generated until a settlement is within `Villages.PREPARE_DISTANCE`, which is far
         enough out that the answers land before the player is in the street: the name is
         what the discovery toast waits on, and a merchant with no stock cannot be talked to
@@ -442,8 +442,7 @@ class WorldStreaming:
             self._naming_villages.add(village.chunk)
             threading.Thread(target=self._generate_village_name, args=(village,), daemon=True).start()
 
-        # One batched call for the shops of every settlement in reach, the same call that
-        # used to stock the whole world at once.
+        # One batched call for the shops of every settlement in reach.
         self.start_shop_generation(
             [
                 npc

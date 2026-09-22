@@ -199,7 +199,7 @@ class Building(BuildingArt):
         """`building_id` names this building for good: the wing it grows, the beam on its
         door, the roof it is built of and the shell kept for it are all rolled off it, so it
         is what makes the same seed lay the same house down in every process. It has no
-        default on purpose. A random one (which is what it used to be) is a fact about the
+        default on purpose. A random one would be a fact about the
         process, and a village whose footprints are pushed apart off wings rolled that way
         comes out a different town each run."""
         w_range, h_range = c.Buildings.SIZES[kind]
@@ -540,7 +540,7 @@ class Building(BuildingArt):
 
         Searching outward in rings for somewhere free (`World.free_spot_near`) finds nothing
         when the doorway is the only gap in the wall and the room behind it is furnished,
-        which is how a door used to shut with the player sealed inside its frame. The way
+        which would shut a door with the player sealed inside its frame. The way
         out of a doorway is never a search: it is one step in or one step out."""
         nx, ny = self.outward()
         door = self.door_rect()
@@ -566,7 +566,7 @@ class Building(BuildingArt):
 
     def damage_door(self, damage: int) -> bool:
         """Land a blow on the door. True on the blow that finally puts it through: from then
-        on the doorway is a hole, exactly like the gap every building used to have."""
+        on the doorway is a hole."""
         if not self.door_closed:
             return False
         self.door_hp -= damage

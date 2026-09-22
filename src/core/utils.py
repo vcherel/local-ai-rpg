@@ -72,8 +72,8 @@ def parse_world_context(response: str | None) -> str | None:
 
     The lore is the one generation the player reads whole, on black, before anything else
     happens, and a quantized model will now and then answer the prompt with a title: one
-    word, a newline, and the stream is cut there. That word used to be persisted as the
-    world and written across the middle of the screen on every launch since. Guarded here
+    word, a newline, and the stream is cut there. Persisted, that word would be the
+    world, written across the middle of the screen on every launch after. Guarded here
     rather than in the prompt, and the answer to a failure is nothing at all: no lore is
     read as no lore yet, and the call is made again on the next session.
     """
@@ -221,8 +221,8 @@ def _as_bool(value, default: bool) -> bool:
     """Read a flag the model may have written as a JSON boolean or as text.
 
     Plain `bool()` is not enough: the repairs above quote every unquoted value, so a literal
-    `false` reaches here as the string "false", which is truthy. That is what used to hand
-    the player a quest they had just turned down."""
+    `false` reaches here as the string "false", which is truthy, and would hand the player
+    a quest they had just turned down."""
     if isinstance(value, bool):
         return value
     if value is None:

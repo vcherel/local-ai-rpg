@@ -256,8 +256,8 @@ class WorldCombat:
         at arm's length, down to `Combat.CLEAVE_MIN` for whatever is caught at the edge of
         the arc or at the far end of the reach.
 
-        A cleave used to hit six things for full damage each, which made a wide weapon
-        strictly better than a focused one in every crowd. Now the crowd is worth sweeping
+        A cleave hitting six things for full damage each would make a wide weapon strictly
+        better than a focused one in every crowd. This way the crowd is worth sweeping
         and the single target is worth facing."""
         dx, dy = target.x - origin[0], target.y - origin[1]
         distance = math.hypot(dx, dy)
@@ -367,10 +367,10 @@ class WorldCombat:
         """Shove a target along kb_dir: hand it the impulse the blow is worth and let it
         travel.
 
-        The shove used to be walked out here and then it was over, all of it inside the
-        frame the blow landed on, which is a teleport however many collision tests it is
-        cut into: the pole, whose whole job is moving people, put them somewhere else with
-        nothing crossing the ground in between. Now the blow only sets a velocity
+        Walking the whole shove out inside the frame the blow lands on is a teleport however
+        many collision tests it is cut into: the pole, whose whole job is moving people,
+        would put them somewhere else with nothing crossing the ground in between. So the
+        blow only sets a velocity
         (`entities.apply_impulse`); `World.advance_impulses` spends it over the next few
         frames, walls and all, and the body is off its feet (`staggered`) while it does.
 
@@ -784,8 +784,8 @@ class WorldCombat:
         """What a killed villager leaves behind: the purse they were carrying, and
         sometimes a piece of what they owned.
 
-        Killing a townsperson used to cost the player their village and pay nothing, which
-        made it a pure mistake rather than a choice. A merchant carries more than a
+        Killing a townsperson costs the player their village, and paying nothing for it would
+        make it a pure mistake rather than a choice. A merchant carries more than a
         labourer, since a merchant's whole day is coins. Neither the purse nor the
         possession is credited to anyone: both drop on the ground where the body fell, for
         whoever walks over them, which is why an uncredited kill still leaves them there.

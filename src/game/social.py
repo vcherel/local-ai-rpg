@@ -159,9 +159,9 @@ class WorldSocial:
     def yield_to_player(self, npc: NPC):
         """A villager with no fight left in them throwing down their weapon.
 
-        Cut a farmer to `Villages.ROUT_HP_FRAC` and they used to keep walking at the player
-        without swinging, which read as a broken villager rather than a beaten one. This is
-        that moment made real: they kneel, their hands are empty, a white flag goes up over
+        Cut to `Villages.ROUT_HP_FRAC`, a farmer who kept walking at the player without
+        swinging would read as a broken villager rather than a beaten one. This is that
+        moment made real: they kneel, their hands are empty, a white flag goes up over
         them and for `Villages.SURRENDER_S` they are nobody's enemy. What the player does
         with somebody who has yielded is theirs to decide, and cutting one down is answered
         without any ladder at all (`WorldCombat._resolve_npc_hit`)."""

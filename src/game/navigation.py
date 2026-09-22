@@ -82,9 +82,9 @@ class WorldNavigation:
 
         Walks the segment in steps half a wall thick, asking the same `blocked` everything
         else does, so a house wall, a well or a tree trunk all break sight the way they
-        break movement. Used by ranged monsters before they shoot: their arrow was already
-        stopped by the wall, but they used to keep firing into it at a player they could
-        not possibly see.
+        break movement. Used by ranged monsters before they shoot: their arrow is stopped
+        by the wall anyway, and firing into it at a player they cannot possibly see looks
+        broken.
 
         `over_walls` is what an archer standing in a tower has that a goblin in a field does
         not: a settlement's own palisade is beneath them, so it neither hides the target nor
@@ -246,7 +246,7 @@ class WorldNavigation:
 
         A leaf closing on a body seals it inside a solid, where every step it could take is
         refused: this is the one way in the world a door is ever shut on somebody who did
-        not shut it themselves, and it is how a villager taking shelter used to trap the
+        not shut it themselves, and without it a villager taking shelter would trap the
         player in their own doorway."""
         building.door_open = False
         for body, radius in self.bodies(player):
@@ -441,8 +441,8 @@ class WorldNavigation:
                     cost = math.dist(start, first) + math.dist(first, last) + math.dist(last, goal)
                     # Aim at the next corner along once this one is effectively reached, and
                     # at the goal itself once there is no next one: a one-corner route whose
-                    # corner is underfoot used to answer with that same corner, so whoever
-                    # was walking it was told to walk to where they already stood. A body
+                    # corner is underfoot would answer with that same corner, telling whoever
+                    # walks it to walk to where they already stand. A body
                     # that arrives is a body that stops, which is a villager standing at the
                     # corner of their own house until morning. The way on from a rounded
                     # corner is clear by construction, since the route was only costed at all

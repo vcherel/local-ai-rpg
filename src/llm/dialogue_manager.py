@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from game.world import World
     from llm.name_generator import NPCNameGenerator
 
-# Sentence enders used to trim a reply that ran into the token cap mid-sentence.
+# Sentence enders, for trimming a reply that ran into the token cap mid-sentence.
 SENTENCE_END_RE = re.compile(r"[.!?…]['\"]?(?=\s|$)")
 
 # Stops handed to llama for dialogue: a reply is one turn, so the moment the model
@@ -361,7 +361,7 @@ class DialogueManager:
         self.current_npc = npc
         self.active = True
         # Whatever was already pressed when the box opened does not belong in the box. Two
-        # things used to leak in: a key held down as E was pressed (the player walks up to
+        # things would leak in: a key held down as E was pressed (the player walks up to
         # somebody with W held, and its repeat lands in the input), and any KEYDOWN queued
         # before this frame. The queue is dropped, and every key currently down is ignored
         # until it is released, so typing starts from the first key actually typed at the

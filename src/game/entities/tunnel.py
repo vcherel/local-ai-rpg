@@ -445,12 +445,12 @@ class Tunnel:
         heard before it is seen and the dark is the tunnel's real difficulty.
 
         The light is one gradient rather than a stack of circles: circles drawn onto an alpha
-        surface replace the pixels under them rather than blending, so each one left a hard
-        edge and the lantern read as a set of rings.
+        surface replace the pixels under them rather than blending, so each one would leave a
+        hard edge and the lantern would read as a set of rings.
 
-        And it stops at the rock. The lantern used to be cut out of the dark as a plain
-        circle, which meant it shone straight through a wall: standing in a corridor lit the
-        rooms on the far side of it and gave the whole layout away from the doorway. The
+        And it stops at the rock. A lantern cut out of the dark as a plain
+        circle would shine straight through a wall: standing in a corridor would light the
+        rooms on the far side of it and give the whole layout away from the doorway. The
         cut-out is clipped to the floor the light can actually reach (`_lit_floor`: what is
         being stood on and whatever opens onto it), so what is round a corner stays round
         it while a doorway is lit on both sides of the seam."""

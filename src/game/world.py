@@ -493,7 +493,7 @@ class World(
         def post(x, y, archer: bool):
             # An archer is posted *on* the tower, which is solid ground to everything else:
             # the top of it is where they stand, so their spot is the tower itself rather
-            # than the first clear pixel around it. That search is what used to put them
+            # than the first clear pixel around it. That search would put them
             # outside their own wall, shooting at a player standing inside it. Nothing else
             # about them moves either (`World._update_npcs` skips them), so nothing ever
             # walks them off the post.
@@ -505,8 +505,8 @@ class World(
             guard.color = c.Villages.GUARD_COLOR
             guard.wander.radius = 0 if archer else c.Villages.GUARD_POST_RADIUS
             if not archer:
-                # A watch is walked, not stood: a guard covers a wider patch than the two
-                # paces they used to and barely stops on it, and their head turns while they
+                # A watch is walked, not stood: a guard covers a wide patch and barely
+                # stops on it, and their head turns while they
                 # do stop (`NPC._keep_watch`). Posted still, since the anchor is the gate.
                 guard.wander.idle_min_ms, guard.wander.idle_max_ms = c.Villages.GUARD_IDLE_MS
             self._set_toughness(guard, village)

@@ -409,8 +409,8 @@ class PointOfInterest:
 
 
 # What draws each kind, named explicitly rather than off the kind's own name, so a search
-# for `_draw_cave` finds both ends of it. Built once here rather than per draw call: this
-# used to be a dict literal rebuilt for every landmark on screen, every frame. Anything not
+# for `_draw_cave` finds both ends of it. Built once here rather than per draw call, for every
+# landmark on screen, every frame. Anything not
 # listed is a ruins pile.
 _DRAWERS = {
     "camp": PointOfInterest._draw_camp,
@@ -465,8 +465,8 @@ def poi_site(cx: int, cy: int) -> tuple[float, float, str] | None:
             if site is None:
                 continue
             # Cleared by the settlement's real grounds, not by its centre point: a walled
-            # town's wall, towers and ditch reach further than any fixed distance, which is
-            # how a graveyard used to be laid out against somebody's gate.
+            # town's wall, towers and ditch reach further than any fixed distance, and a fixed
+            # distance would lay a graveyard out against somebody's gate.
             clear = max(c.Villages.MIN_DIST_FROM_POI, site_grounds_radius(nx, ny) + c.PointsOfInterest.VILLAGE_MARGIN)
             if math.hypot(x - site[0], y - site[1]) < clear:
                 return None

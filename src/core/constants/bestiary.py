@@ -225,8 +225,8 @@ class MonsterKind:
     ranged: bool = False
     keep_distance: int = 0
     shot_cooldown_ms: int = 0
-    # How long between the start of one swing and the next. A monster used to swing as fast
-    # as its animation ran, which was seven blows a second and read as a sewing machine
+    # How long between the start of one swing and the next. A monster swinging as fast as
+    # its animation runs would land seven blows a second and read as a sewing machine
     # rather than as a fight; a heavy kind is slow and hits hard, a light one is quick and
     # hits for little, and the wind-up is the warning either way.
     attack_cooldown_ms: int = 1000

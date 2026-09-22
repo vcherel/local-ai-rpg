@@ -1,9 +1,7 @@
 """The vector art behind every hostile creature, one function per silhouette.
 
-A monster used to be a coloured circle with two smaller circles for arms, which meant a
-slime, a skeleton and an ogre differed only in radius and hue. Here each kind gets a shape
-its name can be read from, picked by `MonsterKind.shape`, exactly the way `CritterKind.shape`
-decides whether an animal is drawn as a blob or as a standing quadruped.
+Each kind gets a shape its name can be read from, picked by `MonsterKind.shape`, exactly
+the way `CritterKind.shape` decides whether an animal is drawn as a blob or as a standing quadruped.
 
 Everything is drawn in the creature's own unrotated space, body centred and forward pointing
 at -y, onto a square surface the caller then rotates: the same convention `gear.py` uses, so

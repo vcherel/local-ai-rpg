@@ -172,8 +172,8 @@ class WorldVillagers:
             # Run without a walk of any kind so the wander does not drift them off the spot.
             npc.orientation = math.atan2(player.y - npc.y, player.x - npc.x) + math.pi / 2
             return True
-        # Their own door and their own gate open for them: a greeter whose timer ran out
-        # while they were indoors used to walk to the leaf and stand against it.
+        # Their own door and their own gate open for them: otherwise a greeter whose timer
+        # ran out while they were indoors would walk to the leaf and stand against it.
         self.open_door_for(npc)
         self.pass_gate_for(npc, c.Entities.NPC_SIZE / 2, Point(*goal))
         waypoint = self.chase_waypoint(npc, player, c.Entities.NPC_SIZE / 2)
@@ -548,8 +548,7 @@ class WorldVillagers:
         Dealt once and kept, the way the house itself is: the people who live here in a fixed
         order against the beds in a fixed order, so the same person has the same bed every
         night and two of them never climb into one. A cottage has a single bed and a tavern
-        three or four; whoever the house has none for sleeps on their feet, which is what
-        everybody used to do."""
+        three or four; whoever the house has none for sleeps on their feet."""
         if not npc.bed_dealt:
             npc.bed_dealt = True
             # Ordered by the doorstep each of them was stood up on rather than by anything
@@ -690,7 +689,7 @@ class WorldVillagers:
 
         A wander picks its spots round the doorstep outside, so a villager whose door was
         shut behind them (the bell, a fright they ran indoors from, the player closing it)
-        used to pick one after another and grind against the wall between. A door is
+        would pick one after another and grind against the wall between. A door is
         theirs from the inside whatever the hour or the roll says of it from the street:
         the beam is lifted, not broken, exactly as `open_door_for` lifts it for a chase."""
         room = self.building_at(npc.x, npc.y)
@@ -1047,9 +1046,9 @@ class WorldVillagers:
         open ground away from `threat` when there is no door within reach.
 
         Any door will do; a frightened person takes the nearest one, not their own. The
-        second answer is what a rout in a field is: with no shelter this used to give back
-        nothing at all, and the caller fell straight through to the ordinary orders, so a
-        farmer cut to nothing out in the open turned round and fought on at full aggression.
+        second answer is what a rout in a field is: giving back nothing with no shelter would
+        drop the caller straight through to the ordinary orders, so a farmer cut to nothing
+        out in the open would turn round and fight on at full aggression.
         A rout has to end in something, and running is the something."""
         shelters = [b for b in self.buildings_near(npc.x, npc.y) if b.has_door and not b.door_broken]
         nearest = min(shelters, key=lambda b: npc.distance_to_point((b.x, b.y)), default=None)

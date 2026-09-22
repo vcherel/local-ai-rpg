@@ -52,8 +52,7 @@ class Statuses:
 
     Mixed into both `Entity` and `Critter`. An animal is not an `Entity` (it has no gear,
     no swing and none of the humanoid drawing), but a bear trap, a frost bolt and a shove
-    do not care what they caught: all three shut on a body. This used to be written out
-    twice, once in each class, with the copy in `critter.py` carrying comments saying so.
+    do not care what they caught: all three shut on a body, so it is written once here.
 
     The defaults are class attributes rather than `__init__` assignments, so neither class
     has to remember to set them and the first `root` or `chill` shadows them per instance.
@@ -339,8 +338,8 @@ def step_towards(body, angle: float, speed: float, blocked, radius: float) -> tu
 def apply_impulse(body, kb_dir, distance: float):
     """Hand a body the velocity a shove is worth instead of moving it there.
 
-    A blow used to teleport its target the whole way at once, which is why the pole, the
-    weapon whose entire job is moving people, had nothing to show for it. The impulse is
+    A blow that teleported its target the whole way at once would leave the pole, the
+    weapon whose entire job is moving people, with nothing to show for it. The impulse is
     sized so the body coasts exactly `distance` as it decays (a geometric series summing to
     v0 / (1 - decay)), and it is spent frame by frame through `advance_impulse` with the
     same collision every step takes, so a shove into a wall stops at the wall.

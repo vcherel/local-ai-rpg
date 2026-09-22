@@ -201,8 +201,8 @@ class WeatherSystem:
 
         What fog does to a view is take the distance away, and distance is a ring rather
         than a border: the wash is painted as rings from the rim inwards, so it thickens
-        smoothly out of what the player is standing in. It used to be three nested
-        rectangles, which reads as a frame laid over the screen and not as weather at all.
+        smoothly out of what the player is standing in. Nested rectangles would
+        read as a frame laid over the screen and not as weather at all.
 
         The rings are kept (`Overlay`), since they only move when the ramp steps. The banks
         are drawn live, because the whole point of them is that they are moving: one soft

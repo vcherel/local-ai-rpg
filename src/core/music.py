@@ -303,8 +303,8 @@ class MusicPlayer:
         if self._playing is None or self._playing[0] != context or self._variant_age >= VARIANT_MS:
             choices = [v for v in range(len(CONTEXTS[context]["sets"])) if (context, v) != self._playing]
             # A progression that is already rendered, whenever there is one: they all are a
-            # moment after launch, and picking blind is how a context change used to land on
-            # the one pad that still had to be built.
+            # moment after launch, and picking blind could land a context change on the one
+            # pad that still has to be built.
             ready = [variant for variant in choices if (context, variant) in self._pads]
             variant = random.choice(ready or choices) if choices else 0
             key = (context, variant)

@@ -22,7 +22,7 @@ class ContextMenu(BaseMenu):
     FADE_MS = 900
     # How long the finished opening text stays up before any key will take it away. The
     # lore is the one thing in the game that is only ever shown once, and a player already
-    # holding a key down from the main menu used to skip it without seeing a word of it.
+    # holding a key down from the main menu would skip it without seeing a word of it.
     MIN_DISPLAY_MS = 2200
 
     def __init__(self, screen):

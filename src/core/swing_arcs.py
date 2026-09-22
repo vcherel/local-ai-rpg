@@ -1,10 +1,10 @@
 """The trail a melee attack leaves behind it.
 
-A swing used to be invisible: the arm animated, particles popped on whatever was hit, and
-nothing on screen said how much ground the blow actually covered. That is fine for a
-dagger and useless for a cleaving weapon, where the whole point is the crowd it catches.
-So an arc is drawn along the exact wedge the hit test uses (the weapon's `arc_deg` at its
-reach), and a cleaving weapon draws it wider and hotter than a single-target one.
+The arm animating and particles popping on whatever was hit say nothing about how much
+ground the blow covered. That is fine for a dagger and useless for a cleaving weapon,
+where the whole point is the crowd it catches. So an arc is drawn along the exact wedge
+the hit test uses (the weapon's `arc_deg` at its reach), and a cleaving weapon draws it
+wider and hotter than a single-target one.
 
 A thrust is drawn from the same rule and comes out as a different picture, because it is
 tested differently: a `pierce_melee` weapon covers a lane down its facing rather than a

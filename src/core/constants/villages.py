@@ -116,9 +116,9 @@ class Villages:
     STREET_TAPER: int = 260
     # How long a stretch takes to open out into the busier one it runs into
     # (`village_streets.widen_into`). A branch meeting a street is an apron worn over a set
-    # run of it, not a step across a line: the width used to change on the last segment of
-    # the stretch, which after the corners are rounded is a few paces of a bend, so a spur
-    # doubled in width from one blob to the next.
+    # run of it, not a step across a line: changing the width on the last segment of the
+    # stretch, which after the corners are rounded is a few paces of a bend, would double a
+    # spur in width from one blob to the next.
     STREET_JOIN: int = 90
     # A gateway's own lane: how far inside the wall it runs dead straight before it is
     # allowed to bend, and how much of the gap is left open for it to be routed through.
@@ -132,7 +132,7 @@ class Villages:
     # How many stretches at the mouth of a gate lane are laid inside the road's own earth and
     # so drawn without a verge of their own. The lane laps the road so the round cap it ends
     # in is buried; a verge painted over ground the road has already verged is that cap drawn
-    # as a dark ring instead, which is the circle that used to sit at every gate.
+    # as a dark ring instead.
     STREET_LAP_STRETCHES: int = 2
     # A lane is routed on a grid of this size rather than run straight at the door: a
     # straight line from the plaza was laid over whatever house stood between the two.
@@ -151,7 +151,7 @@ class Villages:
     STREET_BEND_STEPS: int = 4
     # How far a lane may wander looking for its way round a house, as a multiple of the
     # straight-line distance: past that the settlement is walled in on itself and the
-    # straight lane it used to have is the better answer.
+    # straight lane is the better answer.
     STREET_DETOUR: float = 3.0
     # How far sideways a lane looks for one already worn, and how much longer it will
     # accept its walk becoming to join it. One cost fill only ever merges two routes that
@@ -354,9 +354,9 @@ class Villages:
     # hold their post rather than strolling the way a villager does; how many of them is the
     # settlement's tier, through GUARDS_PER_POST_BY_TIER.
     #
-    # Holding a post is walking it. The patch is a good deal wider than the two paces it
-    # used to be and the pause on it is short, because a body that moves twice a minute in
-    # a street where everyone else is strolling reads as scenery rather than as a watch.
+    # Holding a post is walking it. The patch is wide and the pause on it is short, because
+    # a body that moves twice a minute in a street where everyone else is strolling reads as
+    # scenery rather than as a watch.
     GUARD_POST_RADIUS: int = 150
     GUARD_IDLE_MS: tuple = (400, 1600)
     # How far either side of straight ahead a stopped guard's head turns, and how long one

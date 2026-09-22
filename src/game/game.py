@@ -381,8 +381,8 @@ class Game(GameInteractions, GameSleep):
     def _announce_pickup(self, item: Item):
         """Say something for every item that reaches the inventory. An upgrade gets the F
         prompt; anything else at least names itself, since a pickup that isn't an upgrade
-        (a second bow while a stronger staff is equipped, a pelt, a potion) used to be
-        silent apart from the sound."""
+        (a second bow while a stronger staff is equipped, a pelt, a potion) would otherwise
+        be silent apart from the sound."""
         if self._offer_upgrade(item):
             return
         label = f"Picked up {item.name}"

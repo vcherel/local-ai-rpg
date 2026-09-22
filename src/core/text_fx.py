@@ -1,8 +1,8 @@
 """Text drawn straight onto the world, readable without a panel behind it.
 
-A name floating over somebody's head used to sit on a rounded rectangle, which read as
-a tombstone standing in the grass rather than as a label belonging to the body under it.
-An outline does the same job (light text stays legible over pale ground) without putting
+A name floating over somebody's head on a rounded rectangle reads as a tombstone
+standing in the grass rather than as a label belonging to the body under it. An outline
+does the same job (light text stays legible over pale ground) without putting
 a piece of HUD into the world.
 """
 

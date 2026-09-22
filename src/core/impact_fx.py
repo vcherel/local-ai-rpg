@@ -1,11 +1,11 @@
 """The picture an area effect leaves behind it: a wave of particles going out and a bolt to
 each thing it caught.
 
-Chain Strike used to be invisible. A legendary weapon would land one blow and damage
-numbers would pop on three creatures at once with nothing on screen connecting them,
-which reads as a bug rather than as an affix. So the pulse draws itself: a ring expanding
-to exactly the radius the damage was applied over, and a jagged bolt from its centre to
-everything it actually hit, so what was caught is attributable rather than guessed.
+Without it, Chain Strike lands one blow and damage numbers pop on three creatures at
+once with nothing on screen connecting them, which reads as a bug rather than as an
+affix. So the pulse draws itself: a ring expanding to exactly the radius the damage was
+applied over, and a jagged bolt from its centre to everything it actually hit, so what
+was caught is attributable rather than guessed.
 
 What goes out is a scatter of particles thrown round the source rather than one drawn
 circle: a perfect ring reads as a UI element laid over the fight, while a wave of debris

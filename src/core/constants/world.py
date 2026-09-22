@@ -833,7 +833,7 @@ class Scenery:
     # of it is worse than no crossing at all, since the player walked to it.
     BRIDGE_CLEARANCE: int = 45
     # No two crossings stand closer than this. A lane lays one at fixed intervals and every
-    # road that meets the water asks for one of its own, so the two used to end up as a
+    # road that meets the water asks for one of its own, so the two would end up as a
     # pair of bridges a few strides apart over the same stretch of river. The road wins the
     # argument about which way the deck lies: a crossing a track runs onto is laid along
     # the track, since a deck squared onto the current with a road arriving at it sideways
@@ -891,7 +891,7 @@ class Scenery:
     ROAD_EDGE_PERIOD: int = 90
     # A road runs thousands of pixels between two settlements, so the bend has to be worth
     # that length. It is layered noise rather than waves: a sine is a bow, and a bow pinned
-    # at both ends is a drawn arc, which is what every road in the world used to be. Three
+    # at both ends is a drawn arc. Three
     # octaves of it read as ground somebody picked their way across.
     ROAD_WOBBLE: int = 380
     ROAD_WOBBLE_FULL: int = 4000  # the length at which a road wanders by the full wobble
@@ -1168,8 +1168,8 @@ class Weather:
     RAIN_SLANT: float = 0.22
     RAIN_ALPHA: int = 120
     # And fog as a wash that closes in from the edges, kept by `screen_fx.Overlay`, with a
-    # few banks of it drifting across the top. The wash used to be nested rectangles, which
-    # is a window frame rather than weather: the distance going is round, and what is left
+    # few banks of it drifting across the top. Nested rectangles would read
+    # as a window frame rather than weather: the distance going is round, and what is left
     # of it moves.
     FOG_COLOR: tuple = (176, 180, 186)
     FOG_MAX_ALPHA: int = 155

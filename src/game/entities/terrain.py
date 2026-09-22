@@ -286,7 +286,7 @@ def _bend_layers(rng: random.Random) -> tuple:
     twice as fine and half as wide as the one before it.
 
     A road bent by a sine is a bow, and a bow held at both ends is an arc laid between two
-    villages, which is what the map used to be full of. Noise has no shape of its own, so
+    villages, which a whole map of reads as drawn. Noise has no shape of its own, so
     what comes out is a track that leans one way, comes back, and hesitates on the way,
     which is what a line worn by feet looks like from above.
     """

@@ -656,9 +656,9 @@ class NPC(Entity):
         `standoff`.
 
         A spot nobody can stand in is worse than none, so a blocked bearing shuffles a
-        little way round the ring either side of itself before giving up. It used to fall
-        straight back to the target's own position, which is what had every villager whose
-        slot was against a wall converging on the same pixel: the fallback was the pile.
+        little way round the ring either side of itself before giving up. Falling straight
+        back to the target's own position would have every villager whose slot is against a
+        wall converging on the same pixel: that fallback is the pile.
         With nowhere on the ring to stand, they hold where they are and let the ones with
         room do the work."""
         if standoff <= 0:
@@ -800,8 +800,8 @@ class NPC(Entity):
     def _draw_bedding(self, screen: pygame.Surface, screen_x: int, screen_y: int):
         """The covers over a sleeping villager, pulled up to the chest.
 
-        Somebody asleep used to be an ordinary standing sprite that had stopped moving, which
-        from overhead is somebody standing on the furniture. The covers are the whole tell:
+        An ordinary standing sprite that has stopped moving reads from overhead as somebody
+        standing on the furniture. The covers are the whole tell:
         the body ends halfway along and cloth carries on to the foot of the bed."""
         along = self._sleep_axis()
         size = c.Entities.NPC_SIZE

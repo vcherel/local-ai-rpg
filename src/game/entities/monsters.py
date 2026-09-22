@@ -279,7 +279,7 @@ class Monster(Entity):
 
         The probe never reaches past the goal itself: a player standing in a corner has a wall
         a step behind them, and steering round a wall that lies beyond where the monster is
-        trying to stand is what used to leave it circling just out of reach.
+        trying to stand would leave it circling just out of reach.
 
         A deflection, once taken, is held for a moment and tried first next frame. A monster
         that re-decides which way round a trunk to go on every frame goes nowhere, and going
@@ -293,7 +293,7 @@ class Monster(Entity):
             self.steer_side = 0
         lead = self.steer_side or 1
         # The short probe is the fallback: in a corner or between two pieces of furniture
-        # every long probe is blocked, and giving up there is what used to leave a monster
+        # every long probe is blocked, and giving up there would leave a monster
         # grinding into a table while the player stood two steps away.
         for probe in (far, radius + c.World.STEER_CLOSE_PROBE):
             for offset_deg in self._STEER_OFFSETS_DEG:

@@ -259,9 +259,9 @@ class WorldSpawning:
         """Who this monster is coming for. The player, unless somebody else is nearer and it
         can actually get at them: a villager is prey, not scenery to be filed past.
 
-        It used to take a settlement's grounds to make one worth eating, which left the
-        woman standing twenty paces outside her own gate ignored by the wolf beside her while
-        it walked round her at the player. So the test is reach and sight instead: anyone
+        Requiring a settlement's grounds to make one worth eating would leave the woman
+        standing twenty paces outside her own gate ignored by the wolf beside her while it
+        walks round her at the player. So the test is reach and sight instead: anyone
         inside `Villages.DEFEND_RADIUS`, nearer than the player, and not behind a wall.
         Villagers who are already down (`NPC.surrendered`) are as good a target as any: a
         monster is not owed a surrender.

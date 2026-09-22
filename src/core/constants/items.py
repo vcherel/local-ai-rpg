@@ -83,8 +83,8 @@ class Quests:
     ALWAYS_ITEM_TYPES: tuple = ("clear_camp", "slay_boss", "steal")
 
     # How far out of town a quest puts whatever it sends the player after. An errand given
-    # in the square used to be finishable without leaving the square, which is a line of
-    # dialogue rather than a quest: the map is endless, and a quest is what makes the
+    # in the square and finishable without leaving it is a line of dialogue rather than a
+    # quest: the map is endless, and a quest is what makes the
     # player walk into it.
     MIN_TARGET_DISTANCE: int = 3000
     MAX_TARGET_DISTANCE: int = 9000

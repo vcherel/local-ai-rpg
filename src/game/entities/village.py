@@ -623,9 +623,9 @@ class Village(VillageArt):
         ring round the square they all leave from.
 
         A lane is routed round the buildings rather than run straight at the door
-        (`StreetGrid`): the straight line the lanes used to be was laid over whatever house
-        stood between the plaza and the door it was going to, which read as a street running
-        through somebody's front room. Every lane is walked back off one cost fill from the
+        (`StreetGrid`): a straight line is laid over whatever house stands between the
+        plaza and the door it is going to, which reads as a street running through
+        somebody's front room. Every lane is walked back off one cost fill from the
         plaza and they are all worked out in the same pass (`StreetGrid.trace`), so where two
         of them share ground they are the same stretch of it: what is laid down is a trunk
         with branches off it rather than a spoke per door.

@@ -90,9 +90,9 @@ def widen_into(points: list[tuple[float, float]], width: float, joins: float) ->
     `STREET_JOIN` of it to the width of the busier one it runs into.
 
     A branch leaving a street is an apron, and an apron is a length of ground rather than a
-    point: the width used to change on the last segment of the stretch, which is whatever
-    the corners left there, so a spur doubled from one blob to the next where the bend had
-    been rounded and funnelled the whole way in where it had not. Only the opening stretch
+    point: changing the width on the last segment of the stretch, which is whatever the
+    corners left there, would double a spur from one blob to the next where the bend is
+    rounded and funnel it the whole way in where it is not. Only the opening stretch
     is resampled; the rest of the lane is the corners it turns like any other.
     """
     run = c.Villages.STREET_JOIN
@@ -303,7 +303,7 @@ class StreetGrid:
         points = [self._point(cell) for cell in cells]
         walked = math.dist(end, points[0]) + sum(math.dist(a, b) for a, b in pairwise(points))
         # A lane that has to go three times round the houses is not a lane anybody wore:
-        # something is walled in, and the straight one it used to have says more.
+        # something is walled in, and a straight one says more.
         return cells if walked <= math.dist(end, points[-1]) * c.Villages.STREET_DETOUR else None
 
     def _merge(self, chains: dict[int, list[tuple[int, int]]], fixed: frozenset[int]) -> dict:

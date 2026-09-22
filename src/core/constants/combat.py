@@ -297,8 +297,8 @@ class Explosion:
     # A blast is the loudest thing that happens in this game, and it says so where it went
     # off rather than over the whole screen: the fire, the smoke and the debris are at the
     # blast, the shockwave carries a little past what it hurt, and the wash and the freeze
-    # are a beat rather than a whiteout. It used to take the screen away from the player at
-    # the exact moment they had a fight to read.
+    # are a beat rather than a whiteout, so the screen is never taken away from the player at
+    # the exact moment they have a fight to read.
     HITSTOP_MS: float = 90.0
     # Ring radii as a share of the blast, drawn outward: the damage ring, then the
     # shockwave carrying past what it hurt.
@@ -400,8 +400,8 @@ class WeaponArchetype:
 class Staffs:
     """What an elemental staff's bolt does on top of its damage (game/combat.py).
 
-    A staff used to be one weapon painted purple: every bolt was identical, so carrying a
-    staff instead of a bow was a question of ammo and nothing else. An element is read out
+    With identical bolts, carrying a staff instead of a bow would be a question of ammo and
+    nothing else. An element is read out
     of the weapon's own name and each one maps onto a mechanic the game already has, so
     the family differs in what it does to a fight rather than in its damage number.
     """
@@ -538,7 +538,7 @@ _KEYWORD_TO_ARCHETYPE = {
     "pike": "spear",
     "hatchet": "axe",
     # A farmhouse's contents. Listed above the weapon words so a "Fire Poker" is a poker
-    # rather than falling through to the sword every unknown name used to become.
+    # rather than falling through to the generic entry.
     "hoe": "tool",
     "shovel": "tool",
     "spade": "tool",

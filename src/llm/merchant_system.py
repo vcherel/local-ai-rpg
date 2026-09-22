@@ -18,9 +18,9 @@ TOKENS_PER_ITEM = 22
 def generate_shop_inventories(context: str, shop_count: int) -> list:
     """Stock every merchant in the world with a single LLM call.
 
-    One call instead of one per merchant: shop generation used to be the most expensive
-    thing the queue did, and the per-merchant prompts were identical, so the shops came
-    out identical too. Any shop the model fails to fill falls back to a procedural roll
+    One call instead of one per merchant: per-merchant calls would be the most expensive
+    thing the queue does, and with identical prompts the shops would come out identical
+    too. Any shop the model fails to fill falls back to a procedural roll
     rather than a second request.
     """
     if shop_count <= 0:

@@ -265,7 +265,7 @@ class GameRenderer:
                 building.draw(self.screen, camera, player_inside=building is interior, darkness=darkness)
 
         # Filtered exactly as the entities and the items below are: a splat left on another
-        # building's floor is under a roof that is still on, and used to show through it.
+        # building's floor is under a roof that is still on, and would show through it.
         get_decals().draw(self.screen, camera, hidden=lambda x, y: self._hidden_indoors(world, x, y, interior))
 
         # Only ever because the player asked for them (V). Cones that came up on their own
@@ -520,15 +520,15 @@ class GameRenderer:
         the ground while `always_show_cones` (V) is on.
 
         Never raised by the game itself: the cone is the question "is anyone looking right
-        now", and it is the player who decides when they want it asked. Standing in a room
-        used to raise it on its own, which put a fan of wedges over the furniture at exactly
-        the moment the room was being searched.
+        now", and it is the player who decides when they want it asked. Raising it on entering a
+        room would put a fan of wedges over the furniture at exactly the moment the room is
+        being searched.
 
         One rule, and the colour follows the wedge: white is somebody watching, red is the
         player standing in what they are watching. Which is only readable because a villager
         the walls have already answered (`World.sight_reaches`: another building, or round the
-        back of this one) is not drawn at all. A cone lying across the player used to stay
-        pale for exactly that reason, and a wedge that says nothing about whether you are
+        back of this one) is not drawn at all. Without that, a cone lying across the player
+        stays pale, and a wedge that says nothing about whether you are
         caught is worse than no wedge."""
         radius = world.witness_radius()
         room = world.theft_room(player.x, player.y)
@@ -775,7 +775,7 @@ class GameRenderer:
         for effect, remaining, _magnitude in player.active_buffs():
             text = f"{POTION_EFFECT_LABELS.get(effect, effect)} {int(remaining) + 1}s"
             # Not every buff comes out of a flask: a weapon affix (bloodlust) has no
-            # liquid colour of its own, and used to crash the HUD looking for one.
+            # liquid colour of its own, hence the default.
             color = c.Potions.COLORS.get(effect, c.Colors.RED)
             chips.append((color, c.Fonts.small.render(text, True, c.Colors.WHITE)))
 

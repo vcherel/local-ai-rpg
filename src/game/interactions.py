@@ -38,8 +38,7 @@ class GameInteractions:
         other than what the key does.
 
         Each `_offer_*` yields the `(distance, Interaction)` pairs it found and the nearest
-        of the lot wins. They used to be handed a pair of closures to push into instead, so
-        every one of them carried two arguments it did nothing with but pass along.
+        of the lot wins.
         """
         offers = [
             *self._offer_indoors(),
@@ -99,7 +98,7 @@ class GameInteractions:
                 label = "E: lift the beam"
             elif building.door_overlaps(self.player.x, self.player.y, c.Player.SIZE / 2):
                 # Standing in the doorway: the only thing E may do here is open it. Offering
-                # to close a door around oneself is how one used to end up sealed in it.
+                # to close a door around oneself would seal the player in it.
                 if building.door_open:
                     continue
                 label = "E: open the door"

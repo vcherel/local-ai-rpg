@@ -129,9 +129,9 @@ class WorldProjectiles:
         it is stopped by the same walls. A shot is aimed where the player stands now,
         so sidestepping it is a real answer.
 
-        Nothing shoots through a wall: the arrow was always stopped by one, but the archer
-        used to keep loosing into it at a player it had no way of seeing, so breaking line
-        of sight is now a real answer too. Nothing shoots point blank either: an archer with
+        Nothing shoots through a wall: the arrow is stopped by one anyway, and an archer
+        loosing into it at a player it has no way of seeing looks broken, so breaking line of
+        sight is a real answer too. Nothing shoots point blank either: an archer with
         the player on top of it is cornered (Monster.cornered) and has to use its knife."""
         now = pygame.time.get_ticks()
         for monster in self.monsters:

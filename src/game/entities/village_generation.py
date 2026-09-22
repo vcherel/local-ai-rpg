@@ -27,7 +27,7 @@ def _clear_of_plaza(building: Building, center: tuple[float, float]) -> bool:
 
     Measured off `bounds` rather than off the slot offset: a wing grows out to one side, so
     the middle of what the building actually covers is not where its main block stands, and
-    an L used to reach over the well while its rect sat clear of it. Whichever axis needs
+    an L can reach over the well while its rect sits clear of it. Whichever axis needs
     the smaller shove is the one that gives, so a house steps off the square rather than
     being flung to the edge of the village. Returns whether the building had to move."""
     keep = c.Villages.PLAZA_RADIUS
@@ -97,11 +97,11 @@ def _separate(buildings: list[Building], center: tuple[float, float], gap: int =
     standing on the well made the one thing every village has impossible to walk up to.
 
     The grid the slots come off is spaced for a plain rect; a building with a wing on it is
-    wider than its slot, and two of them side by side used to end up sharing ground, which
-    is a broken room rather than a tight street. Everything is measured off `bounds`, whose
+    wider than its slot, and two of them side by side can end up sharing ground, which is
+    a broken room rather than a tight street. Everything is measured off `bounds`, whose
     middle is not the building's own (x, y) once it has a wing: overlap resolved off the
-    rect centres moved a pair the wrong way as often as not, which is how two Ls stayed
-    interlocked however many passes ran. Each pass shoves the one further from the plaza,
+    rect centres moves a pair the wrong way as often as not, and two Ls stay interlocked
+    however many passes run. Each pass shoves the one further from the plaza,
     so the settlement spreads outward instead of the layout shifting off centre."""
     for _ in range(c.Villages.SEPARATE_PASSES):
         # The plaza is settled first and re-settled every pass: shoving one house off its

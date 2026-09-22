@@ -10,8 +10,8 @@ class Blow:
     """How one blow landed, apart from who it landed on and for how much.
 
     Every path that hurts a monster or a villager (a swing, an arrow, a blast, a chain, a
-    boss's slam) ends in `WorldCombat._resolve_monster_hit` or `_resolve_npc_hit`, and each
-    one used to spell the same six keywords out again. They travel together and mean
+    boss's slam) ends in `WorldCombat._resolve_monster_hit` or `_resolve_npc_hit`, and they
+    all carry the same six values. They travel together and mean
     nothing apart, so they are one value.
 
     `kb_dir` is the (dx, dy) the blow throws along, `blocked` the collision test that shove

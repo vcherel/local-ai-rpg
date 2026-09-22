@@ -66,9 +66,9 @@ class Player:
 class Magic:
     """The mana a staff spends (game/projectiles.py `_fire_ranged`).
 
-    A staff used to be the only weapon in the game with no cost at all: no ammo to buy, no
-    swing to close the distance for, so carrying one made every other family a worse choice.
-    Mana is that cost. It is a pool rather than a stock: it comes back on its own, so magic
+    Without it a staff would be the only weapon in the game with no cost at all: no ammo to
+    buy, no swing to close the distance for, so carrying one would make every other family a
+    worse choice. Mana is that cost. It is a pool rather than a stock: it comes back on its own, so magic
     is paced instead of rationed, and what decides how deep and how fast is the magic stat.
     """
 
@@ -240,8 +240,8 @@ class Stats:
     ACCESSORY_XP_PER_BONUS: float = 0.04  # +4% xp from all actions per bonus point
 
     # Shops buy loot below its worth; bartering raises the fraction toward SELL_CEILING.
-    # Deliberately punishing: hoovering every rusty dagger into the nearest shop used to be
-    # the fattest income in the game, which made quests, caches and risk pointless.
+    # Deliberately punishing: otherwise hoovering every rusty dagger into the nearest shop is
+    # the fattest income in the game, which makes quests, caches and risk pointless.
     SELL_BASE: float = 0.35
     # Prices can move at most this far from their base value. A shop never pays what a
     # thing is worth, however good a haggler the player becomes.
