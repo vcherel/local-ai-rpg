@@ -25,7 +25,7 @@ CONTROLS = [
     ("Left Click", "Use the weapon in hand one (swing it or fire it)"),
     ("Right Click", "Use the weapon in hand two"),
     ("Space", "Hold to raise your shield: it covers the side it is worn on and turns shots away"),
-    ("E", "Interact: talk, open a door, a chest, a bed, rest at a camp"),
+    ("E", "Interact: talk, plead, pay off a witness, open a door, a chest, a bed, rest at a camp"),
     ("Loot", "Picked up by walking over it, no key needed"),
     ("B", "Trade with a merchant you are next to"),
     ("K", "Pay a village you have turned its blood price, so it lets you back in"),

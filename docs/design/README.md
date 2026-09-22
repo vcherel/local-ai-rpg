@@ -11,5 +11,6 @@ examples live here.
 - `entities.md`: monsters, wildlife, crowds, art and gait
 - `progression.md`: healing, economy, quests, loot, inventory and the quick bars
 - `llm.md`: the request queue, batching, and never trusting a reply
+- `decisions.md`: the model picking one of a few labelled answers, who asks what, how to ask well, and the ideas left for later
 - `ui.md`: HUD, minimap, prompts, menus, the effect systems
 - `persistence.md`: what is saved, what is session-only, how ids resolve

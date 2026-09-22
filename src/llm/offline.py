@@ -203,6 +203,24 @@ BOSS_EPITHET = (
 )
 
 
+# What the decisions read a player's line by with no model to ask (`llm/decide.py`): a
+# goodbye closes the conversation, asking for a better price is a haggle, a sorry is an
+# apology. Words, not judgement, which is all a clone without the weights can offer.
+FAREWELL_RE = re.compile(
+    r"\b(bye|goodbye|farewell|see you|take care|so long|gotta go|got to go|have to go|must go|be going)\b", re.I
+)
+HAGGLE_RE = re.compile(
+    r"\b(discount|cheaper|lower (the |your )?price|better (price|deal)|too expensive|haggle)\b", re.I
+)
+APOLOGY_RE = re.compile(r"\b(sorry|apologi[sz]e|forgive me|my fault|won't happen again)\b", re.I)
+
+
+def says(pattern: re.Pattern, line: str) -> dict[str, float]:
+    """The odds of a yes/no decision with no model: yes exactly when the line says it."""
+    hit = pattern.search(line or "") is not None
+    return {"yes": 1.0 if hit else 0.0, "no": 0.0 if hit else 1.0}
+
+
 def _rng(*parts: str) -> random.Random:
     """A generator seeded on what was asked, so the same question gets the same answer."""
     return random.Random(hash("\n".join(parts)) & 0xFFFFFFFF)

@@ -18,6 +18,7 @@ Talk to anyone in your own words. Quests come out of the conversation. Nothing l
 ## What there is to do
 
 - Conversations with villagers using a local LLM
+- Villagers who react to what you say: haggle a merchant down, apologise, talk an angry mob out of it
 - NPCs can give quests
 - Full combat system
 - Loot with rarities and stats evolution

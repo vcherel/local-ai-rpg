@@ -47,6 +47,35 @@ def log_call(
     _append(entry)
 
 
+def log_decision(
+    category: str,
+    system_prompt: str,
+    prompt: str,
+    probs: dict[str, float],
+    choice: str,
+    duration: float,
+    model_path: str,
+    prompt_tokens: int,
+    evaluated: int,
+):
+    """A decision: what the model leaned towards and what the draw then picked. `evaluated`
+    is how much of the prompt was not already in the cache, which is what it cost."""
+    _append(
+        {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "category": category,
+            "model": model_path,
+            "system_prompt": system_prompt,
+            "prompt": prompt,
+            "probs": {label: round(p, 4) for label, p in probs.items()},
+            "choice": choice,
+            "duration_seconds": round(duration, 3),
+            "prompt_tokens": prompt_tokens,
+            "evaluated_tokens": evaluated,
+        }
+    )
+
+
 def log_parse_failure(category: str, response: str, error: str):
     """Record a response the game couldn't make sense of, alongside the call that produced
     it. Model output that fails to parse is a quality signal like any other, and the game

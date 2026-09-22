@@ -210,6 +210,8 @@ class Game(GameInteractions):
         # (`_lift_gate`), and the prompt says so.
         self.interact_actions = {
             "npc": self._talk_to,
+            "plead": self._plead_with,
+            "hush": self._pay_hush,
             "chest": lambda _target: self._open_interior_chest(),
             "bed": self._sleep_in_bed,
             "door": self._use_door,
@@ -497,6 +499,22 @@ class Game(GameInteractions):
         self.player.stats.train("bartering", c.Stats.XP_PER_TALK_BARTERING)
         self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
         self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world)
+
+    def _plead_with(self, npc):
+        """Talk an angry villager down, face to face (`Parley`). The world stands still
+        while the box is open, as it does for any conversation, which is why it is spent
+        on a refusal and on walking away alike (`World.refuse_parley`)."""
+        if self.world.context is None or not self.world.parley_open(npc):
+            return
+        if llm_busy():
+            self.loot_notification.show(f"{npc.name or 'They'} won't listen yet, give it a moment", c.Colors.MUTED)
+            return
+        self.player.stats.train("persuasion", c.Stats.XP_PER_TALK)
+        self.dialogue_manager.interact_with_npc(npc, self.npc_name_generator, self.world, parley=True)
+
+    def _pay_hush(self, npc):
+        if not self.world.pay_hush(npc, self.player):
+            self.loot_notification.show(f"You don't have {npc.hush_price} coins", c.Colors.MUTED)
 
     def _read_board(self, village):
         """Open what is pinned to this settlement's board.
@@ -869,11 +887,13 @@ class Game(GameInteractions):
     def _check_witness(self, offence: str = "theft"):
         """See whether anyone caught the player helping themselves in someone's house.
 
-        The one place a single NPC turns hostile on their own: whoever saw it comes for the
-        player, and the rest of the village never hears about it. Swinging back at them is
-        what turns the whole settlement, through the usual `World.provoke_village`.
+        The one place a single NPC turns hostile on their own: whoever saw it decides what to
+        do about it (`World.catch_thief`), and if they tell, they come for the player and
+        the rest of the village never hears about it. They may look away instead, or ask to
+        be paid. Swinging back at them is what turns the whole settlement, through the usual
+        `World.provoke_village`.
 
-        The first time is a warning rather than a knife (`World.strike_village`), and a
+        Telling, the first time is a warning rather than a knife (`World.strike_village`), and a
         villager who has only shouted still has their quest and still talks. Which ledger it
         is spent on is `offence`: a bed taken for the night is not a hand in a chest, and
         the two are counted apart.
@@ -882,13 +902,9 @@ class Game(GameInteractions):
         household coming and going, not the instant a lid is lifted."""
         finder = self.world.squatter_witness if offence == "squatting" else self.world.theft_witness
         witness = finder(self.player.x, self.player.y)
-        if witness is None:
-            return
-        if self.world.catch_thief(witness, self.player, offence) is None:
-            return
-        # Nobody sees a task through for someone they are trying to kill.
-        self.dialogue_manager.quest_system.remove_quest(witness)
-        play_sound("player_hurt")
+        if witness is not None:
+            # What they do about it lands a moment later (`World.settle_witnesses`).
+            self.world.catch_thief(witness, self.player, offence)
 
     def _save_from_menu(self):
         """Manual save from the pause menu, with an on-screen confirmation."""
@@ -1075,6 +1091,10 @@ class Game(GameInteractions):
         in_water = self.world.water_at(self.player.x, self.player.y)
         self.player.move(gameplay_dt, self.world.blocked, in_water)
         self.world.update(self.player, gameplay_dt, self.dialogue_manager.quest_system, self.npc_name_generator)
+        # Nobody sees a task through for someone they are trying to kill.
+        for witness in self.world.settle_witnesses(self.player):
+            self.dialogue_manager.quest_system.remove_quest(witness)
+            play_sound("player_hurt")
         self._pop_levelups()
         # A building's interior is just its own footprint; re-derive which one (if any) the
         # player is standing in rather than tracking a separate mode.

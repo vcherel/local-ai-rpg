@@ -721,3 +721,48 @@ class Onboarding:
         "You there! There is paid work here, if you want it.",
         "Hey! Got a moment? I have something to ask you.",
     )
+
+
+@dataclass(frozen=True)
+class Temperament:
+    """What a villager is like, one word each, decided once per settlement by the model off
+    its lore and name and then drawn per person off their home (`WorldStreaming._settle_temperaments`).
+
+    The model is asked what this place's people are like and its leaning over the five is
+    the settlement's own mix, so a mining town the lore calls fearful is mostly timid
+    without anybody being told to be. It is only ever flavour and odds: a line in their own
+    prompt, how soon they give up a fight, and the odds the other decisions fall back to."""
+
+    # label: (how the option is put to the model, the line in the villager's own prompt)
+    KINDS = {
+        "brave": ("bold, quick to stand their ground", "By nature you are brave and stand your ground. "),
+        "timid": ("fearful, quick to run or give in", "By nature you are timid and easily frightened. "),
+        "greedy": ("greedy, always counting coin", "By nature you are greedy and always thinking about coin. "),
+        "kind": ("kind, quick to forgive", "By nature you are kind and quick to forgive. "),
+        "hotheaded": ("hot-headed, quick to anger", "By nature you are hot-headed and quick to anger. "),
+    }
+    # How much of their health a villager of this kind gives up a fight at, on top of
+    # `Villages.ROUT_HP_FRAC`: a brave one fights on further, a timid one kneels sooner.
+    ROUT_SHIFT = {"brave": -0.12, "timid": 0.15}
+
+
+@dataclass(frozen=True)
+class Parley:
+    # Talking an angry settlement down, face to face with one of the people chasing the
+    # player. Never offered to a settlement holding a grudge: a killing is paid for or died
+    # for (`Amends`), not talked away.
+    #
+    # Each line the player says is judged good, poor or bad by the model as an onlooker
+    # would (`DialogueManager._read_plea`). This many good ones talk the villager down, one
+    # bad one ends it, and running out of lines ends it too.
+    PLEAS_NEEDED: int = 2
+    TURNS: int = 3
+    # How long a settlement that refused will not hear the player again.
+    REFUSED_S: float = 60.0
+    # Odds with no model, and how far the villager's temperament pushes them.
+    OFFLINE = {"good": 0.45, "poor": 0.4, "bad": 0.15}
+    TEMPERAMENT_ODDS = {
+        "kind": {"good": 1.8},
+        "timid": {"good": 1.4},
+        "hotheaded": {"good": 0.6, "bad": 1.8},
+    }

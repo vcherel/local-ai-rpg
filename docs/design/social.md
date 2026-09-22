@@ -31,8 +31,10 @@ player cannot see is a trap rather than a warning.
 
 Theft is the one exception to the all-or-nothing rule and it has exactly one entry point:
 `Game._check_witness` asks `World.theft_witness` who could see the player empty a chest, and
-`World.catch_thief` turns that one villager, alone, while the rest of the settlement goes on
-with its day. A bed is asked about differently (`World.squatter_witness`): sleeping is not an
+`World.catch_thief` hands that one villager the choice of what to do about it: tell, and turn on
+the player alone while the rest of the settlement goes on with its day, look away, or ask to be
+paid (`decisions.md`). Whether they saw it is never a roll; what they do about it is their
+character. A bed is asked about differently (`World.squatter_witness`): sleeping is not an
 instant somebody either had eyes on or missed, it is a night, so what answers for it is who
 of that settlement is near the bed by morning rather than who was facing it. Whoever lives
 in the room is the exception and catches the player whichever way they are turned, unless

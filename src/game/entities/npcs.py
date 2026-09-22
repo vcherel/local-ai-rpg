@@ -162,6 +162,23 @@ class NPC(Entity):
         # when they will look up again.
         self._glance_until = 0.0
         self._glance_next = 0.0
+        # What this one is like (`Temperament.KINDS`), drawn off their settlement's mix once
+        # the model has said what its people are like, and saved: a person does not change
+        # their nature between sessions. None until then.
+        self.temperament: str | None = None
+        # What they took off every buy price when the player talked them down in
+        # conversation, and whether they have been asked at all; one answer a session.
+        self.discount = 0.0
+        self.haggled = False
+        # Having caught the player at something, what they are still making up their mind
+        # about (`WorldSocial.catch_thief`): the decision on its thread, the offence, and
+        # when they stop waiting on it. Then, if they chose to be paid to forget it, the
+        # price and when they tell anyway. All session-only, like every fight.
+        self.pondering = None
+        self.pondering_offence = ""
+        self.pondering_until = 0
+        self.hush_price = 0
+        self.hush_until = 0.0
 
     @property
     def hostile(self) -> bool:
@@ -392,6 +409,7 @@ class NPC(Entity):
             "hostile_until": self.hostile_until,
             "grudge": self.grudge,
             "affinity": self.affinity,
+            "temperament": self.temperament,
             "shop_ready": self.shop_ready,
             "restock_at": self.restock_at,
             "home": list(self.home),
@@ -423,6 +441,7 @@ class NPC(Entity):
         npc.hostile_until = data.get("hostile_until", 0.0)
         npc.grudge = data.get("grudge", data.get("hostile", False))
         npc.affinity = data.get("affinity", c.Affinity.START)
+        npc.temperament = data.get("temperament")
         npc.shop_ready = data["shop_ready"]
         npc.restock_at = data.get("restock_at", 0.0)
         npc.home = tuple(data["home"])
@@ -701,7 +720,18 @@ class NPC(Entity):
         """Cut down this far and this one is done fighting: they break for the nearest door.
         A mob that thins out as it loses is a mob; one that fights to the last farmer over a
         stolen loaf is a machine."""
-        return self.hp <= self.max_hp * c.Villages.ROUT_HP_FRAC
+        shift = c.Temperament.ROUT_SHIFT.get(self.temperament, 0.0)
+        return self.hp <= self.max_hp * (c.Villages.ROUT_HP_FRAC + shift)
+
+    def temperament_descriptor(self) -> str:
+        """The line in their own prompt that says what they are like, or "" before it is known."""
+        kind = c.Temperament.KINDS.get(self.temperament)
+        return kind[1] if kind else ""
+
+    @property
+    def hushing(self) -> bool:
+        """Waiting to be paid to forget what they saw."""
+        return self.hush_price > 0 and time.time() < self.hush_until
 
     def _badge(self) -> tuple | None:
         """(font, symbol, color) for the marker floating over this NPC's head, or None."""
@@ -713,6 +743,12 @@ class NPC(Entity):
         # two badges is the difference between a warning and a fight.
         if self.warning:
             return c.Fonts.badge, "!", c.Colors.ORANGE
+        # Caught the player at something and still deciding what to do about it, then
+        # waiting to be paid to forget it.
+        if self.pondering is not None:
+            return c.Fonts.badge, "?", c.Colors.ORANGE
+        if self.hushing:
+            return c.Fonts.badge_small, "$", c.Colors.ORANGE
         if self.has_active_quest:
             return c.Fonts.badge, "!", c.Colors.YELLOW
         if self.is_thief:

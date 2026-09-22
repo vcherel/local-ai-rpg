@@ -7,6 +7,8 @@ import threading
 import time
 from queue import PriorityQueue, Queue
 
+import numpy as np
+
 import core.constants as c
 from core import llm_log
 from llm import fit, offline, preflight
@@ -24,7 +26,21 @@ ENGLISH_ONLY_REMINDER = "Respond only in English, using standard Latin letters a
 # The player is waiting on the screen for these, so they go to the front of the queue.
 # Everything else (naming, shop stock, world context, quest analysis) happens in the
 # background and can wait: what it must not do is hold up the next line of dialogue.
-INTERACTIVE_CATEGORIES = frozenset({"First message", "Continuing conversation"})
+# The decisions read off a conversation still open, and a witness standing there making up
+# their mind, are waited on the same way.
+INTERACTIVE_CATEGORIES = frozenset(
+    {
+        "First message",
+        "Continuing conversation",
+        "Decide: conversation",
+        "Decide: haggle",
+        "Decide: parley",
+        "Decide: witness",
+    }
+)
+# Every decision's category starts with this. A decision is one pass over a prompt and no
+# generation, a fraction of a second, so it never makes an NPC too busy to talk.
+DECISION_PREFIX = "Decide"
 PRIORITY_INTERACTIVE = 0
 PRIORITY_BACKGROUND = 1
 
@@ -122,6 +138,20 @@ class LLMRequestQueue:
 
         def request_func():
             return generate_response_internal(prompt, system_prompt, category, max_tokens=max_tokens, raw=raw)
+
+        task_id = self._register_task(category)
+        self._submit({"func": request_func, "result_queue": result_queue, "task_id": task_id}, category)
+
+        status, result = result_queue.get()
+        if status == "error":
+            raise Exception(f"LLM error: {result}")
+        return result
+
+    def decide(self, prompt: str, system_prompt: str, category: str, n_options: int) -> dict:
+        result_queue = Queue()
+
+        def request_func():
+            return decide_internal(prompt, system_prompt, n_options)
 
         task_id = self._register_task(category)
         self._submit({"func": request_func, "result_queue": result_queue, "task_id": task_id}, category)
@@ -280,7 +310,9 @@ def llm_busy() -> bool:
     game and a running call cannot be preempted, so a conversation opened on top of one
     would sit there with an empty box until it finished; the interaction prompt says the
     NPC is busy instead. Never forces the model to load: no queue means nothing in flight."""
-    return bool(llm_queue and llm_queue.get_active_tasks())
+    if not llm_queue:
+        return False
+    return any(not task["category"].startswith(DECISION_PREFIX) for task in llm_queue.get_active_tasks())
 
 
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
@@ -296,6 +328,15 @@ def generate_response_stream_queued(prompt, system_prompt, log, max_tokens=None,
         yield from offline.stream(log, prompt, system_prompt)
         return
     yield from active.generate_response_stream(prompt, system_prompt, log, max_tokens=max_tokens, stop=stop, poll=poll)
+
+
+def decide_queued(prompt, system_prompt, category, n_options) -> dict | None:
+    """The model's leaning over `n_options` lettered answers, or None with no model to ask
+    (the caller falls back to its own odds, `llm/decide.py`)."""
+    active = get_llm_queue() if model_available() else None
+    if active is None:
+        return None
+    return active.decide(prompt, system_prompt, category, n_options)
 
 
 def _sampling(prompt, system_prompt, max_tokens, stop=()) -> dict:
@@ -375,3 +416,41 @@ def generate_response_stream_internal(prompt, system_prompt, category, max_token
 
     response = _strip_unsupported_glyphs(accumulated_text).translate(CHAR_FILTER)
     _log(category, system_prompt, prompt, response, start, max_tokens, True, usage)
+
+
+def _option_tokens(n_options: int) -> list[int]:
+    """The token each answer letter is written as, first thing in the assistant's turn."""
+    return [llm.tokenize(letter.encode("utf-8"), add_bos=False, special=False)[0] for letter in "ABCDEFGH"[:n_options]]
+
+
+def decide_internal(prompt, system_prompt, n_options):
+    """One pass over the prompt and the logits of the answer letters, with nothing sampled.
+
+    Tokenised exactly as a completion is, and started from whatever the cache already holds
+    of it, so a decision asked right after a reply over the same conversation pays only for
+    the question. What it leaves in the cache is a valid prefix too: the next generation
+    matches against it the same way."""
+    start = time.monotonic()
+    tokens = llm.tokenize(_format_prompt(prompt, system_prompt).encode("utf-8"), add_bos=False, special=True)
+    if len(tokens) >= llm.n_ctx():
+        raise ValueError(f"decision prompt of {len(tokens)} tokens does not fit the context")
+    shared = 0
+    for cached, wanted in zip(llm._input_ids, tokens, strict=False):
+        if cached != wanted:
+            break
+        shared += 1
+    # At least the last token is always evaluated: its logits are the answer.
+    keep = min(shared, len(tokens) - 1)
+    if keep > 0 and llm._ctx.kv_cache_seq_rm(-1, keep, -1):
+        llm.n_tokens = keep
+    else:
+        llm.reset()
+    llm.eval(tokens[llm.n_tokens :])
+    logits = np.ctypeslib.as_array(llm._ctx.get_logits_ith(-1), shape=(llm.n_vocab(),))
+    return {
+        "logits": [float(logits[token]) for token in _option_tokens(n_options)],
+        "prompt_tokens": len(tokens),
+        "evaluated": len(tokens) - keep,
+        "duration": time.monotonic() - start,
+        "model_path": llm.model_path,
+    }

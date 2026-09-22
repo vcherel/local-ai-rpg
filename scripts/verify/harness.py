@@ -82,6 +82,8 @@ def _stub_llm(answer):
     q.llm_busy = lambda: False
     q.generate_response_queued = lambda *_a, **_kw: answer
     q.generate_response_stream_queued = lambda *_a, **_kw: iter(_StubStream(answer))
+    # No model to lean on, so every decision is drawn from the caller's own odds.
+    q.decide_queued = lambda *_a, **_kw: None
 
 
 class _Nothing:

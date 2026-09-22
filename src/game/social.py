@@ -25,6 +25,7 @@ from game.entities.boss import Boss
 from game.entities.monsters import pick_monster_kind
 from game.entities.npcs import NPC
 from game.navigation import Point
+from llm.decide import decide, later, odds, pick
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
@@ -287,6 +288,56 @@ class WorldSocial:
                 dog.hostile = False
         # The gates come back off the bar on the next frame of `_work_gates` now that nobody
         # inside is angry, so the player can walk back into the place they died in.
+        return village
+
+    # ------------------------------------------------------------------ talking it down
+
+    def _home_key(self, npc: NPC) -> str:
+        """The settlement this one lives in, as the key its patience is kept under."""
+        village = self.village_at(*npc.home)
+        if village is not None:
+            return f"{village.chunk[0]}:{village.chunk[1]}"
+        return f"lone:{round(npc.home[0])}:{round(npc.home[1])}"
+
+    def forgive_strikes(self, npc: NPC) -> bool:
+        """An apology taken: every warning standing against the player where this one is
+        standing is let go. Returns whether there was anything to let go."""
+        return self.village_strikes.pop(self._strike_key(npc), None) is not None
+
+    def parley_open(self, npc: NPC) -> bool:
+        """Whether this angry villager will hear the player out. Anger can be talked down; a
+        grudge anywhere in the settlement cannot (a killing is paid for or died for), and a
+        settlement that has just refused will not listen again for `Parley.REFUSED_S`."""
+        if not npc.hostile or npc.grudge:
+            return False
+        village = self.village_at(*npc.home)
+        if village is not None and any(other.grudge for other in self.villagers_of(village)):
+            return False
+        return time.time() >= self.parleys_refused.get(self._home_key(npc), 0.0)
+
+    def refuse_parley(self, npc: NPC):
+        self.parleys_refused[self._home_key(npc)] = time.time() + c.Parley.REFUSED_S
+
+    def stand_down(self, npc: NPC) -> Village | None:
+        """The player talked this one down, and with them the settlement they speak for:
+        its anger ends here rather than on its clock. What it undoes is the anger and the
+        warnings, never the deeds: the neighbours still heard what happened (`settle_deeds`
+        is the blood price's alone)."""
+        village = self.village_at(*npc.home)
+        people = self.villagers_of(village) if village is not None else [npc]
+        for other in people:
+            if not other.grudge:
+                other.hostile_until = 0.0
+                other.affinity = max(other.affinity, c.Affinity.FORGIVEN)
+        self.village_strikes.pop(self._home_key(npc), None)
+        if village is not None:
+            key = f"{village.chunk[0]}:{village.chunk[1]}"
+            for dog in self.critters:
+                if dog.village_key == key:
+                    dog.hostile = False
+        if self.notify:
+            name = village.name if village is not None and village.name else npc.name or "They"
+            self.notify(f"{name} stands down", c.Colors.GREEN)
         return village
 
     # ------------------------------------------------------------------ word of mouth
@@ -831,9 +882,136 @@ class WorldSocial:
             self.catch_thief(witness, player, "vandalism")
         return witness
 
-    def catch_thief(self, npc: NPC, player: Player, offence: str = "theft") -> NPC | None:
-        """One villager catches the player at something, and either warns them or comes for
-        them. Returns whoever turned hostile, or None when it was only a warning.
+    def catch_thief(self, npc: NPC, player: Player, offence: str = "theft"):
+        """One villager catches the player at something, and makes up their mind about it.
+
+        Being seen is still the cones and nothing else. What they do about it is theirs: a
+        decision (`llm/decide.py`) over telling, looking away, or asking to be paid to
+        forget it, off who they are and how they feel about the player. They round on the
+        player and stand there deciding with a "?" over them for at most
+        `Crime.WITNESS_THINK_MS`, and `settle_witnesses` carries it out. Somebody already
+        deciding, or already waiting on their money, is not asked twice."""
+        if npc.pondering is not None or npc.hushing:
+            return
+        if npc.hostile:
+            self._report(npc, player, offence)
+            return
+        npc.aim_at(player.x, player.y)
+        npc.pondering_offence = offence
+        npc.pondering_until = pygame.time.get_ticks() + c.Crime.WITNESS_THINK_MS
+        args = (
+            self.context or c.World.FALLBACK_CONTEXT,
+            npc.name,
+            npc.temperament,
+            npc.affinity,
+            offence,
+            self.notoriety_at(npc.x, npc.y),
+        )
+        npc.pondering = later(lambda: self._witness_decides(*args))
+        self.witnesses.append(npc)
+
+    @staticmethod
+    def _witness_odds(temperament: str | None, affinity: float) -> dict:
+        return odds(
+            c.Crime.WITNESS_OFFLINE,
+            c.Crime.WITNESS_TEMPERAMENT_ODDS.get(temperament),
+            {"look_away": affinity / c.Affinity.START},
+        )
+
+    @classmethod
+    def _witness_decides(cls, context, name, temperament, affinity, offence, notoriety) -> str:
+        """The worker's half of `catch_thief`: what the witness does, as a label.
+
+        Asked of the model as a narrator rather than in the witness's own voice: asked as
+        themselves it hardly ever raised the alarm whoever they were, asked what somebody
+        of their kind does it answers like somebody who has met people."""
+        who = name or "The villager"
+        kind = c.Temperament.KINDS[temperament][0] if temperament in c.Temperament.KINDS else "an ordinary sort"
+        caught = {
+            "theft": "helping themselves to what is in a chest in somebody's house",
+            "squatting": "asleep in a bed that is not theirs",
+            "vandalism": "wrecking a room in somebody's house",
+        }
+        situation = (
+            f"{who} is a villager: {kind}. They have just caught the player {caught.get(offence, caught['theft'])}."
+        )
+        if notoriety >= c.Notoriety.NO_WARNING_LEVEL:
+            situation += " Word is the player has done worse elsewhere."
+        return decide(
+            situation,
+            f"What does {who} do?",
+            {
+                "report": "Raise the alarm",
+                "look_away": "Pretend not to have seen anything",
+                "blackmail": "Demand a bribe",
+            },
+            f"You narrate an RPG with this context: {context}.",
+            "witness",
+            offline=cls._witness_odds(temperament, affinity),
+            # Their liking is the game's to weigh rather than the model's: told the witness
+            # likes the player, it had a brave one ask for a bribe.
+            prior=odds(c.Crime.WITNESS_PRIOR, {"look_away": affinity / c.Affinity.START}),
+        ).choice
+
+    def settle_witnesses(self, player: Player) -> list[NPC]:
+        """Carry out whatever the witnesses have decided, and what the ones waiting on hush
+        money do when it does not come. Once a frame. Returns whoever turned on the player,
+        so the caller can strike their quests off."""
+        turned = []
+        now = pygame.time.get_ticks()
+        for npc in list(self.witnesses):
+            pending = npc.pondering
+            if not pending.done and now < npc.pondering_until:
+                continue
+            self.witnesses.remove(npc)
+            npc.pondering = None
+            if npc not in self.npcs:
+                continue
+            # A model too busy to answer in time is answered for it, off the same odds.
+            choice = pending.poll() if pending.done else None
+            if choice is None:
+                choice = pick(self._witness_odds(npc.temperament, npc.affinity))
+            if choice == "blackmail" and player.coins < c.Crime.HUSH_MIN:
+                choice = "report"
+            name = npc.name or "A villager"
+            if choice == "look_away":
+                if self.notify:
+                    self.notify(f"{name} saw that, and looks away", c.Colors.MUTED)
+            elif choice == "blackmail":
+                npc.hush_price = max(c.Crime.HUSH_MIN, round(player.coins * c.Crime.HUSH_SHARE))
+                npc.hush_until = time.time() + c.Crime.HUSH_WAIT_S
+                self.hushers.append(npc)
+                if self.notify:
+                    self.notify(f"{name} saw that. {npc.hush_price} coins and they forget it", c.Colors.ORANGE)
+            elif self._report(npc, player, npc.pondering_offence) is not None:
+                turned.append(npc)
+        for npc in list(self.hushers):
+            if npc.hush_price and time.time() < npc.hush_until:
+                continue
+            self.hushers.remove(npc)
+            if not npc.hush_price or npc not in self.npcs:
+                continue
+            npc.hush_price = 0
+            if self.notify:
+                self.notify(f"{npc.name or 'A villager'} got tired of waiting", c.Colors.ORANGE)
+            if self._report(npc, player, npc.pondering_offence) is not None:
+                turned.append(npc)
+        return turned
+
+    def pay_hush(self, npc: NPC, player: Player) -> bool:
+        """Pay a witness what they asked to forget it. False when the purse is short."""
+        if not npc.hushing or player.coins < npc.hush_price:
+            return False
+        player.add_coins(-npc.hush_price)
+        npc.hush_price = 0
+        play_sound("pickup")
+        if self.notify:
+            self.notify(f"{npc.name or 'They'} pockets it and forgets what they saw", c.Colors.YELLOW)
+        return True
+
+    def _report(self, npc: NPC, player: Player, offence: str) -> NPC | None:
+        """The witness tells: they warn the player or come for them. Returns whoever turned
+        hostile, or None when it was only a warning.
 
         The single exception to violence's all-or-nothing rule: what one person catches is
         between them and the player, so the rest of the village goes on with its day.

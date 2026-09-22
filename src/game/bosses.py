@@ -14,8 +14,10 @@ import threading
 from typing import TYPE_CHECKING
 
 import core.constants as c
+from core import mainthread
 from game.entities.boss import Boss
 from game.entities.village_sites import settlements_near_chunk
+from llm.decide import decide
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
@@ -168,10 +170,27 @@ class WorldBosses:
         prompt = f"World: {self.context}\nName {boss.template.flavor}. 2 to 5 words."
         text = generate_response_queued(prompt, system_prompt, "Boss naming") or ""
         boss.set_identity(text)
+        self._decide_leaning(boss)
         self.sync_quest_boss_names()
         self.persist_world()
         if announce and self.notify:
             self.notify(announce.format(name=boss.name), c.Colors.BOSS_BAR)
+
+    def _decide_leaning(self, boss: Boss):
+        """Which of its abilities a boss favours, read off the name it was just given: a
+        "Bonecaller" summons and a "Stormhand" throws. A decision over the abilities its
+        archetype already has, so it only ever reweights the roll (`Boss._use_ability`)."""
+        abilities = [ability for ability in boss.template.abilities if ability in c.Boss.LEANINGS]
+        if len(abilities) < 2:
+            return
+        leaning = decide(
+            f"World: {self.context}\nA boss called {boss.display_name}, {boss.template.flavor}.",
+            "Given its name, what does it fight with most?",
+            {ability: c.Boss.LEANINGS[ability] for ability in abilities},
+            "You design bosses for a dark fantasy RPG.",
+            "boss",
+        ).choice
+        mainthread.post(setattr, boss, "leaning", leaning)
 
     def sync_quest_boss_names(self):
         """Copy each boss's display name onto the slay_boss quest hunting it.

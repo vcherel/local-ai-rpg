@@ -38,3 +38,11 @@ class Hyperparameters:
     NAME_BUFFER: int = 3
     NAME_PROMPT_RECENT: int = 40
     NAME_RETRIES: int = 2
+
+
+@dataclass(frozen=True)
+class Decisions:
+    # The model's leaning over the answer letters is divided by this before the softmax.
+    # Above 1 flattens it, so a 90/10 lean still comes out the other way now and then;
+    # a decision is odds the model sets and a draw that settles them (`llm/decide.py`).
+    TEMPERATURE: float = 1.6

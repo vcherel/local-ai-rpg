@@ -101,8 +101,11 @@ class ShopMenu(BaseMenu):
         return _affinity_swing(self.merchant) - self.notoriety * c.Notoriety.MAX_PRICE_SWING
 
     def _buy_price(self, item: Item) -> int:
+        """What they charge, with whatever they agreed to take off when the player talked
+        them down in conversation (`NPC.discount`, `DialogueManager._land_haggle`)."""
         swing = self._swing()
-        return max(1, round(self.merchant.shop_prices[item.id] * self.player.buy_multiplier() * (1.0 - swing)))
+        price = self.merchant.shop_prices[item.id] * self.player.buy_multiplier() * (1.0 - swing)
+        return max(1, round(price * (1.0 - self.merchant.discount)))
 
     def _sell_price(self, item: Item) -> int:
         swing = self._swing()

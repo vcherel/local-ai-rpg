@@ -201,6 +201,22 @@ def parse_response_quest_analysis(response):
     return result_dict
 
 
+def parse_quest_fields(response) -> dict | None:
+    """The details of a quest already known to be one (`QuestSystem.analyze_conversation_for_quest`
+    decides that, its type and whether it was taken without writing anything), or None when
+    there are none worth building a quest from."""
+    result = _repaired_json(response)
+    if result is None:
+        return None
+    fields = {
+        field: result.get(field, "")
+        for field in ("quest_description", "item_name", "reward_item", "monster_hint", "kill_count")
+    }
+    if not (fields["quest_description"] or fields["item_name"] or fields["monster_hint"]):
+        return None
+    return fields
+
+
 def _as_bool(value, default: bool) -> bool:
     """Read a flag the model may have written as a JSON boolean or as text.
 

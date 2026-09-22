@@ -271,6 +271,27 @@ class Crime:
     # which is what makes a tavern room something taken rather than something free.
     SQUAT_WITNESS_RADIUS: float = 620.0
 
+    # What somebody who catches the player does about it is theirs to decide
+    # (`WorldSocial.catch_thief`): tell, look away, or ask to be paid to forget it. Getting
+    # caught is still the cones and nothing else; what follows is the witness's character.
+    # How long they stand there deciding, with a "?" over them, before it lands anyway.
+    WITNESS_THINK_MS: int = 2500
+    # Odds with no model, and how the witness's temperament moves them. With a model, its
+    # own reading of the witness is multiplied by WITNESS_PRIOR instead: most people tell.
+    WITNESS_OFFLINE = {"report": 0.7, "look_away": 0.15, "blackmail": 0.15}
+    WITNESS_PRIOR = {"report": 2.5}
+    WITNESS_TEMPERAMENT_ODDS = {
+        "kind": {"look_away": 3.0},
+        "greedy": {"blackmail": 3.0},
+        "hotheaded": {"report": 1.5, "look_away": 0.3},
+        "timid": {"look_away": 1.8, "blackmail": 0.4},
+    }
+    # Hush money: a share of what the player carries, never less than the floor, and how
+    # long they wait for it before they tell after all.
+    HUSH_SHARE: float = 0.2
+    HUSH_MIN: int = 15
+    HUSH_WAIT_S: float = 30.0
+
 
 @dataclass(frozen=True)
 class Buildings:

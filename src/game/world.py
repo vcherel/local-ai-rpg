@@ -260,6 +260,10 @@ class World(
         self._shops_generating = False
         self._landmark_naming = False
         self._naming_villages: set = set()
+        # What each settlement's people are like, by chunk: the decision still out, then the
+        # mix it came back as (`WorldStreaming._settle_temperaments`). Session-only; what is
+        # kept is each villager's own draw from it.
+        self._temperaments: dict = {}
         # Counts down to the next look around for a settlement worth preparing; see
         # `WorldStreaming._prepare_settlements_near`. Nothing here is urgent to the frame.
         self._prepare_timer = 0.0
@@ -323,6 +327,12 @@ class World(
         # or quitting would be a way of starting over on a clean slate. Strikes older than
         # the window are dropped rather than loaded.
         self.village_strikes = self._load_strikes(self.save_system.load("village_strikes", {}))
+        # Settlements that would not be talked down, until when (`WorldSocial.refuse_parley`);
+        # the witnesses still deciding what to do about what they saw, and the ones waiting
+        # to be paid to forget it (`WorldSocial.catch_thief`). All session-only.
+        self.parleys_refused: dict[str, float] = {}
+        self.witnesses: list = []
+        self.hushers: list = []
         # What the player has done that people repeat, as points on the map with a weight and
         # a time (`WorldSocial.record_deed`). A grudge belongs to the settlement holding it;
         # this is what the settlement over the hill has heard, so it is kept by where it

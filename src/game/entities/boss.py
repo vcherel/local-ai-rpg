@@ -82,6 +82,10 @@ class Boss(Monster):
         # first world's landmark guardian. A cave's warden and a quest's hunt target are the
         # same thing, told apart by `camp_id` and `quest_tag`; see `counts_against_cap`.
         self.fixture = False
+        # The ability it favours, decided by the model off the name it was given
+        # (`WorldBosses._decide_leaning`): rolled `Boss.LEANING_WEIGHT` times as often as
+        # each of the others. None rolls them evenly, as every boss did before.
+        self.leaning: str | None = None
 
     # ------------------------------------------------------------------ identity / save
 
@@ -124,6 +128,7 @@ class Boss(Monster):
             "enraged": self.enraged,
             "quest_tag": self.quest_tag,
             "fixture": self.fixture,
+            "leaning": self.leaning,
         }
 
     @classmethod
@@ -137,6 +142,7 @@ class Boss(Monster):
         # the ground again: an arrival is something the player watched happen once.
         boss.rising = 0.0
         boss.fixture = data.get("fixture", False)
+        boss.leaning = data.get("leaning")
         boss._apply_shrink(quiet=True)
         if data.get("enraged"):
             boss._apply_enrage_stats()
@@ -287,7 +293,8 @@ class Boss(Monster):
         options = [a for a in self.template.abilities if not (a == "slam" and self.slam_windup > 0)]
         if not options:
             return
-        ability = random.choice(options)
+        weights = [c.Boss.LEANING_WEIGHT if ability == self.leaning else 1.0 for ability in options]
+        ability = random.choices(options, weights=weights)[0]
         if ability == "slam":
             self._start_slam()
         elif ability == "volley":

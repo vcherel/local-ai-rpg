@@ -6,17 +6,45 @@ import re
 from typing import TYPE_CHECKING
 
 import core.constants as c
-from core.utils import parse_response_quest_analysis
+from core.utils import parse_quest_fields
 from game.entities.buildings import random_open_coordinates
 from game.entities.items import Item, item_type_from_name, roll_bonus, roll_rarity
 from game.entities.npcs import NPC
 from game.loot import roll_reward_item
 from game.quest import COUNTED_QUEST_TYPES, Quest
+from llm.decide import decide
 from llm.llm_request_queue import generate_response_queued
 
 if TYPE_CHECKING:
     from game.entities.player import Player
     from llm.name_generator import NPCNameGenerator
+
+
+YES_NO = {"yes": "Yes", "no": "No"}
+# Every kind of quest a conversation can hand out, as put to the model when it is asked
+# which one it was.
+QUEST_KINDS = {
+    "fetch": "bring back a specific item",
+    "kill_mob": "kill a number of a kind of monster or creature",
+    "loot_mob": "kill monsters of a kind until a specific item drops from them",
+    "recover_stolen": "recover a specific item somebody else stole from the NPC",
+    "slay_boss": "defeat a single powerful named boss, beast or warlord",
+    "clear_camp": "wipe out a bandit camp in the wilds",
+    "steal": "steal a specific item from a neighbour's house",
+    "deliver": "carry a specific item to another person and come back",
+}
+
+
+def _no_quest() -> dict:
+    return {
+        "has_quest": False,
+        "quest_type": "",
+        "quest_description": "",
+        "item_name": "",
+        "reward_item": "",
+        "monster_hint": "",
+        "kill_count": "",
+    }
 
 
 def coin_band(quest: Quest) -> tuple[int, int]:
@@ -79,47 +107,65 @@ class QuestSystem:
     def analyze_conversation_for_quest(self, conversation_history: str) -> dict:
         """Returns {has_quest, quest_type, quest_description, item_name, monster_hint,
         kill_count, reward_item}. `has_quest` already accounts for the player's answer: a
-        task the player turned down is not a quest, however clearly the NPC offered it."""
+        task the player turned down is not a quest, however clearly the NPC offered it.
+
+        Whether there is a quest, whether it was taken and what kind it is are decisions
+        (`llm/decide.py`), read off the model without it writing a word; only the details,
+        which are names and numbers out of the conversation, are written. Most conversations
+        hold no quest at all, and those cost one pass over the conversation and nothing else."""
         system_prompt = (
-            "You are a conversation analyzer for an RPG game. "
-            "Analyze the conversation and determine whether the NPC gave the player a quest, "
-            "and whether the player agreed to do it. "
-            "A quest is one of: "
-            "fetch (bring back a specific item), "
-            "kill_mob (kill a number of a kind of monster or creature), "
-            "loot_mob (kill monsters of a kind until a specific item drops from them), "
-            "recover_stolen (recover a specific item that was stolen from the NPC by someone else), "
-            "slay_boss (defeat a single powerful named boss, beast or warlord terrorizing the area), "
-            "clear_camp (wipe out a bandit camp in the wilds), "
-            "steal (steal a specific item from a neighbour's house), "
-            "deliver (carry a specific item to another person and come back). "
-            "Set player_accepted to false if the player refused, changed the subject, left without "
-            "answering, or only listened to a rumour or a complaint. "
-            "Reply ONLY with valid JSON, with no extra text."
+            "You are a conversation analyzer for an RPG game. You read a conversation between the player and an NPC."
         )
+        offered = decide(
+            f"Conversation:\n{conversation_history}",
+            "Did the NPC ask the player to do a task for them?",
+            YES_NO,
+            system_prompt,
+            "quest",
+            offline={"no": 1.0},
+            draw=False,
+        )
+        if offered.choice == "no":
+            return _no_quest()
+        accepted = decide(
+            f"Conversation:\n{conversation_history}",
+            "Did the player agree to do it? No if they refused, changed the subject, left without answering, "
+            "or only listened to a rumour or a complaint.",
+            YES_NO,
+            system_prompt,
+            "quest",
+            draw=False,
+        )
+        if accepted.choice == "no":
+            return _no_quest()
+        quest_type = decide(
+            f"Conversation:\n{conversation_history}",
+            "Which kind of task is it?",
+            QUEST_KINDS,
+            system_prompt,
+            "quest",
+            draw=False,
+        ).choice
 
         json_format = (
-            '{"has_quest": true/false, "player_accepted": true/false,'
-            ' "quest_type": "fetch/kill_mob/loot_mob/recover_stolen/slay_boss/clear_camp/steal/deliver",'
-            ' "quest_description": "short description",'
+            '{"quest_description": "short description",'
             ' "item_name": "item to fetch, loot, recover, steal or deliver, empty otherwise",'
-            ' "monster_hint": "kind of monster or creature involved, empty for fetch/recover_stolen",'
+            ' "monster_hint": "kind of monster or creature involved, empty otherwise",'
             ' "kill_count": "number to kill, only for kill_mob",'
             ' "reward_item": "item the NPC will give as reward, empty string if only coins"}'
         )
-        no_quest = (
-            "{'has_quest': false, 'player_accepted': false, 'quest_type': '', 'quest_description': '',"
-            " 'item_name': '', 'monster_hint': '', 'kill_count': '', 'reward_item': ''}"
-        )
         prompt = (
             f"Conversation:\n{conversation_history}\n\n"
-            f"Analyze this conversation. Reply with this exact JSON format:\n"
-            f"{json_format}\n"
-            f"If there is no quest, use: {no_quest}"
+            f"The NPC gave the player this task: {QUEST_KINDS[quest_type]}. "
+            f"Reply with its details in this exact JSON format:\n{json_format}"
         )
-
-        response = generate_response_queued(prompt, system_prompt, "Conversation analyze")
-        return parse_response_quest_analysis(response)
+        response = generate_response_queued(
+            prompt, system_prompt + " Reply ONLY with valid JSON, with no extra text.", "Conversation analyze", raw=True
+        )
+        fields = parse_quest_fields(response)
+        if fields is None:
+            return _no_quest()
+        return {"has_quest": True, "quest_type": quest_type, **fields}
 
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict, npc_name_generator: NPCNameGenerator):
         """Turn the model's reading of the conversation into a real quest, or into nothing.

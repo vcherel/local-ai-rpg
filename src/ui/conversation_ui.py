@@ -75,7 +75,7 @@ class ConversationUI:
         box_y = c.Screen.HEIGHT - self.BOX_HEIGHT - 25
         return pygame.Rect(c.Screen.WIDTH - 22 - self.CLOSE_SIZE, box_y + 12, self.CLOSE_SIZE, self.CLOSE_SIZE)
 
-    def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False):
+    def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False, reaction: tuple | None = None):
         box_height = self.BOX_HEIGHT
         box_y = c.Screen.HEIGHT - box_height - 25
 
@@ -84,6 +84,14 @@ class ConversationUI:
 
         name_surface = c.Fonts.title.render(npc_name, True, c.Colors.YELLOW)
         self.screen.blit(name_surface, (25, box_y + 10))
+        # How the last line landed with them, beside their name for a moment.
+        if reaction is not None:
+            text, color = reaction
+            said = c.Fonts.medium.render(text, True, color)
+            self.screen.blit(
+                said,
+                (25 + name_surface.get_width() + 24, box_y + 10 + (name_surface.get_height() - said.get_height()) // 2),
+            )
 
         self._draw_close_button()
         self._draw_messages(self.screen, box_y, npc_name, history.messages)

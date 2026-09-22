@@ -14,6 +14,7 @@ from game.entities.terrain import blocking_cells, generate_chunk_scenery, water_
 from game.entities.traps import traps_for_chunk
 from game.entities.village_generation import generate_village
 from game.entities.village_sites import village_site
+from llm.decide import Pending, decide, later
 from llm.llm_request_queue import generate_response_queued, generate_response_stream_queued
 
 if TYPE_CHECKING:
@@ -452,6 +453,8 @@ class WorldStreaming:
                 and any(village.contains_point(npc.x, npc.y) for village in near)
             ]
         )
+        for village in near:
+            self._settle_temperaments(village)
         # And a name waiting for the first villager they speak to, which is the one thing
         # here the player would otherwise stand and wait for.
         npc_name_generator.start_generation()
@@ -469,6 +472,45 @@ class WorldStreaming:
                 self.persist_world()
         finally:
             self._naming_villages.discard(village.chunk)
+
+    def _settle_temperaments(self, village: Village):
+        """Give everybody in this settlement a temperament, off what the model says its
+        people are like.
+
+        One decision per settlement (`llm/decide.py`), asked once it has a name to be asked
+        about, and its whole leaning over `Temperament.KINDS` is kept as the place's mix
+        rather than its one answer: each villager is then a draw from that mix, off their
+        own home, so the same house is always the same person and a town the lore calls
+        fearful is mostly, not entirely, timid. A save that already holds everybody's asks
+        nothing at all."""
+        people = [npc for npc in self.villagers_of(village) if npc.temperament is None]
+        if not people:
+            return
+        mix = self._temperaments.get(village.chunk)
+        if mix is None:
+            if not village.name:
+                return
+            prompt = f"World: {self.context}\nThe settlement of {village.name}, a {village.size} in the wilds."
+            self._temperaments[village.chunk] = later(
+                lambda: (
+                    decide(
+                        prompt,
+                        "What are most of the people who live here like?",
+                        {kind: text for kind, (text, _) in c.Temperament.KINDS.items()},
+                        "You describe the people of places in an RPG world.",
+                        "temperament",
+                    ).probs
+                )
+            )
+            return
+        if isinstance(mix, Pending):
+            if not mix.done:
+                return
+            mix = self._temperaments[village.chunk] = mix.poll() or dict.fromkeys(c.Temperament.KINDS, 1.0)
+        kinds = list(mix)
+        for npc in people:
+            rng = random.Random(f"temperament:{round(npc.home[0])}:{round(npc.home[1])}")
+            npc.temperament = rng.choices(kinds, weights=[mix[kind] for kind in kinds])[0]
 
     def _check_village_discovery(self, player: Player):
         """Walking into a village for the first time announces it. Held back until the name

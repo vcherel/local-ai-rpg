@@ -275,8 +275,9 @@ STAT_LABELS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class Affinity:
-    # Per-NPC relationship level. Starts neutral, moves from concrete player
-    # actions toward that NPC rather than an LLM judgment of conversation tone.
+    # Per-NPC relationship level. Starts neutral, moves from concrete player actions toward
+    # that NPC, and from how each line the player says to them lands (`MOOD_SHIFT`): a
+    # decision the model makes over four fixed readings, never a number it writes.
     START: float = 50.0
     MIN: float = 0.0
     MAX: float = 100.0
@@ -296,6 +297,24 @@ class Affinity:
 
     # Shop buy/sell price swing between MIN and MAX affinity, on top of bartering.
     MAX_PRICE_SWING: float = 0.15
+
+    # What one line of the player's is worth to the person hearing it, by how they took it
+    # (`DialogueManager._judge_turn`), and the most talking can earn with one person in one
+    # conversation. Losing it has no cap: flattery is farmed, an insult is not.
+    MOOD_SHIFT = {"pleased": 3.0, "neutral": 0.0, "annoyed": -3.0, "insulted": -8.0}
+    TALK_GAIN_CAP: float = 9.0
+
+
+@dataclass(frozen=True)
+class Haggle:
+    # Asking a merchant to come down, in the conversation rather than at the counter. The
+    # model decides whether a line is a haggle and how the merchant takes it; what each
+    # answer is worth off every buy price, for the rest of the session, is here.
+    DISCOUNT = {"accept": 0.15, "counter": 0.07, "refuse": 0.0}
+    # A merchant who says no takes being asked as a slight, a small one.
+    REFUSE_AFFINITY: float = -2.0
+    # Odds with no model, before the bartering skill and the merchant's liking move them.
+    OFFLINE = {"accept": 0.2, "counter": 0.4, "refuse": 0.4}
 
 
 @dataclass(frozen=True)

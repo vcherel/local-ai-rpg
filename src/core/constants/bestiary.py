@@ -679,6 +679,15 @@ class Boss:
 
     # Special abilities fire on this cooldown (ms), randomised within the range.
     ABILITY_COOLDOWN_RANGE_MS: tuple = (4500, 7000)
+    # What a boss leans on, decided by the model off the name it was given
+    # (`WorldBosses._decide_leaning`), as how many times likelier that ability is rolled
+    # than each of the others it has. Never a new ability and never a number on its body.
+    LEANING_WEIGHT: float = 3.0
+    LEANINGS = {
+        "slam": "crushing blows that shake the ground",
+        "volley": "bolts and missiles hurled from afar",
+        "summon": "calling servants and beasts to fight for it",
+    }
 
     # Slam: a telegraphed ground pound. Warns for TELEGRAPH_MS, then damages anyone
     # still within RADIUS of the boss.

@@ -196,9 +196,23 @@ class GameInteractions:
     def _offer_npc(self):
         """Whoever is close enough to talk to, and the reason they won't when they won't."""
         npc = self.world.npc_in_reach(self.player)
-        # A merchant still waiting on its stock, someone who has turned on the player, or a
-        # world whose context hasn't generated yet: no prompt for something the key wouldn't do.
-        if npc is None or not npc.can_talk or self.world.context is None or (npc.is_merchant and not npc.shop_ready):
+        if npc is None or self.world.context is None:
+            return
+        where = (npc.x, npc.y - c.Entities.NPC_SIZE)
+        # Somebody who saw the player at something and wants paying to forget it.
+        if npc.hushing:
+            label = f"E: pay {npc.hush_price} coins for their silence"
+            yield self._reach(npc.x, npc.y), Interaction("hush", npc, label, *where)
+            return
+        # Somebody who has turned on the player may still hear them out, while their
+        # settlement's anger is the kind that can be talked down (`World.parley_open`).
+        if npc.hostile:
+            if self.world.parley_open(npc) and not llm_busy():
+                label = f"E: plead with {npc.name}" if npc.name else "E: plead with them"
+                yield self._reach(npc.x, npc.y), Interaction("plead", npc, label, *where)
+            return
+        # A merchant still waiting on its stock: no prompt for something the key wouldn't do.
+        if npc.is_merchant and not npc.shop_ready:
             return
         if self._threat_nearby():
             # Nobody stands in the street making conversation with a wolf twenty paces

@@ -14,6 +14,8 @@ from core.utils import ConversationHistory
 from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import potion_description
 from game.quest import COUNTED_QUEST_TYPES
+from llm import offline
+from llm.decide import decide, later, odds
 from llm.llm_request_queue import generate_response_stream_queued
 from llm.quest_system import QuestSystem, coin_band
 from ui import widgets
@@ -24,19 +26,6 @@ if TYPE_CHECKING:
     from game.entities.npcs import NPC
     from game.world import World
     from llm.name_generator import NPCNameGenerator
-
-END_MARKER = "[END]"
-
-# The model is asked for "[END]" but writes it however it likes: bare END, on its own
-# line, bolded, parenthesised, "[end of conversation]". Bracketed forms match in any
-# case; a bare END must be uppercase so an NPC saying "we must end this" isn't a goodbye.
-END_RE = re.compile(
-    # [END], (end of conversation), **[END]**, in any case
-    r"(?i:[\*\s]*[\[\(]\s*end\b[^\]\)]*[\]\)]?[\*\s]*)"
-    # A bare END, uppercase and closing the reply: an all-caps word mid-sentence
-    # ("I will END this curse") is emphasis, not a goodbye.
-    r"|(?<=[.!?…\"'\)\n])\s*\*{0,2}\bEND\b\*{0,2}[\s.]*$"
-)
 
 # Sentence enders used to trim a reply that ran into the token cap mid-sentence.
 SENTENCE_END_RE = re.compile(r"[.!?…]['\"]?(?=\s|$)")
@@ -54,6 +43,29 @@ DIALOGUE_STOPS = ["Player:", "player:"]
 GREETER_TASK = "the errand is:"
 
 PLACEHOLDER_RE = re.compile(r"\s*[\[{][^\]}]{0,60}[\]}]")
+
+
+# How a line of the player's can land, as put to the person hearing it. The labels are the
+# keys of `Affinity.MOOD_SHIFT`, which says what each is worth.
+MOODS = {
+    "pleased": "It pleased you",
+    "neutral": "It neither pleased nor bothered you",
+    "annoyed": "It annoyed you",
+    "insulted": "It insulted or offended you",
+}
+YES_NO = {"yes": "Yes", "no": "No"}
+HAGGLE_ANSWERS = {
+    "accept": "Agree to a good discount",
+    "counter": "Offer only a small discount",
+    "refuse": "Refuse to lower your prices",
+}
+PLEAS = {
+    "good": "Good: sincere, apologetic, or offering to make amends",
+    "poor": "Poor: dismissive or unconvincing",
+    "bad": "Bad: insulting or threatening",
+}
+# What the player is shown in the box's header for each reading, and for how long.
+REACTION_MS = 3500
 
 
 # What an NPC is told about the quest they gave, per quest type: the line for a task just
@@ -98,6 +110,16 @@ FETCH_LINES = (
 )
 
 
+def _deal_line(discount: float) -> str:
+    """What a merchant who has been asked for a better price remembers about their answer."""
+    if discount <= 0:
+        return "The player asked you for a better price and you refused; you will not change your mind. "
+    return (
+        f"The player asked you for a better price and you agreed to take {round(discount * 100)}% off "
+        "everything you sell them; say so if it comes up, and go no lower. "
+    )
+
+
 def _ware_effect(item) -> str:
     """How a shop item is described to the merchant's LLM prompt: what it actually does."""
     if item.item_type == "potion":
@@ -109,20 +131,11 @@ def _strip_placeholders(text: str) -> str:
     """Drop a fill-in the model left in the reply, e.g. "here is [describe coins]".
 
     Asked to hand over a reward, the model sometimes writes the instruction back instead of
-    a number, in the bracket style [END] taught it. Nothing in a spoken line is ever meant
-    to be in brackets, so they come out whatever is inside them.
+    a number, in brackets. Nothing in a spoken line is ever meant to be in brackets, so they
+    come out whatever is inside them.
     """
     text = PLACEHOLDER_RE.sub(" ", text)
     return re.sub(r"\s{2,}", " ", text).strip()
-
-
-def _trim_partial_marker(text: str) -> str:
-    # Hide an end marker that is still streaming in, e.g. a trailing "[EN"
-    upper = text.upper()
-    for length in range(len(END_MARKER) - 1, 0, -1):
-        if upper.endswith(END_MARKER[:length]):
-            return text[:-length]
-    return text
 
 
 def _trim_to_sentence(text: str) -> str:
@@ -163,6 +176,24 @@ class DialogueManager:
         self.shop_requested = False
         self.shop_button_rect: pygame.Rect | None = None
 
+        # Decisions read off the conversation (`llm/decide.py`), on a thread, and what to do
+        # with them on the main thread once they land. One at a time, and the box takes no
+        # typing while one is out: the next line would be read against a conversation that
+        # has already moved on.
+        self._judging = None
+        self._on_judged = None
+        # What talking has earned with this person so far this conversation
+        # (`Affinity.TALK_GAIN_CAP`), and the reading shown in the box's header.
+        self._talk_gain = 0.0
+        self._reaction: tuple[str, tuple] | None = None
+        self._reaction_until = 0
+        # Talking an angry villager down rather than chatting (`Parley`): how many lines the
+        # player has had, and whether it worked.
+        self.parley = False
+        self._parley_turns = 0
+        self._parley_good = 0
+        self._parley_won = False
+
         self.conversation = ConversationHistory()
         self.ui = ConversationUI(screen)
         self.quest_system = QuestSystem(items, player, npcs)
@@ -170,7 +201,7 @@ class DialogueManager:
 
     def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool, delivered: str = "") -> str:
         persuasion_hint = self.quest_system.player.stats.persuasion_descriptor()
-        affinity_hint = npc.affinity_descriptor()
+        affinity_hint = npc.temperament_descriptor() + npc.affinity_descriptor()
 
         if npc.is_merchant:
             system_prompt = (
@@ -190,10 +221,10 @@ class DialogueManager:
                 system_prompt += f"You sell: {wares}. "
             else:
                 system_prompt += "You are a trader who buys and sells adventuring gear. "
+            if npc.haggled:
+                system_prompt += _deal_line(npc.discount)
             system_prompt += (
-                "Reply naturally to messages in one short sentence. You can mention your wares but keep it brief. "
-                "Usually just reply normally. Only if the player says goodbye, or you have clearly finished "
-                f"your business with them, add {END_MARKER} after your reply."
+                "Reply naturally to messages in one short sentence. You can mention your wares but keep it brief."
             )
             return system_prompt
 
@@ -236,12 +267,23 @@ class DialogueManager:
             )
 
         system_prompt += (
-            "Reply naturally to messages, staying within the context of the conversation, in one short sentence. "
-            "Usually just reply normally. Only if the player says goodbye, or you have clearly finished "
-            f"your business with them, add {END_MARKER} after your reply."
+            "Reply naturally to messages, staying within the context of the conversation, in one short sentence."
         )
 
         return system_prompt
+
+    @staticmethod
+    def _build_parley_prompt(npc: NPC, context: str) -> str:
+        """An angry villager with the player at weapon point, and the player talking."""
+        return (
+            f"You are {npc.name}, an NPC in an RPG with this context: {context}. "
+            "Your village has turned on the player for what they did here, and you have them at weapon point. "
+            "They are trying to talk their way out of it. You are angry, but you would rather not spill blood "
+            "if they can convince you to let it go. "
+            + npc.temperament_descriptor()
+            + npc.affinity_descriptor()
+            + "Reply in character, in one short sentence."
+        )
 
     def _quest_lines(self, quest, quest_complete: bool) -> str:
         """What to tell an NPC about the quest they gave: that the player has just finished
@@ -286,16 +328,22 @@ class DialogueManager:
         promise = f"You promised them your {quest.reward_item_name} as a reward. " if quest.reward_item_name else ""
         return asked_line.format(**fields) + promise + pending_line.format(**fields)
 
-    def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, world: World):
+    def interact_with_npc(self, npc: NPC, npc_name_generator: NPCNameGenerator, world: World, parley: bool = False):
         npc.assign_name(npc_name_generator)
         self._npc_name_generator = npc_name_generator
+        self.parley = parley
+        self._parley_turns = 0
+        self._parley_good = 0
+        self._parley_won = False
+        self._talk_gain = 0.0
+        self._reaction = None
 
         # Walking up to the person a parcel is addressed to is the delivery: it happens as
         # the conversation opens, so they can react to it in their first line.
-        delivered_quest = self.quest_system.on_delivery(npc)
+        delivered_quest = None if parley else self.quest_system.on_delivery(npc)
 
         quest_complete = False
-        if npc.has_active_quest and id(npc.quest) not in self._completing:
+        if not parley and npc.has_active_quest and id(npc.quest) not in self._completing:
             quest = npc.quest
             if quest.quest_type in COUNTED_QUEST_TYPES:
                 quest_complete = quest.kills_done >= quest.kill_count
@@ -304,9 +352,12 @@ class DialogueManager:
         if quest_complete:
             self.pending_quest_completion = npc
 
-        self.system_prompt = self._build_system_prompt(
-            npc, world.context, quest_complete, delivered=delivered_quest.item_name if delivered_quest else ""
-        )
+        if parley:
+            self.system_prompt = self._build_parley_prompt(npc, world.context)
+        else:
+            self.system_prompt = self._build_system_prompt(
+                npc, world.context, quest_complete, delivered=delivered_quest.item_name if delivered_quest else ""
+            )
 
         self.current_npc = npc
         self.active = True
@@ -326,7 +377,7 @@ class DialogueManager:
         self.ui.reset()
         self.pending_quest_analysis = False
 
-        initial_prompt = "Player: Hi!\nNPC:"
+        initial_prompt = "Player: Wait! Hear me out!\nNPC:" if parley else "Player: Hi!\nNPC:"
         self.generator = generate_response_stream_queued(
             initial_prompt,
             self.system_prompt,
@@ -391,7 +442,7 @@ class DialogueManager:
         # nothing until it is finished. Before the stream was polled the main thread was
         # blocked here anyway; now it is not, and sending mid-stream would abandon a reply
         # halfway through writing itself.
-        if not self.active or self.conversation_ended or self.generator is not None:
+        if not self.active or self.conversation_ended or self.generator is not None or self._judging is not None:
             return
 
         message = self.ui.handle_text_input(event)
@@ -405,6 +456,10 @@ class DialogueManager:
         self.ui.scroll(direction, self.conversation, self.current_npc.name)
 
     def update(self):
+        if self.active and self._judging is not None and self._judging.done:
+            pending, landed = self._judging, self._on_judged
+            self._judging = self._on_judged = None
+            landed(pending.poll())
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
@@ -412,17 +467,6 @@ class DialogueManager:
                 # the game keeps running and the spinner keeps saying the NPC is thinking.
                 if partial is None:
                     return
-                match = END_RE.search(partial)
-                if match:
-                    stripped = partial[: match.start()].rstrip()
-                    # The model sometimes tags [END] on the opening greeting, or right
-                    # after asking the player a question, both premature. Drop the tag
-                    # but keep the conversation open in those cases.
-                    if not self._is_first_message and not stripped.endswith("?"):
-                        self.conversation_ended = True
-                    partial = stripped
-                else:
-                    partial = _trim_partial_marker(partial)
                 self.conversation.update_last_assistant_message(_strip_placeholders(partial))
                 self.ui.auto_scroll(self.conversation, self.current_npc.name)
                 self.waiting_for_llm = False
@@ -439,26 +483,29 @@ class DialogueManager:
                     if len(cleaned_content) <= 25:
                         content = cleaned_content
 
-                # Second pass on the finished text: catches an end marker that only
-                # became recognisable once the reply was complete, and trims a reply the
-                # token cap cut off mid-sentence.
-                match = END_RE.search(content)
-                if match:
-                    content = content[: match.start()].rstrip()
-                    if not was_first_message and not content.endswith("?"):
-                        self.conversation_ended = True
+                # Trims a reply the token cap cut off mid-sentence.
                 content = _trim_to_sentence(_strip_placeholders(content))
 
                 self.conversation.update_last_assistant_message(content)
                 self.ui.auto_scroll(self.conversation, self.current_npc.name)
+                # Whether it is over, and how the player's last line landed, is asked once
+                # the reply it drew is whole. The opening line answers nothing the player said.
+                if not was_first_message:
+                    self._judge_turn(content)
 
     def close(self):
         if not self.active:
             return
 
         # Escape can be pressed mid-stream; abandon the in-flight generator rather than
-        # waiting for it, so closing the dialogue is never blocked on the LLM.
+        # waiting for it, so closing the dialogue is never blocked on the LLM. A decision
+        # still out is dropped with it: it was about a conversation that is over.
         self.generator = None
+        self._judging = self._on_judged = None
+        # Walking away from a parley is the villager's answer made for them, so a fight
+        # cannot be paused by opening a box and shutting it again.
+        if self.parley and not self._parley_won and self.quest_system.world is not None:
+            self.quest_system.world.refuse_parley(self.current_npc)
 
         log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
 
@@ -472,7 +519,7 @@ class DialogueManager:
         # behind it for nothing.
         player_spoke = any(msg["role"] == "user" for msg in self.conversation.messages)
         npc = self.current_npc
-        if player_spoke and not greeter_intro and not npc.has_active_quest and not npc.is_merchant:
+        if player_spoke and not greeter_intro and not self.parley and not npc.has_active_quest and not npc.is_merchant:
             self.pending_quest_analysis = True
 
         self._execute_pending_actions(log_path)
@@ -484,6 +531,7 @@ class DialogueManager:
         self.ui.reset()
         self.conversation_ended = False
         self.pending_quest_completion = None
+        self.parley = False
 
     def _greeter_offer(self, npc: NPC) -> dict | None:
         """The first quest as `World.intro_offer` rolled it, off the greeter's own town."""
@@ -541,7 +589,8 @@ class DialogueManager:
             return
 
         self.update()
-        self.ui.draw(self.current_npc.name, self.conversation, self.conversation_ended)
+        reaction = self._reaction if pygame.time.get_ticks() < self._reaction_until else None
+        self.ui.draw(self.current_npc.name, self.conversation, self.conversation_ended, reaction)
 
         if self.current_npc.is_merchant and self.generator is None:
             box_height = self.ui.BOX_HEIGHT
@@ -580,9 +629,37 @@ class DialogueManager:
 
         self.conversation.add_user_message(message)
         self._is_first_message = False
+        self.waiting_for_llm = True
 
+        # A merchant hears a line as a haggle or not before answering it, so what they say
+        # back is the deal they actually struck.
+        npc = self.current_npc
         conversation_text = self.conversation.format_for_prompt()
+        if self.parley:
+            args = (npc.temperament, conversation_text)
+            self._await(lambda: self._read_plea(*args), self._land_plea)
+            return
+        # A warning standing against the player here is something an apology can take back.
+        world = self.quest_system.world
+        sorry = world is not None and bool(world.warnings_at(npc.x, npc.y))
+        if npc.is_merchant or sorry:
+            haggle = (npc.haggled, npc.affinity, npc.temperament) if npc.is_merchant else None
+            args = (haggle, sorry, self.system_prompt, conversation_text, message)
+            self._await(lambda: self._read_before_reply(*args), self._land_before_reply)
+            return
+        self._reply()
 
+    def _await(self, work, landed):
+        self._judging = later(work)
+        self._on_judged = landed
+
+    def _react(self, text: str, color: tuple):
+        self._reaction = (text, color)
+        self._reaction_until = pygame.time.get_ticks() + REACTION_MS
+
+    def _reply(self):
+        """Ask for the NPC's next line over the conversation as it stands."""
+        conversation_text = self.conversation.format_for_prompt()
         self.generator = generate_response_stream_queued(
             conversation_text + "\nNPC:",
             self.system_prompt,
@@ -591,6 +668,186 @@ class DialogueManager:
             stop=DIALOGUE_STOPS,
             poll=True,
         )
+
+    @classmethod
+    def _read_before_reply(cls, haggle, sorry, system_prompt, conversation_text, message) -> dict:
+        """What has to be known before the NPC answers a line, so the answer can say it: a
+        haggle struck with a merchant, an apology accepted."""
+        out = {}
+        if haggle is not None:
+            out["haggle"] = cls._read_haggle(*haggle, system_prompt, conversation_text, message)
+        if sorry:
+            out["apology"] = decide(
+                "The player was warned by an NPC's village for something they did there.\n"
+                f"Conversation:\n{conversation_text}",
+                "Is the player's last line a sincere apology?",
+                YES_NO,
+                "You judge conversations in an RPG game.",
+                "conversation",
+                offline=offline.says(offline.APOLOGY_RE, message),
+                draw=False,
+            ).choice
+        return out
+
+    def _land_before_reply(self, out: dict | None):
+        out = out or {}
+        npc = self.current_npc
+        world = self.quest_system.world
+        if "haggle" in out:
+            self._land_haggle(out["haggle"])
+        if out.get("apology") == "yes" and world is not None and world.forgive_strikes(npc):
+            self.system_prompt += "The player has apologised for what they did here and you accept it. "
+            self._react(f"{npc.name} lets it go", c.Colors.GREEN)
+        self._reply()
+
+    @staticmethod
+    def _read_haggle(haggled, affinity, temperament, system_prompt, conversation_text, message):
+        """The worker's half of a haggle: whether the player's line asks for a better price,
+        and if it is the first time, what the merchant says to it. None when it was not a
+        haggle at all, "again" when it was one already answered."""
+        asked = decide(
+            conversation_text,
+            "Is the player asking you for a lower price, a discount or a better deal?",
+            YES_NO,
+            system_prompt,
+            "haggle",
+            offline=offline.says(offline.HAGGLE_RE, message),
+            draw=False,
+        )
+        if asked.choice == "no":
+            return None
+        if haggled:
+            return "again"
+        liking = affinity / c.Affinity.START
+        return decide(
+            conversation_text,
+            "The player wants a better price from you. What do you do?",
+            HAGGLE_ANSWERS,
+            system_prompt,
+            "haggle",
+            offline=odds(
+                c.Haggle.OFFLINE,
+                {"accept": liking, "refuse": 1 / max(liking, 0.1)},
+                {"refuse": 2.0} if temperament == "greedy" else {"accept": 1.6} if temperament == "kind" else None,
+            ),
+        )
+
+    def _land_haggle(self, answer):
+        npc = self.current_npc
+        if answer == "again":
+            self.system_prompt += "The player is pushing for a better price again; your answer stands. "
+        elif answer is not None:
+            npc.haggled = True
+            npc.discount = c.Haggle.DISCOUNT[answer.choice]
+            self.system_prompt += _deal_line(npc.discount)
+            percent = round(npc.discount * 100)
+            if answer.choice == "refuse":
+                npc.affinity = max(c.Affinity.MIN, npc.affinity + c.Haggle.REFUSE_AFFINITY)
+                self._react(f"{npc.name} won't budge", c.Colors.ORANGE)
+            elif answer.choice == "accept":
+                self._react(f"{npc.name} takes {percent}% off", c.Colors.GREEN)
+            else:
+                self._react(f"{npc.name} comes down {percent}%", c.Colors.YELLOW)
+
+    def _judge_turn(self, reply: str):
+        """Ask how the player's last line landed and whether the conversation is over, off
+        the conversation as it now stands, which is what the cache already holds."""
+        if self.parley:
+            return
+        player_line = next((m["content"] for m in reversed(self.conversation.messages) if m["role"] == "user"), "")
+        args = (
+            self.system_prompt,
+            self.conversation.format_for_prompt(),
+            player_line,
+            reply,
+        )
+        self._await(lambda: self._read_turn(*args), self._land_turn)
+
+    @staticmethod
+    def _read_turn(system_prompt, conversation_text, player_line, reply) -> dict:
+        """The worker's half of `_judge_turn`: every question about this turn, one after
+        the other over the same prefix."""
+        out = {
+            "mood": decide(
+                conversation_text,
+                "How did you take the player's last line to you?",
+                MOODS,
+                system_prompt,
+                "conversation",
+                offline={"neutral": 1.0},
+            ).choice
+        }
+        # A reply that asks the player something is waiting on an answer, whatever else it says.
+        if not reply.rstrip().endswith("?"):
+            out["end"] = decide(
+                conversation_text,
+                "Is this conversation over now, with both of you done talking?",
+                YES_NO,
+                system_prompt,
+                "conversation",
+                offline=offline.says(offline.FAREWELL_RE, player_line),
+                draw=False,
+            ).choice
+        return out
+
+    def _land_turn(self, out: dict | None):
+        if not out:
+            return
+        npc = self.current_npc
+        shift = c.Affinity.MOOD_SHIFT[out["mood"]]
+        if shift > 0:
+            shift = min(shift, c.Affinity.TALK_GAIN_CAP - self._talk_gain)
+            self._talk_gain += shift
+        npc.affinity = max(c.Affinity.MIN, min(c.Affinity.MAX, npc.affinity + shift))
+        if out["mood"] == "pleased" and shift > 0:
+            self._react(f"{npc.name} liked that", c.Colors.GREEN)
+        elif out["mood"] == "annoyed":
+            self._react(f"{npc.name} didn't like that", c.Colors.ORANGE)
+        elif out["mood"] == "insulted":
+            self._react(f"{npc.name} is offended", c.Colors.RED)
+        if out.get("end") == "yes":
+            self.conversation_ended = True
+
+    @staticmethod
+    def _read_plea(temperament, conversation_text) -> str:
+        """The worker's half of a parley line: how good the player's last line is at calming
+        the villager down, asked of the model as an onlooker. Asked in the villager's own
+        angry voice it found nothing convincing, however sincere."""
+        return decide(
+            "An angry villager has the player at weapon point, and the player is trying to calm them down.\n"
+            f"Conversation:\n{conversation_text}",
+            "How good is the player's last line at calming the villager?",
+            PLEAS,
+            "You judge conversations in an RPG game.",
+            "parley",
+            offline=odds(c.Parley.OFFLINE, c.Parley.TEMPERAMENT_ODDS.get(temperament)),
+        ).choice
+
+    def _land_plea(self, plea: str | None):
+        """Count the line, settle the parley if it is settled, and tell the villager what they
+        decided so the line they answer with is that decision."""
+        npc = self.current_npc
+        world = self.quest_system.world
+        self._parley_turns += 1
+        if plea == "good":
+            self._parley_good += 1
+        if plea != "bad" and self._parley_good >= c.Parley.PLEAS_NEEDED and world is not None:
+            self._parley_won = True
+            self.conversation_ended = True
+            world.stand_down(npc)
+            self.system_prompt += "They have convinced you. You lower your weapon and let it go; say so. "
+            self._react(f"{npc.name} lowers their weapon", c.Colors.GREEN)
+            play_sound("quest_complete")
+        elif plea == "bad" or self._parley_turns >= c.Parley.TURNS:
+            self.conversation_ended = True
+            if world is not None:
+                world.refuse_parley(npc)
+            self.system_prompt += "You have heard enough. You raise your weapon to attack; say so. "
+            self._react(f"{npc.name} has heard enough", c.Colors.RED)
+        elif plea == "good":
+            self.system_prompt += "That moved you a little, but you are not convinced yet. "
+            self._react(f"{npc.name} hesitates", c.Colors.YELLOW)
+        self._reply()
 
     def _execute_quest_analysis(self, npc: NPC, conversation_text: str, log_path):
         """The worker's half: the model reads the conversation. What it found is built into
