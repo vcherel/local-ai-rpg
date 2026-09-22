@@ -171,7 +171,6 @@ class Tunnel:
         self.time_in = 0.0
         self._blackout_gap = 0.0
         self._blackout_room = -1
-        self._flicker = 0.0
         self.ambient_timer = 0.0
         self.breath_timer = 0.0
         self.bat_timer = 0.0
@@ -313,10 +312,6 @@ class Tunnel:
     def guard_killed(self):
         if self.guards_alive:
             self.guards_alive -= 1
-
-    @property
-    def cleared(self) -> bool:
-        return self.guards_alive == 0
 
     def state(self) -> dict:
         return {

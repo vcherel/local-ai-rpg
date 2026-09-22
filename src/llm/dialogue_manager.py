@@ -158,7 +158,6 @@ class DialogueManager:
         # Keys that were already held when the box opened, ignored until they are released.
         self._ignored_keys: set[int] = set()
         self.current_npc = None
-        self.waiting_for_llm = False
         self.system_prompt = ""
         self.conversation_ended = False
         self._is_first_message = False
@@ -369,7 +368,6 @@ class DialogueManager:
         # box rather than from whatever the player was doing to get to it.
         pygame.event.clear(pygame.KEYDOWN)
         self._ignored_keys = {key for key, down in enumerate(pygame.key.get_pressed()) if down}
-        self.waiting_for_llm = True
         self.conversation_ended = False
         self._is_first_message = True
 
@@ -469,7 +467,6 @@ class DialogueManager:
                     return
                 self.conversation.update_last_assistant_message(_strip_placeholders(partial))
                 self.ui.auto_scroll(self.conversation, self.current_npc.name)
-                self.waiting_for_llm = False
             except StopIteration:
                 self.generator = None
                 was_first_message = self._is_first_message
@@ -525,7 +522,6 @@ class DialogueManager:
         self._execute_pending_actions(log_path)
 
         self.active = False
-        self.waiting_for_llm = False
         self.system_prompt = ""
         self.conversation.clear()
         self.ui.reset()
@@ -629,7 +625,6 @@ class DialogueManager:
 
         self.conversation.add_user_message(message)
         self._is_first_message = False
-        self.waiting_for_llm = True
 
         # A merchant hears a line as a haggle or not before answering it, so what they say
         # back is the deal they actually struck.

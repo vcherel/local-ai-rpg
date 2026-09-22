@@ -144,7 +144,6 @@ def shoot_talk(game, clock, out):
     # The opening line is already in flight against the stub; drop it and write the
     # exchange straight into the history instead.
     game.dialogue_manager.generator = None
-    game.dialogue_manager.waiting_for_llm = False
     history = game.dialogue_manager.conversation
     history.clear()
     for speaker, line in CONVERSATION:

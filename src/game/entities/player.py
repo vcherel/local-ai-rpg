@@ -180,7 +180,6 @@ class Player(PlayerBonuses, Entity):
         self.guard_broken_until_ms = 0
         self.last_guard_use_ms = 0
         # Whether the player is in water this frame, set by move() and read by the renderer.
-        self.swimming = False
 
         saved = save_system.load("player", None)
         if saved:
@@ -250,7 +249,6 @@ class Player(PlayerBonuses, Entity):
             actual_speed *= c.Shield.SPEED_MULT
         # Water is crossed, not walked over: the penalty is heavy at first and eases off as
         # the swimming stat trains, never quite to walking pace, so a bridge keeps its job.
-        self.swimming = in_water
         if in_water:
             actual_speed *= self.stats.swim_multiplier()
 

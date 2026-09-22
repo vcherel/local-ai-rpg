@@ -30,7 +30,6 @@ class ContextMenu(BaseMenu):
 
         self.context_text = ""
         self._chunk_queue: queue.Queue = queue.Queue()
-        self._generating = False
         self._ready = False
         self._lock = threading.Lock()
         # Whether this showing is the opening of a session (black screen) rather than the
@@ -45,7 +44,6 @@ class ContextMenu(BaseMenu):
         game: nothing else has been seen yet, and this is what the player reads first."""
         with self._lock:
             self.context_text = ""
-            self._generating = True
             self._ready = False
             self.active = True
             self.intro = True
@@ -67,7 +65,6 @@ class ContextMenu(BaseMenu):
         on black like a new one; without it this is the L key, a panel over the world."""
         with self._lock:
             self.context_text = text
-            self._generating = False
             self._ready = True
             self.active = True
             self.intro = intro
@@ -88,7 +85,6 @@ class ContextMenu(BaseMenu):
                 elif kind == "done":
                     if data is not None:
                         self.context_text = data
-                    self._generating = False
                     self._ready = True
                     self._ready_at = pygame.time.get_ticks()
                     changed = True
