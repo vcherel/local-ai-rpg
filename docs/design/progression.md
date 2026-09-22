@@ -183,3 +183,10 @@ the health bar's grey tail shrinks with it. The span is saved beside the deadlin
 reload has no other way to know how far into the fade the player is. A fire or an inn bed still
 clears it outright.
 
+## Rules
+
+- Healing is scarce and each source has one job (potion, campfire, bed, slow passive trickle). New healing goes through one of the four, not beside them.
+- Dying moves what it takes rather than destroying it: a rolled share of the coins and a few of the things carried (equipped included) are thrown out on every side of where the body fell by `Game._scatter_death_drop`, joined to `world.items`, and pinned on the minimap and under the one arrow (`World.death_drop`) until the player has walked back. The weakness after it is worst on the frame they stand up and fades to nothing over its span (`Player.weakness_severity`, `weakness_mult`), never a flat state that switches off.
+- Equip best takes gear off as well as putting it on: a slot `Player._best_loadout` does not want is emptied, and the best weapon carried goes on the left button whatever its family, the best of the other family on the right (`_best_pair`).
+- Deaths and quests handed in are a tally, not a stat: they live in `game/record.py`, and their milestones pay in loot and in taunts respectively.
+- A quest sends the player out of town (`World.quest_target_spot`) and the walk is what the coins pay for (`quest_system.coin_band`).

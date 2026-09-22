@@ -120,3 +120,13 @@ would fill the constants namespace with names nothing else could ever want.
 
 The line: a colour something else reads, or that a person would go and turn a dial on, is a
 constant. A colour that exists only inside one silhouette stays inside it.
+
+## Rules
+
+- The music answers what is happening (`Game._music_context` into `core/music.py`), as a priority and never a blend.
+- Walking is world space and aiming is the mouse. The four keys are north, west, south and east off `core.Controls` (`settings.move_keys()`, QWERTY or AZERTY, switched in the pause menu), and nothing about a walk reads where the cursor is. Which way the body faces is the cursor alone, so the two come apart, which is why a humanoid's walk is the bob and nothing else: arms that swing up a sprite facing somewhere the body is not going read as one arm waving (`Entities.GAIT_ARM` is gone; only a swing moves an arm).
+- The player's own health bar is HUD drawn in world space, so it goes over the canopies (`Player.draw_health_bar_overlay`), never inside the entity pass.
+- The minimap draws memory, not radar: explored cells only, plus rumour marks. Underground those cells are finer, lantern-wide and floor-only, so a cave unfolds as it is walked and is saved like any other ground. What is stacked under it (village name and mood, warnings, paces from home or from the way in, the clock) hangs off `Minimap.content_bottom`.
+- The quest arrow is drawn last of everything, after the HUD: an arrow nobody can see is worth nothing. With no quest in hand it points at the nearest settlement's notice board (`World.nearest_board_pos`), the one place a player with nothing to do can pick something up.
+- A new game does not leave the player to guess what it wants: on the first world only, one villager in the starting town (`World._designate_greeter`, nearest to where the player spawned) walks over after `Onboarding.GREET_DELAY_S` with a hail in a bubble over their head (`NPC.hailing`) and offers the first quest. "Hear them out" opens the ordinary dialogue; the quest is `World.intro_offer`, rolled once per session, told to the model in full as the one thing the greeter has to say (and read back out of the prompt by `offline.py`), and granted outright on close (`DialogueManager._grant_greeter_quest`), so what they talk about is what lands, with a model, without one, or if the box is shut without a word. The greeter waits rather than grinding a wall when the player is out past the settlement's grounds and out of sight.
+- The quest tracker is never blank (`QuestTracker`): with no active quest it shows one slim pill pointing at a notice board, and a milestone chip hangs under it whatever else is there, so there is always a visible next step and a visible longer goal.

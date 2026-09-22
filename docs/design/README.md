@@ -1,8 +1,9 @@
 # Design notes
 
 The rules behind rpg-ai, kept out of `CLAUDE.md` so a session pays for them only when
-it needs them. `CLAUDE.md` holds the one-line rule; the reasoning and the worked
-examples live here.
+it needs them. `CLAUDE.md` holds the engineering rules that apply everywhere. Each file
+here holds the reasoning and worked examples for one subject, and ends with a Rules
+section listing that subject's invariants.
 
 - `world.md`: streaming, chunks, wilderness, water, the underground, spawning, difficulty and weather
 - `settlements.md`: settlements, buildings, lanes, walls and gates, villagers, beds, defences and the merchant's clock

@@ -340,3 +340,16 @@ building the player is standing in). A doorway is a step; weather is not, and fo
 whole on the frame a threshold is crossed reads as a bug rather than as walking outside. It
 is only ever what is drawn: `sight_mult` is the world's, so a villager indoors sees exactly
 as far as one in the street, and a room is still weatherless once the ramp has run.
+
+## Rules
+
+- Ground that overlaps itself is drawn in passes over the chunk, never layer by layer per piece: a road's verge and the three colours of every body of water (`Scenery.WATER_LAYERS`, still and running alike, so a river joins the lake it runs into rather than striping it) are kinds of their own in `Scenery.GROUND_KINDS`.
+- Nothing grows out of what is drawn as a way through: the decoration (`Scenery.DECOR_KINDS`) keeps off a road's band and off a settlement's lanes and plaza (`Village.street_at`), and off nothing else, because grass is what the grounds either side are made of.
+- A landmark covers what it draws (`poi_footprint`), not the point it stands on: a footpath stops at that edge, and where a road would cross it the landmark stands down rather than the road bending.
+- Difficulty is distance from the world centre, pulled by four levers (which kinds, how many, what has a name, and what a town sells through `NPC.stock_luck`). Nothing scales a monster's own stat block.
+- The spawn point is protected three ways at once: nothing hostile spawned near it, the player placed by `safe_spot_near`, and `Death.SPAWN_GRACE_S` of grace.
+- Weather is a state of the world like night, on a shorter clock (`core/weather.py`). It never touches damage or spawning: all it does is shorten sight, through the one `sight_mult` that both `World.witness_radius` and a monster's detection read, so fog is somewhere to hide rather than a filter over the screen. Session-only, and never drawn over a room the player is standing in: how much roof is overhead is a ramp (`WeatherSystem.shelter`), so walking out of a door is the sky arriving over a moment. What it is drawn as is kept rather than blended live: the wash is an `Overlay` and the banks carry their own alpha at a quantised step, because a per-pixel-alpha surface given a surface alpha too is the slowest blit there is.
+- A crossing stands on the track: a deck goes at the middle of the road's own wet run, laid along the road, and a river lane's deck is moved onto a road that runs into the water beside it. The earth runs under the planks, since a deck is wider than the widest road.
+- Felling a tree and breaking a boulder are what the wilderness remembers (`World.felled` and `World.smashed`, keyed by chunk and index): the chunk stays a pure function of its seed and the wreck is laid over the top, exactly as `poi_state` is. A landmark that is a prop rather than a place (`PointsOfInterest.WRECKABLE`) comes down the same way, kept in its own `poi_state`.
+- Underground, light is clipped to floor the player can actually reach (`Tunnel._lit_floor`: what is stood on plus whatever opens onto it): it never crosses rock, it never snaps at a doorway, and what is past it is not dimmer, it is unseen.
+- A cave is worth the walk and a well is a cellar: the hoard's luck, the vault's guaranteed box, the bats and the warden are all `WorldPlaces._populate_cave`, and nothing is stood up within `Tunnels.ENTRANCE_CLEARANCE` of the shaft.

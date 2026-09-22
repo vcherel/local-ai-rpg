@@ -42,3 +42,8 @@ last finished sentence, the quest parser repairs the model's near-JSON (whether 
 at all, and whether it was accepted, are decisions now rather than booleans in it), and a
 response that will not parse ends as "no quest" and is recorded through `llm_log.log_parse_failure`
 rather than printed and lost.
+
+## Rules
+
+- A settlement is asked of the model only once the player walks up to it (`WorldStreaming._prepare_settlements_near`, `Villages.PREPARE_DISTANCE`): its name, its shops' stock and the next villager's name are prepared there and nowhere else. Generating a village is not a reason to spend a call on it, and neither is loading a save.
+- The world's lore is guarded rather than trusted (`parse_world_context`): an answer with no sentence in it is asked again, and then shown as nothing at all. Only lore the model actually wrote is written to the save; `World.FALLBACK_CONTEXT` is what the other prompts quote when there is none, and it is never displayed.

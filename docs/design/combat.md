@@ -140,3 +140,15 @@ is standing behind them. `Projectile.update` advances in hops no longer than the
 wide, since a whole frame at once let an arrow cross a 16px wall whenever the framerate dipped.
 Everything about a shot lives in `projectiles.py` rather than `combat.py` for one reason: an
 arrow has a lifetime of its own, where a swing resolves and is over.
+
+## Rules
+
+- A blow is a swing rather than an instant: an attacker commits on its own cadence (`MonsterKind.attack_cooldown_ms`, `NPC.swing_cooldown_ms`), the arm goes out over `swing_duration_ms` and the blow lands at the peak of the arc (`Entity.update_attack_anim`, `lands=True`) on whatever is still in reach when it gets there, so the wind-up is the warning and stepping out of it is the answer. Cadence is what paces an attacker, never the animation. The player is the exception: their blow is resolved on the click that asked for it, and each hand is paced by its own weapon's cooldown (`Player.hand_ready`/`spend_hand`), so two ranged weapons fire together and a slow one never holds up the other hand.
+- Nothing the player did not do pays the player: `by_player=False` withholds every reward and consequence, never the kill.
+- Nothing in the world breaks in a single hit, and every hit-point pool draws its own wear through `core/damage_fx.py`.
+- A break pays on the ground, never into the purse: `WorldBreaking._break_loot` lays the coins down as a `"coins"` item beside whatever else came out, and walking over it is what credits them and the one toast they get.
+- A wound is drawn from the weapon that made it: one recipe per family in `core/decals.py`, picked through `WorldCombat.blow_style`, and a kill is that recipe several times over.
+- A weapon family answers a question rather than being a bigger number; a bigger number is a rarity roll.
+- The player has two hands and one weapon in each: hand one is the left mouse button, hand two the right, and key 1 swaps the two over. Either weapon goes in either hand (melee defaults left, ranged right) and the archetype decides what the click does, so nothing outside `Player` may ask whether a weapon is melee or ranged. Read a hand through `hand_weapon` and fill one through `select_weapon`, never a slot by name, and pass the hand to every on-hit effect. An empty hand is bare hands, which is a loadout and not a missing weapon.
+- The shield is worn on the offhand side, and that side is where it works: the wedge `draw_shield` shows is the wedge `Player.shield_side_hit` reads. A shot arriving there is turned away and costs guard, never health.
+- A bomb is spent rather than wielded, so it has a slot of its own and a key of its own (G) instead of costing a hand. Both kinds end in `WorldCombat.explode`, so nothing about a blast is ever written twice.
