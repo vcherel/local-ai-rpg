@@ -35,8 +35,6 @@ _rng = random.Random()
 class Decision:
     choice: str
     probs: dict[str, float]
-    # False when the odds were the caller's own rather than the model's.
-    by_model: bool
 
     def chance(self, label: str) -> float:
         return self.probs.get(label, 0.0)
@@ -114,7 +112,7 @@ def decide(
         llm_log.log_parse_failure(category, "", f"decision failed: {error}")
     if answer is None:
         probs = _normalised(offline or dict.fromkeys(labels, 1.0))
-        return Decision(_pick(labels, probs, draw), probs, False)
+        return Decision(_pick(labels, probs, draw), probs)
     probs = _normalised(odds(_softmax(labels, answer["logits"]), prior))
     choice = _pick(labels, probs, draw)
     llm_log.log_decision(
@@ -128,7 +126,7 @@ def decide(
         answer["prompt_tokens"],
         answer["evaluated"],
     )
-    return Decision(choice, probs, True)
+    return Decision(choice, probs)
 
 
 class Pending:

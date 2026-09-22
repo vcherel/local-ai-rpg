@@ -226,10 +226,6 @@ def _rng(*parts: str) -> random.Random:
     return random.Random(hash("\n".join(parts)) & 0xFFFFFFFF)
 
 
-def _npc_is_merchant(system_prompt: str) -> bool:
-    return "a merchant in an RPG" in system_prompt
-
-
 # The greeter's errand, quoted in their prompt after `dialogue_manager.GREETER_TASK`.
 GREETER_TASK_RE = re.compile(r'the errand is: "([^"]+)"')
 
@@ -241,7 +237,7 @@ def _dialogue(prompt: str, system_prompt: str, first: bool) -> str:
     errand = GREETER_TASK_RE.search(system_prompt)
     if errand is not None:
         return errand.group(1) if first else rng.choice(GREETER_REPLIES)
-    if _npc_is_merchant(system_prompt):
+    if "a merchant in an RPG" in system_prompt:
         bank = MERCHANT_GREETINGS if first else MERCHANT_REPLIES
     else:
         bank = GREETINGS if first else REPLIES

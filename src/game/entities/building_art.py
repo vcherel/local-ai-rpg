@@ -41,10 +41,6 @@ _SHELLS: OrderedDict[str, weakref.ref] = OrderedDict()
 _SHELL_BUDGET = 64
 
 
-def _draw_label(screen: pygame.Surface, text: str, center: tuple):
-    draw_outlined_text(screen, text, c.Fonts.small, c.Colors.WHITE, center=center)
-
-
 class _ShellCamera:
     """Stands in for the camera while a building's shell is painted onto its own surface.
 
@@ -436,7 +432,7 @@ class BuildingArt:
             pygame.draw.circle(screen, (110, 110, 105), (cx + px, cy + py), radius)
             pygame.draw.circle(screen, (80, 80, 76), (cx + px, cy + py), radius, 2)
         if self.name:
-            _draw_label(screen, self.name, (cx, cy + self.h / 2 + 30))
+            draw_outlined_text(screen, self.name, c.Fonts.small, c.Colors.WHITE, center=(cx, cy + self.h / 2 + 30))
 
     def _draw_interior(self, screen: pygame.Surface, camera: Camera):
         """Cutaway view of this one building: wall shell, floor and furniture drawn at its

@@ -95,7 +95,9 @@ class World(
     """
 
     def __init__(self, save_system: SaveSystem, context_window: ContextMenu, notify):
-        self._init_state()
+        self._init_terrain_state()
+        self._init_entity_state()
+        self._init_generation_state()
         self.save_system = save_system
         self.context_window = context_window
         self.notify = notify
@@ -131,12 +133,6 @@ class World(
             # before anything in the world moves, rather than as a panel over a street.
             self.context_window.show(self.context, intro=True)
             self._start_landmark_naming()
-
-    def _init_state(self):
-        """Every list, index and timer the world keeps, before anything is loaded or built."""
-        self._init_terrain_state()
-        self._init_entity_state()
-        self._init_generation_state()
 
     def _init_terrain_state(self):
         """The ground and what is indexed about it: all of it streamed, none of it saved."""
