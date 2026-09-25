@@ -235,6 +235,7 @@ class WorldWitnesses:
             # Their liking is the game's to weigh rather than the model's: told the witness
             # likes the player, it had a brave one ask for a bribe.
             prior=odds(c.Crime.WITNESS_PRIOR, {"look_away": affinity / c.Affinity.START}),
+            trust=c.Crime.WITNESS_MODEL_TRUST,
         ).choice
 
     def settle_witnesses(self, player: Player) -> list[NPC]:

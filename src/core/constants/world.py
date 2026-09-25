@@ -277,8 +277,12 @@ class Crime:
     # How long they stand there deciding, with a "?" over them, before it lands anyway.
     WITNESS_THINK_MS: int = 2500
     # Odds with no model, and how the witness's temperament moves them. With a model, its
-    # own reading of the witness is multiplied by WITNESS_PRIOR instead: most people tell.
+    # own reading is only WITNESS_MODEL_TRUST of the answer and these odds are the rest, then
+    # WITNESS_PRIOR is multiplied in: most people tell. Left to itself the model is near
+    # certain off the temperament alone (every greedy witness blackmails, no timid one tells),
+    # which no prior can move.
     WITNESS_OFFLINE = {"report": 0.7, "look_away": 0.15, "blackmail": 0.15}
+    WITNESS_MODEL_TRUST: float = 0.5
     WITNESS_PRIOR = {"report": 2.5}
     WITNESS_TEMPERAMENT_ODDS = {
         "kind": {"look_away": 3.0},

@@ -68,7 +68,7 @@ def odds(base: dict[str, float], *shifts: dict[str, float] | None) -> dict[str, 
 
 def _pick(labels: list[str], probs: dict[str, float], draw: bool) -> str:
     if not draw:
-        return max(labels, key=probs.__getitem__)
+        return max(labels, key=lambda label: probs.get(label, 0.0))
     return pick(probs)
 
 
@@ -92,6 +92,7 @@ def decide(
     offline: dict[str, float] | None = None,
     draw: bool = True,
     prior: dict[str, float] | None = None,
+    trust: float = 1.0,
 ) -> Decision:
     """One of `options` (label: how it is put to the model), drawn from the model's odds.
 
@@ -101,7 +102,9 @@ def decide(
     and is also what a model that fails mid-call falls back to. `draw=False` takes the most
     likely answer instead of drawing one, for a question of fact rather than of character.
     `prior` is multiplied into the model's odds, label by label: what the game wants as a
-    base rate whatever the model leans towards (a witness mostly tells)."""
+    base rate whatever the model leans towards (a witness mostly tells). `trust` below 1 mixes
+    the model's odds with `offline` before `prior`, for a question the model answers so surely
+    that no prior moves it."""
     labels = list(options)
     full = f"{prompt}\n\n{question_block(question, options)}" if prompt else question_block(question, options)
     category = f"Decide: {category}"
@@ -110,10 +113,12 @@ def decide(
         answer = decide_queued(full, system_prompt, category, len(labels))
     except Exception as error:
         llm_log.log_parse_failure(category, "", f"decision failed: {error}")
+    fallback = _normalised(offline or dict.fromkeys(labels, 1.0))
     if answer is None:
-        probs = _normalised(offline or dict.fromkeys(labels, 1.0))
-        return Decision(_pick(labels, probs, draw), probs)
-    probs = _normalised(odds(_softmax(labels, answer["logits"]), prior))
+        return Decision(_pick(labels, fallback, draw), fallback)
+    model = _softmax(labels, answer["logits"])
+    mixed = {label: trust * p + (1 - trust) * fallback.get(label, 0.0) for label, p in model.items()}
+    probs = _normalised(odds(mixed, prior))
     choice = _pick(labels, probs, draw)
     llm_log.log_decision(
         category,

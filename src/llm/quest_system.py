@@ -33,6 +33,16 @@ QUEST_KINDS = {
     "steal": "steal a specific item from a neighbour's house",
     "deliver": "carry a specific item to another person and come back",
 }
+# A reward the model wrote into `reward_item` that is only money ("40 gold", "coins"). The
+# coins are paid off the NPC's parting line (`promised_reward`); as an item it came out as an
+# accessory called "40 gold".
+COIN_REWARD_RE = re.compile(
+    r"^[\d\s,]*(?:some |a few |(?:a )?(?:bag|purse|pouch) of )?(?:gold|silver|copper)?\s*(?:coins?|pieces?|gold)?"
+    r"(?:\s+(?:pieces|coins))?$",
+    re.I,
+)
+# What is carried when the NPC asked for a delivery without the model naming the thing.
+DEFAULT_PARCEL = "parcel"
 
 
 def _no_quest() -> dict:
@@ -184,6 +194,8 @@ class QuestSystem:
             "description": quest_info["quest_description"],
             "reward_item_name": self._strip_article(quest_info.get("reward_item", "")),
         }
+        if COIN_REWARD_RE.match(common["reward_item_name"]):
+            common["reward_item_name"] = ""
         quest = build(self, npc, quest_info, common, npc_name_generator)
         if quest is None:
             return
@@ -282,14 +294,12 @@ class QuestSystem:
         )
 
     def _build_deliver(self, npc, quest_info, common, _names) -> Quest | None:
-        if not quest_info.get("item_name"):
-            return None
         recipient = self._pick_recipient(npc)
         if recipient is None:
             return None
         # The parcel is handed over as the quest is given, so the player is carrying it
         # from the first step: a delivery is a walk, not a hunt for the thing to deliver.
-        item_name = self._strip_article(quest_info["item_name"])
+        item_name = self._strip_article(quest_info.get("item_name") or DEFAULT_PARCEL)
         parcel = self._quest_item(self.player.x, self.player.y, item_name)
         parcel.picked_up = True
         if self.player.add_item(parcel) is parcel:

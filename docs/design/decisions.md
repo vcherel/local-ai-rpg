@@ -19,8 +19,10 @@ Every decision has an answer with no model. The caller passes `offline` odds, re
 state of the world (a temperament, a liking, a word in the player's line through
 `offline.says`), and the same odds are what a model that fails mid-call falls back to.
 `prior` is the other half: game odds multiplied into the model's, for when the game wants a
-base rate the model does not share (a witness mostly tells). Draws come off the module's own
-random stream, so a decision made or not made never shifts a seeded roll of the world's.
+base rate the model does not share (a witness mostly tells). `trust` is for a model too sure
+of itself for any prior to move: below 1, that share of the answer is the model's and the
+rest is the `offline` odds. Draws come off the module's own random stream, so a decision
+made or not made never shifts a seeded roll of the world's.
 
 ## Who asks what
 
