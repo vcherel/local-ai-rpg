@@ -151,6 +151,19 @@ def _strip_placeholders(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
+def _strip_speaker_label(text: str, name: str | None) -> str:
+    """Drop the speaker label the model sometimes opens a reply with ("NPC:", "Bran:").
+    Only a label that names the speaker goes: a colon inside the sentence ("Listen: I
+    can't") is part of what they said."""
+    label, sep, rest = text.partition(":")
+    if not sep:
+        return text
+    names = {"npc"}
+    if name:
+        names |= {name.lower(), name.split()[0].lower()}
+    return rest.strip() if label.strip().lower() in names else text
+
+
 def _trim_to_sentence(text: str) -> str:
     """Cut a reply back to its last finished sentence.
 
@@ -202,11 +215,10 @@ class DialogueManager:
         self._reaction: tuple[str, tuple] | None = None
         self._reaction_until = 0
         # Talking an angry villager down rather than chatting (`Parley`): how many lines the
-        # player has had, and whether it worked.
+        # player has had, and how many of them landed.
         self.parley = False
         self._parley_turns = 0
         self._parley_good = 0
-        self._parley_won = False
 
         self.conversation = ConversationHistory()
         self.ui = ConversationUI(screen)
@@ -351,7 +363,6 @@ class DialogueManager:
         self.parley = parley
         self._parley_turns = 0
         self._parley_good = 0
-        self._parley_won = False
         self._talk_gain = 0.0
         self._reaction = None
 
@@ -420,7 +431,7 @@ class DialogueManager:
                 self.current_npc
                 and self.current_npc.is_merchant
                 and self.shop_button_rect
-                and self.generator is None
+                and not self._busy
                 and self.shop_button_rect.collidepoint(event.pos)
             ):
                 self.shop_requested = True
@@ -503,11 +514,7 @@ class DialogueManager:
 
                 content = self.conversation.get_last_message()["content"]
 
-                # The model sometimes prefixes its reply with a speaker label; drop it
-                if ":" in content:
-                    cleaned_content = content.split(":", 1)[-1].strip()
-                    if len(cleaned_content) <= 25:
-                        content = cleaned_content
+                content = _strip_speaker_label(content, self.current_npc.name)
 
                 # Trims a reply the token cap cut off mid-sentence.
                 content = _trim_to_sentence(_strip_placeholders(content))
@@ -530,8 +537,9 @@ class DialogueManager:
         self._judging = self._on_judged = None
         self._send_when_free = False
         # Walking away from a parley is the villager's answer made for them, so a fight
-        # cannot be paused by opening a box and shutting it again.
-        if self.parley and not self._parley_won and self.quest_system.world is not None:
+        # cannot be paused by opening a box and shutting it again. One that already ended
+        # was settled either way by `_land_plea`.
+        if self.parley and not self.conversation_ended and self.quest_system.world is not None:
             self.quest_system.world.refuse_parley(self.current_npc)
 
         log_path = dialogue_log.write_conversation(self.current_npc, self.system_prompt, self.conversation)
@@ -591,14 +599,14 @@ class DialogueManager:
         # so the background threads must not read it directly.
         npc = self.current_npc
         conversation_text = self.conversation.format_for_prompt()
-        last_msg = self.conversation.get_last_message()
+        npc_lines = [msg["content"] for msg in self.conversation.messages if msg["role"] == "assistant"]
 
         # Quest completion first (uses conversation context for rewards)
         if self.pending_quest_completion:
             self._completing.add(id(self.pending_quest_completion.quest))
             threading.Thread(
                 target=self._execute_quest_completion,
-                args=(self.pending_quest_completion, last_msg, log_path),
+                args=(self.pending_quest_completion, npc_lines, log_path),
                 daemon=True,
             ).start()
             self.pending_quest_completion = None
@@ -618,7 +626,8 @@ class DialogueManager:
         reaction = self._reaction if pygame.time.get_ticks() < self._reaction_until else None
         self.ui.draw(self.current_npc.name, self.conversation, self.conversation_ended, reaction)
 
-        if self.current_npc.is_merchant and self.generator is None:
+        # Hidden while a haggle is still being read too: the shop would open on the old price.
+        if self.current_npc.is_merchant and not self._busy:
             box_height = self.ui.BOX_HEIGHT
             box_y = c.Screen.HEIGHT - box_height - 25
             btn_w, btn_h = 130, 30
@@ -857,7 +866,6 @@ class DialogueManager:
         if plea == "good":
             self._parley_good += 1
         if plea != "bad" and self._parley_good >= c.Parley.PLEAS_NEEDED and world is not None:
-            self._parley_won = True
             self.conversation_ended = True
             world.stand_down(npc)
             self.system_prompt += "They have convinced you. You lower your weapon and let it go; say so. "
@@ -892,14 +900,14 @@ class DialogueManager:
             self.quest_tracker.notify_new_quest(quest)
             play_sound("quest_new")
 
-    def _execute_quest_completion(self, npc: NPC, last_msg, log_path):
-        """The worker's half: the coins the NPC's parting line named, which may cost a model
+    def _execute_quest_completion(self, npc: NPC, npc_lines: list[str], log_path):
+        """The worker's half: the coins the NPC's lines named, which may cost a model
         call. The payout itself (`_pay_out`) is main-thread work, and the quest stays marked
         as completing until it has actually run there."""
         quest = npc.quest
         try:
-            if last_msg and quest:
-                reward = self.quest_system.promised_reward(last_msg["content"], quest)
+            if quest:
+                reward = self.quest_system.promised_reward(npc_lines, quest)
                 quest.reward_coins = reward
                 dialogue_log.append_section(log_path, "Quest completion", f"Reward: {reward} coins")
         except Exception:

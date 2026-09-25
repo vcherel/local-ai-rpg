@@ -102,14 +102,21 @@ class ShopMenu(BaseMenu):
 
     def _buy_price(self, item: Item) -> int:
         """What they charge, with whatever they agreed to take off when the player talked
-        them down in conversation (`NPC.discount`, `DialogueManager._land_haggle`)."""
+        them down in conversation (`NPC.discount`, `DialogueManager._land_haggle`). Never
+        less than they would pay for the same thing back: the model prices a ware without
+        knowing what it sells for, and a cheap listing bought and sold on the spot was a
+        profit."""
         swing = self._swing()
         price = self.merchant.shop_prices[item.id] * self.player.buy_multiplier() * (1.0 - swing)
-        return max(1, round(price * (1.0 - self.merchant.discount)))
+        return max(1, round(price * (1.0 - self.merchant.discount)), self._sell_price(item))
 
     def _sell_price(self, item: Item) -> int:
+        """What they pay for one click: one unit of a stack, except a quiver, which goes
+        whole. Arrows are worth a fraction of a coin each, so one at a time the floor of a
+        coin paid more than the bundle cost."""
         swing = self._swing()
-        return max(1, round(base_value(item) * self.player.sell_multiplier() * (1.0 + swing)))
+        units = item.quantity if item.item_type == "ammo" else 1
+        return max(1, round(base_value(item) * units * self.player.sell_multiplier() * (1.0 + swing)))
 
     # --- bulk selling ---------------------------------------------------------
 
@@ -242,9 +249,9 @@ class ShopMenu(BaseMenu):
         if item.quest_bound:
             return
         price = self._sell_price(item)
-        # A stack sells one unit per click, so parting with a spare arrow or potion
+        # A stack of potions or bombs sells one unit per click, so parting with a spare
         # doesn't hand the merchant the whole stack for a single item's price.
-        if item.quantity > 1:
+        if item.quantity > 1 and item.item_type != "ammo":
             item.quantity -= 1
         else:
             self.player.unequip_if_equipped(item)

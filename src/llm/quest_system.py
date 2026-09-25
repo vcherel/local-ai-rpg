@@ -52,6 +52,8 @@ PROMISED_OBJECT = (
     'What object did the NPC promise to give the player as a reward? Reply with its name only, or "nothing" '
     "if they promised none."
 )
+# A sum of coins named in a line, the number before the coin word or just after it.
+COIN_AMOUNT_RE = re.compile(r"(\d+)\s*(?:coins?|gold|pieces?)|(?:reward|coins?|gold)\D{0,15}?(\d+)", re.I)
 NOTHING_RE = re.compile(r"^(?:nothing|none|no object|n/?a)\b", re.I)
 # What is carried when the NPC asked for a delivery without the model naming the thing.
 DEFAULT_PARCEL = "parcel"
@@ -393,20 +395,26 @@ class QuestSystem:
         name = (quest.item_name or "").strip().lower()
         if not name:
             return None
-        return next((item for item in self.player.inventory if item.name.strip().lower() == name), None)
+        matches = [item for item in self.player.inventory if item.name.strip().lower() == name]
+        # One the player is not holding goes first: a bow asked for is not the bow in their hand
+        # while a spare one sits in the bag.
+        spoken_for = set(self.player.equipped_ids().values())
+        return min(matches, key=lambda item: item.id in spoken_for, default=None)
 
-    def on_monster_killed(self, monster_kind_name: str, x: float, y: float) -> Item | None:
-        """Progress kill_mob quests and drop a matching loot_mob quest's item, if any."""
-        dropped_item = None
+    def on_monster_killed(self, monster_kind_name: str, x: float, y: float) -> list[Item]:
+        """Progress kill_mob quests and drop every matching loot_mob quest's item. Two quests
+        after the same kind each get their own drop off one kill, and both have to reach
+        the ground: one only on the quest is an item nobody can pick up."""
+        dropped = []
         for quest in self.active_quests:
             if quest.target_monster_kind != monster_kind_name:
                 continue
             if quest.quest_type == "kill_mob":
                 quest.kills_done += 1
             elif quest.quest_type == "loot_mob" and quest.item is None:
-                dropped_item = self._quest_item(x, y, quest.item_name)
-                quest.item = dropped_item
-        return dropped_item
+                quest.item = self._quest_item(x, y, quest.item_name)
+                dropped.append(quest.item)
+        return dropped
 
     def on_boss_killed(self, boss) -> None:
         """Complete the objective of any slay_boss quest targeting this boss."""
@@ -472,30 +480,32 @@ class QuestSystem:
                 return dropped_item
         return None
 
-    def promised_reward(self, last_message: str, quest: Quest) -> int:
+    def promised_reward(self, npc_lines: list[str], quest: Quest) -> int:
         """The coins a quest just handed in is worth. The figure the NPC named is their
         word and is honoured, but it is clamped into the band its quest type is worth
         (`coin_band`) rather than trusted: the model has no sense of the economy and would
         send the player across the map for three coins. Read here, paid in
-        `complete_quest`, so the payout goes through the one gate that pays once."""
-        floor, ceiling = coin_band(quest)
-        return min(max(self._promised_coins(last_message), floor), ceiling)
+        `complete_quest`, so the payout goes through the one gate that pays once.
 
-    def _promised_coins(self, last_message: str) -> int:
-        """The number of coins the NPC's parting line actually names, or 0 if it names none."""
+        Only the NPC's own lines are read, newest first: the player naming a sum is not a
+        promise, and the line that names the coins is often not the last one said."""
+        floor, ceiling = coin_band(quest)
+        return min(max(self._promised_coins(npc_lines), floor), ceiling)
+
+    def _promised_coins(self, npc_lines: list[str]) -> int:
+        """The number of coins the NPC's latest line naming any actually names, or 0."""
         # Prefer a number explicitly tied to a coin/reward word, so we don't pick up
         # an unrelated count like "I lost 3 sheep, here are 50 coins".
-        coin_match = re.search(
-            r"(\d+)\s*(?:coins?|gold|pieces?)|(?:reward|coins?|gold)\D{0,15}?(\d+)",
-            last_message,
-            re.IGNORECASE,
-        )
-        if coin_match:
-            return int(coin_match.group(1) or coin_match.group(2))
+        for line in reversed(npc_lines):
+            coin_match = COIN_AMOUNT_RE.search(line)
+            if coin_match:
+                return int(coin_match.group(1) or coin_match.group(2))
+        if not npc_lines or not npc_lines[-1].strip():
+            return 0
 
         # No coin-tagged number in the text, ask the model to extract it
         system_prompt = "You are an extraction assistant. Reply only with a number."
-        prompt = f"How many coins are in this text: '{last_message}'?"
+        prompt = f"How many coins are in this text: '{npc_lines[-1]}'?"
         reward_str = re.sub(r"[^\d]", "", generate_response_queued(prompt, system_prompt, "Extract reward"))
         return int(reward_str) if reward_str else 0
 
@@ -566,6 +576,7 @@ class QuestSystem:
             if handed_in.quantity > 1:
                 handed_in.quantity -= 1
             else:
+                self.player.unequip_if_equipped(handed_in)
                 self.player.inventory.remove(handed_in)
                 if handed_in in self.items:
                     self.items.remove(handed_in)

@@ -33,7 +33,7 @@ class ConversationUI:
             return self.take_input()
         elif event.key == pygame.K_BACKSPACE:
             self.user_input = self.user_input[:-1]
-        elif event.unicode and len(self.user_input) < 150:
+        elif event.unicode and event.unicode.isprintable() and len(self.user_input) < 150:
             self.user_input += event.unicode
         return None
 

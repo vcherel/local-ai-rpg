@@ -57,9 +57,9 @@ class GameSleep:
             return
         # A bed is the one full night's rest in the game: unlike a campfire it heals
         # everything, shakes off the post-death weakness and puts the night behind the
-        # player. None of them is bought and none of them is the player's: a tavern room
-        # is taken rather than paid for, exactly like a villager's own bed, so both cost
-        # the risk of being seen and both leave that bed cold for a while. Nobody sleeps
+        # player. None of them is the player's: a villager's bed, or a tavern room nobody is
+        # renting out, is taken, which costs the risk of being seen, and every one of them
+        # is left cold for a while. Nobody sleeps
         # with something hostile in the street, the same refusal a campfire makes through
         # `camp_is_clear`.
         if self._sleep_threat():
@@ -78,7 +78,7 @@ class GameSleep:
             if self.player.coins < price:
                 self.loot_notification.show(f"The doorman wants {price} coins for a room", c.Colors.RED)
                 return
-            self.player.coins -= price
+            self.player.add_coins(-price)
         self.world.rest_in_house(self.interior)
 
         play_sound("quest_complete")

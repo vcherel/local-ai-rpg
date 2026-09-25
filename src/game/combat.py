@@ -584,9 +584,7 @@ class WorldCombat:
             get_hitstop().trigger(c.Combat.HITSTOP_KILL_MS)
         self._spill_blood(monster.x, monster.y, monster.kind.color, direction)
         if by_player:
-            quest_item = quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y)
-            if quest_item is not None:
-                self.items.append(quest_item)
+            self.items.extend(quest_system.on_monster_killed(monster.kind.name, monster.x, monster.y))
             drop_chance = c.LootBox.DROP_CHANCE
             drop_chance *= 1.0 + (c.Events.BLOOD_NIGHT_DROP_MULT - 1.0) * self.events.blood_intensity
             if random.random() < drop_chance:

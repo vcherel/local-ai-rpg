@@ -169,12 +169,20 @@ class WorldBosses:
         )
         prompt = f"World: {self.context}\nName {boss.template.flavor}. 2 to 5 words."
         text = generate_response_queued(prompt, system_prompt, "Boss naming") or ""
+        mainthread.post(self._land_boss_identity, boss, text, announce)
+
+    def _land_boss_identity(self, boss: Boss, text: str, announce: str | None):
+        """The name put on the boss and on the quest hunting it, on the main thread. What
+        follows from the name (its leaning, the save) goes back to a worker."""
         boss.set_identity(text)
-        self._decide_leaning(boss)
         self.sync_quest_boss_names()
-        self.persist_world()
         if announce and self.notify:
             self.notify(announce.format(name=boss.name), c.Colors.BOSS_BAR)
+        threading.Thread(target=self._after_boss_named, args=(boss,), daemon=True).start()
+
+    def _after_boss_named(self, boss: Boss):
+        self._decide_leaning(boss)
+        self.persist_world()
 
     def _decide_leaning(self, boss: Boss):
         """Which of its abilities a boss favours, read off the name it was just given: a

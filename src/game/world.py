@@ -624,8 +624,10 @@ class World(
         return snapshot
 
     def serialize(self) -> dict:
-        # A wandering merchant is a transient event; drop it rather than saving it as permanent.
-        npcs = [npc for npc in self.npcs if npc is not self.events.wandering_merchant]
+        # A wandering merchant and their guard are a transient event; drop them rather than
+        # saving them as permanent, since a reload no longer knows to walk them off the map.
+        caravan = (self.events.wandering_merchant, self.events.merchant_guard)
+        npcs = [npc for npc in self.npcs if not any(npc is member for member in caravan)]
         # Camp guards are not saved either: the camp's own count is what a garrison is, and
         # `_populate_camp` stands them back up from it. Saving them too would put the ones on
         # the ground at save time next to the ones the count rebuilds on load.
