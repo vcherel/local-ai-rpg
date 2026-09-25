@@ -6,7 +6,7 @@ up on SDL's dummy drivers with the LLM stubbed and a virtual clock, and every sc
 steps that.
 
     uv run python scripts/verify/refs.py            # every module parses, every self.x() resolves
-    uv run python scripts/verify/smoke.py           # 900 frames, then look at the state
+    uv run python scripts/verify/smoke.py           # 900 frames with quests handed out, then a reload
     uv run python scripts/verify/render_diff.py     # this tree against HEAD, pixel by pixel
     uv run python scripts/verify/frame_profile.py   # where a frame goes
     uv run python scripts/verify/spawn_rates.py     # what the world would roll, as a table
