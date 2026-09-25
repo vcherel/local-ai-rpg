@@ -20,7 +20,7 @@ import sys
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 import core.constants as c
-from llm import fit, preflight
+from llm import fit, gpu, preflight
 
 OK = "  ok  "
 WARN = " warn "
@@ -165,8 +165,9 @@ def check_generation() -> None:
     working game rather than in a rebuild. The answer is written where the game reads it,
     and asked again every time this runs.
     """
-    print("        (loading the model, this takes a moment)")
-    verdict = preflight.verify(again=True)
+    with gpu.claimed("uv run doctor"):
+        print("        (loading the model, this takes a moment)")
+        verdict = preflight.verify(again=True)
     if verdict.ok and not verdict.loading.trimmed:
         line(OK, "Generation", f"the model answered, {verdict.loading.n_ctx} of context")
         return

@@ -21,18 +21,26 @@ The rules behind the systems (why a village turns hostile as a whole, why a tunn
 
 One line per file, saying what it owns. Update this when adding, removing or substantially repurposing a file: this list is what keeps lookups fast instead of requiring a codebase search. Keep entries to a line; anything longer belongs in `docs/design/`.
 
-`saves/save.json`: persisted game state (gitignored). `saves/llm_probe.json`: what `uv run doctor` last found out about this machine's ability to generate (gitignored). `models/`: GGUF model files (gitignored).
+`saves/save.json`: persisted game state (gitignored). `saves/llm_probe.json`: what `uv run doctor` last found out about this machine's ability to generate (gitignored). `models/`: GGUF model files (gitignored). `saves/gpu.lock`: who holds the card right now (gitignored). `logs/eval/`: every eval case as asked and answered (gitignored).
 
 ### scripts/verify
 How a change here is checked, all headless and none of them loading the model. `scripts/verify/README.md` says what is reproducible and what is not.
 - `scripts/verify/harness.py`: `boot()`, a real `Game` on dummy SDL with the LLM stubbed and a virtual clock; `step()` is one frame
-- `scripts/verify/refs.py`: every module parses and every `self.x()` names something defined in `src`
-- `scripts/verify/smoke.py`: N frames, then checks the world for non-finite coordinates, bad hp, orphan items
+- `scripts/verify/refs.py`: every module parses, every `self.x()` names something defined in `src`, no worker thread changes the world
+- `scripts/verify/smoke.py`: N frames with every quest type handed out, then a save and a reload, checking coordinates, hp, items, equipment and quests
 - `scripts/verify/render.py`: the fixed shots, drawn offscreen to PNG
 - `scripts/verify/render_diff.py`: those shots on this tree against a git ref, pixel by pixel
 - `scripts/verify/frame_profile.py`: update/draw split, frame percentiles, then a cProfile table
 - `scripts/verify/spawn_rates.py`: what `pick_monster_kind` rolls per distance band
 - `scripts/verify/shots.py`: regenerates the README's pictures; not a check
+
+### scripts/eval
+The same questions asked of the real model, kept so a prompt change comes with numbers. They load the model, so they wait for the card.
+- `scripts/eval/runner.py`: the GPU claim, the comparison against a git ref (its numbers kept per commit), the table, and the per case log in `logs/eval/`
+- `scripts/eval/quest_reward.py`: quest analysis over 18 conversations: quest or not, its type, the promised reward
+
+### .claude
+- `.claude/skills/bughunt/SKILL.md`: `/bughunt`, find bugs by reading, fix what is approved, leave a check per bug class
 
 ### Container
 How the game is handed to somebody who will not install it. Offline only: no CUDA, no llama-cpp-python, no weights.
@@ -108,6 +116,7 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 - `src/llm/llm_request_queue.py`: `LLMRequestQueue`, every LLM call serialised onto a worker thread
 - `src/llm/decide.py`: `decide`, the model picking one of a few labelled answers
 - `src/llm/fit.py`: sizing the model to the GPU by arithmetic, never by trial
+- `src/llm/gpu.py`: `claimed`, one process at a time on the card for anything that loads the model on purpose
 - `src/llm/preflight.py`: whether this install can generate at all, without crashing to find out
 - `src/llm/offline.py`: the no model answers, one per LLM category
 - `src/llm/dialogue_manager.py`: `DialogueManager`, the NPC dialogue window and the decisions read off each line
@@ -175,7 +184,9 @@ Engineering rules that apply to every change. The game design rules are in the R
 - Nothing heavy runs in Python on a background thread while the world is being drawn. Every pygame call on the main thread lets go of the GIL and has to take it back, so a worker doing arithmetic costs the frame a switch interval per call: rendering one music pad on demand took the frame from 16 ms to 85 ms. Work that has to be done in the background is done before the player has control (the pads, on the loading screen) or not at all; the model's own threads are waiting on C, which is the case this is not about.
 - `src/` is the package root; all imports are relative to it (e.g. `import core.constants as c`).
 - Verify before committing, always through `scripts/verify/`: `refs.py` and `smoke.py` after any multi-file change, `render_diff.py` after anything that draws, `frame_profile.py` on both sides of a performance claim. Report what they printed rather than that they passed. There is no pytest suite: `refs.py` and `smoke.py` are what the pre-push hook runs, so a push is the one place they are not optional.
-- Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it. To self-check a rendering change, a throwaway script that renders to an offscreen `Surface` is fine, with `SDL_VIDEODRIVER=dummy` set before `pygame.init()`.
+- A change to a prompt or to how a model answer is read is measured, before and after, with `scripts/eval/` (`--ref HEAD` puts both in one table), and a new kind of question gets its test set there rather than in a scratchpad. Anything else that loads the model on purpose goes through `llm.gpu.claimed`: two loads on the 4 GB card fail, and the claim is what makes parallel sessions take turns without anyone relaying who holds it.
+- When other sessions are working in this tree, commit each change as soon as it is verified, staging by explicit path, so nobody's uncommitted edits end up mixed with another session's in the same file.
+- Don't launch the game (`uv run game`, or any script that opens a pygame window) to verify a change, and don't ask Valentin to launch it. To self-check a rendering change, a throwaway script that renders to an offscreen `Surface` is fine, with `SDL_VIDEODRIVER=dummy` set before `pygame.init()`. A drawing bug Valentin reports is reproduced before it is diagnosed: boot `scripts/verify/harness.py`, put the world in the state he describes (the gear he wears, the direction he walks), draw a real frame through `Game._draw_frame` and read the PNG back. A sprite rendered on its own misses whatever is drawn over it, which is how a walk cycle took four rounds.
 - `World` is one class split across files by mixin (`world.py` state, `combat.py` blows against a body, `breaking.py` blows against the built world, `explosives.py` blasts, `projectiles.py` what is in flight, `streaming.py` the map, `places.py` what happens at a place, `social.py` what a settlement thinks of the player, `witnesses.py` who saw the player do it, `bosses.py` standing one up, `shops.py` the shelves, `navigation.py` getting there, `spawning.py` keeping the ground populated, `villagers.py` what a villager does with their frame). They share the same entity lists; pick the file by what you are changing, not by defaulting to `world.py`.
 - The map is endless and deterministic, what stands on it is generated on demand and kept. Anything regenerated from a chunk seed must stay a pure function of `(cx, cy)`, with player changes in `World.poi_state`. Villages are the exception and go through `World._ensure_village`. A building is named off its settlement's chunk and its slot, never off a fresh uuid, since its wing and its roof are rolled from that name and its wing is what its neighbour is shoved off: a random name would lay the same seed's houses down in different places in each process.
 - Exactly one interaction prompt is on screen at a time, drawn from `Game.current_interaction`.
