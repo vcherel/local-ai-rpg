@@ -189,11 +189,13 @@ class DialogueManager:
         self.shop_button_rect: pygame.Rect | None = None
 
         # Decisions read off the conversation (`llm/decide.py`), on a thread, and what to do
-        # with them on the main thread once they land. One at a time, and the box takes no
-        # typing while one is out: the next line would be read against a conversation that
-        # has already moved on.
+        # with them on the main thread once they land. One at a time, and no line is sent
+        # while one is out: the next line would be read against a conversation that has
+        # already moved on. The player can still type it; Enter pressed meanwhile is kept
+        # and sends the line once the box is free.
         self._judging = None
         self._on_judged = None
+        self._send_when_free = False
         # What talking has earned with this person so far this conversation
         # (`Affinity.TALK_GAIN_CAP`), and the reading shown in the box's header.
         self._talk_gain = 0.0
@@ -451,15 +453,22 @@ class DialogueManager:
 
         return True
 
-    def handle_text_input(self, event):
-        # The reply still streaming in is the one the player is answering, so the box takes
-        # nothing until it is finished. Before the stream was polled the main thread was
-        # blocked here anyway; now it is not, and sending mid-stream would abandon a reply
-        # halfway through writing itself.
-        if not self.active or self.conversation_ended or self.generator is not None or self._judging is not None:
-            return
+    @property
+    def _busy(self) -> bool:
+        return self.generator is not None or self._judging is not None
 
-        message = self.ui.handle_text_input(event)
+    def handle_text_input(self, event):
+        if not self.active or self.conversation_ended:
+            return
+        # The reply still streaming in is the one the player is answering, and the verdicts
+        # on it are still out, so a line is not sent until both are done: sending mid-stream
+        # would abandon a reply halfway through writing itself. Typing it is not held up.
+        if event.key == pygame.K_RETURN and self._busy:
+            self._send_when_free = bool(self.ui.user_input.strip())
+            return
+        self._send(self.ui.handle_text_input(event))
+
+    def _send(self, message: str | None):
         if message:
             self._send_chat_message(message)
             self.ui.auto_scroll(self.conversation, self.current_npc.name)
@@ -474,6 +483,10 @@ class DialogueManager:
             pending, landed = self._judging, self._on_judged
             self._judging = self._on_judged = None
             landed(pending.poll())
+        if self.active and self._send_when_free and not self._busy:
+            self._send_when_free = False
+            if not self.conversation_ended:
+                self._send(self.ui.take_input())
         if self.active and self.generator is not None:
             try:
                 partial = next(self.generator)
@@ -515,6 +528,7 @@ class DialogueManager:
         # still out is dropped with it: it was about a conversation that is over.
         self.generator = None
         self._judging = self._on_judged = None
+        self._send_when_free = False
         # Walking away from a parley is the villager's answer made for them, so a fight
         # cannot be paused by opening a box and shutting it again.
         if self.parley and not self._parley_won and self.quest_system.world is not None:

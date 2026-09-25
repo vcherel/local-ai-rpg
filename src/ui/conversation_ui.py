@@ -29,15 +29,20 @@ class ConversationUI:
         self.user_input = ""
 
     def handle_text_input(self, event) -> str:
-        if event.key == pygame.K_RETURN and self.user_input.strip():
-            message = self.user_input
-            self.user_input = ""
-            return message
+        if event.key == pygame.K_RETURN:
+            return self.take_input()
         elif event.key == pygame.K_BACKSPACE:
             self.user_input = self.user_input[:-1]
         elif event.unicode and len(self.user_input) < 150:
             self.user_input += event.unicode
         return None
+
+    def take_input(self) -> str | None:
+        """The line typed so far, emptying the box, or None if there is nothing in it."""
+        if not self.user_input.strip():
+            return None
+        message, self.user_input = self.user_input, ""
+        return message
 
     def scroll(self, direction: int, history: ConversationHistory, npc_name: str):
         """Move the view by one line. Positive direction scrolls up, towards older text."""
