@@ -145,8 +145,18 @@ class QuestSystem:
     def _pick_recipient(self, giver: NPC) -> NPC | None:
         """Who a delivery is for: someone else already living in the world, named, still on
         speaking terms with the player, and as far from the giver as the world allows, so a
-        delivery is a journey rather than a walk across the plaza."""
-        candidates = [npc for npc in self.npcs if npc is not giver and npc.name and not npc.hostile]
+        delivery is a journey rather than a walk across the plaza. Never a thief the player
+        is hunting nor anyone in a passing caravan, who will not be there to receive it."""
+        caravan = self.world.events.caravan() if self.world is not None else ()
+        candidates = [
+            npc
+            for npc in self.npcs
+            if npc is not giver
+            and npc.name
+            and not npc.hostile
+            and not npc.is_thief
+            and not any(npc is member for member in caravan)
+        ]
         if not candidates:
             return None
         return max(candidates, key=lambda npc: npc.distance_to_point((giver.x, giver.y)))

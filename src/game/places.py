@@ -775,6 +775,9 @@ class WorldPlaces:
         furious at dawn. A grudge is deliberately not one of them: no amount of sleeping
         makes a village forget who killed one of them."""
         self.daynight.update(seconds * 1000)
+        # A blood night is a night: sleeping through it is waking up after it, not at dawn
+        # under a sky still red.
+        self.events.blood_night_timer = max(0.0, self.events.blood_night_timer - seconds * 1000)
         now = time.time()
         self.rest_cooldowns = {
             key: ready - seconds for key, ready in self.rest_cooldowns.items() if ready - seconds > now

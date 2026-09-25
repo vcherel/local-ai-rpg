@@ -24,6 +24,9 @@ LABEL_GAP = 30
 # Strip at the bottom of the panel kept clear for the hint line and the sell-all buttons.
 FOOTER_HEIGHT = 84
 BULK_BUTTON_HEIGHT = 30
+# How long a bulk sell waits for the second press that confirms it. One press was the whole
+# bag gone, on S, which is also a walking key.
+BULK_CONFIRM_MS = 2500
 
 # What "unused gear" means: equippable kinds only. Ammo and potions are supplies you
 # spend rather than gear you outgrow, so a bulk sell never touches them.
@@ -52,6 +55,9 @@ class ShopMenu(BaseMenu):
         self.buy_scroll = 0
         self.sell_scroll = 0
         self.notoriety = 0.0
+        # The bulk sell waiting on its confirming press ("valuables" or "gear"), and until when.
+        self.armed: str | None = None
+        self.armed_until = 0
 
         # The two columns' geometry. Worked out once here rather than per row per frame:
         # nothing it is built from (the panel size, the padding, the header) changes for the
@@ -75,9 +81,11 @@ class ShopMenu(BaseMenu):
         self.hovered_sell = None
         self.buy_scroll = 0
         self.sell_scroll = 0
+        self.armed = None
 
     def close(self):
         self.active = False
+        self.armed = None
         self.merchant = None
         self.player = None
         self.world_items = None
@@ -144,6 +152,24 @@ class ShopMenu(BaseMenu):
         y = self.height - FOOTER_HEIGHT + 6
         return pygame.Rect(self.buy_panel_x, y, (self.panel_width - 10) // 2, BULK_BUTTON_HEIGHT)
 
+    def _batch(self, kind: str) -> list[Item]:
+        return self._valuables() if kind == "valuables" else self._unused_gear()
+
+    def _is_armed(self, kind: str) -> bool:
+        return self.armed == kind and pygame.time.get_ticks() < self.armed_until
+
+    def _press_bulk(self, kind: str):
+        """A bulk sell takes two presses: the first names what would go and for how much, the
+        second, within `BULK_CONFIRM_MS`, sells it."""
+        if not self._batch(kind):
+            return
+        if not self._is_armed(kind):
+            self.armed = kind
+            self.armed_until = pygame.time.get_ticks() + BULK_CONFIRM_MS
+            return
+        self.armed = None
+        self._sell_all(self._batch(kind))
+
     def _sell_all(self, items: list[Item]):
         """Sell a whole batch through the normal per-item path, so each one still trains
         bartering and warms the merchant exactly as it would clicked by hand."""
@@ -183,9 +209,9 @@ class ShopMenu(BaseMenu):
             elif event.key == EQUIP_BEST_KEY:
                 self.player.auto_equip_best()
             elif event.key == SELL_VALUABLES_KEY:
-                self._sell_all(self._valuables())
+                self._press_bulk("valuables")
             elif event.key == SELL_GEAR_KEY:
-                self._sell_all(self._unused_gear())
+                self._press_bulk("gear")
 
         elif event.type == pygame.MOUSEWHEEL:
             # MOUSEWHEEL carries no position; the column under the cursor scrolls.
@@ -208,10 +234,10 @@ class ShopMenu(BaseMenu):
                 return True
             valuables_rect, gear_rect = self._bulk_button_rects()
             if valuables_rect.collidepoint(rx, ry):
-                self._sell_all(self._valuables())
+                self._press_bulk("valuables")
                 return True
             if gear_rect.collidepoint(rx, ry):
-                self._sell_all(self._unused_gear())
+                self._press_bulk("gear")
                 return True
             if self._auto_equip_rect().collidepoint(rx, ry):
                 self.player.auto_equip_best()
@@ -219,15 +245,19 @@ class ShopMenu(BaseMenu):
 
         return True
 
-    def _scroll(self, rows: int, mouse_x: int, _mouse_y: int):
+    def _scroll(self, rows: int, mouse_x: int, mouse_y: int):
         """Scroll whichever column the cursor sits over, the sell one by default."""
-        menu_x, _ = self.get_centered_position()
+        menu_x, menu_y = self.get_centered_position()
         if mouse_x - menu_x < self.sell_panel_x:
             limit = self._max_scroll(len(self.merchant.shop_items))
             self.buy_scroll = max(0, min(limit, self.buy_scroll + rows))
         else:
             limit = self._max_scroll(len(self.player.inventory))
             self.sell_scroll = max(0, min(limit, self.sell_scroll + rows))
+        # The rows moved under a cursor that did not, so what it is over is asked again.
+        rx, ry = mouse_x - menu_x, mouse_y - menu_y
+        self.hovered_buy = self._buy_slot_at(rx, ry)
+        self.hovered_sell = self._sell_slot_at(rx, ry)
 
     def _buy(self, index: int):
         item = self.merchant.shop_items[index]
@@ -384,19 +414,26 @@ class ShopMenu(BaseMenu):
         rel = (mouse_x - menu_x, mouse_y - menu_y)
 
         batches = (
-            ("Valuables", self._valuables(), pygame.key.name(SELL_VALUABLES_KEY).upper()),
-            ("Unused gear", self._unused_gear(), pygame.key.name(SELL_GEAR_KEY).upper()),
+            ("valuables", "Valuables", pygame.key.name(SELL_VALUABLES_KEY).upper()),
+            ("gear", "Unused gear", pygame.key.name(SELL_GEAR_KEY).upper()),
         )
-        for rect, (caption, items, key) in zip(self._bulk_button_rects(), batches, strict=True):
+        for rect, (kind, caption, key) in zip(self._bulk_button_rects(), batches, strict=True):
+            items = self._batch(kind)
             total = sum(self._sell_price(item) for item in items)
-            label = f"[{key}] Sell {caption.lower()}  {total}g" if items else f"No {caption.lower()}"
+            armed = bool(items) and self._is_armed(kind)
+            if armed:
+                label = f"[{key}] again: sell {len(items)} for {total}g"
+            elif items:
+                label = f"[{key}] Sell {caption.lower()}  {total}g"
+            else:
+                label = f"No {caption.lower()}"
             widgets.draw_button(
                 surface,
                 rect,
                 label,
                 c.Fonts.small,
-                hovered=bool(items) and rect.collidepoint(rel),
-                text_color=c.Colors.WHITE if items else c.Colors.MUTED,
+                hovered=armed or (bool(items) and rect.collidepoint(rel)),
+                text_color=c.Colors.ACCENT if armed else c.Colors.WHITE if items else c.Colors.MUTED,
             )
 
     def _draw_scrollbar(self, surface: pygame.Surface, x: int, count: int, scroll: int):

@@ -71,7 +71,7 @@ class EventSystem:
             self._notify(message, color)
 
     def update(self, dt, player: Player, quest_system: QuestSystem, npc_name_generator: NPCNameGenerator):
-        self._tick_merchant(dt, player)
+        self._tick_merchant(dt, player, quest_system)
         if self.blood_night_timer > 0:
             self.blood_night_timer = max(0.0, self.blood_night_timer - dt)
 
@@ -197,7 +197,12 @@ class EventSystem:
         self.notify("A traveling merchant is on the road nearby", c.Colors.MERCHANT)
         self.world.start_shop_generation([npc])
 
-    def _tick_merchant(self, dt, player: Player):
+    def caravan(self) -> tuple:
+        """The travelling merchant and their guard while they are on the road. Passing
+        through is all they do: nobody in it gives or receives a quest, and neither is saved."""
+        return tuple(npc for npc in (self.wandering_merchant, self.merchant_guard) if npc is not None)
+
+    def _tick_merchant(self, dt, player: Player, quest_system: QuestSystem):
         """The pair walk while they are here and leave when their time is up.
 
         They travel by having their wander anchor drift: the merchant and the guard keep
@@ -225,8 +230,11 @@ class EventSystem:
         # Out of sight before they are taken away, so nobody watches a man wink out.
         if merchant.distance_to_point(player.get_pos()) < c.Events.MERCHANT_MIN_DIST:
             return
-        for npc in (self.wandering_merchant, self.merchant_guard):
-            if npc is not None and npc in self.world.npcs:
+        for npc in self.caravan():
+            # A parcel addressed to them, or a task they gave before this rule, goes with them.
+            quest_system.on_npc_killed(npc)
+            quest_system.remove_quest(npc)
+            if npc in self.world.npcs:
                 self.world.npcs.remove(npc)
         self.wandering_merchant = None
         self.merchant_guard = None
@@ -346,12 +354,19 @@ class EventSystem:
         candidates = [
             npc
             for npc in self.world.npcs
-            if not npc.is_merchant and not npc.has_active_quest and npc.can_talk and not self._village_angry(npc)
+            if not npc.is_merchant
+            and not npc.is_thief
+            and not any(npc is member for member in self.caravan())
+            and not npc.has_active_quest
+            and npc.can_talk
+            and not self._village_angry(npc)
         ]
         if not candidates:
             return
         npc = random.choice(candidates)
-        npc.assign_name(npc_name_generator)
+        # Drawn here, where waiting on the generator costs no frame, and given to them on the
+        # main thread with the quest.
+        name = npc.name or npc_name_generator.get_name()
 
         system_prompt = "You create small crises for RPG villagers. Reply ONLY with valid JSON, no extra text."
         json_format = (
@@ -361,18 +376,20 @@ class EventSystem:
         )
         prompt = (
             f"World: {self.world.context}\n"
-            f"{npc.name} suddenly faces an urgent problem that an adventurer could solve by fetching an item. "
+            f"{name} suddenly faces an urgent problem that an adventurer could solve by fetching an item. "
             f"Reply with this exact JSON format:\n{json_format}"
         )
         response = generate_response_queued(prompt, system_prompt, "Village crisis", raw=True)
         quest_info = parse_response_quest_analysis(response)
-        mainthread.post(self._land_crisis, quest_system, npc, quest_info, npc_name_generator)
+        mainthread.post(self._land_crisis, quest_system, npc, name, quest_info, npc_name_generator)
 
-    def _land_crisis(self, quest_system: QuestSystem, npc: NPC, quest_info: dict, npc_name_generator):
+    def _land_crisis(self, quest_system: QuestSystem, npc: NPC, name: str, quest_info: dict, npc_name_generator):
         # Asked again on the main thread: somebody else may have given them a task, or
         # turned them, while the model was writing this one.
         if npc.has_active_quest or not npc.can_talk or npc not in self.world.npcs:
             return
+        if npc.name is None:
+            npc.name = name
         quest_system.create_quest_from_analysis(npc, quest_info, npc_name_generator)
         if npc.quest:
             self.notify(f"{npc.name} has an urgent problem, seek them out", c.Colors.YELLOW)

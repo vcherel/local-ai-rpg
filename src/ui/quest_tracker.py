@@ -28,7 +28,7 @@ def _progress_line(quest: Quest) -> str:
         return f"Steal {quest.item_name} from the house"
     if quest.quest_type == "deliver":
         if quest.kills_done >= quest.kill_count:
-            return f"{quest.item_name} delivered"
+            return f"Delivered, back to {quest.npc_name}"
         return f"Take {quest.item_name} to {quest.recipient_npc_name}"
     return f"Fetch: {quest.item_name}"
 

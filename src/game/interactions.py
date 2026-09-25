@@ -213,7 +213,8 @@ class GameInteractions:
         # A merchant still waiting on its stock: no prompt for something the key wouldn't do.
         if npc.is_merchant and not npc.shop_ready:
             return
-        if self._threat_nearby():
+        threat = self._threat_nearby()
+        if threat:
             # Nobody stands in the street making conversation with a wolf twenty paces
             # off. Kill it or walk away from it first.
             label = f"{npc.name or 'They'} won't talk with that out there"
@@ -225,7 +226,7 @@ class GameInteractions:
             label = f"E: hear {npc.name} out" if npc.name else "E: hear them out"
         else:
             label = f"E: talk to {npc.name}" if npc.name else "E: talk"
-        hint = "B: trade" if npc.is_merchant else ""
+        hint = "B: trade" if npc.is_merchant and not threat else ""
         yield (
             self._reach(npc.x, npc.y),
             Interaction("npc", npc, label, npc.x, npc.y - c.Entities.NPC_SIZE, hint),

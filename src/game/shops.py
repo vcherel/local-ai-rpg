@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 
 import core.constants as c
+from core import mainthread
 from game.entities.items import AMMO_BUNDLE
 from game.loot import roll_shop_stock
 from llm.merchant_system import generate_shop_inventories
@@ -52,10 +53,17 @@ class WorldShops:
     def _generate_merchant_shops(self, merchants: list):
         try:
             stocks = generate_shop_inventories(self.context, len(merchants))
-            for merchant, stock in zip(merchants, stocks, strict=False):
-                merchant.set_shop(stock + self._shop_staples())
-        finally:
+        except Exception:
             self._shops_generating = False
+            raise
+        mainthread.post(self._stock_merchants, list(zip(merchants, stocks, strict=False)))
+
+    def _stock_merchants(self, deliveries: list):
+        """Put what the model wrote on the shelves, on the main thread: a shop menu may be
+        walking a merchant's stock this frame, and it is not a list a worker may refill."""
+        for merchant, stock in deliveries:
+            merchant.set_shop(stock + self._shop_staples())
+        self._shops_generating = False
         self.persist_world()
 
     @staticmethod

@@ -265,7 +265,9 @@ class Game(GameInteractions, GamePickups, GameSleep):
             if self.dialogue_manager.handle_event(event, self.npc_name_generator):
                 continue
 
-            if self.quest_menu.handle_event(event, self.dialogue_manager.quest_system):
+            if self.quest_menu.handle_event(
+                event, self.dialogue_manager.quest_system, self.dialogue_manager.quest_tracker
+            ):
                 continue
 
             if self.stats_menu.handle_event(event):
@@ -522,6 +524,9 @@ class Game(GameInteractions, GamePickups, GameSleep):
         """Open a merchant's shop straight from the world, skipping the conversation."""
         npc = self.world.npc_in_reach(self.player)
         if npc is None or not npc.is_merchant or not npc.shop_ready or not npc.can_talk:
+            return
+        if self._threat_nearby():
+            self.loot_notification.show(f"{npc.name or 'They'} won't trade with danger this close", c.Colors.MUTED)
             return
         self.shop_menu.open(npc, self.player, self.world.items, self.world)
 
@@ -957,7 +962,7 @@ class Game(GameInteractions, GamePickups, GameSleep):
             )
             self.loot_notification.draw()
         self.inventory_menu.draw(self.player)
-        self.quest_menu.draw(self.dialogue_manager.quest_system)
+        self.quest_menu.draw(self.dialogue_manager.quest_system, self.dialogue_manager.quest_tracker.tracked)
         self.shop_menu.draw()
         self.stats_menu.draw(self.player, self.record)
         self.help_menu.draw()

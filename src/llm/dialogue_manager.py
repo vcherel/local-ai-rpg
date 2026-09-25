@@ -866,6 +866,11 @@ class DialogueManager:
             mainthread.post(self._land_quest, npc, quest_info)
 
     def _land_quest(self, npc: NPC, quest_info: dict):
+        # Asked again on the main thread, as a crisis is: the decisions do not hold the model
+        # busy, so the player may have talked the same quest out of them twice, or turned or
+        # killed them, while this one was being read.
+        if npc.has_active_quest or not npc.can_talk or npc not in self.quest_system.npcs:
+            return
         self.quest_system.create_quest_from_analysis(npc, quest_info, self._npc_name_generator)
         quest = npc.quest
         if quest:

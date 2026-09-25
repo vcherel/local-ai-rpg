@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 
 RARE_GLOW = {"rare", "epic", "legendary"}
+GEAR_TYPES = ("weapon", "armor", "shield", "accessory")
 
 # Height of a section heading row, cell rows being cell_size + cell_padding tall.
 HEADER_ROW_H = 34
@@ -61,7 +62,10 @@ class InventoryMenu(BaseMenu):
         item_dict = {}
         for item in player.inventory:
             # Effects and flavour distinguish otherwise-identical items, so they don't merge in the grid.
+            # Gear never merges at all: two identical daggers are two things to hold, one in
+            # each hand, and a cell only ever clicks the one it was drawn from.
             key = (
+                item.id if item.item_type in GEAR_TYPES else None,
                 item.name,
                 item.rarity,
                 item.bonus,
@@ -296,7 +300,7 @@ class InventoryMenu(BaseMenu):
         # Drawn on the screen after the panel, not onto it: a long tooltip near an edge
         # would otherwise be clipped at the panel border instead of overhanging it.
         if tooltip_item is not None:
-            self._draw_tooltip(tooltip_item, mouse_pos, tooltip_item.id in equipped_ids)
+            self._draw_tooltip(tooltip_item, mouse_pos, tooltip_item.id in equipped_ids, player)
 
     def _draw_paperdoll(self, surface, player: Player):
         header = c.Fonts.heading.render("Equipped", True, c.Colors.MUTED)
@@ -424,7 +428,7 @@ class InventoryMenu(BaseMenu):
             text = text[:-1]
         return c.Fonts.small.render(text + "…", True, color)
 
-    def _draw_tooltip(self, item: Item, mouse_pos, is_equipped):
+    def _draw_tooltip(self, item: Item, mouse_pos, is_equipped, player: Player):
         if item.item_type == "weapon" and item.bonus > 0:
             text = f"{item.name}  (+{item.bonus} attack)"
         elif item.item_type == "armor" and item.bonus > 0:
@@ -437,8 +441,12 @@ class InventoryMenu(BaseMenu):
             text = f"{item.name}  (+{item.bonus} {flavor})"
         elif item.item_type in ("ammo", "potion"):
             text = f"{item.name}  (x{item.quantity})"
+        elif item.quest_bound:
+            text = f"{item.name}  (someone is waiting for this)"
         elif item.item_type == "misc":
-            text = f"{item.name}  (valuable, sells for ~{base_value(item)}g)"
+            # What a shop actually pays, before whatever the merchant thinks of the player.
+            price = max(1, round(base_value(item) * player.sell_multiplier()))
+            text = f"{item.name}  (valuable, sells for ~{price}g)"
         else:
             text = item.name
         if is_equipped:

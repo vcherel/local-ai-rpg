@@ -55,7 +55,9 @@ class QuestMenu(BaseMenu):
 
         return None
 
-    def handle_event(self, event, quest_system):
+    def handle_event(self, event, quest_system, tracker):
+        """Scrolling, and a click on a card to track that quest: the one the HUD follows and
+        the arrow points at."""
         if not self.active:
             return False
 
@@ -71,10 +73,15 @@ class QuestMenu(BaseMenu):
                 self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_offset = max(0, min(max_scroll, self.scroll_offset - event.y))
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            menu_x, menu_y = self.get_centered_position()
+            index = self.get_quest_at_mouse(*event.pos, menu_x, menu_y, len(quest_system.active_quests))
+            if index is not None:
+                tracker.tracked = quest_system.active_quests[index]
 
         return True
 
-    def draw(self, quest_system: QuestSystem):
+    def draw(self, quest_system: QuestSystem, tracked=None):
         if not self.active:
             return
 
@@ -111,8 +118,15 @@ class QuestMenu(BaseMenu):
                 card_y = content_start_y + i * (self.card_height + self.card_spacing)
 
                 card_rect = pygame.Rect(self.padding, card_y, self.card_width, self.card_height)
-                widgets.draw_slot(menu_surface, card_rect, hovered=visible_index == self.hovered_quest_index)
-                self._draw_card(menu_surface, quest, card_y)
+                is_tracked = quest is tracked
+                widgets.draw_slot(
+                    menu_surface,
+                    card_rect,
+                    hovered=visible_index == self.hovered_quest_index,
+                    border_color=c.Colors.ACCENT if is_tracked else None,
+                    border_w=3 if is_tracked else 2,
+                )
+                self._draw_card(menu_surface, quest, card_y, is_tracked)
 
             if quest_count > self.max_visible_quests:
                 self._draw_scroll_indicator(menu_surface, quest_count)
@@ -133,10 +147,12 @@ class QuestMenu(BaseMenu):
         if quest.quest_type == "steal":
             return f"Steal: {quest.item_name} from a house"
         if quest.quest_type == "deliver":
-            return f"Deliver: {quest.item_name} to {quest.recipient_npc_name} ({quest.kills_done}/{quest.kill_count})"
+            if quest.kills_done >= quest.kill_count:
+                return f"Delivered: go back to {quest.npc_name}"
+            return f"Deliver: {quest.item_name} to {quest.recipient_npc_name}"
         return f"Fetch: {quest.item_name}"
 
-    def _draw_card(self, surface, quest, card_y: int):
+    def _draw_card(self, surface, quest, card_y: int, tracked: bool = False):
         """Name, description, objective and reward stacked in that order. The objective and
         reward sit at the bottom of the card and the description takes whatever room is
         left above them, so a long one is trimmed instead of running into them."""
@@ -146,10 +162,16 @@ class QuestMenu(BaseMenu):
 
         npc_surface = c.Fonts.heading.render(quest.npc_name, True, c.Colors.YELLOW)
         surface.blit(npc_surface, (text_x, card_y + 10))
+        tag = c.Fonts.small.render(
+            "Tracked" if tracked else "Click to track", True, c.Colors.ACCENT if tracked else c.Colors.MUTED
+        )
+        surface.blit(tag, (self.padding + self.card_width - 15 - tag.get_width(), card_y + 14))
 
         objective_surface = c.Fonts.button.render(self._objective_text(quest), True, c.Colors.WHITE)
         if quest.reward_item_name:
             reward_surface = c.Fonts.button.render(f"Reward: {quest.reward_item_name}", True, c.Colors.YELLOW)
+        elif quest.quest_type in c.Quests.ALWAYS_ITEM_TYPES:
+            reward_surface = c.Fonts.button.render("Reward: coins and gear", True, c.Colors.WHITE)
         else:
             reward_surface = c.Fonts.button.render("Reward: coins", True, c.Colors.WHITE)
 

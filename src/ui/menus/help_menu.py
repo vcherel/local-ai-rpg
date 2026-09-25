@@ -34,7 +34,7 @@ CONTROLS = [
     ("1", "Swap your two weapons over, hand one to hand two"),
     ("2 3 4 5", "Drink the potion in that quickbar slot"),
     ("E", "In the bag or a shop: equip the best of everything carried"),
-    ("S / U", "In a shop: sell every valuable / every unused piece of gear"),
+    ("S / U", "In a shop, pressed twice: sell every valuable / every unused piece of gear"),
     ("I", "Inventory"),
     ("J", "Quests"),
     ("C", "Character"),

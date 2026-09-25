@@ -110,18 +110,28 @@ def _default_hand(item) -> int:
     return 1 if c.weapon_archetype(item.name).ranged else 0
 
 
+def _is_ranged(item) -> bool:
+    return c.weapon_archetype(item.name).ranged
+
+
 def _best_pair(weapons) -> list:
-    """The two weapons to hold, out of everything on offer: the strongest of the lot on the
-    left button whatever its family, and the best of the *other* family on the right, so
-    the player leads with their best and still carries the answer the other family gives.
-    Either may be None. The one rule behind `_best_loadout`."""
+    """The two weapons to hold, out of everything on offer: the best swung weapon on the
+    left button and the best fired one on the right, the hands every weapon defaults to.
+    A family with nothing in it lends its hand to the runner up of the other, so two swords
+    and no bow is a sword in each hand rather than one and a bare fist. Either may be None.
+    The one rule behind `_best_loadout`."""
     ranked = sorted(weapons, key=lambda item: (-item.bonus, item.name))
-    if not ranked:
-        return [None, None]
-    best = ranked[0]
-    ranged = c.weapon_archetype(best.name).ranged
-    second = next((item for item in ranked[1:] if c.weapon_archetype(item.name).ranged != ranged), None)
-    return [best, second]
+    melee = [item for item in ranked if not _is_ranged(item)]
+    ranged = [item for item in ranked if _is_ranged(item)]
+    left = melee[0] if melee else (ranged[1] if len(ranged) > 1 else None)
+    right = ranged[0] if ranged else (melee[1] if len(melee) > 1 else None)
+    return [left, right]
+
+
+def _same_pair(held: list, wanted: list) -> bool:
+    """Whether two pairs of hands hold the same two weapons, whichever hand each is in: a
+    loadout swapped over with one key is the player's choice of button, not a worse one."""
+    return sorted(held, key=str) == sorted(wanted, key=str)
 
 
 class Player(PlayerBonuses, Entity):
@@ -578,14 +588,25 @@ class Player(PlayerBonuses, Entity):
         return next((item for item in self.inventory if item.id == item_id), None)
 
     def _target_slot(self, item) -> str | None:
-        """The slot an item is actually equipped into. Only a weapon has a choice to make:
-        it goes to the hand its family defaults to (swung on the left, fired on the right),
-        and when that hand is full but the other is free it goes there instead, so a second
-        weapon is taken up rather than pushing the first out. With both full it replaces the
-        one it defaults to."""
+        """The slot an item is actually equipped into. Only a weapon has a choice to make.
+        One already held stays where it is. Otherwise it replaces a weapon of its own family
+        (the weaker, if both hands hold one), so a new sword never takes the bow out of
+        whichever hand the player put it in. With none of its family held it goes to the hand
+        its family defaults to (swung on the left, fired on the right), else to the free one,
+        and with both full it replaces the one it defaults to."""
         kind = _equip_slot(item)
         if kind != "weapon":
             return kind
+        current = self.equipped_slot_of(item)
+        if current is not None:
+            return current
+        kin = [
+            held
+            for held in (self.hand_weapon(0), self.hand_weapon(1))
+            if held is not None and _is_ranged(held) == _is_ranged(item)
+        ]
+        if kin:
+            return self.equipped_slot_of(min(kin, key=lambda held: held.bonus))
         hand = _default_hand(item)
         if self.equipped[HAND_SLOTS[hand]] is None:
             return HAND_SLOTS[hand]
@@ -680,15 +701,14 @@ class Player(PlayerBonuses, Entity):
         equippable but never an upgrade: which quiver is loaded is a choice, not a power
         level, and prompting "press F to equip" over every bundle of arrows is noise, and
         neither is a bomb, which is a thing to spend rather than a thing to wear. A weapon
-        is measured against whatever is already in the hand it would arrive in, so a shop
-        only flags what would actually replace something with better."""
+        is measured against whatever is in the hand F would put it in (`_target_slot`), so
+        a shop only flags what would actually replace something with better."""
         kind = _equip_slot(item)
         if kind is None or kind in ("ammo", "bomb"):
             return False
-        if kind == "weapon":
-            held = self.hand_weapon(_default_hand(item))
-            return item.bonus > (held.bonus if held is not None else -1)
-        equipped = self.equipped_item(kind)
+        if self.equipped_slot_of(item) is not None:
+            return False
+        equipped = self.equipped_item(self._target_slot(item))
         return item.bonus > (equipped.bonus if equipped else -1)
 
     def _clear_slot(self, slot: str):
@@ -722,8 +742,8 @@ class Player(PlayerBonuses, Entity):
 
         Every slot it covers is named, the ones it wants empty included: putting the best on
         takes the worse thing off rather than leaving it hanging where the loadout no longer
-        wants it. The weapons are `_best_pair`: the best of the bag on the left button and
-        the best of the other family on the right."""
+        wants it. The weapons are `_best_pair`: the best swung weapon on the left button and
+        the best fired one on the right."""
         candidates: dict[str, list] = {}
         for item in self.inventory:
             kind = _equip_slot(item)
@@ -745,13 +765,29 @@ class Player(PlayerBonuses, Entity):
         counted like one it would fill: what the button offers, rather than how many
         upgrades are lying in the bag (three swords are one upgrade)."""
         loadout = self._best_loadout()
-        return sum(1 for slot, item in loadout.items() if self.equipped[slot] != (item.id if item else None))
+        wanted = [loadout.pop(slot) for slot in HAND_SLOTS]
+        wanted_ids = [item.id if item else None for item in wanted]
+        held_ids = [self.equipped[slot] for slot in HAND_SLOTS]
+        hands = 0
+        if not _same_pair(held_ids, wanted_ids):
+            spare = list(held_ids)
+            for item_id in wanted_ids:
+                if item_id in spare:
+                    spare.remove(item_id)
+                else:
+                    hands += 1
+        return hands + sum(1 for slot, item in loadout.items() if self.equipped[slot] != (item.id if item else None))
 
     def auto_equip_best(self) -> list:
         """Put the best loadout on, taking off whatever it does not want. Returns the items
         newly equipped, for the caller to report."""
         changed = []
-        for slot, item in self._best_loadout().items():
+        loadout = self._best_loadout()
+        wanted_hands = [loadout[slot].id if loadout[slot] else None for slot in HAND_SLOTS]
+        if _same_pair([self.equipped[slot] for slot in HAND_SLOTS], wanted_hands):
+            for slot in HAND_SLOTS:
+                del loadout[slot]
+        for slot, item in loadout.items():
             wanted = item.id if item is not None else None
             if self.equipped[slot] == wanted:
                 continue

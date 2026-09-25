@@ -79,10 +79,12 @@ class GameSleep:
                 self.loot_notification.show(f"The doorman wants {price} coins for a room", c.Colors.RED)
                 return
             self.player.add_coins(-price)
-        self.world.rest_in_house(self.interior)
 
         play_sound("quest_complete")
         self._sleep_until_dawn()
+        # Marked cold once the night is over rather than before it: the skip runs every
+        # rest clock forward, and this bed's would have been spent on the night slept in it.
+        self.world.rest_in_house(self.interior)
         self.player.clear_death_debuff()
         self.player.max_hp = self.player.effective_max_hp()
         self.player.hp = self.player.max_hp
