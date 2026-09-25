@@ -33,14 +33,26 @@ QUEST_KINDS = {
     "steal": "steal a specific item from a neighbour's house",
     "deliver": "carry a specific item to another person and come back",
 }
-# A reward the model wrote into `reward_item` that is only money ("40 gold", "coins"). The
-# coins are paid off the NPC's parting line (`promised_reward`); as an item it came out as an
-# accessory called "40 gold".
+# A reward the model wrote into `reward_item` that is only money ("40 gold", "a hundred
+# coins"). The coins are paid off the NPC's parting line (`promised_reward`); as an item it
+# came out as an accessory called "40 gold".
 COIN_REWARD_RE = re.compile(
-    r"^[\d\s,]*(?:some |a few |(?:a )?(?:bag|purse|pouch) of )?(?:gold|silver|copper)?\s*(?:coins?|pieces?|gold)?"
+    r"^[\d\s,]*(?:(?:a|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|forty|fifty"
+    r"|sixty|seventy|eighty|ninety|hundred|thousand)\s+)*"
+    r"(?:some |a few |(?:a )?(?:bag|purse|pouch) of |(?:a )?(?:purse|pouch)$)?"
+    r"(?:gold|silver|copper)?\s*(?:coins?|pieces?|gold)?"
     r"(?:\s+(?:pieces|coins))?$",
     re.I,
 )
+# Where a reward naming coins and a thing ("40 gold and my hunting bow") is cut apart.
+REWARD_PARTS_RE = re.compile(r",|\band\b|\bplus\b", re.I)
+# The reward asked for again on its own (`QuestSystem._promised_object`), when the JSON left it
+# empty. "as a reward" is what keeps the answer off the parcel a delivery hands over.
+PROMISED_OBJECT = (
+    'What object did the NPC promise to give the player as a reward? Reply with its name only, or "nothing" '
+    "if they promised none."
+)
+NOTHING_RE = re.compile(r"^(?:nothing|none|no object|n/?a)\b", re.I)
 # What is carried when the NPC asked for a delivery without the model naming the thing.
 DEFAULT_PARCEL = "parcel"
 
@@ -92,10 +104,33 @@ class QuestSystem:
     @staticmethod
     def _strip_article(name: str) -> str:
         name = name.strip()
-        for article in ["the ", "a ", "an ", "some "]:
+        for article in ["the ", "a ", "an ", "some ", "my "]:
             if name.lower().startswith(article):
                 return name[len(article) :]
         return name
+
+    @classmethod
+    def _reward_name(cls, reward: str) -> str:
+        """The thing a reward names, with the money cut out of it: the model writes a mixed
+        offer as one name, now and then as an object ({"coins": "a purse"}), and the coins
+        are paid separately (`promised_reward`)."""
+        if isinstance(reward, dict):
+            reward = list(reward.values())
+        if isinstance(reward, list):
+            reward = " and ".join(map(str, reward))
+        parts = (cls._strip_article(part) for part in REWARD_PARTS_RE.split(str(reward or "")))
+        return " and ".join(part for part in parts if part and not COIN_REWARD_RE.match(part))
+
+    @staticmethod
+    def _promised_object(conversation_history: str, system_prompt: str) -> str:
+        """The reward item asked for with no other field beside it. Beside the quest's other
+        details the model dropped a named reward in about one run in six; asked alone, it
+        named every one and answers a coin only offer with the coins or "nothing"."""
+        answer = generate_response_queued(
+            f"Conversation:\n{conversation_history}\n\n{PROMISED_OBJECT}", system_prompt, "Quest reward", max_tokens=16
+        )
+        answer = answer.strip().strip(".\"'")
+        return "" if NOTHING_RE.match(answer) else answer
 
     @staticmethod
     def _resolve_monster_kind(hint: str) -> c.MonsterKind:
@@ -175,6 +210,8 @@ class QuestSystem:
         fields = parse_quest_fields(response)
         if fields is None:
             return _no_quest()
+        if not self._reward_name(fields["reward_item"]):
+            fields["reward_item"] = self._promised_object(conversation_history, system_prompt)
         return {"has_quest": True, "quest_type": quest_type, **fields}
 
     def create_quest_from_analysis(self, npc: NPC, quest_info: dict, npc_name_generator: NPCNameGenerator):
@@ -192,10 +229,8 @@ class QuestSystem:
         common = {
             "npc_name": npc.name,
             "description": quest_info["quest_description"],
-            "reward_item_name": self._strip_article(quest_info.get("reward_item", "")),
+            "reward_item_name": self._reward_name(quest_info.get("reward_item", "")),
         }
-        if COIN_REWARD_RE.match(common["reward_item_name"]):
-            common["reward_item_name"] = ""
         quest = build(self, npc, quest_info, common, npc_name_generator)
         if quest is None:
             return

@@ -71,6 +71,17 @@ Found on the Q2_K 7B, and worth keeping in mind for any new question:
 - A detail in the prompt primes the answer it suggests: mentioning the player's coins made
   every witness a blackmailer, and "likes the player" made a brave one ask for a bribe.
   What the game should weigh (a liking) goes in `prior` rather than in the words.
+- A decision is not always better than a written field. "Besides any money, did the NPC
+  promise an object?" read most offers of coins and a thing as money only, and read them
+  that way every time, where the quest's written `reward_item` lost a promised item in 4 of
+  30 runs. Rewording the field did not move that, and naming what it must not hold ("not
+  the item the player must fetch") made the model leave it empty. What the model writes
+  there is cleaned in code instead (`QuestSystem._reward_name`): the money cut out of a
+  mixed reward, and an object written where a name was asked for flattened to its values.
+  What did move it was asking the field again on its own, only when it came back empty
+  (`QuestSystem._promised_object`): no promised item lost in 60 runs against 10 lost. Asked
+  as "what object did the NPC promise", it named the letter a delivery hands over in 6 of
+  30 coin only runs; "as a reward" brought that to 1.
 - Ask before the reply when the reply has to agree with the answer (a haggle, an apology,
   a plea), after it when the answer is about the exchange (the mood, the end).
 
