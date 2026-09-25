@@ -51,6 +51,7 @@ How the game is handed to somebody who will not install it. Offline only: no CUD
 - `src/game/game.py`: `Game`, the main loop, input handling and the key/dock/interact action tables
 - `src/game/interactions.py`: `Interaction` and `GameInteractions`, the single E prompt on screen
 - `src/game/sleeping.py`: `GameSleep`, a night in a bed: its prompt, its refusals and the fade to morning
+- `src/game/pickups.py`: `GamePickups`, loot off the ground and out of boxes: the magnet, purses, stacking, the F upgrade prompt
 - `src/game/world.py`: `World`, the shared state (entity lists, buildings, saving) and the per-frame `update`
 - `src/game/combat.py`: `WorldCombat`, every blow against a body and its aftermath
 - `src/game/breaking.py`: `WorldBreaking`, blows against the built world (scenery, props, windows, doors)

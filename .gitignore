@@ -5,7 +5,6 @@ __pycache__
 .ruff_cache
 models
 saves
-/stats*
 logs
 dist/
 .env

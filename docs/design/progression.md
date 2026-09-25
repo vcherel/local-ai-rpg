@@ -48,7 +48,7 @@ rule `GameRenderer._hidden_indoors` draws by, because loot must not come out thr
 ## Coins on the ground are an object, not a number
 
 A killed villager's purse is an `Item` of type `"coins"` holding its amount in `quantity`,
-dropped where the body fell and credited (through `gain_coins`, so the coin-find accessory still
+dropped where the body fell and credited (through `find_coins`, so the coin-find accessory still
 applies) only when somebody walks into it; it never enters the inventory and leaves the master
 item list the moment it is taken. That is what lets an uncredited kill still leave money lying
 there, and it is the shape every coin drop takes rather than an instant credit.

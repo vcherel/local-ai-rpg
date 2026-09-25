@@ -70,8 +70,6 @@ _STYLE_BY_WEAPON = {
 
 def style_for_weapon(arch) -> str:
     """The splat recipe a weapon archetype bleeds by. Unknown families bleed generically."""
-    if arch is None:
-        return "generic"
     return _STYLE_BY_WEAPON.get(getattr(arch, "name", ""), "generic")
 
 

@@ -14,6 +14,7 @@ a search for what a monster *does* should never land in a hundred lines of polyg
 from __future__ import annotations
 
 import math
+from functools import partial
 
 import pygame
 
@@ -487,18 +488,10 @@ def _husk(sprite, center, size, color, breath, hand, torn: bool):
     return {"hands": hands, "eyes": (at(0.26, -0.13), at(0.26, 0.13))}
 
 
-def _draw_husk(sprite, center, size, color, breath, hand):
-    return _husk(sprite, center, size, color, breath, hand, torn=False)
-
-
-def _draw_husk_open(sprite, center, size, color, breath, hand):
-    return _husk(sprite, center, size, color, breath, hand, torn=True)
-
-
 _SHAPES = {
     "humanoid": _draw_humanoid,
-    "husk": _draw_husk,
-    "husk_open": _draw_husk_open,
+    "husk": partial(_husk, torn=False),
+    "husk_open": partial(_husk, torn=True),
     "goblin": _draw_goblin,
     "hulk": _draw_hulk,
     "skeleton": _draw_skeleton,

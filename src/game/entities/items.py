@@ -175,6 +175,12 @@ VALUABLE_COLORS = {
 # A dropped purse, drawn brighter than a valuable so a pile of coins reads as money.
 COIN_COLOR = (255, 215, 60)
 
+# Gear gets a slightly different shade per piece; the rest are one colour per type. A purse
+# ("coins") lies on the ground and never enters the inventory: walking into it credits the
+# coins its quantity holds.
+_JITTERED_COLORS = {"weapon": WEAPON_COLOR, "armor": ARMOR_COLOR, "shield": ARMOR_COLOR, "accessory": ACCESSORY_COLOR}
+_FIXED_COLORS = {"lootbox": LOOTBOX_COLOR, "coins": COIN_COLOR, "ammo": AMMO_COLOR, "bomb": c.Bombs.BODY_COLOR}
+
 ACCESSORY_FLAVORS = ("speed", "regen", "luck", "crit", "lifesteal", "coinfind", "xpgain", "pierce")
 # Legendary-only accessory flavor: a chance to combine coin find and xp gain into one
 # relic instead of picking a single flavor, its own signature effect like the weapon/
@@ -496,7 +502,7 @@ def potion_description(item: Item) -> str:
     if effect == "swiftness":
         return f"+{round((magnitude - 1) * 100)}% move speed for {seconds}s"
     if effect == "stoneskin":
-        return f"+{int(magnitude)} armor for {seconds}s"
+        return f"+{int(magnitude)} armour for {seconds}s"
     return POTION_EFFECT_LABELS.get(effect, effect)
 
 
@@ -545,27 +551,15 @@ class Item:
         self.quantity = quantity
         # Rolled before the colour: a valuable's metal follows the shape its name gave it.
         self.shape = icon_shape(item_type, name)
-        if item_type == "weapon":
-            self.color = _jitter(WEAPON_COLOR)
-        elif item_type in ("armor", "shield"):
-            self.color = _jitter(ARMOR_COLOR)
-        elif item_type == "accessory":
-            if self.accessory_flavor is None:
-                self.accessory_flavor = roll_accessory_flavor(self.rarity)
-            self.color = _jitter(ACCESSORY_COLOR)
-        elif item_type == "lootbox":
-            self.color = LOOTBOX_COLOR
-        elif item_type == "coins":
-            # A purse lying on the ground. Never enters the inventory: walking into it
-            # credits the coins, which is what "quantity" holds.
-            self.color = COIN_COLOR
-        elif item_type == "ammo":
-            self.color = AMMO_COLOR
-        elif item_type == "bomb":
-            self.color = c.Bombs.BODY_COLOR
+        if item_type == "accessory" and self.accessory_flavor is None:
+            self.accessory_flavor = roll_accessory_flavor(self.rarity)
+        if item_type == "potion" and self.potion_effect is None:
+            self.potion_effect = potion_effect_from_name(name)
+        if item_type in _JITTERED_COLORS:
+            self.color = _jitter(_JITTERED_COLORS[item_type])
+        elif item_type in _FIXED_COLORS:
+            self.color = _FIXED_COLORS[item_type]
         elif item_type == "potion":
-            if self.potion_effect is None:
-                self.potion_effect = potion_effect_from_name(name)
             self.color = c.Potions.COLORS[self.potion_effect]
         else:  # misc: something to sell, drawn as whatever its name says it is
             self.color = VALUABLE_COLORS.get(self.shape, VALUABLE_COLOR)

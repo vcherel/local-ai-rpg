@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 import core.constants as c
+from game.entities.item_icons import draw_shape_with_border
 from ui import widgets
 
 if TYPE_CHECKING:
@@ -77,12 +78,36 @@ class ConversationUI:
     def close_button_rect(self) -> pygame.Rect:
         """The cross in the box's top right corner. Computed, not stored, so it can be
         hit-tested on a frame the box hasn't drawn yet."""
-        box_y = c.Screen.HEIGHT - self.BOX_HEIGHT - 25
+        box_y = self.panel_rect().top
         return pygame.Rect(c.Screen.WIDTH - 22 - self.CLOSE_SIZE, box_y + 12, self.CLOSE_SIZE, self.CLOSE_SIZE)
+
+    def draw_shop_button(self, coins: int) -> pygame.Rect:
+        """The Shop button left of the close cross, with the player's coins beside it.
+        Haggling with a merchant is the one conversation where what's in the purse decides
+        what to say next."""
+        close = self.close_button_rect()
+        rect = pygame.Rect(0, 0, 130, 30)
+        rect.topright = (close.left - 12, close.top)
+        hovered = rect.collidepoint(pygame.mouse.get_pos())
+        widgets.draw_button(
+            self.screen,
+            rect,
+            "Shop",
+            c.Fonts.button,
+            hovered=hovered,
+            text_color=(100, 255, 100),
+            accent=(100, 255, 100),
+        )
+        amount = c.Fonts.button.render(str(coins), True, c.Colors.ACCENT)
+        right = rect.left - 14
+        self.screen.blit(amount, (right - amount.get_width(), rect.centery - amount.get_height() // 2))
+        coin_center = (right - amount.get_width() - 16, rect.centery)
+        draw_shape_with_border(self.screen, "coin", coin_center, 8, (235, 205, 80), 2)
+        return rect
 
     def draw(self, npc_name: str, history: ConversationHistory, ended: bool = False, reaction: tuple | None = None):
         box_height = self.BOX_HEIGHT
-        box_y = c.Screen.HEIGHT - box_height - 25
+        box_y = self.panel_rect().top
 
         pygame.draw.rect(self.screen, c.Colors.MENU_BACKGROUND, (10, box_y, c.Screen.WIDTH - 20, box_height))
         pygame.draw.rect(self.screen, c.Colors.WHITE, (10, box_y, c.Screen.WIDTH - 20, box_height), 2)

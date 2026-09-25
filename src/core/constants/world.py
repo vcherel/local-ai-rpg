@@ -721,6 +721,8 @@ class Scenery:
     }
     # How much of a body of water each of those three passes covers.
     WATER_LAYER_SCALE: tuple = (1.0, 0.9, 0.5)
+    # The same for a river's blobs, which are circles rather than lobes.
+    RIVER_LAYER_SCALE: tuple = (1.0, 0.84, 0.52)
     # The kinds the player wades through rather than walks over. A bridge sits on top of
     # them in the draw order for the same reason it does in the world.
     WATER_KINDS: tuple = ("pond", "lake", "river")

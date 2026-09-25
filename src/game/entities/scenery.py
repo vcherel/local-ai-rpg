@@ -359,17 +359,13 @@ class Scenery:
             pygame.draw.ellipse(screen, color, rect)
 
     def _draw_river(self, screen, center):
-        # One blob of the course, and only its bank: the body and the deep middle stand at
-        # the same points as their own kinds and are laid down in their own passes (see
-        # c.Scenery.GROUND_KINDS). Blobs sit well inside each other's width, so a blob that
-        # drew all three layers itself would paint its bank over its neighbour's middle.
-        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[0], center, round(self.size))
-
-    def _draw_river_body(self, screen, center):
-        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[1], center, round(self.size * 0.84))
-
-    def _draw_river_deep(self, screen, center):
-        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[2], center, round(self.size * 0.52))
+        # One blob of the course, and only this piece's layer: the bank, the body and the
+        # deep middle stand at the same points as their own kinds and are laid down in their
+        # own passes (see c.Scenery.GROUND_KINDS). Blobs sit well inside each other's width,
+        # so a blob that drew all three layers itself would paint its bank over its
+        # neighbour's middle.
+        scale = c.Scenery.RIVER_LAYER_SCALE[self.layer]
+        pygame.draw.circle(screen, c.Scenery.WATER_COLORS[self.layer], center, round(self.size * scale))
 
     def _draw_bridge(self, screen, center):
         cx, cy = center
@@ -520,8 +516,8 @@ _DRAWERS = {
     "lake_body": Scenery._draw_pond,
     "lake_deep": Scenery._draw_pond,
     "river": Scenery._draw_river,
-    "river_body": Scenery._draw_river_body,
-    "river_deep": Scenery._draw_river_deep,
+    "river_body": Scenery._draw_river,
+    "river_deep": Scenery._draw_river,
     "bridge": Scenery._draw_bridge,
     "grass": Scenery._draw_blades,
     "reeds": Scenery._draw_blades,

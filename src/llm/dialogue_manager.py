@@ -11,14 +11,12 @@ import core.constants as c
 from core import dialogue_log, mainthread
 from core.audio import play_sound
 from core.utils import ConversationHistory
-from game.entities.item_icons import draw_shape_with_border
 from game.entities.items import potion_description
 from game.quest import COUNTED_QUEST_TYPES
 from llm import offline
 from llm.decide import decide, later, odds
 from llm.llm_request_queue import generate_response_stream_queued, warm_queued
 from llm.quest_system import QuestSystem, coin_band
-from ui import widgets
 from ui.conversation_ui import ConversationUI
 from ui.quest_tracker import QuestTracker
 
@@ -628,35 +626,9 @@ class DialogueManager:
 
         # Hidden while a haggle is still being read too: the shop would open on the old price.
         if self.current_npc.is_merchant and not self._busy:
-            box_height = self.ui.BOX_HEIGHT
-            box_y = c.Screen.HEIGHT - box_height - 25
-            btn_w, btn_h = 130, 30
-            # Left of the close cross in the same corner, not under it.
-            btn_x = self.ui.close_button_rect().left - 12 - btn_w
-            btn_y = box_y + 12
-            self.shop_button_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
-
-            mouse = pygame.mouse.get_pos()
-            hover = self.shop_button_rect.collidepoint(mouse)
-            widgets.draw_button(
-                self.ui.screen,
-                self.shop_button_rect,
-                "Shop",
-                c.Fonts.button,
-                hovered=hover,
-                text_color=(100, 255, 100),
-                accent=(100, 255, 100),
-            )
-            self._draw_purse(self.shop_button_rect.left - 14, self.shop_button_rect.centery)
+            self.shop_button_rect = self.ui.draw_shop_button(self.quest_system.player.coins)
         else:
             self.shop_button_rect = None
-
-    def _draw_purse(self, right: int, centery: int):
-        """The player's coins beside the Shop button. Haggling with a merchant is the one
-        conversation where what's in the purse decides what to say next."""
-        amount = c.Fonts.button.render(str(self.quest_system.player.coins), True, c.Colors.ACCENT)
-        self.ui.screen.blit(amount, (right - amount.get_width(), centery - amount.get_height() // 2))
-        draw_shape_with_border(self.ui.screen, "coin", (right - amount.get_width() - 16, centery), 8, (235, 205, 80), 2)
 
     def _send_chat_message(self, message: str):
         if self.conversation_ended:

@@ -100,29 +100,29 @@ class EventSystem:
 
         kind = random.choices([k for k, _ in kinds], weights=[w for _, w in kinds])[0]
 
+        # Whether it is announced first is a roll; the announcement quotes the lore, so it is
+        # written on a thread and the event itself is posted back once it has been read.
+        presaged = {
+            "treasure": (self._treasure_with_presage, self._spawn_treasure),
+            "blood_night": (self._blood_night_with_presage, self._start_blood_night),
+            "boss": (self._boss_event_with_presage, self._spawn_boss_event),
+        }
+        threaded = {
+            "rumor": (self._generate_rumor, (player,)),
+            "prophetic_rumor": (self._generate_prophetic_rumor, (player,)),
+            "crisis": (self._generate_crisis, (quest_system, npc_name_generator)),
+        }
         if kind == "merchant":
             self._spawn_wandering_merchant(player)
-        elif kind == "treasure":
+        elif kind in presaged:
+            with_presage, plain = presaged[kind]
             if random.random() < c.Events.PRESAGE_CHANCE:
-                threading.Thread(target=self._treasure_with_presage, args=(player,), daemon=True).start()
+                threading.Thread(target=with_presage, args=(player,), daemon=True).start()
             else:
-                self._spawn_treasure(player)
-        elif kind == "blood_night":
-            if random.random() < c.Events.PRESAGE_CHANCE:
-                threading.Thread(target=self._blood_night_with_presage, args=(player,), daemon=True).start()
-            else:
-                self._start_blood_night(player)
-        elif kind == "boss":
-            if random.random() < c.Events.PRESAGE_CHANCE:
-                threading.Thread(target=self._boss_event_with_presage, args=(player,), daemon=True).start()
-            else:
-                self._spawn_boss_event(player)
-        elif kind == "rumor":
-            threading.Thread(target=self._generate_rumor, args=(player,), daemon=True).start()
-        elif kind == "prophetic_rumor":
-            threading.Thread(target=self._generate_prophetic_rumor, args=(player,), daemon=True).start()
-        elif kind == "crisis":
-            threading.Thread(target=self._generate_crisis, args=(quest_system, npc_name_generator), daemon=True).start()
+                plain(player)
+        else:
+            target, args = threaded[kind]
+            threading.Thread(target=target, args=args, daemon=True).start()
 
     def _point_near_player(self, player: Player, min_dist, max_dist, radius, accept=None):
         """Open ground in a band around the player, or None. `accept` is whatever else the
@@ -311,7 +311,7 @@ class EventSystem:
             return
         _, x, y, label = lead
         text = self._generate_lore_line(
-            f"In at most 15 words, have a villager whisper a rumor about {label} out in the wilds."
+            f"In at most 15 words, have a villager whisper a rumour about {label} out in the wilds."
         )
         whisper = text or f"someone speaks of {label} out in the wilds"
         self.notify(f"Rumour: {whisper} (marked on your map)", RUMOR_COLOR)
@@ -327,10 +327,9 @@ class EventSystem:
             RUMOR_COLOR,
         )
         time.sleep(random.uniform(*c.Events.PROPHECY_DELAY_RANGE_S))
-        mainthread.post(self._spawn_prophesied_treasure, player)
-
-    def _spawn_prophesied_treasure(self, player: Player):
-        self._spawn_treasure(player, "The rumor was true: treasure glints somewhere out there", mark="the treasure")
+        mainthread.post(
+            self._spawn_treasure, player, "The rumour was true: treasure glints somewhere out there", "the treasure"
+        )
 
     def _village_angry(self, npc: NPC) -> bool:
         """Whether the settlement this one lives in has turned on the player. One furious

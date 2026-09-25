@@ -901,7 +901,7 @@ class Player(PlayerBonuses, Entity):
         if retribution > 0:
             self._reflect(source, max(1, int(damage * retribution)), (255, 90, 40), 8, 4, 350)
 
-    def gain_coins(self, amount: int):
+    def find_coins(self, amount: int):
         """Add coins from loot, boosted by the coin-find accessory."""
         self.add_coins(round(amount * self.coin_find_mult()))
 
