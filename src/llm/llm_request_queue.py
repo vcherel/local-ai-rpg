@@ -21,6 +21,7 @@ CHAR_FILTER = str.maketrans("", "", '"«»')
 # LLMs favour; drop everything else so it never reaches the screen.
 UNSUPPORTED_GLYPH_RE = re.compile("[^\t\n\r\x20-\x7e -ɏ‐-―‘-‟…]")
 
+SYSTEM_OPEN = "<|im_start|>system\n"
 ENGLISH_ONLY_REMINDER = "Respond only in English, using standard Latin letters and punctuation."
 
 # The player is waiting on the screen for these, so they go to the front of the queue.
@@ -41,6 +42,12 @@ INTERACTIVE_CATEGORIES = frozenset(
 # Every decision's category starts with this. A decision is one pass over a prompt and no
 # generation, a fraction of a second, so it never makes an NPC too busy to talk.
 DECISION_PREFIX = "Decide"
+# The head of the system prompt of whoever the player is standing in front of, read into the
+# cache before E is pressed. Invisible: never "busy", never on the HUD, never logged.
+WARM_CATEGORY = "Warm"
+# How many tokens a warm reads before looking whether a line is waiting behind it, which is
+# the most it can hold a first line up by (about 11.5 ms a token on the GTX 1650).
+WARM_CHUNK = 16
 PRIORITY_INTERACTIVE = 0
 PRIORITY_BACKGROUND = 1
 
@@ -55,9 +62,7 @@ def _strip_unsupported_glyphs(text: str) -> str:
 
 def _format_prompt(prompt: str, system_prompt: str) -> str:
     system_prompt = f"{system_prompt} {ENGLISH_ONLY_REMINDER}"
-    return (
-        f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-    )
+    return f"{SYSTEM_OPEN}{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
 
 
 class LLMRequestQueue:
@@ -74,6 +79,8 @@ class LLMRequestQueue:
         # task_id -> {category, priority, state ("queued"/"running"), start (monotonic)}.
         self.tasks = {}
         self._next_task_id = 0
+        # Set whenever something the player waits on is queued, so a warm stops for it.
+        self.interactive_waiting = threading.Event()
 
     def start(self):
         if not self.running:
@@ -86,7 +93,7 @@ class LLMRequestQueue:
         they will be served (the running one first, then by priority)."""
         now = time.monotonic()
         with self.lock:
-            tasks = list(self.tasks.values())
+            tasks = [t for t in self.tasks.values() if t["category"] != WARM_CATEGORY]
         tasks.sort(key=lambda t: (t["state"] != "running", t["priority"]))
         return [{"category": t["category"], "state": t["state"], "elapsed": now - t["start"]} for t in tasks]
 
@@ -103,7 +110,23 @@ class LLMRequestQueue:
         return task_id
 
     def _submit(self, request: dict, category: str):
+        if _priority_of(category) == PRIORITY_INTERACTIVE:
+            self.interactive_waiting.set()
         self.request_queue.put((_priority_of(category), next(self._sequence), request))
+
+    def idle(self) -> bool:
+        with self.lock:
+            return not self.tasks
+
+    def warm(self, system_prompt_head: str):
+        """Read the head of a system prompt into the cache, answering nothing."""
+        result_queue = Queue()
+
+        def request_func():
+            return warm_internal(system_prompt_head, self.interactive_waiting)
+
+        task_id = self._register_task(WARM_CATEGORY)
+        self._submit({"func": request_func, "result_queue": result_queue, "task_id": task_id}, WARM_CATEGORY)
 
     def _process_queue(self):
         while self.running:
@@ -113,6 +136,8 @@ class LLMRequestQueue:
 
                 task_id = request["task_id"]
                 with self.lock:
+                    if self.tasks.get(task_id, {}).get("priority") == PRIORITY_INTERACTIVE:
+                        self.interactive_waiting.clear()
                     task = self.tasks.get(task_id)
                     if task is not None:
                         task["state"] = "running"
@@ -315,6 +340,20 @@ def llm_busy() -> bool:
     return any(not task["category"].startswith(DECISION_PREFIX) for task in llm_queue.get_active_tasks())
 
 
+_warmed = None
+
+
+def warm_queued(key, system_prompt_head: str):
+    """Read what a conversation about to open will start with, while nothing else wants the
+    model. Called every frame the talk prompt shows; does nothing past the first for the same
+    `key`, nothing while the queue holds anything, and never loads a model to do it."""
+    global _warmed
+    if llm_queue is None or key == _warmed or not llm_queue.idle():
+        return
+    _warmed = key
+    llm_queue.warm(system_prompt_head)
+
+
 def generate_response_queued(prompt, system_prompt, log, max_tokens=None, raw=False):
     active = get_llm_queue() if model_available() else None
     if active is None:
@@ -418,6 +457,34 @@ def generate_response_stream_internal(prompt, system_prompt, category, max_token
     _log(category, system_prompt, prompt, response, start, max_tokens, True, usage)
 
 
+def _reuse_cache(tokens) -> None:
+    """Keep what the cache shares with `tokens`, short of the last one, and drop the rest."""
+    shared = 0
+    for cached, wanted in zip(llm._input_ids, tokens, strict=False):
+        if cached != wanted:
+            break
+        shared += 1
+    keep = min(shared, len(tokens) - 1)
+    if keep > 0 and llm._ctx.kv_cache_seq_rm(-1, keep, -1):
+        llm.n_tokens = keep
+    else:
+        llm.reset()
+
+
+def warm_internal(system_prompt_head, interrupted: threading.Event):
+    """The head evaluated into the cache in small chunks, stopping at the first chunk boundary
+    after an interactive call is queued. What was read stays: the call that follows matches
+    against it like any other prefix. The head's own last token may tokenise differently
+    inside the whole prompt, which costs that one token again."""
+    text = SYSTEM_OPEN + system_prompt_head.rstrip()
+    tokens = llm.tokenize(text.encode("utf-8"), add_bos=False, special=True)
+    if len(tokens) >= llm.n_ctx():
+        return
+    _reuse_cache(tokens)
+    while llm.n_tokens < len(tokens) and not interrupted.is_set():
+        llm.eval(tokens[llm.n_tokens : llm.n_tokens + WARM_CHUNK])
+
+
 def _option_tokens(n_options: int) -> list[int]:
     """The token each answer letter is written as, first thing in the assistant's turn."""
     return [llm.tokenize(letter.encode("utf-8"), add_bos=False, special=False)[0] for letter in "ABCDEFGH"[:n_options]]
@@ -434,17 +501,9 @@ def decide_internal(prompt, system_prompt, n_options):
     tokens = llm.tokenize(_format_prompt(prompt, system_prompt).encode("utf-8"), add_bos=False, special=True)
     if len(tokens) >= llm.n_ctx():
         raise ValueError(f"decision prompt of {len(tokens)} tokens does not fit the context")
-    shared = 0
-    for cached, wanted in zip(llm._input_ids, tokens, strict=False):
-        if cached != wanted:
-            break
-        shared += 1
     # At least the last token is always evaluated: its logits are the answer.
-    keep = min(shared, len(tokens) - 1)
-    if keep > 0 and llm._ctx.kv_cache_seq_rm(-1, keep, -1):
-        llm.n_tokens = keep
-    else:
-        llm.reset()
+    _reuse_cache(tokens)
+    keep = llm.n_tokens
     llm.eval(tokens[llm.n_tokens :])
     logits = np.ctypeslib.as_array(llm._ctx.get_logits_ith(-1), shape=(llm.n_vocab(),))
     return {

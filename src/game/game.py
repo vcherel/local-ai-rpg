@@ -974,6 +974,7 @@ class Game(GameInteractions, GameSleep):
         self.interior = self.world.building_at(self.player.x, self.player.y)
         self._sweep_loot(gameplay_dt)
         self.interaction = self.current_interaction()
+        self.dialogue_manager.warm_for(self.interaction, self.world.context)
         self._offer_cone_hint()
         self._lift_gate(gameplay_dt)
         self.update_camera()

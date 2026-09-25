@@ -16,7 +16,7 @@ from game.entities.items import potion_description
 from game.quest import COUNTED_QUEST_TYPES
 from llm import offline
 from llm.decide import decide, later, odds
-from llm.llm_request_queue import generate_response_stream_queued
+from llm.llm_request_queue import generate_response_stream_queued, warm_queued
 from llm.quest_system import QuestSystem, coin_band
 from ui import widgets
 from ui.conversation_ui import ConversationUI
@@ -110,6 +110,19 @@ FETCH_LINES = (
 )
 
 
+# What a villager with no quest of their own is told they might want from the player.
+VILLAGER_NEEDS = (
+    "You may have needs or problems. "
+    "The player can help you by fetching a specific item, dealing with dangerous creatures, "
+    "recovering something that was stolen from you, clearing out a bandit camp, carrying "
+    "something to someone who lives far away, or quietly taking something from a neighbour. "
+    "You may offer coins, a specific item you own, or both as a reward. "
+    "You cannot take part in these quests yourself "
+    "(make up an excuse if needed, the player must not know) ! "
+    "You may also simply want to chat. "
+)
+
+
 def _deal_line(discount: float) -> str:
     """What a merchant who has been asked for a better price remembers about their answer."""
     if discount <= 0:
@@ -198,46 +211,52 @@ class DialogueManager:
         self.quest_system = QuestSystem(items, player, npcs)
         self._npc_name_generator: NPCNameGenerator | None = None
 
-    def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool, delivered: str = "") -> str:
-        persuasion_hint = self.quest_system.player.stats.persuasion_descriptor()
-        affinity_hint = npc.temperament_descriptor() + npc.affinity_descriptor()
-
+    def _prompt_head(self, npc: NPC, context: str) -> str:
+        """The start of this person's system prompt that is known before E is pressed, so it
+        can be read into the cache while the talk prompt shows (`warm_for`). What depends on
+        the conversation opening (a haggle, a delivery, a quest) comes after it."""
+        role = "a merchant" if npc.is_merchant else "an NPC"
+        head = (
+            f"You are {npc.name}, {role} in an RPG with this context: {context}. The player comes to talk to you. "
+            + self.quest_system.player.stats.persuasion_descriptor()
+            + npc.temperament_descriptor()
+            + npc.affinity_descriptor()
+        )
         if npc.is_merchant:
-            system_prompt = (
-                (
-                    f"You are {npc.name}, a merchant in an RPG with this context: {context}. "
-                    "The player comes to talk to you. "
-                )
-                + persuasion_hint
-                + affinity_hint
-            )
             if npc.shop_ready and npc.shop_items:
                 wares = ", ".join(
                     f"{item.name} ({item.rarity} {item.item_type}, {_ware_effect(item)})"
                     f" for {npc.shop_prices[item.id]} coins"
                     for item in npc.shop_items
                 )
-                system_prompt += f"You sell: {wares}. "
+                head += f"You sell: {wares}. "
             else:
-                system_prompt += "You are a trader who buys and sells adventuring gear. "
+                head += "You are a trader who buys and sells adventuring gear. "
+        elif not npc.has_active_quest and not npc.is_greeter:
+            head += VILLAGER_NEEDS
+        return head
+
+    def warm_for(self, interaction, context: str | None):
+        """Start reading the system prompt of whoever E would talk to, while nothing else
+        wants the model, so their first line does not pay for it."""
+        if self.active or interaction is None or interaction.kind != "npc" or context is None:
+            return
+        npc = interaction.target
+        if npc.name is None:
+            return
+        head = self._prompt_head(npc, context)
+        warm_queued((id(npc), head), head)
+
+    def _build_system_prompt(self, npc: NPC, context: str, quest_complete: bool, delivered: str = "") -> str:
+        system_prompt = self._prompt_head(npc, context)
+
+        if npc.is_merchant:
             if npc.haggled:
                 system_prompt += _deal_line(npc.discount)
             system_prompt += (
                 "Reply naturally to messages in one short sentence. You can mention your wares but keep it brief."
             )
             return system_prompt
-
-        system_prompt = (
-            (f"You are {npc.name}, an NPC in an RPG with this context: {context}. The player comes to talk to you. ")
-            + persuasion_hint
-            + affinity_hint
-        )
-
-        if delivered:
-            system_prompt += (
-                f"The player has just handed you {delivered}, sent to you by someone else. "
-                "Take it and thank them; you owe them nothing, the sender pays them. "
-            )
 
         if npc.has_active_quest:
             system_prompt += self._quest_lines(npc.quest, quest_complete)
@@ -253,16 +272,13 @@ class DialogueManager:
                 "task, item or reward. If they accept or agree, thank them and tell them to come back "
                 "when it is done. "
             )
-        else:
+        elif npc.is_greeter:
+            system_prompt += VILLAGER_NEEDS
+
+        if delivered:
             system_prompt += (
-                "You may have needs or problems. "
-                "The player can help you by fetching a specific item, dealing with dangerous creatures, "
-                "recovering something that was stolen from you, clearing out a bandit camp, carrying "
-                "something to someone who lives far away, or quietly taking something from a neighbour. "
-                "You may offer coins, a specific item you own, or both as a reward. "
-                "You cannot take part in these quests yourself "
-                "(make up an excuse if needed, the player must not know) ! "
-                "You may also simply want to chat. "
+                f"The player has just handed you {delivered}, sent to you by someone else. "
+                "Take it and thank them; you owe them nothing, the sender pays them. "
             )
 
         system_prompt += (
