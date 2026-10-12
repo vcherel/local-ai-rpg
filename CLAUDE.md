@@ -42,14 +42,6 @@ The same questions asked of the real model, kept so a prompt change comes with n
 ### .claude
 - `.claude/skills/bughunt/SKILL.md`: `/bughunt`, find bugs by reading, fix what is approved, leave a check per bug class
 
-### Container
-How the game is handed to somebody who will not install it. Offline only: no CUDA, no llama-cpp-python, no weights.
-- `Dockerfile`: the image, running off `src` on `PYTHONPATH`
-- `.dockerignore`: what never goes in (weights, saves, logs, screenshots)
-- `scripts/container/build.sh`: builds the image
-- `scripts/container/push.sh`: publishes it to `vcherel/rpg-ai` with the token in `.env`
-- `scripts/container/play.sh`: the one file another machine needs to pull and run it
-
 ### rpg_ai
 - `src/rpg_ai/__main__.py`: entry point; pygame and LLM queue setup, loading screen, main menu to game loop
 - `src/rpg_ai/fetch_model.py`: `uv run fetch-model`, downloads the weights into `models/`
