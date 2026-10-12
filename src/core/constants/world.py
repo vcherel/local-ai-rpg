@@ -219,8 +219,12 @@ class DayNight:
     # everyone turning on their heel at the same instant.
     CURFEW_DARKNESS: float = 0.35
 
-    NIGHT_COLOR: tuple = (15, 20, 60)
-    NIGHT_MAX_ALPHA: int = 90
+    NIGHT_COLOR: tuple = (14, 20, 58)
+    NIGHT_MAX_ALPHA: int = 118
+    # On top of that, the dark gathered at the edges of the view at the depth of night,
+    # and how much of the middle (as a share of the screen) it leaves clear.
+    NIGHT_EDGE_ALPHA: int = 90
+    NIGHT_EDGE_CLEAR: float = 0.55
 
     # Blood night overrides the normal tint with a fixed dark red look, regardless of
     # whatever the time of day would otherwise show.
@@ -862,6 +866,8 @@ class Scenery:
     # counts as being over a body, since its lobes are rolled out past that radius.
     CANOPY_KINDS: tuple = ("tree", "pine")
     CANOPY_FADE_ALPHA: int = 105
+    # How dark the shadow a tree or a boulder lays on the ground is, over whatever is there.
+    SHADOW_ALPHA: int = 70
     CANOPY_COVER_MARGIN: float = 1.35
 
     # Roads: every village site is joined to its nearest ROAD_LINKS neighbours, and the

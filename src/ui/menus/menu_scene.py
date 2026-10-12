@@ -143,7 +143,7 @@ class MenuScene:
     def draw(self):
         """The same order `GameRenderer.draw_world` uses: ground, plaza, buildings, then
         everything standing on top of them."""
-        self.screen.fill(c.Colors.GREEN)
+        self.screen.fill(c.Colors.GRASS)
         for kind in c.Scenery.GROUND_KINDS:
             for item in self.ground:
                 if item.kind == kind:

@@ -319,7 +319,7 @@ class GameRenderer:
         the roads and water drawn in passes over the chunk, and the plaza each settlement is
         built around. Nothing here stands on the ground, so nothing here is depth-sorted:
         the order is the order the passes are written in and that is the whole of it."""
-        self.screen.fill(c.Colors.GREEN)
+        self.screen.fill(c.Colors.GRASS)
 
         # The one loop long enough for the culling itself to cost something: a few hundred
         # pebbles per chunk, so it asks the world for the chunks it can see rather than

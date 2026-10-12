@@ -1,3 +1,4 @@
+import os
 import sys
 import threading
 
@@ -70,7 +71,10 @@ def main():
     pygame.mixer.pre_init(44100, -16, 1, 512)
     pygame.init()
     # SCALED keeps the fixed layout resolution and translates mouse coordinates, so
-    # fullscreen is a stretch of the same screen rather than a different one.
+    # fullscreen is a stretch of the same screen rather than a different one. Stretched
+    # smoothly: pygame's default is nearest, which at a ratio like 1.5 doubles some rows
+    # of pixels and not others and leaves every letter jagged.
+    os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "linear")
     screen = pygame.display.set_mode((c.Screen.WIDTH, c.Screen.HEIGHT), pygame.SCALED | pygame.FULLSCREEN)
     clock = pygame.time.Clock()
     c.Fonts = c.Fonts.load()

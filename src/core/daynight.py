@@ -82,6 +82,36 @@ class DayNightCycle:
         # Kept rather than filled afresh every frame: the sky is one flat colour that holds
         # still for minutes at a time, and a whole screen of it was 2 ms of every night frame.
         # A step per level of alpha, so nothing about the dusk is any coarser than it was.
-        overlay = self._tint.surface(alpha / 255, lambda tint, amount: tint.fill((*color, round(amount * 255))), color)
+        overlay = self._tint.surface(alpha / 255, lambda tint, amount: self._paint(tint, amount, color), color)
         if overlay is not None:
             surface.blit(overlay, (0, 0))
+
+    @staticmethod
+    def _paint(tint: pygame.Surface, amount: float, color: tuple):
+        """The sky, and the dark it gathers at the edges of the view: night closes in on
+        the player rather than lying over the screen as one flat sheet."""
+        tint.fill((*color, round(amount * 255)))
+        depth = min(1.0, amount * 255 / c.DayNight.NIGHT_MAX_ALPHA)
+        edges = _vignette(color).copy()
+        edges.fill((255, 255, 255, round(depth * 255)), special_flags=pygame.BLEND_RGBA_MULT)
+        tint.blit(edges, (0, 0))
+
+
+_VIGNETTE: dict = {}
+
+
+def _vignette(color: tuple) -> pygame.Surface:
+    """Rings of `color`, clear in the middle of the screen and densest in its corners."""
+    if color not in _VIGNETTE:
+        w, h = c.Screen.WIDTH, c.Screen.HEIGHT
+        art = pygame.Surface((w, h), pygame.SRCALPHA)
+        art.fill((*color, c.DayNight.NIGHT_EDGE_ALPHA))
+        rings = 24
+        for i in range(rings):
+            t = i / rings  # 0 at the corners, 1 at the clear middle
+            scale = 1.5 - t * (1.5 - c.DayNight.NIGHT_EDGE_CLEAR)
+            rect = pygame.Rect(0, 0, round(w * scale), round(h * scale))
+            rect.center = (w // 2, h // 2)
+            pygame.draw.ellipse(art, (*color, round(c.DayNight.NIGHT_EDGE_ALPHA * (1 - t) ** 2)), rect)
+        _VIGNETTE[color] = art
+    return _VIGNETTE[color]

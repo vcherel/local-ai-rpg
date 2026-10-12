@@ -86,6 +86,9 @@ class Minimap:
 class Colors:
     BLACK: tuple = (0, 0, 0)
     GREEN: tuple = (41, 179, 41)
+    # The ground itself, kept apart from the UI's green: a meadow a little short of
+    # saturated, so what stands on it and what is painted over it both read.
+    GRASS: tuple = (92, 158, 62)
     RED: tuple = (201, 30, 22)
     WHITE: tuple = (255, 255, 255)
     YELLOW: tuple = (255, 255, 0)

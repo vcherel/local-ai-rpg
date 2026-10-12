@@ -56,6 +56,7 @@ class Scenery:
         self.family = _WATER_FAMILY.get(kind, kind)
         self.layer = _WATER_LAYER.get(kind, 0)
         self._shape = self._roll_shape()
+        self._shadow = None
         # How far this piece reaches, for the water and bridge lookups: nothing about water
         # blocks, so it needs a footprint of its own rather than borrowing blocking_radius.
         self.water_reach = self._water_reach()
@@ -201,7 +202,7 @@ class Scenery:
     def _roll_canopy(self, rng: random.Random) -> dict:
         pine = self.kind == "pine"
         radius = rng.randint(34, 52) if not pine else rng.randint(28, 40)
-        base = (46, 96, 44) if not pine else (34, 72, 52)
+        base = (58, 114, 50) if not pine else (34, 76, 54)
         lobes = []
         for _ in range(5 if not pine else 4):
             ox = rng.uniform(-radius * 0.45, radius * 0.45)
@@ -213,7 +214,34 @@ class Scenery:
         # Sorted so the biggest lobes go down first and the small bright ones read as the
         # lit top of the canopy rather than being buried under them.
         lobes.sort(key=lambda lobe: -lobe[2])
-        return {"radius": radius, "lobes": lobes, "trunk": rng.randint(7, 10)}
+        shape = {"radius": radius, "lobes": lobes, "trunk": rng.randint(7, 10)}
+        shape["rim"] = tuple(round(v * 0.62) for v in base)
+        # The light comes from the upper left, as on a boulder: the top lobes catch it.
+        shape["lit"] = [
+            (ox - r * 0.28, oy - r * 0.32, round(r * 0.5), tuple(min(255, round(v * 1.22) + 8) for v in color))
+            for ox, oy, r, color in lobes[-2:]
+        ]
+        if pine:
+            shape["tiers"] = self._roll_pine_tiers(rng, radius, base)
+        return shape
+
+    @staticmethod
+    def _roll_pine_tiers(rng: random.Random, radius: int, base: tuple) -> list:
+        """A conifer seen from above: stacked stars of needles, each smaller and lighter than
+        the one under it, so it reads apart from a leafy tree at a glance."""
+        tiers = []
+        spikes = rng.randint(8, 10)
+        for level, scale in enumerate((1.0, 0.72, 0.44)):
+            outer = radius * scale
+            turn = rng.uniform(0, 2 * math.pi)
+            points = []
+            for i in range(spikes * 2):
+                angle = turn + math.pi * i / spikes
+                r = outer if i % 2 == 0 else outer * 0.66
+                points.append((math.cos(angle) * r, math.sin(angle) * r - level * 3))
+            color = tuple(min(255, v + level * 14) for v in base)
+            tiers.append((points, color))
+        return tiers
 
     @staticmethod
     def _roll_boulder(rng: random.Random) -> dict:
@@ -259,7 +287,7 @@ class Scenery:
         ry = round(rx * rng.uniform(0.5, 0.85))
         shades = c.Scenery.PATCH_COLORS[self.biome]
         mult = shades[rng.randrange(len(shades))]
-        color = tuple(max(0, min(255, round(c.Colors.GREEN[i] * mult[i]))) for i in range(3))
+        color = tuple(max(0, min(255, round(c.Colors.GRASS[i] * mult[i]))) for i in range(3))
         # A couple of lobes rather than one clean ellipse, so the edge of a patch reads as
         # ground giving way to other ground and not as a painted circle.
         lobes = [(0.0, 0.0, 1.0)]
@@ -428,8 +456,7 @@ class Scenery:
             self._draw_rubble(screen, center)
             return
         points = [(cx + px, cy + py) for px, py in self._shape["points"]]
-        shadow = [(x + 4, y + 6) for x, y in points]
-        pygame.draw.polygon(screen, (52, 62, 44), shadow)
+        screen.blit(self._boulder_shadow(), (cx - self._shape["radius"], cy - self._shape["radius"]))
         pygame.draw.polygon(screen, self._shape["color"], points)
         pygame.draw.polygon(screen, tuple(round(v * 0.66) for v in self._shape["color"]), points, 2)
         highlight = [(cx + px * 0.45 - 4, cy + py * 0.45 - 5) for px, py in self._shape["points"]]
@@ -459,14 +486,43 @@ class Scenery:
         if self.felled:
             self._draw_fallen(screen, center)
             return
-        shadow = pygame.Rect(0, 0, round(radius * 1.7), round(radius * 1.1))
-        shadow.center = (cx + 8, cy + 12)
-        pygame.draw.ellipse(screen, (48, 68, 40), shadow)
+        shadow = _ground_shadow(round(radius * 1.7), round(radius * 1.1))
+        screen.blit(shadow, shadow.get_rect(center=(cx + 8, cy + 12)))
         pygame.draw.circle(screen, (88, 62, 38), (cx, cy), self._shape["trunk"])
-        for ox, oy, r, color in self._shape["lobes"]:
-            pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
+        if "tiers" in self._shape:
+            self._draw_pine(screen, center)
+        else:
+            rim = self._shape["rim"]
+            for ox, oy, r, _color in self._shape["lobes"]:
+                pygame.draw.circle(screen, rim, (round(cx + ox), round(cy + oy)), r + 2)
+            for ox, oy, r, color in self._shape["lobes"]:
+                pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
+            for ox, oy, r, color in self._shape["lit"]:
+                pygame.draw.circle(screen, color, (round(cx + ox), round(cy + oy)), r)
         # What is left of it, so a tree worth two more swings looks like one.
         self._draw_wear(screen, center, self._shape["trunk"])
+
+    def _draw_pine(self, screen, center):
+        cx, cy = center
+        rim = self._shape["rim"]
+        for i, (points, color) in enumerate(self._shape["tiers"]):
+            polygon = [(cx + px, cy + py) for px, py in points]
+            if i == 0:
+                pygame.draw.polygon(screen, rim, polygon)
+                pygame.draw.polygon(screen, rim, polygon, 3)
+            pygame.draw.polygon(screen, color, polygon)
+            pygame.draw.polygon(screen, rim, polygon, 1)
+
+    def _boulder_shadow(self) -> pygame.Surface:
+        """The stone's own outline, dropped down and right and laid over whatever ground it
+        is on, kept with the boulder since no two are the same shape."""
+        if self._shadow is None:
+            radius = self._shape["radius"]
+            size = radius * 2 + 12
+            self._shadow = pygame.Surface((size, size), pygame.SRCALPHA)
+            points = [(radius + px + 4, radius + py + 6) for px, py in self._shape["points"]]
+            pygame.draw.polygon(self._shadow, (0, 0, 0, c.Scenery.SHADOW_ALPHA), points)
+        return self._shadow
 
     def _draw_wear(self, screen, center, radius: float):
         """The wear taken by a piece of wilderness still standing, through the same crack
@@ -495,6 +551,20 @@ class Scenery:
         pygame.draw.circle(screen, c.Trees.STUMP_COLOR, (cx, cy), trunk)
         pygame.draw.circle(screen, (58, 40, 24), (cx, cy), trunk, 2)
         pygame.draw.circle(screen, (128, 96, 62), (cx, cy), max(1, round(trunk * 0.5)), 1)
+
+
+_SHADOWS: dict = {}
+
+
+def _ground_shadow(width: int, height: int) -> pygame.Surface:
+    """A soft dark ellipse that darkens whatever ground is under it, one per size and kept:
+    an opaque one was a green that only matched the bare grass."""
+    shadow = _SHADOWS.get((width, height))
+    if shadow is None:
+        shadow = pygame.Surface((width, height), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (0, 0, 0, c.Scenery.SHADOW_ALPHA), shadow.get_rect())
+        _SHADOWS[(width, height)] = shadow
+    return shadow
 
 
 # What draws each kind of scenery. An explicit table rather than a name looked up off the
